@@ -23,9 +23,11 @@ that needs it imports it from there.
 Blind spots, stated once: a tuple-unpacking target binds nothing in
 ``resolve`` or ``bound_names`` (``unpacking_bindings`` lists what it binds, for
 a guard that wants it), a starred argument lands on no parameter, and a string
-constant is a value, never a route to a name.  The receiver offset applies
-when the first parameter is spelled ``self`` or ``cls``, and assumes the
-receiver fills it, so an unbound method called with an explicit instance —
+constant is a value, never a route to a name (``spelled_sites`` alone reads an
+identifier inside one as a spelling, for a guard that wants every route).  The
+receiver offset applies when the first parameter is spelled ``self`` or
+``cls``, and assumes the receiver fills it, so an unbound method called with an
+explicit instance —
 ``Reader._own_text(reader, spec)`` — hands that instance to the parameter
 after the receiver's own and every later argument lands one place late, on the
 parameter after its own, or off the end.  Only an absolute ``kodezart.``
@@ -37,9 +39,15 @@ package writes either form.
 """
 
 import ast
-from collections.abc import Callable, Collection, Mapping
+import functools
+import importlib
+import inspect
+import re
+import typing
+from collections.abc import Callable, Collection, Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from types import MappingProxyType, ModuleType
 
 import kodezart
 
@@ -702,6 +710,252 @@ def through_partials(trees: Mapping[str, ast.Module]) -> dict[str, ast.Module]:
             ast.Module(body=[*tree.body, *calls], type_ignores=[]) if calls else tree
         )
     return rewritten
+
+
+def _dotted(path: str) -> str:
+    """The dotted module a posix path of the tree is imported as."""
+    parts = [SOURCE_ROOT.name, *path.removesuffix(".py").split("/")]
+    if parts[-1] == "__init__":
+        parts.pop()
+    return ".".join(parts)
+
+
+def package_modules(sources: Collection[str]) -> tuple[ModuleType, ...]:
+    """Each module of the tree, imported: the objects a guard can follow."""
+    return tuple(importlib.import_module(_dotted(path)) for path in sorted(sources))
+
+
+def _ours(value: object) -> bool:
+    """Whether *value* is defined in the package, by its own ``__module__``."""
+    module = getattr(value, "__module__", None)
+    return isinstance(module, str) and module.partition(".")[0] == SOURCE_ROOT.name
+
+
+def _mentioned(
+    annotation: object, scope: Mapping[str, object], known: Mapping[str, object]
+) -> Iterator[object]:
+    """The objects an annotation names, a string one read rather than run.
+
+    A string annotation, or a forward reference inside one, is parsed and
+    each word it spells is looked up in its own module first and then in
+    every module of the package, so a name imported only for the type check
+    is still found where it is defined.
+    """
+    if isinstance(annotation, typing.ForwardRef):
+        annotation = annotation.__forward_arg__
+    if not isinstance(annotation, str):
+        yield annotation
+        return
+    try:
+        parsed_annotation = ast.parse(annotation, mode="eval")
+    except SyntaxError:
+        return
+    for node in ast.walk(parsed_annotation):
+        word = _spelling(node) if isinstance(node, ast.Name | ast.Attribute) else None
+        if word is None:
+            continue
+        last = word.rpartition(".")[2]
+        for found in (scope.get(last), known.get(last)):
+            if found is not None:
+                yield found
+
+
+def _produces(
+    value: object,
+    scopes: Mapping[str, Mapping[str, object]],
+    known: Mapping[str, object],
+) -> Iterator[object]:
+    """What *value* can hand back when it is used: called, built, validated.
+
+    A type form hands back its arguments and origin, an alias its value, a
+    ``NewType`` its supertype, a type variable its bound, a partial its
+    function, a descriptor its function, and a collection its members.  A
+    package class hands back what its own fields and members state, and those
+    of every package class it inherits from; a package function or method
+    hands back its return annotation, never a parameter's.  Any
+    other instance hands back its type and its own attributes, which is how
+    a ``TypeAdapter`` built at module level hands back the type it adapts.
+    """
+    yield from typing.get_args(value)
+    origin = typing.get_origin(value)
+    if origin is not None:
+        yield origin
+    if isinstance(value, typing.TypeAliasType):
+        yield value.__value__
+    elif isinstance(value, typing.NewType):
+        yield value.__supertype__
+    elif isinstance(value, typing.TypeVar):
+        yield value.__bound__
+        yield from value.__constraints__
+    elif isinstance(value, functools.partial):
+        yield value.func
+    elif isinstance(value, staticmethod | classmethod):
+        yield value.__func__
+    elif isinstance(value, property):
+        yield value.fget
+    elif isinstance(value, tuple | list | set | frozenset):
+        yield from value
+    elif isinstance(value, dict | MappingProxyType):
+        yield from value.values()
+    elif inspect.isclass(value):
+        for klass in value.__mro__ if _ours(value) else ():
+            if not _ours(klass):
+                continue
+            scope = scopes.get(klass.__module__, {})
+            for annotation in inspect.get_annotations(klass).values():
+                yield from _mentioned(annotation, scope, known)
+            yield from (
+                member
+                for name, member in vars(klass).items()
+                if not name.startswith("__")
+            )
+    elif inspect.isroutine(value):
+        if _ours(value):
+            scope = getattr(value, "__globals__", {})
+            returned = inspect.get_annotations(value).get("return")
+            yield from _mentioned(returned, scope, known)
+    elif not isinstance(value, ModuleType):
+        yield type(value)
+        yield from getattr(value, "__dict__", {}).values()
+
+
+def names_reaching(target: object, *, modules: Iterable[ModuleType]) -> frozenset[str]:
+    """Every word *modules* bind to an object from which *target* can be had.
+
+    A module-level name is one when using its object — calling it,
+    building it, validating through it, reading it — can hand back *target*,
+    directly or through a chain of what each object hands back
+    (``_produces``), to a fixed point.  So a class holding the target in a
+    field is one, a union or an alias over such a class is one, a function
+    returning one is one, and an adapter built over one is one.  The name of
+    a method of a package class whose return can hand back *target* is one
+    too, because a method is reached by that word on any receiver.
+
+    Keyed on the objects, not on how their source spells them, so an
+    assignment, a type alias, an import under another name and a re-export
+    all bind the same object.  A dunder name is never one.
+    """
+    loaded = tuple(modules)
+    scopes = {module.__name__: vars(module) for module in loaded}
+    known: dict[str, object] = {}
+    for module in loaded:
+        for name, value in vars(module).items():
+            known.setdefault(name, value)
+    graph: dict[int, list[int]] = {}
+    kept: dict[int, object] = {}
+    stack: list[object] = [
+        value
+        for module in loaded
+        for name, value in vars(module).items()
+        if not name.startswith("__")
+    ]
+    while stack:
+        value = stack.pop()
+        if id(value) in graph:
+            continue
+        kept[id(value)] = value
+        produced = list(_produces(value, scopes, known))
+        graph[id(value)] = [id(one) for one in produced]
+        stack.extend(produced)
+    back: dict[int, set[int]] = {}
+    for source, heads in graph.items():
+        for head in heads:
+            back.setdefault(head, set()).add(source)
+    reaching = {id(target)}
+    frontier = [id(target)]
+    while frontier:
+        for source in back.get(frontier.pop(), ()):
+            if source not in reaching:
+                reaching.add(source)
+                frontier.append(source)
+    words = {
+        name
+        for module in loaded
+        for name, value in vars(module).items()
+        if not name.startswith("__") and id(value) in reaching
+    }
+    for value in kept.values():
+        if inspect.isclass(value) and _ours(value):
+            words.update(
+                name
+                for name, member in vars(value).items()
+                if not name.startswith("__")
+                and not inspect.isclass(member)
+                and id(member) in reaching
+            )
+    return frozenset(words)
+
+
+_IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+def _unspelled(tree: ast.Module) -> set[int]:
+    """``id`` of every node inside an annotation or a docstring.
+
+    An annotation states a type for the type check and a docstring states
+    prose: neither is a use of the value it names.
+    """
+    skipped: set[int] = set()
+    for node in ast.walk(tree):
+        annotations: list[ast.expr | None] = []
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            annotations.append(node.returns)
+            annotations.extend(one.annotation for one in parameters_of(node))
+        elif isinstance(node, ast.AnnAssign):
+            annotations.append(node.annotation)
+        for annotation in annotations:
+            if annotation is not None:
+                skipped.update(id(one) for one in ast.walk(annotation))
+        if isinstance(
+            node, ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef
+        ):
+            first = node.body[0] if node.body else None
+            if (
+                isinstance(first, ast.Expr)
+                and isinstance(first.value, ast.Constant)
+                and isinstance(first.value.value, str)
+            ):
+                skipped.add(id(first.value))
+    return skipped
+
+
+def spelled_sites(
+    tree: ast.Module, *, words: Collection[str]
+) -> tuple[tuple[str, str], ...]:
+    """Every place *tree* spells one of *words*, as ``(definition, word)``.
+
+    A name, an attribute, an import's imported or bound name, and an
+    identifier inside a string literal all spell the word; an annotation and
+    a docstring do not.  However a module reaches an object — a from-import,
+    a module attribute, ``importlib`` or ``sys.modules`` and an attribute
+    off what they return, a package ``__init__``, a relative import, a
+    re-export, ``getattr`` or a mapping lookup with a literal — the word is
+    spelled at the use.  A word built at run time is not.
+    """
+    wanted = frozenset(words)
+    skipped = _unspelled(tree)
+    where = definitions(tree)
+    found: list[tuple[str, str]] = []
+    for node in ast.walk(tree):
+        if id(node) in skipped:
+            continue
+        spelled: list[str] = []
+        if isinstance(node, ast.Name):
+            spelled.append(node.id)
+        elif isinstance(node, ast.Attribute):
+            spelled.append(node.attr)
+        elif isinstance(node, ast.alias):
+            spelled.extend(_IDENTIFIER.findall(node.name))
+            if node.asname is not None:
+                spelled.append(node.asname)
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+            spelled.extend(_IDENTIFIER.findall(node.value))
+        found.extend(
+            (where.get(id(node), "<module>"), word)
+            for word in spelled
+            if word in wanted
+        )
+    return tuple(sorted(found))
 
 
 def bound_names(
