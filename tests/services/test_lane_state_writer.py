@@ -939,6 +939,47 @@ async def test_a_recovery_receipt_records_the_backup_ref_beside_the_loop_branch(
     ]
 
 
+async def test_a_pull_request_write_keeps_the_recorded_recovery_ref():
+    """Setting the pull request on the record leaves its recovery row in place.
+
+    The commit recorded a divergence recovery's backup ref; the delivery that
+    follows sets the pull request on the same record. The record read back
+    afterwards still carries the RECOVERY association, with its parent and
+    run, beside the pull request: a delivery changes no association.
+    """
+    port, repo = board(), lane_repo()
+    lane = binding()
+    lane_state = writer(port, repo)
+    backup = f"{lane.loop_branch}-backup-0a1b2c3d"
+    sha = repo.commit()
+    repo.publish()
+    await lane_state.record_commit(
+        lane=lane,
+        workspace_path="/workspace/lane",
+        receipt=PersistResult(
+            commit_sha=sha,
+            branch=lane.loop_branch,
+            message="feat: recovered commit",
+            source=PersistSource.DIVERGENCE_REPLAY,
+            recovery_ref=backup,
+        ),
+    )
+    committed = await stored_record(port)
+
+    await lane_state.record_pull_request(
+        lane_key=LANE, pr=PR, visibility=lane.visibility
+    )
+
+    stored = await stored_record(port)
+    assert stored.pr == PR
+    rows = {
+        (item.branch, item.role, item.derived_from, item.run_id)
+        for item in stored.associations
+    }
+    assert (backup, BranchRole.RECOVERY, lane.loop_branch, lane.run_id) in rows
+    assert stored.associations == committed.associations
+
+
 # ---------------------------------------------------------------------------
 # The tick: one criterion's state and the sha it was graded at, in one act.
 # ---------------------------------------------------------------------------
