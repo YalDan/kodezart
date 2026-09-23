@@ -188,7 +188,7 @@
   "tests/domain/test_fire_spec_arm_reads.py": 23,
   "tests/domain/test_fire_spec_formatter.py": 2,
   "tests/domain/test_fire_spec_purity.py": 10,
-  "tests/domain/test_gap.py": 43,
+  "tests/domain/test_gap.py": 50,
   "tests/domain/test_git_url.py": 16,
   "tests/domain/test_issue_label_config.py": 6,
   "tests/domain/test_lane_branch_name.py": 6,
@@ -3041,7 +3041,8 @@
    "test_canceled_and_duplicate_are_excluded_on_state_alone_and_named_beside_the_gap",
    "test_a_criterion_never_graded_is_owed_and_carries_no_grading",
    "test_the_lapse_and_the_never_graded_are_one_membership_told_apart_by_the_sha",
-   "test_a_lapse_and_a_reopened_grading_are_owed_and_told_apart_by_the_lapse_pointer"
+   "test_a_lapse_and_a_reopened_grading_are_owed_and_told_apart_by_the_lapse_pointer",
+   "test_the_shape_guard_rejects_a_default_arm_however_it_is_spelled"
   ],
   "tests/domain/test_git_url.py": [
    "test_parse_repo_url_https_without_dot_git",
