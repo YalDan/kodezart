@@ -22,6 +22,10 @@ from kodezart.domain.errors import (
 from kodezart.types.domain.dispatch import SelfWriteLedger
 from kodezart.types.domain.operation import OperationMemberAbsentError, ScopeLabel
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
+from kodezart.types.domain.scope_ready import (
+    UnreachableCriterion,
+    UnreachableReason,
+)
 from kodezart.types.domain.tracker import WorkflowStateKind
 from tests.fakes import FakeTrackerPort
 from tests.test_forge_origin_selection import (
@@ -251,6 +255,13 @@ async def test_a_graded_lane_over_an_out_of_filter_open_child_is_not_at_rest(
     assert keys(selection) == ["lane"]
     assert [item.issue_key for item in selection.ready[0].gap] == ["child-check"]
     assert selection.blocked == ()
+    assert selection.unreachable == (
+        UnreachableCriterion(
+            issue_key="child-check",
+            reason=UnreachableReason.OTHER_PROJECT,
+            container=OTHER_PROJECT,
+        ),
+    )
     fixture.assert_read_only()
 
 

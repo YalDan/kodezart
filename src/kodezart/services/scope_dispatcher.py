@@ -49,16 +49,18 @@ class ScopeDispatcher:
         subtree closing and by nothing else — no schedule survives between
         ticks to be walked stale.
 
-        Nothing here writes.  A criterion a ready lane owes whose own issue
-        the scope's filter never carried is reported first, under the
-        out-of-scope clause carrying the reason it is out of reach: the
-        lane is still fired for it, and a reader is told what this scope
-        cannot address in its own right rather than left to infer it from
-        a silence.  The blocked lanes are then reported as exclusions
-        under the live-blocker clause carrying their blockers' keys, the
-        ready lanes are offered to the dispatcher's standing clauses in
-        order, and the first lane that survives them is launched through
-        the same procedure the unscoped pass launches through.  A pass in
+        Nothing here writes.  Every open criterion whose own issue the
+        scope's filter never carried is reported first, under the
+        out-of-scope clause carrying the container it sits in or the reason
+        it is out of reach.  It is named under any member, approved or not,
+        blocked or not, and only a ready lane (approved and unblocked) is
+        fired for it; a reader is told what this scope cannot address in
+        its own right rather than left to infer it from a silence.  The
+        blocked lanes are then reported as exclusions under the
+        live-blocker clause carrying their blockers' keys, the ready lanes
+        are offered to the dispatcher's standing clauses in order, and the
+        first lane that survives them is launched through the same
+        procedure the unscoped pass launches through.  A pass in
         which every ready lane is held back, or in which none was ready at
         all, reports an empty eligible set and leaves the board untouched.
         """
