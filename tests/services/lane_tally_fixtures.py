@@ -192,6 +192,7 @@ async def board(
     scopes=None,
     holder=HOLDER,
     extra=(),
+    lane_fields=None,
 ):
     """Each lane's issue, its criterion family, and the record its loop left.
 
@@ -208,6 +209,10 @@ async def board(
     *extra* holds further issues beneath the lanes, such as a deliverable
     child owing criteria of its own, so a lane's subtree can reach deeper than
     its direct criteria.
+
+    *lane_fields* maps a lane to further fields of its own issue, such as the
+    parent it is a sub-issue of or the lanes it is blocked by, so a lane's
+    place among the others is stated on the lane rather than patched in.
     """
     if scope is not None and scopes is not None:
         raise ValueError("a board states its scope memberships once")
@@ -226,6 +231,7 @@ async def board(
                     issue_labels=frozenset()
                     if memberships is None
                     else frozenset({STAGED}),
+                    **({} if lane_fields is None else lane_fields.get(lane, {})),
                 ),
                 *subtree(lane),
             )
