@@ -6,7 +6,23 @@ boundary, through the configured ``workflow_states`` mapping the adapter is
 built with, and nowhere else (KOD-795).
 
 The mapping is also read outside the adapter, at registered reading sites
-only, each with the reason it reads it.
+only, each with the reason it reads it.  A read is an attribute naming a
+configured field, or a string constant naming one (``getattr(operation,
+"workflow_states")``, a dotted or ``module:attr`` path, a format field);
+names are resolved by object after import, so the adapter's constructions
+are found under any alias, and the exemptions are the adapter's own module
+and nothing else.
+
+Outside every static guard's reach:
+
+- a value handed across a function boundary, where the other function is not
+  resolved at this site (returned from a helper, stored on an object and read
+  elsewhere, or passed through a container built elsewhere);
+- a name built at run time;
+- a binding made only when a function runs (``setattr`` or ``globals()``
+  inside a function body).
+
+Each shape is held as unseen by a committed test.
 
 The state strings scanned for are the configured ones: the values the
 shipped operation files declare under a configured mapping.  A board state
@@ -15,7 +31,9 @@ no scan here sees it.
 """
 
 import ast
+import functools
 import inspect
+import re
 import textwrap
 import tomllib
 import typing
@@ -48,6 +66,7 @@ from kodezart.types.domain.run_event import (
     RunEventPublisher,
 )
 from tests.fakes import ManagedFakeLinearMcpServer, pass_render_variables
+from tests.object_resolution import denoted, names_of
 from tests.run_events import RUN_EVENT_STATES, RUN_EVENT_TOML
 
 #: The non-human writer the dialling case declares and the backend reports, so
@@ -482,24 +501,60 @@ def scanned_surfaces() -> dict[str, str]:
     return {**table_surfaces(), **consumer_functions(), **consumer_templates()}
 
 
+def _docstrings(tree: ast.AST) -> set[int]:
+    """The docstring constants of a tree, by identity: prose, not a read."""
+    return {
+        id(node.body[0].value)
+        for node in ast.walk(tree)
+        if isinstance(
+            node, ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef
+        )
+        and node.body
+        and isinstance(node.body[0], ast.Expr)
+        and isinstance(node.body[0].value, ast.Constant)
+    }
+
+
+def literal_names(node: ast.AST) -> frozenset[str]:
+    """The configured fields a string constant names.
+
+    Equal to the field (``getattr(x, "workflow_states")``,
+    ``vars(x)["workflow_states"]``), or one part of a path spelled in it (an
+    ``attrgetter`` dotted path, a ``module:attr`` string, a format field).
+    """
+    if not (isinstance(node, ast.Constant) and isinstance(node.value, str)):
+        return frozenset()
+    return frozenset(CONFIGURED) & frozenset(re.split(r"[.:{}\[\]]", node.value))
+
+
+def configured_names(tree: ast.AST) -> Iterator[tuple[ast.AST, frozenset[str]]]:
+    """Every node of *tree* that names a configured field, with the fields."""
+    prose = _docstrings(tree)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute) and node.attr in CONFIGURED:
+            yield node, frozenset({node.attr})
+        elif id(node) not in prose and (named := literal_names(node)):
+            yield node, named
+
+
 def mapping_reads(
     functions: Mapping[str, str], templates: Mapping[str, str]
 ) -> dict[str, tuple[str, ...]]:
     """Each consumer surface that reads a configured state mapping, with the
     fields it reads.
 
-    A Python surface is parsed and reports every attribute naming a
-    configured field, so a consumer that renders its effects through the
-    mapping is seen although no state string is spelled in it.  A template
-    surface reports every configured field it references.
+    A Python surface is parsed and reports every attribute or string
+    constant naming a configured field, so a consumer that renders its
+    effects through the mapping is seen although no state string is spelled
+    in it.  A template surface reports every configured field it references.
     """
     reads = {
         name: tuple(
             sorted(
                 {
-                    node.attr
-                    for node in ast.walk(ast.parse(textwrap.dedent(text)))
-                    if isinstance(node, ast.Attribute) and node.attr in CONFIGURED
+                    field
+                    for _, fields in configured_names(ast.parse(textwrap.dedent(text)))
+                    for field in fields
                 }
             )
         )
@@ -863,17 +918,64 @@ def state_constants(
     )
 
 
+#: The adapter's parameters in the order a positional argument fills them.
+ADAPTER_POSITIONS = tuple(
+    parameter.name
+    for parameter in inspect.signature(LinearMcpTracker).parameters.values()
+    if parameter.kind
+    in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
+)
+
+
+def _handed_mapping(
+    arguments: list[ast.expr], keywords: list[ast.keyword]
+) -> ast.expr | None:
+    """The expression a call hands the adapter's mapping parameter, in any
+    argument shape: a keyword, a ``**`` dict display's key, or a position."""
+    for keyword in keywords:
+        if keyword.arg in ADAPTER_MAPPING:
+            return keyword.value
+        if keyword.arg is None and isinstance(keyword.value, ast.Dict):
+            for key, value in zip(
+                keyword.value.keys, keyword.value.values, strict=True
+            ):
+                if isinstance(key, ast.Constant) and key.value in ADAPTER_MAPPING:
+                    return value
+    for position, argument in enumerate(arguments):
+        if isinstance(argument, ast.Starred):
+            return None
+        if (
+            position < len(ADAPTER_POSITIONS)
+            and ADAPTER_POSITIONS[position] in ADAPTER_MAPPING
+        ):
+            return argument
+    return None
+
+
 def mapping_sites(sources: Mapping[str, str]) -> tuple[tuple[str, bool], ...]:
-    """Each call handing the adapter its state mapping, and whether the value
-    names the configured field."""
-    return tuple(
-        (f"{name}:{keyword.value.lineno}", _names_configured(keyword.value))
-        for name, text in sorted(sources.items())
-        for node in ast.walk(ast.parse(text))
-        if isinstance(node, ast.Call)
-        for keyword in node.keywords
-        if keyword.arg in ADAPTER_MAPPING
-    )
+    """Each call handing the adapter a state mapping, and whether the value
+    names the configured field.
+
+    Every construction of the adapter class is a site, the callee resolved
+    by object (an alias, a module attribute, ``functools.partial`` of the
+    class), whether or not a mapping is found in it; so is every other call
+    whose arguments carry the adapter's mapping keyword.
+    """
+    sites = []
+    for name, text in sorted(sources.items()):
+        names = names_of(name, text)
+        for node in ast.walk(ast.parse(text)):
+            if not isinstance(node, ast.Call):
+                continue
+            callee, arguments = denoted(node.func, names), list(node.args)
+            if callee is functools.partial and arguments:
+                callee, arguments = denoted(arguments[0], names), arguments[1:]
+            value = _handed_mapping(arguments, node.keywords)
+            if callee is LinearMcpTracker or value is not None:
+                where = node if value is None else value
+                named = value is not None and _names_configured(value)
+                sites.append((f"{name}:{where.lineno}", named))
+    return tuple(sites)
 
 
 def _names_configured(expression: ast.expr) -> bool:
@@ -942,7 +1044,10 @@ MAPPING_READERS: dict[str, tuple[tuple[str, ...], str]] = {
         REVIEW_STATE,
     ),
     "composition/audit.py": (
-        ("LifecycleStage.IN_REVIEW in operation.workflow_states",),
+        (
+            "'workflow_states.in_review'",
+            "LifecycleStage.IN_REVIEW in operation.workflow_states",
+        ),
         "the presence check: configured audit scheduling does not start "
         "without a configured name for the review stage",
     ),
@@ -952,7 +1057,11 @@ MAPPING_READERS: dict[str, tuple[tuple[str, ...], str]] = {
         "to the tracker adapter",
     ),
     "core/prompt_namespaces.py": (
-        ("config.workflow_states.items()", "not config.workflow_states"),
+        (
+            "'workflow_states'",
+            "config.workflow_states.items()",
+            "not config.workflow_states",
+        ),
         "the prompt resolution site: the one binding that renders the "
         "configured names into a prompt, which the Check requires to exist",
     ),
@@ -974,19 +1083,35 @@ MAPPING_READERS: dict[str, tuple[tuple[str, ...], str]] = {
         "resolution pass that checks it exists on the board before any pass "
         "runs",
     ),
+    module_path(OperationConfig): (
+        (
+            "'workflow_states'",
+            "self.workflow_states",
+            "stage not in self.workflow_states",
+        ),
+        "the mapping's own model: its load validator checks that the "
+        "configured mapping names every required stage, and its ownership "
+        "table names the field's owner",
+    ),
 }
+#: The one module a read of the mapping is not registered in: the adapter the
+#: handoff reaches, read off the class the handoff constructs.
+ADAPTER_MODULE = module_path(LinearMcpTracker)
 
 
 def configured_field_reads(sources: Mapping[str, str]) -> dict[str, tuple[str, ...]]:
-    """Each module's reads of a configured state mapping, outside the adapter
-    package and the mapping's own model module.
+    """Each module's reads of a configured state mapping, outside the
+    adapter's own module.
 
-    A read is rendered as the expression that uses the field: the call when
-    a method of the mapping is called, otherwise the node that holds it.
+    A read is an attribute naming a configured field, rendered as the
+    expression that uses it: the call when a method of the mapping is
+    called, the node itself when a statement holds it, otherwise the node
+    that holds it.  A string constant naming a field (``literal_names``) is
+    a read too, rendered as itself.  A docstring is prose, not a read.
     """
     reads: dict[str, list[str]] = {}
     for name, text in sorted(sources.items()):
-        if name.startswith("adapters/") or name == module_path(OperationConfig):
+        if name == ADAPTER_MODULE:
             continue
         tree = ast.parse(text)
         parents = {
@@ -994,12 +1119,15 @@ def configured_field_reads(sources: Mapping[str, str]) -> dict[str, tuple[str, .
             for node in ast.walk(tree)
             for child in ast.iter_child_nodes(node)
         }
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Attribute) and node.attr in CONFIGURED:
+        for node, _ in configured_names(tree):
+            use = node
+            if isinstance(node, ast.Attribute):
                 use = parents[node]
                 if isinstance(use, ast.Attribute):
                     use = parents[use]
-                reads.setdefault(name, []).append(ast.unparse(use))
+                if isinstance(use, ast.stmt):
+                    use = node
+            reads.setdefault(name, []).append(ast.unparse(use))
     return {name: tuple(sorted(found)) for name, found in reads.items()}
 
 
@@ -1018,9 +1146,173 @@ def test_a_new_read_of_the_configured_mapping_is_reported():
             f"def _done_name(operation):\n"
             f"    return operation.{field}[LifecycleStage.DONE]\n"
         ),
-        "adapters/linear/tracker.py": f"names = self.{field}\n",
-        module_path(OperationConfig): f"names = self.{field}\n",
+        ADAPTER_MODULE: f"names = self.{field}\n",
+        module_path(OperationConfig): (
+            "class OperationConfig:\n"
+            "    def review_state_name(self):\n"
+            f"        return self.{field}.get(LifecycleStage.IN_REVIEW)\n"
+        ),
+        "adapters/toml_operation_config.py": (
+            "def review_state_name(operation):\n"
+            f"    return operation.{field}.get(LifecycleStage.IN_REVIEW)\n"
+        ),
     }
     assert configured_field_reads(planted) == {
+        "adapters/toml_operation_config.py": (
+            f"operation.{field}.get(LifecycleStage.IN_REVIEW)",
+        ),
         "services/lane_state_writer.py": (f"operation.{field}[LifecycleStage.DONE]",),
+        module_path(OperationConfig): (f"self.{field}.get(LifecycleStage.IN_REVIEW)",),
     }
+
+
+def test_the_only_unregistered_module_is_the_adapter_the_handoff_constructs():
+    assert ADAPTER_MODULE == module_path(LinearMcpTracker)
+    assert ADAPTER_MODULE not in MAPPING_READERS
+    assert module_path(OperationConfig) in MAPPING_READERS
+
+
+#: A configured field named by a string constant, in each form a literal name
+#: takes, each with the read it is reported as.
+LITERAL_READS = {
+    "getattr": ("getattr(operation, {field!r}).get(stage)", "{field!r}"),
+    "attrgetter": ("operator.attrgetter('config.{field}')(run)", "'config.{field}'"),
+    "vars": ("vars(operation)[{field!r}]", "{field!r}"),
+    "dunder-dict": ("operation.__dict__[{field!r}]", "{field!r}"),
+    "format-field": ("'{{0.{field}}}'.format(operation)", "'{{0.{field}}}'"),
+    "module-attr": ("resolve('kodezart.config:{field}')", "'kodezart.config:{field}'"),
+}
+
+
+@pytest.mark.parametrize("form", sorted(LITERAL_READS))
+def test_a_configured_field_named_by_a_string_constant_is_a_read(form):
+    (field,) = sorted(CONFIGURED)
+    expression, read = (text.format(field=field) for text in LITERAL_READS[form])
+    planted = {"services/reader.py": f"def names(operation):\n    {expression}\n"}
+    assert configured_field_reads(planted) == {"services/reader.py": (read,)}
+    assert mapping_reads({"surface": expression}, {}) == {"surface": (field,)}
+
+
+def test_a_docstring_naming_the_field_is_not_a_read():
+    (field,) = sorted(CONFIGURED)
+    planted = {
+        "services/reader.py": (
+            f'"""Reads {field}."""\n\n\ndef names(operation):\n'
+            f'    """The {field} mapping."""\n    return operation\n'
+        ),
+    }
+    assert configured_field_reads(planted) == {}
+
+
+def test_a_binding_rendered_through_the_mapping_by_name_is_reported():
+    (field,) = sorted(CONFIGURED)
+    binding = (
+        f"_bind_absentable(bindings, {TABLE_FIELD!r}, [{{'event': name, "
+        f"'effect': getattr(config, {field!r}).get(effect, effect.value)}} "
+        f"for name, effect in config.{TABLE_FIELD}.items()], "
+        f"absent=not config.{TABLE_FIELD})"
+    )
+    assert mapping_reads({"binding": binding}, {}) == {"binding": (field,)}
+
+
+#: The adapter's import, as a planted module spells it.
+ADAPTER_IMPORT = (
+    f"from {LinearMcpTracker.__module__} import {LinearMcpTracker.__name__}"
+)
+
+#: Each argument shape a construction of the adapter may take, handing it
+#: something other than the configured field.
+UNNAMED_HANDOFFS = {
+    "splatted-display": (
+        f"{ADAPTER_IMPORT}\n"
+        "def second(caller, operation):\n"
+        "    return LinearMcpTracker(caller=caller, **{{{keyword!r}: "
+        "dict(operation.queue_states)}})\n"
+    ),
+    "positional": (
+        f"{ADAPTER_IMPORT}\n"
+        "def second(caller, operation):\n"
+        "    return LinearMcpTracker(caller, dict(operation.queue_states))\n"
+    ),
+    "aliased-class": (
+        f"{ADAPTER_IMPORT} as Tracker\n"
+        "def second(caller, options):\n"
+        "    make = Tracker\n"
+        "    return make(caller=caller, **options)\n"
+    ),
+    "module-attribute": (
+        f"import {LinearMcpTracker.__module__} as linear\n"
+        "def second(caller, options):\n"
+        f"    return linear.{LinearMcpTracker.__name__}(caller=caller, **options)\n"
+    ),
+    "partial": (
+        f"import functools\n{ADAPTER_IMPORT}\n"
+        "def second(caller, options):\n"
+        "    return functools.partial(LinearMcpTracker, caller=caller)(**options)\n"
+    ),
+}
+
+
+@pytest.mark.parametrize("shape", sorted(UNNAMED_HANDOFFS))
+def test_a_second_construction_of_the_adapter_in_any_shape_is_reported(shape):
+    (keyword,) = ADAPTER_MAPPING
+    planted = {"composition/second.py": UNNAMED_HANDOFFS[shape].format(keyword=keyword)}
+    sites = mapping_sites({**production_sources(), **planted})
+    assert len(sites) == 2
+    assert [
+        named for site, named in sites if site.startswith("composition/second")
+    ] == [False]
+
+
+def test_the_positional_order_is_read_off_the_adapter():
+    assert ADAPTER_POSITIONS == tuple(
+        name
+        for name, parameter in inspect.signature(LinearMcpTracker).parameters.items()
+        if parameter.kind is not inspect.Parameter.KEYWORD_ONLY
+        and parameter.kind is not inspect.Parameter.VAR_KEYWORD
+    )
+
+
+def test_a_value_handed_across_a_function_boundary_is_not_seen():
+    """The stated limit: the mapping returned from a helper elsewhere, or the
+    adapter class returned from one, is read by nothing here."""
+    planted = {
+        "services/reader.py": (
+            "def review(holder):\n"
+            "    return holder.names().get(LifecycleStage.IN_REVIEW)\n"
+        ),
+        "composition/second.py": (
+            "def second(factory, caller, options):\n"
+            "    return factory()(caller=caller, **options)\n"
+        ),
+    }
+    assert configured_field_reads(planted) == {}
+    assert mapping_sites(planted) == ()
+
+
+def test_a_name_built_at_run_time_is_not_seen():
+    """The stated limit: a field name composed when the code runs."""
+    (field,) = sorted(CONFIGURED)
+    head, tail = field[:4], field[4:]
+    planted = {
+        "services/reader.py": (
+            "def names(operation):\n"
+            f"    return getattr(operation, {head!r} + {tail!r})\n"
+        ),
+    }
+    assert configured_field_reads(planted) == {}
+
+
+def test_a_binding_made_only_when_a_function_runs_is_not_seen():
+    """The stated limit: the adapter class bound through ``globals()`` inside
+    a function body, then constructed under that name."""
+    planted = {
+        "composition/second.py": (
+            f"{ADAPTER_IMPORT}\n"
+            "def bind():\n"
+            "    globals()['Tracker'] = LinearMcpTracker\n"
+            "def second(caller, options):\n"
+            "    return Tracker(caller=caller, **options)\n"
+        ),
+    }
+    assert mapping_sites(planted) == ()
