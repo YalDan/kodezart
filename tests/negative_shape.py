@@ -98,12 +98,24 @@ SKIP_FORMS: Final[frozenset[str]] = frozenset(
 #: class it decorates is not checked at all, under the strict settings the
 #: gate runs as much as under any other, and the linter says nothing of it.
 #: A decorator rather than a comment, so it is read the way the skip forms
-#: are, through the module's own bindings.
-TYPE_CHECK_FORMS: Final[frozenset[str]] = frozenset({"typing.no_type_check"})
+#: are, through the module's own bindings.  ``typing_extensions`` re-exports
+#: the same decorator, and the checker honours it under that spelling too.
+TYPE_CHECK_FORMS: Final[frozenset[str]] = frozenset(
+    {"typing.no_type_check", "typing_extensions.no_type_check"}
+)
 
-#: The flag the type checker takes as always true.  A block guarded by its
-#: negation is one the checker treats as never running, and so never reads.
-TYPE_CHECKING_FLAG: Final[str] = "typing.TYPE_CHECKING"
+#: The names the type checker takes as always true, whatever they are bound
+#: to: it matches the last segment of a name or an attribute, not the object
+#: (``mypy.reachability.infer_condition_value``).  A block whose test the
+#: checker folds to false through their negation is one it treats as never
+#: running, and so never reads.
+TYPE_CHECKING_NAMES: Final[frozenset[str]] = frozenset({"TYPE_CHECKING", "MYPY"})
+
+#: The flag's origins, read through the module's bindings as well, so an
+#: alias of the flag under a name of its own is read as the flag.
+TYPE_CHECKING_FLAGS: Final[frozenset[str]] = frozenset(
+    {"typing.TYPE_CHECKING", "typing_extensions.TYPE_CHECKING"}
+)
 
 #: The modules the form rosters name members of.  A chain resolves to a form
 #: only through a binding whose origin is one of these or a module under
@@ -111,8 +123,14 @@ TYPE_CHECKING_FLAG: Final[str] = "typing.TYPE_CHECKING"
 #: root that is not here would resolve nowhere and its control would red.
 #: Binding a root binds its every imported name, but only a rostered name is
 #: ever reported, so a module importing ``Final`` from the standard
-#: library's typing module reports nothing.
-FORM_ROOTS: Final[tuple[str, ...]] = ("pytest", "unittest", "typing")
+#: library's typing module reports nothing.  ``typing_extensions`` is a root
+#: because it re-exports the checker's decorator and flag.
+FORM_ROOTS: Final[tuple[str, ...]] = (
+    "pytest",
+    "unittest",
+    "typing",
+    "typing_extensions",
+)
 
 
 def gated_mark_forms() -> frozenset[str]:
@@ -348,26 +366,86 @@ def sites(module: Source, forms: frozenset[str]) -> tuple[str, ...]:
     return tuple(name for _, _, name in sorted(found))
 
 
-def unchecked_blocks(module: Source) -> tuple[str, ...]:
-    """Every block guarded by the negated type-checking flag, in file order.
+#: The three answers the checker's fold gives a test, as far as the flag
+#: decides it: true for the checker only, false for the checker only, or
+#: not decided by the flag.
+_CHECKER_TRUE: Final = "checker-true"
+_CHECKER_FALSE: Final = "checker-false"
+_UNDECIDED: Final = "undecided"
+_NEGATED: Final[Mapping[str, str]] = {
+    _CHECKER_TRUE: _CHECKER_FALSE,
+    _CHECKER_FALSE: _CHECKER_TRUE,
+    _UNDECIDED: _UNDECIDED,
+}
 
-    ``if not TYPE_CHECKING:`` and ``if not typing.TYPE_CHECKING:``, and any
-    alias of either, resolved through the module's own bindings: the type
-    checker takes the flag as true, so it never reads the block.  Each is
-    reported as the flag's origin, once per block.
+
+def _flag_value(test: ast.expr, bindings: Mapping[str, str]) -> str:
+    """What the type checker takes *test* to be, as far as the flag decides it.
+
+    The checker's own fold (``mypy.reachability.infer_condition_value``):
+    ``not`` inverts; a name or an attribute whose last segment is one of
+    ``TYPE_CHECKING_NAMES``, or a chain the module bound to the flag, is
+    true for the checker; ``and`` is false for the checker when either
+    side is and true when both are; ``or`` is true when either side is and
+    false when both are.  A chain of three or more operands folds left to
+    right, as the checker parses it.  Recursion is bounded by the test's
+    own depth.
+    """
+    if isinstance(test, ast.UnaryOp) and isinstance(test.op, ast.Not):
+        return _NEGATED[_flag_value(test.operand, bindings)]
+    if isinstance(test, ast.BoolOp):
+        folded = _flag_value(test.values[0], bindings)
+        for operand in test.values[1:]:
+            sides = {folded, _flag_value(operand, bindings)}
+            if isinstance(test.op, ast.And):
+                folded = (
+                    _CHECKER_FALSE
+                    if _CHECKER_FALSE in sides
+                    else _CHECKER_TRUE
+                    if sides == {_CHECKER_TRUE}
+                    else _UNDECIDED
+                )
+            else:
+                folded = (
+                    _CHECKER_TRUE
+                    if _CHECKER_TRUE in sides
+                    else _CHECKER_FALSE
+                    if sides == {_CHECKER_FALSE}
+                    else _UNDECIDED
+                )
+        return folded
+    if isinstance(test, ast.Name) and test.id in TYPE_CHECKING_NAMES:
+        return _CHECKER_TRUE
+    if isinstance(test, ast.Attribute) and test.attr in TYPE_CHECKING_NAMES:
+        return _CHECKER_TRUE
+    if _through(dotted(test), bindings) in TYPE_CHECKING_FLAGS:
+        return _CHECKER_TRUE
+    return _UNDECIDED
+
+
+def unchecked_blocks(module: Source) -> tuple[str, ...]:
+    """Every ``if`` or ``elif`` block the type checker takes as never running.
+
+    The checker's own rule: a test it folds to false through a negated
+    ``TYPE_CHECKING`` or ``MYPY`` -- matched by name whatever the name is
+    bound to, locally or imported from ``typing`` or ``typing_extensions``
+    -- marks the block unreachable, so it is never read.  ``and`` and
+    ``or`` are folded the way the checker folds them (``_flag_value``), so
+    ``not TYPE_CHECKING and x`` is such a block and ``not TYPE_CHECKING or
+    x`` is not.  An alias of the flag bound from either module under a
+    name of its own is read through the module's bindings as well.  An
+    ``elif`` is an ``if`` nested in the arm above it, so it is read the
+    same way.  Each block is reported as its test, as written, in file
+    order.
     """
     bindings = form_bindings(module.tree)
-    found: list[tuple[int, int]] = []
+    found: list[tuple[int, int, str]] = []
     for node in ast.walk(module.tree):
-        if not (
-            isinstance(node, ast.If)
-            and isinstance(node.test, ast.UnaryOp)
-            and isinstance(node.test.op, ast.Not)
+        if isinstance(node, ast.If) and (
+            _flag_value(node.test, bindings) == _CHECKER_FALSE
         ):
-            continue
-        if _through(dotted(node.test.operand), bindings) == TYPE_CHECKING_FLAG:
-            found.append((node.lineno, node.col_offset))
-    return tuple(f"not {TYPE_CHECKING_FLAG}" for _ in sorted(found))
+            found.append((node.lineno, node.col_offset, ast.unparse(node.test)))
+    return tuple(test for _, _, test in sorted(found))
 
 
 def test_declarations(module: Source) -> tuple[str, ...]:
