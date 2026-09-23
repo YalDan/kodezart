@@ -130,7 +130,8 @@ SHIPPED_SETS = sorted(
 #: The load-bearing sentences of the checklist-adoption paragraph, one clause
 #: each: adopt and do not restate, one criterion per item not already stated,
 #: the item's own text as the Check, nothing reworded, merged, split or
-#: dropped, and the body left where it is.
+#: dropped, the body left where it is, and the item's text kept as its Check
+#: even where it cannot be demonstrated as written.
 CHECKLIST_ADOPTION = (
     "When the issue body already carries a checklist a person wrote, adopt it "
     "rather than restating it:",
@@ -140,6 +141,23 @@ CHECKLIST_ADOPTION = (
     "as that criterion's Check.",
     "Do not reword, merge, split or drop an item,",
     "do not propose moving or removing the checklist; the body stays as it is.",
+    "An item that cannot be demonstrated as written stays that criterion's "
+    "Check, and the criterion names the evidence that is missing: re-graining "
+    "applies only to criteria you write yourself.",
+)
+
+#: The whole paragraph, whitespace folded, so a sentence inserted between
+#: two of the ones above, or a connector reworded, is a different paragraph.
+ADOPTION_PARAGRAPH = (
+    "When the issue body already carries a checklist a person wrote, adopt it "
+    "rather than restating it: propose exactly one criterion for each checklist "
+    "item that no existing criterion's Check already states, and use the item's "
+    "own text, unchanged and without its list marker or tick box, as that "
+    "criterion's Check. Do not reword, merge, split or drop an item, and do not "
+    "propose moving or removing the checklist; the body stays as it is. An item "
+    "that cannot be demonstrated as written stays that criterion's Check, and "
+    "the criterion names the evidence that is missing: re-graining applies only "
+    "to criteria you write yourself."
 )
 
 #: The landed sentence that keeps adoption from becoming an edit of a child.
@@ -168,20 +186,24 @@ def test_the_criteria_author_adopts_a_body_checklist_verbatim_in_every_set(
     """Each set tells the criteria author to adopt a checklist, not restate it.
 
     One assertion per sentence, so a set that loses or rewords any clause is
-    named, and then the paragraph itself is compared with every other set's:
-    equality alone would hold for two sets that both lacked it.
+    named, then the paragraph whole, so a connector or an inserted sentence
+    is seen too, and then the paragraph itself is compared with every other
+    set's: equality alone would hold for two sets that both lacked it.
     """
     assert {V5_SET, OPUS_SET} <= set(SHIPPED_SETS)
     rendered = rendered_criteria_author(set_name)
 
     for sentence in CHECKLIST_ADOPTION:
         assert sentence in rendered, sentence
+    assert adoption_paragraph(rendered) == ADOPTION_PARAGRAPH
     assert NO_CRITERION_EDIT in rendered
     # The paragraph is the only place the prompt speaks of a checklist, so no
     # second sentence elsewhere can tell the author to treat one differently.
-    assert rendered.count("checklist") == adoption_paragraph(rendered).count(
-        "checklist"
-    )
+    # Counted without regard to case, so "Checklist" is seen as well; another
+    # spelling of the thing, such as "task list", is not seen.
+    assert rendered.lower().count("checklist") == adoption_paragraph(
+        rendered
+    ).lower().count("checklist")
     assert {
         adoption_paragraph(rendered_criteria_author(other)) for other in SHIPPED_SETS
     } == {adoption_paragraph(rendered)}
