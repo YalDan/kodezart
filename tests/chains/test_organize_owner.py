@@ -43,6 +43,10 @@ from tests.chains.test_organize import (
     tracker,
 )
 from tests.fakes import SUPPRESS_ALL_SKILLS, FakeGitService, PassThroughGate
+from tests.integration.test_organize_authority import groomer
+from tests.integration.test_scope_entry import GROOM_MARKER
+from tests.integration.test_scope_runtime import SCOPE
+from tests.integration.test_scope_runtime import board as scope_board
 from tests.prompts.test_organize_mandate_bindings import declared_operation
 from tests.prompts.test_prompt_wiring import load_registry
 from tests.services.test_run_surface_lease import _Board
@@ -744,6 +748,42 @@ async def test_the_triage_member_dispatches_and_the_approved_member_alone_does_n
     assert executor.calls == []
     assert "graph complete" not in parent.labels
     assert not [(name, args) for name, args in board.calls if name.startswith("save_")]
+
+
+@pytest.mark.parametrize(
+    ("members", "grooms"),
+    [(frozenset({ScopeLabel.TRIAGE}), True), (frozenset(), False)],
+    ids=["project-carries-triage", "project-carries-nothing"],
+)
+async def test_a_project_addressed_scope_carrying_triage_dispatches_groom(
+    members, grooms
+):
+    """The same gate on a project-addressed scope, through the production build.
+
+    ``build_scope_organizer`` on the pre-approval side of the table, over a
+    board whose project is the addressed scope: the project carrying the
+    triage member grooms its lane, and the same project carrying nothing
+    opens no session and writes nothing.
+    """
+    assert SCOPE.kind is ScopeKind.PROJECT
+    lanes = ("A",)
+    port = scope_board(lanes=lanes, approved=False)
+    port.scope_label_members[SCOPE] = members
+    organizer, operation, executor = groomer(port, lanes=lanes)
+
+    report = await organizer.run(
+        scope=SCOPE, repository=operation.repos[0], job_id="groom-job"
+    )
+
+    assert report.halt is None
+    if grooms:
+        assert report.completed_phases == (MandateKind.GROOM,)
+        assert port.classification_writes == [("A", GROOM_MARKER)]
+        assert sorted({key for key, _, _ in executor.admissions}) == ["A"]
+        return
+    assert report.completed_phases == ()
+    assert executor.organize_calls == []
+    assert port.classification_writes == []
 
 
 #: A pre-approval gate on a configured member other than the shipped one.
