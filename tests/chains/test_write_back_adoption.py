@@ -809,6 +809,71 @@ def test_a_wrapper_declaring_a_port_write_of_its_own_is_still_a_call_site():
     assert site in found.unadopted
 
 
+def shared_sink(*, bypass: bool) -> str:
+    """A typed writer an applier reaches, with or without a plain caller too."""
+    plain = (
+        """
+    async def shortcut(self) -> None:
+        await self._sink.put()
+"""
+        if bypass
+        else ""
+    )
+    return f"""
+from dataclasses import dataclass
+
+from kodezart.chains.write_back_verifier import WriteBackVerifier
+from kodezart.core.protocols import TrackerPort
+
+
+class Sink:
+    def __init__(self, *, tracker: TrackerPort) -> None:
+        self._tracker = tracker
+
+    async def put(self) -> None:
+        await self._tracker.post_comment(issue_key="K", body="b")
+
+
+@dataclass(frozen=True)
+class Step:
+    surface: object
+    apply: object
+
+    async def write(self, *, finding):
+        await self.apply(finding)
+
+
+class Writer:
+    def __init__(self, *, sink: Sink, verifier: WriteBackVerifier) -> None:
+        self._sink, self._verifier = sink, verifier
+
+    async def publish(self) -> None:
+        async def land(finding):
+            await self._sink.put()
+
+        await self._verifier.write_back(step=Step(None, land), ref="r")
+{plain}"""
+
+
+@pytest.mark.parametrize("bypass", [False, True], ids=["driven-only", "bypassed"])
+def test_a_writer_with_one_undriven_caller_is_not_delegated(bypass):
+    """Every resolved caller must be driven, not merely one of them.
+
+    The sink's write is reached from an applier the verifier drives, and in
+    the bypassed planting also from a plain method through the same typed
+    receiver.  Without that method the sink is driven; with it, one call of
+    the sink stands outside every write-back, so its write is refused.
+    """
+    module = "planted/sink.py"
+    found = census((module, shared_sink(bypass=bypass)))
+    site = CallSite(module=module, function="Sink.put", method="post_comment")
+    if bypass:
+        assert site in found.unadopted
+        assert site not in found.driven
+    else:
+        assert site in found.driven
+
+
 IMPOSTOR = '''
 from kodezart.core.protocols import TrackerPort
 
