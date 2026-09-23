@@ -36,18 +36,30 @@ A second class is out of it too: `addopts` (with `-k` or `--deselect`),
 `testpaths`, `collect_ignore` in a conftest, a module-level `__test__` set
 false, and a `parametrize` mark whose parameter set is empty (which the
 runner reports as a skip at collection, under a setting of its own table)
-can each stop a test being collected at all, and nothing here reads them;
-they are a later slice.  The same holds for the collection-name keys of the
-runner's table (`python_files`, `python_classes`, `python_functions`),
-which decide what is a test in the first place; for a mark that relaxes the
-warning filter on one test or a whole module (`filterwarnings` applied as a
-mark rather than set in the pinned table); and for the type checker's own
-skip decorator (`typing.no_type_check`), which exempts a body from the
-checker with no comment to count.  A third is out of it as well: a stub carrying no
-directive at all, sitting beside the module it shadows, takes that module
-out of the type checker's reach, because the checker reads the stub in
-place of it.  That shape has no directive to count and no roster can see
-it; it is a diff the code review has to catch.
+can each stop a test being collected at all, and nothing here reads what
+they say; they are a later slice.  The same holds for the collection-name
+keys of the runner's table (`python_files`, `python_classes`,
+`python_functions`), which decide what is a test in the first place; for a
+mark that relaxes the warning filter on one test or a whole module
+(`filterwarnings` applied as a mark rather than set in the pinned table);
+and for the type checker's own skip decorator (`typing.no_type_check`),
+which exempts a body from the checker with no comment to count.  Of the
+runner's table the key set is pinned whole, and of its values only
+`filterwarnings` and `markers` are read: a key it does not carry today --
+`addopts`, `norecursedirs`, a collection-name key,
+`empty_parameter_set_mark`, `collect_imported_tests` -- reds the suite when
+it is added, while a changed value of another key it carries, `testpaths`
+among them, is not seen.  Code the runner executes at collection is not
+read either: a collection hook in any conftest, the repository root's
+included, which the walk does not reach (`pytest_ignore_collect`, or a
+`pytest_collection_modifyitems` or `pytest_deselected` that removes items),
+`collect_ignore_glob`, a module-level deletion or rebinding of a test's
+name, a fixture decorator applied to a test, and a skip form reached
+through a submodule (`unittest.case.SkipTest`).  A third is out of it as
+well: a stub carrying no directive at all, sitting beside the module it
+shadows, takes that module out of the type checker's reach, because the
+checker reads the stub in place of it.  That shape has no directive to
+count and no roster can see it; it is a diff the code review has to catch.
 
 A new row in any table below, and a deleted name or a lowered count in
 `negative_shape_baseline.json`, is a decision.  It belongs in the commit
@@ -161,6 +173,21 @@ CONFIG_TABLES: tuple[str, ...] = (
     "tool.pydantic-mypy",
     "tool.pytest.ini_options.filterwarnings",
     "tool.ruff",
+)
+#: The keys of the runner's own table, as a set: their values are read
+#: where one matters here (`filterwarnings` above, `markers` by the gate's
+#: cases), and the set is pinned so that a key added to the table -- one that
+#: stops a directory, a file or a name being collected, or adds options to
+#: every run -- is a row edit here, with its reason beside it.
+RUNNER_KEYS: frozenset[str] = frozenset(
+    {
+        "asyncio_mode",
+        "asyncio_default_fixture_loop_scope",
+        "pythonpath",
+        "testpaths",
+        "filterwarnings",
+        "markers",
+    }
 )
 CONFIG_BASELINE: dict[str, object] = {
     "tool.mypy": {
@@ -684,6 +711,16 @@ def test_the_gate_configuration_is_the_pinned_literal() -> None:
     read = negative_shape.config_tables(REPO_ROOT / "pyproject.toml", CONFIG_TABLES)
 
     assert read == CONFIG_BASELINE
+
+
+def test_the_runner_table_carries_exactly_the_pinned_keys() -> None:
+    """A key added to the runner's table can stop tests being collected at all."""
+    table = negative_shape.config_tables(
+        REPO_ROOT / "pyproject.toml", ("tool.pytest.ini_options",)
+    )["tool.pytest.ini_options"]
+
+    assert isinstance(table, dict)
+    assert set(table) == RUNNER_KEYS
 
 
 def test_the_configuration_scan_sees_a_new_per_file_row(tmp_path: Path) -> None:
