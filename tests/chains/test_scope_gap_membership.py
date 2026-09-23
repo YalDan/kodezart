@@ -126,6 +126,24 @@ async def test_one_gap_arm_per_criterion_state_over_the_subtree(
     fixture.assert_read_only()
 
 
+async def test_supersession_prose_on_an_owed_criterion_keeps_it_on_every_gap(
+    ready_fixture,
+) -> None:
+    """A body naming a supersession is prose: the unstarted state still owes it."""
+    fixture = await ready_fixture(subtree(kind="unstarted", body="Superseded by X-1"))
+
+    selection = await read_scope_ready(ref=PROJECT, tracker=fixture.tracker)
+
+    owed = {
+        lane.issue.issue_key: [item.issue_key for item in lane.gap]
+        for lane in selection.ready
+    }
+    assert owed == {LANE: [DEEP_CHECK], NESTED: [DEEP_CHECK]}
+    assert selection.excluded == ()
+    assert DEEP_CHECK in selection.unresolved
+    fixture.assert_read_only()
+
+
 async def test_a_criterion_moved_back_from_done_is_owed_again_with_its_graded_sha(
     ready_fixture,
 ) -> None:
