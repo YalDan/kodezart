@@ -199,10 +199,10 @@ async def test_a_raised_scope_alarm_is_logged_at_warning_and_the_tick_ran():
 
     assert outcome is PassRun.RAN
     assert [
-        (entry["log_level"], entry["scope"], entry["marker"])
+        (entry["log_level"], entry["scope"], entry["signal"], entry["marker"])
         for entry in logs
         if entry["event"] == "supervisor_scope_alarm_raised"
-    ] == [("warning", REF.key, TICKET_MARKER_SOURCE)]
+    ] == [("warning", REF.key, AlarmSignal.TALLY_UNMOVED.value, TICKET_MARKER_SOURCE)]
     # Every comment on the board is on a lane: none carries the scope's stall.
     assert {row.issue_key for row in port.comments} == set(LANES)
     for lane in LANES:

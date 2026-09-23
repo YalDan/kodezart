@@ -991,8 +991,9 @@ tick: `composition/supervisor.py::build_supervisor_pass` builds, beside the lane
 observer, a callable the tick is handed the way `read_ready` is, which calls
 `services.scope_tally.observe_scope_tally` once for each rung of the governed
 sequence that has a successor, holding only `ScopeRosterReader`. A raise is
-logged as `supervisor_scope_alarm_raised` at warning with the scope and the
-rung's marker address; a failure is logged as `supervisor_scope_arm_failed`,
+logged as `supervisor_scope_alarm_raised` at warning with the scope, the
+signal it raised under (`tally_unmoved`, the member the scope arm widens) and
+the rung's marker address; a failure is logged as `supervisor_scope_arm_failed`,
 names the scope in `SupervisorIncompleteError`, and leaves the scope's lanes
 still observed. The argument is required, so there is no tick without it.
 
