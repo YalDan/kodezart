@@ -169,10 +169,22 @@ def out_of_reach_board() -> FakeTrackerPort:
     carries is squarely inside the lane's subtree and squarely the lane's work.
     Two lanes so every ready lane is shown to be read, and two different
     reasons so each is shown to be the one its own criterion is given.
+
+    A1 also carries a completed and a canceled criterion beside its open
+    one. They are out of reach too, but they are nobody's obligation, so
+    naming them would call discharged or excluded work unreachable: only the
+    OPEN criteria the filter cannot reach are named.
     """
     return scope_board(
         criterion_row("A/check"),
         criterion_row("A1/check", parent="A1"),
+        criterion_row("A1/done", parent="A1", closed=True),
+        criterion_row(
+            "A1/dropped",
+            parent="A1",
+            state_name="Canceled",
+            state_kind=WorkflowStateKind.CANCELED,
+        ),
         criterion_row("B/check", parent="B"),
         criterion_row("B1/check", parent="B1").model_copy(
             update={"project_id": ELSEWHERE}
