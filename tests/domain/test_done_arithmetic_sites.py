@@ -741,6 +741,9 @@ def test_a_binding_made_only_when_a_function_runs_is_not_seen(tmp_path):
 #: each read off the vocabulary and the port rather than spelled here.
 DONE = LifecycleStage.DONE.name
 STATE_MOVE = TrackerPort.set_workflow_state.__name__
+#: The criterion record's own identity field: the one a finished-state move
+#: may address it by.
+IDENTITY = "id"
 
 
 def _keyword(call: ast.Call, name: str) -> ast.expr | None:
@@ -750,32 +753,51 @@ def _keyword(call: ast.Call, name: str) -> ast.expr | None:
     )
 
 
-def _root_name(expression: ast.expr) -> str | None:
-    cursor: ast.expr = expression
-    while isinstance(cursor, ast.Attribute | ast.Subscript):
-        cursor = cursor.value
-    return cursor.id if isinstance(cursor, ast.Name) else None
+def _moves_to_done(stage: ast.expr, names: dict[str, object]) -> bool:
+    """Whether a ``stage=`` value is the finished stage: spelled as the
+    member, or denoting it by object however it is bound or imported."""
+    return (isinstance(stage, ast.Attribute) and stage.attr == DONE) or denoted(
+        stage, names
+    ) is LifecycleStage.DONE
 
 
-def finished_identities(sources: dict[str, str], *, method: str) -> dict[str, str]:
-    """What each move into the finished state addresses, by annotation.
+def _addressed(key: ast.expr, annotations: dict[str, str]) -> str:
+    """What a move addresses: the annotation of the parameter whose own
+    identity it names, or, for anything else, the expression itself."""
+    if (
+        isinstance(key, ast.Attribute)
+        and key.attr == IDENTITY
+        and isinstance(key.value, ast.Name)
+        and key.value.id in annotations
+    ):
+        return annotations[key.value.id]
+    return ast.unparse(key)
 
-    The moving functions are the ones the stage-move finder reports, and
-    each is re-walked for the call itself, so what this reads is the call
-    that finder found rather than a second search for one.
+
+def finished_identities(
+    sources: dict[str, str], *, method: str
+) -> dict[str, list[str]]:
+    """What every move into the finished state addresses, by function.
+
+    A mover is a function the stage-move finder reports, or one holding a
+    call of *method* whose ``stage=`` resolves to the finished stage by
+    object.  Every such call in it is collected, in source order, so a
+    second move beside the criterion's cannot hide behind it.  A move
+    addresses a record only as ``<parameter>.id``; any other ``issue_key``
+    is reported as written.
+
+    A put-back through the restore moves a row to the state the board held
+    and is outside this reading: ``tests/test_issue_state_write_sites.py``
+    holds every restore to a name read off the board.
     """
-    addressed: dict[str, str] = {}
+    addressed: dict[str, list[str]] = {}
     for module, text in sorted(sources.items()):
         tree = ast.parse(text)
+        names = names_of(module, text)
         movers = frozenset(stage_moves(tree, method=method, stage=DONE))
-        if not movers:
-            continue
         where = qualified_names(tree)
         for node in ast.walk(tree):
             if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
-                continue
-            function = where[id(node)]
-            if function not in movers:
                 continue
             annotations = {
                 argument.arg: (
@@ -783,17 +805,26 @@ def finished_identities(sources: dict[str, str], *, method: str) -> dict[str, st
                     if argument.annotation is None
                     else ast.unparse(argument.annotation)
                 )
-                for argument in [*node.args.args, *node.args.kwonlyargs]
+                for argument in [
+                    *node.args.posonlyargs,
+                    *node.args.args,
+                    *node.args.kwonlyargs,
+                ]
             }
-            for call in ast.walk(node):
-                if not isinstance(call, ast.Call):
-                    continue
-                stage = _keyword(call, "stage")
-                key = _keyword(call, "issue_key")
-                if stage is None or key is None:
-                    continue
-                root = _root_name(key)
-                addressed[f"{module}::{function}"] = annotations.get(root or "", "")
+            found = [
+                (call.lineno, call.col_offset, _addressed(key, annotations))
+                for call in ast.walk(node)
+                if isinstance(call, ast.Call)
+                and isinstance(call.func, ast.Attribute)
+                and call.func.attr == method
+                and (stage := _keyword(call, "stage")) is not None
+                and (key := _keyword(call, "issue_key")) is not None
+                and (where[id(node)] in movers or _moves_to_done(stage, names))
+            ]
+            if found:
+                addressed[f"{module}::{where[id(node)]}"] = [
+                    entry for _, _, entry in sorted(found)
+                ]
     return addressed
 
 
@@ -805,10 +836,11 @@ def test_the_finished_state_is_written_only_onto_a_criterion_identity():
     function declares as the criterion record, so a fire key or an issue key
     cannot ride through the same write.
     """
+    assert IDENTITY in TrackerCriterion.model_fields
     assert finished_identities(source_tree(), method=STATE_MOVE) == {
-        "services/lane_state_writer.py::TrackerLaneStateWriter._write_one": (
+        "services/lane_state_writer.py::TrackerLaneStateWriter._write_one": [
             TrackerCriterion.__name__
-        )
+        ]
     }
 
 
@@ -829,11 +861,20 @@ MOVER = (
             TrackerCriterion.__name__,
             id="a-criterion-record",
         ),
-        pytest.param("lane: LaneBinding", "lane.lane_key", "LaneBinding", id="a-lane"),
+        pytest.param("lane: LaneBinding", "lane.id", "LaneBinding", id="a-lane"),
         pytest.param(
-            "issue: TrackerIssue", "issue.issue_key", "TrackerIssue", id="an-issue"
+            "lane: LaneBinding", "lane.lane_key", "lane.lane_key", id="a-lane-key"
         ),
-        pytest.param("key: str", '"KOD-1"', "", id="a-written-down-key"),
+        pytest.param(
+            "issue: TrackerIssue", "issue.issue_key", "issue.issue_key", id="an-issue"
+        ),
+        pytest.param("key: str", '"KOD-1"', "'KOD-1'", id="a-written-down-key"),
+        pytest.param(
+            f"criterion: {TrackerCriterion.__name__}",
+            'criterion.id[: criterion.id.rfind("/")]',
+            "criterion.id[:criterion.id.rfind('/')]",
+            id="a-sliced-criterion-identity",
+        ),
     ],
 )
 def test_what_a_planted_move_addresses_is_read_off_its_own_parameter(
@@ -843,5 +884,39 @@ def test_what_a_planted_move_addresses_is_read_off_its_own_parameter(
         "chains/planted.py": MOVER.format(parameter=parameter, addressed=addressed)
     }
     assert finished_identities(sources, method=STATE_MOVE) == {
-        "chains/planted.py::move": annotation
+        "chains/planted.py::move": [annotation]
     }
+
+
+TWO_MOVES = (
+    "from kodezart.types.domain.operation import LifecycleStage\n\n\n"
+    f"async def settle_both(self, *, criterion: {TrackerCriterion.__name__}, "
+    "lane: LaneBinding) -> None:\n"
+    f"    await self._tracker.{STATE_MOVE}(\n"
+    f"        issue_key=lane.lane_key, stage=LifecycleStage.{DONE}\n"
+    "    )\n"
+    "    await settle(\n"
+    f"        self._tracker.{STATE_MOVE}(\n"
+    f"            issue_key=criterion.id, stage=LifecycleStage.{DONE}\n"
+    "        )\n"
+    "    )\n"
+)
+ALIASED_STAGE = (
+    "from kodezart.types.domain.operation import LifecycleStage as Stage\n\n"
+    "FINISHED = Stage.DONE\n\n\n"
+    "async def close(self, *, lane: LaneBinding) -> None:\n"
+    f"    await self._tracker.{STATE_MOVE}(issue_key=lane.lane_key, stage=FINISHED)\n"
+)
+
+
+def test_a_second_move_beside_the_criterions_is_reported():
+    """Every move in a function is read, not the last one walked."""
+    assert finished_identities({"chains/planted.py": TWO_MOVES}, method=STATE_MOVE) == {
+        "chains/planted.py::settle_both": ["lane.lane_key", TrackerCriterion.__name__]
+    }
+
+
+def test_a_move_whose_stage_denotes_the_finished_stage_by_object_is_reported():
+    assert finished_identities(
+        {"chains/planted.py": ALIASED_STAGE}, method=STATE_MOVE
+    ) == {"chains/planted.py::close": ["lane.lane_key"]}
