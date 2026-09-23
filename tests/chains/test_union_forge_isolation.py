@@ -45,8 +45,10 @@ from tests.chains.test_union_exit_invariance import (
     CONFLICTING_EDITS,
     FAILING_CHECKS,
     INDEPENDENT_EDITS,
+    RETURN_SITES,
     RecordingPublisher,
     build_delivery,
+    returns_taken,
 )
 from tests.chains.union_holdings import (
     COLLECTIONS,
@@ -275,19 +277,27 @@ async def lifecycles(
     }
 
 
+#: The return statements each kind of return runs, by their RETURN_SITES keys.
+STEP_RETURNS = "ScopeUnionCoordinator.verify: self._tick.verify"
+MEASURED = frozenset({STEP_RETURNS, "UnionTick.verify: result"})
+COMPOSED = MEASURED | {"UnionComposition.verify: UnionCompositionResult"}
+CONFLICTED = MEASURED | {"UnionComposition.verify: result"}
+REUSED = frozenset({STEP_RETURNS, "UnionTick.verify: previous"})
+
 #: Every way verifying RETURNS, and what drives each one.  The step also leaves
 #: by raising, which the exit sibling's scenarios cover; a read-back around the
-#: call can only be made where there is a result to read it around, and the step
-#: has THREE of those — a chain was composed and reported, the merge refused and
-#: the chain was never reached, or an earlier result was reused because no head
-#: had moved since it was measured.  ``composed`` says which of the first two;
-#: ``reused`` asks twice on one step and requires the second answer to be the
-#: first result OBJECT, which is the only thing that says reuse was the return
-#: taken rather than a second measurement that merely compares equal.  The
-#: composed return carries a green or a red chain, and the reuse return hands
-#: back whichever kind was cached — green, red or a merge conflict — so each of
-#: those is a row of its own, and ``outcome`` says which one the row drove.
-#: ``checks`` replaces the declared chain, or keeps it when None.
+#: call can only be made where there is a result to read it around.  Which
+#: returns there are is read off the source (RETURN_SITES, every return
+#: statement of a ``verify`` method in the union modules), and the census
+#: below requires the rows to take every one of them.  Each row names the
+#: return statements its measured call runs, and ``returns_taken`` witnesses
+#: that from the lines that executed.  ``composed`` says whether a chain was
+#: composed and reported rather than the merge refused; ``reused`` asks twice
+#: on one step and requires the second answer to be the first result OBJECT.
+#: The composed return carries a green or a red chain, and the reuse return
+#: hands back whichever kind was cached — green, red or a merge conflict — so
+#: each of those is a row of its own, and ``outcome`` says which one the row
+#: drove.  ``checks`` replaces the declared chain, or keeps it when None.
 RETURN_PATHS: tuple[
     tuple[
         str,
@@ -296,11 +306,28 @@ RETURN_PATHS: tuple[
         bool,
         bool,
         UnionOutcome,
+        frozenset[str],
     ],
     ...,
 ] = (
-    ("independent edits", INDEPENDENT_EDITS, None, True, False, UnionOutcome.GREEN),
-    ("conflicting edits", CONFLICTING_EDITS, None, False, False, UnionOutcome.RED),
+    (
+        "independent edits",
+        INDEPENDENT_EDITS,
+        None,
+        True,
+        False,
+        UnionOutcome.GREEN,
+        COMPOSED,
+    ),
+    (
+        "conflicting edits",
+        CONFLICTING_EDITS,
+        None,
+        False,
+        False,
+        UnionOutcome.RED,
+        CONFLICTED,
+    ),
     (
         "a failing chain",
         INDEPENDENT_EDITS,
@@ -308,6 +335,7 @@ RETURN_PATHS: tuple[
         True,
         False,
         UnionOutcome.RED,
+        COMPOSED,
     ),
     (
         "unchanged heads asked twice",
@@ -316,6 +344,7 @@ RETURN_PATHS: tuple[
         True,
         True,
         UnionOutcome.GREEN,
+        REUSED,
     ),
     (
         "conflicting edits asked twice",
@@ -324,6 +353,7 @@ RETURN_PATHS: tuple[
         False,
         True,
         UnionOutcome.RED,
+        REUSED,
     ),
     (
         "a failing chain asked twice",
@@ -332,12 +362,25 @@ RETURN_PATHS: tuple[
         True,
         True,
         UnionOutcome.RED,
+        REUSED,
     ),
 )
 
 
+def test_every_return_the_step_writes_is_one_some_row_takes() -> None:
+    """The return table is the step's own return statements, read, not counted.
+
+    Not parametrised, so an empty census fails here by itself.  A return
+    added on a branch no row drives fails here rather than standing
+    unwitnessed.
+    """
+    assert RETURN_SITES, "the union modules write no return in a verify method"
+    taken = frozenset().union(*(row[6] for row in RETURN_PATHS))
+    assert taken == set(RETURN_SITES), sorted(taken ^ set(RETURN_SITES))
+
+
 @pytest.mark.parametrize(
-    "name, edits, checks, composed, reused, outcome",
+    "name, edits, checks, composed, reused, outcome, returns",
     RETURN_PATHS,
     ids=[row[0] for row in RETURN_PATHS],
 )
@@ -349,6 +392,7 @@ async def test_verifying_leaves_every_open_pull_request_open(
     composed: bool,
     reused: bool,
     outcome: UnionOutcome,
+    returns: frozenset[str],
 ) -> None:
     """Read back around the verify, not asserted of the step's own surface.
 
@@ -357,7 +401,9 @@ async def test_verifying_leaves_every_open_pull_request_open(
     returns as it was before it was called — on EACH way it returns, because a
     lifecycle write placed on the return the read-back never drives is a write
     nothing here would see.  The reuse rows read back around their SECOND ask,
-    so the return under measurement is the one that composes nothing.  On
+    so the return under measurement is the one that composes nothing, and
+    every row requires the return statements that ran to be the ones it
+    names.  On
     each, no port the step is handed was asked a member its port does not
     declare, by any spelling the recorder keys on (``Asked`` in the exit
     sibling states which) — the forge this git double carries included.
@@ -375,9 +421,11 @@ async def test_verifying_leaves_every_open_pull_request_open(
     first = await coordinator.verify() if reused else None
     before = await lifecycles(forge)
 
-    result = await coordinator.verify()
+    with returns_taken() as taken:
+        result = await coordinator.verify()
 
     after = await lifecycles(forge)
+    assert taken == returns, name
     assert fixture.undeclared_reads() == {}, name
     assert fixture.unrowed_asks() == {}, name
     assert fixture.refused_holdings() == [], name

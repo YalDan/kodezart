@@ -17,11 +17,13 @@ import copy
 import importlib
 import inspect
 import operator
+import sys
 import traceback
-from collections.abc import Callable, Mapping
-from contextlib import suppress
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager, suppress
 from functools import partial
 from pathlib import Path
+from types import CodeType, FunctionType
 
 import pytest
 
@@ -256,6 +258,87 @@ def exit_sites() -> dict[str, tuple[str, frozenset[int]]]:
 
 
 EXIT_SITES: dict[str, tuple[str, frozenset[int]]] = exit_sites()
+
+
+def _returned(node: ast.Return) -> str:
+    """What a return statement hands back: the callee it awaits or calls, or
+    the expression itself."""
+    value: ast.expr | None = node.value
+    if isinstance(value, ast.Await):
+        value = value.value
+    if isinstance(value, ast.Call):
+        value = value.func
+    return "None" if value is None else ast.unparse(value)
+
+
+def return_sites() -> dict[str, tuple[CodeType, frozenset[int]]]:
+    """Every return statement of a ``verify`` method in the union step's modules.
+
+    site -> (that method's code, the statement's lines).  Keyed by the method
+    and what the statement hands back, so a row names the return in the
+    code's own words; two statements with one key would make a row
+    ambiguous, so that fails here.  A method is resolved by object, off the
+    module it is defined in.  Bounded by the syntax trees of
+    ``UNION_MODULES``; a return inside a function nested in ``verify`` is
+    that function's, not a way ``verify`` returns.
+    """
+    sites: dict[str, tuple[CodeType, frozenset[int]]] = {}
+    for name in UNION_MODULES:
+        module = importlib.import_module(name)
+        tree = ast.parse(inspect.getsource(module))
+        where = definitions(tree)
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Return):
+                continue
+            owner = where[id(node)]
+            if not owner.endswith(".verify"):
+                continue
+            site = f"{owner}: {_returned(node)}"
+            assert site not in sites, site
+            method: object = module
+            for part in owner.split("."):
+                method = inspect.getattr_static(method, part)
+            assert isinstance(method, FunctionType), owner
+            sites[site] = (
+                method.__code__,
+                frozenset(range(node.lineno, (node.end_lineno or 0) + 1)),
+            )
+    return sites
+
+
+RETURN_SITES: dict[str, tuple[CodeType, frozenset[int]]] = return_sites()
+
+
+@contextmanager
+def returns_taken() -> Iterator[set[str]]:
+    """The return sites whose statement ran while the block ran.
+
+    Read with ``sys.monitoring`` line events on the ``verify`` methods' own
+    code, so which return a call took is a fact of what executed rather than
+    of what the result looks like.  The tool slot is released however the
+    block leaves.
+    """
+    by_code: dict[CodeType, list[tuple[str, frozenset[int]]]] = {}
+    for site, (code, lines) in RETURN_SITES.items():
+        by_code.setdefault(code, []).append((site, lines))
+    taken: set[str] = set()
+    monitoring = sys.monitoring
+    tool = monitoring.PROFILER_ID
+
+    def ran(code: CodeType, line: int) -> None:
+        taken.update(site for site, lines in by_code.get(code, ()) if line in lines)
+
+    monitoring.use_tool_id(tool, "union returns")
+    try:
+        monitoring.register_callback(tool, monitoring.events.LINE, ran)
+        for code in by_code:
+            monitoring.set_local_events(tool, code, monitoring.events.LINE)
+        yield taken
+    finally:
+        for code in by_code:
+            monitoring.set_local_events(tool, code, 0)
+        monitoring.register_callback(tool, monitoring.events.LINE, None)
+        monitoring.free_tool_id(tool)
 
 
 def errors_behind(error: BaseException) -> list[BaseException]:
