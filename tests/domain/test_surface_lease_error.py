@@ -7,14 +7,26 @@ from kodezart.domain.errors import SurfaceLeaseError
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.surface import SurfaceKind, WritableSurface
 
-
-@pytest.mark.parametrize("holder", [None, "queue-job-17"])
-def test_lease_error_preserves_the_full_address_with_primitives(holder) -> None:
-    surface = WritableSurface(
+#: An issue-scoped marker comment and a project-scoped container status
+#: update: the address is carried whole whatever scope kind it names.
+ADDRESSES = [
+    WritableSurface(
         kind=SurfaceKind.MARKER_COMMENT,
         ref=ScopeRef(kind=ScopeKind.ISSUE, key="lane-1"),
         marker="criteria/evaluation",
-    )
+    ),
+    WritableSurface(
+        kind=SurfaceKind.CONTAINER_STATUS_UPDATE,
+        ref=ScopeRef(kind=ScopeKind.PROJECT, key="project-7"),
+    ),
+]
+
+
+@pytest.mark.parametrize("surface", ADDRESSES, ids=lambda item: item.ref.kind.value)
+@pytest.mark.parametrize("holder", [None, "queue-job-17"])
+def test_lease_error_preserves_the_full_address_with_primitives(
+    surface: WritableSurface, holder: str | None
+) -> None:
     error = SurfaceLeaseError(
         "surface is not held by this run",
         surface=surface,
@@ -22,13 +34,20 @@ def test_lease_error_preserves_the_full_address_with_primitives(holder) -> None:
     )
 
     assert vars(error) == {
-        "surface_kind": "marker_comment",
-        "scope_kind": "issue",
-        "scope_key": "lane-1",
-        "marker": "criteria/evaluation",
+        "surface_kind": surface.kind.value,
+        "scope_kind": surface.ref.kind.value,
+        "scope_key": surface.ref.key,
+        "marker": surface.marker,
         "current_holder": holder,
     }
-    assert "criteria/evaluation" in str(error)
+    assert error.scope_kind == surface.ref.kind.value
+    assert type(error.surface_kind) is str
+    assert type(error.scope_kind) is str
+    assert f"{surface.kind.value}:{surface.ref.kind.value}:{surface.ref.key}" in str(
+        error
+    )
+    if surface.marker is not None:
+        assert surface.marker in str(error)
     assert f"current holder: {'none' if holder is None else holder}" in str(error)
     assert not should_retry(error)
 
