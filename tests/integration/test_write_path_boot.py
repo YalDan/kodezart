@@ -28,7 +28,7 @@ from kodezart.composition.write_adoption import (
 )
 from kodezart.domain.errors import UnverifiedWritePathError
 from kodezart.main import create_app, lifespan
-from tests.chains.test_write_back_adoption import DIRECT, DRIVEN, PLANTED, census
+from tests.chains.test_write_back_adoption import DIRECT, DRIVEN, PLANTED
 from tests.integration.test_scope_deployment import (
     guide_environment,
     scratch_project,
@@ -69,12 +69,20 @@ def installed_with(monkeypatch: pytest.MonkeyPatch, planted: Mapping[str, str]) 
     monkeypatch.setattr(write_adoption, "installed_sources", lambda: tree)
 
 
-async def boots(capsys: pytest.CaptureFixture[str]) -> None:
-    """One whole boot and shutdown, reconciling the mappings exactly once."""
+async def boots(server: ScratchBoardServer, capsys: pytest.CaptureFixture[str]) -> None:
+    """One whole boot and shutdown, reconciling the mappings exactly once.
+
+    The boot is seen to dial the board: it opens a tracker session and makes
+    tool calls, which is what a refused boot's untouched board is compared
+    against.
+    """
     capsys.readouterr()
+    calls, lifecycle = len(server.calls), len(server.lifecycle)
     async with lifespan(create_app()):
         reconciled = logged(capsys.readouterr().out, "tracker_mappings_reconciled")
         assert len(reconciled) == 1
+        assert "open" in server.lifecycle[lifecycle:]
+        assert len(server.calls) > calls
 
 
 async def test_a_deployment_with_an_unadopted_write_path_refuses_to_boot_naming_it(
@@ -100,7 +108,7 @@ async def test_a_deployment_with_an_unadopted_write_path_refuses_to_boot_naming_
         return forge_client(**kwargs)
 
     monkeypatch.setattr(main, "build_forge_client", recording_forge_client)
-    await boots(capsys)
+    await boots(server, capsys)
     assert len(built) == 1
 
     installed_with(monkeypatch, {"planted/direct.py": DIRECT})
@@ -143,14 +151,19 @@ async def test_a_write_path_declared_derived_boots(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """The same undriven write, declared beside its writer, is held out."""
-    deployment(monkeypatch)
+    """The same undriven write, declared beside its writer, is held out.
+
+    The census asserted on is the one the gate took over the tree it read,
+    so the boot is shown to have passed because the declaration held the
+    planted write out.
+    """
+    server = deployment(monkeypatch)
     module = "planted/declared.py"
     installed_with(monkeypatch, {module: PLANTED["declared"]})
 
-    await boots(capsys)
+    await boots(server, capsys)
     assert f"{module}::Writer.publish::post_comment" in {
-        str(site) for site in census((module, PLANTED["declared"])).held_out
+        str(site) for site in verify_write_adoption().held_out
     }
 
 
@@ -158,14 +171,17 @@ async def test_a_driven_write_path_passes_the_boot_check(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """The same write, applied by a step the verifier drives, is driven."""
-    deployment(monkeypatch)
+    """The same write, applied by a step the verifier drives, is driven.
+
+    The census asserted on is the one the gate took over the tree it read.
+    """
+    server = deployment(monkeypatch)
     module = "planted/driven.py"
     installed_with(monkeypatch, {module: DRIVEN})
 
-    await boots(capsys)
+    await boots(server, capsys)
     assert f"{module}::Writer.publish.put::post_comment" in {
-        str(site) for site in census((module, DRIVEN)).driven
+        str(site) for site in verify_write_adoption().driven
     }
 
 
@@ -178,10 +194,10 @@ async def test_a_stale_declaration_boots(
     The guard holds the census to no stale declaration; boot does not refuse
     one, because nothing is written through it.
     """
-    deployment(monkeypatch)
+    server = deployment(monkeypatch)
     installed_with(monkeypatch, {"planted/stale.py": PLANTED["stale"]})
 
-    await boots(capsys)
+    await boots(server, capsys)
     assert "planted/stale.py::Writer.publish::post_comment" in {
         str(site) for site in verify_write_adoption().stale
     }
