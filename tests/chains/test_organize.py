@@ -2088,19 +2088,55 @@ def description_surface(key):
     )
 
 
+def drop_the_mandate(monkeypatch, executor):
+    """Every body the author proposes leaves the mandating sentence out.
+
+    A landed write then repairs the mandate, so a run that still reports it
+    is one whose write did not land.
+    """
+    h = owner_harness()
+    original = executor.stream
+
+    async def repaired(**kwargs):
+        async for event in original(**kwargs):
+            payload = event.structured_output
+            if (
+                kwargs["output_format"]["schema"].get("title") == "OrganizeProposal"
+                and payload.get("kind") == "body"
+            ):
+                event = result(
+                    structured_output={
+                        **payload,
+                        "body": payload["body"].replace(f"{h.MANDATE_SENTENCE} ", ""),
+                    }
+                )
+            yield event
+
+    monkeypatch.setattr(executor, "stream", repaired)
+
+
+@pytest.mark.parametrize("held", [True, False])
 async def test_a_surface_held_by_another_run_leaves_the_mandate_open_and_escalated(
-    monkeypatch,
+    monkeypatch, held
 ):
     """An unheld in-scope surface stops the round and keeps the finding open.
 
-    Another pass holds the subject's description through the same adapter,
-    so the stage's own write cannot be made. The round writes nothing
+    The author's fix drops the mandating sentence, so a write that lands
+    repairs the mandate and the stage converges: that is the control row.
+    With another pass holding the subject's description through the same
+    adapter, the stage's own write cannot be made. The round writes nothing
     there, the verification that follows names the mandate class again, and
     the convergence bound reports the surviving finding and escalates it on
     the issue that owns it. Nothing is marked complete.
     """
     h = owner_harness()
-    owner, board, _executor, _observed = h.regrowth(monkeypatch, mandate=True)
+    owner, board, executor, _observed = h.regrowth(monkeypatch, mandate=True)
+    drop_the_mandate(monkeypatch, executor)
+    if not held:
+        report = await h.run_owner(owner)
+        assert report.halt is None
+        assert "body complete" in board.server.issues[CLAIMED_ISSUE].labels
+        return
     with structlog.testing.capture_logs() as logs:
         async with RunSurfaceLease(
             tracker=board.tracker(),
@@ -2123,6 +2159,12 @@ async def test_a_surface_held_by_another_run_leaves_the_mandate_open_and_escalat
         comment
         for comment in board.server.comments
         if comment.body.startswith(h.ESCALATION_MARKER)
+    ]
+    # The subject's refused admission is escalated beside the surviving
+    # finding: its body is still the draft the held lease kept in place.
+    assert sorted(comment.issue_id for comment in escalations) == [
+        CLAIMED_ISSUE,
+        "restating-criterion",
     ]
     owning = [
         comment for comment in escalations if comment.issue_id == "restating-criterion"
