@@ -209,6 +209,32 @@ async def test_a_raised_scope_alarm_is_logged_at_warning_and_the_tick_ran():
         assert len(records_on(port, lane)) == 1, lane
 
 
+async def test_every_scopes_barrier_is_observed_and_each_raise_is_logged():
+    """Two declared scopes, each with a stalled barrier: two warnings, one each."""
+    port = await board(lanes=LANES)
+    stalled = tally_unmoved(
+        subject=SCOPE_STALL,
+        readings=scope_inputs(),
+        raised_at_sha="supervisor",
+        raised_by=HOLDER,
+    )
+    assert stalled is not None
+
+    with structlog.testing.capture_logs() as logs:
+        outcome = await pass_over(
+            port,
+            readings={REF: ready_set(), OTHER: ready_set(ref=OTHER, lanes=())},
+            scope_arm={REF: (stalled,), OTHER: (stalled,)},
+        ).run(FIXTURE_EPOCH)
+
+    assert outcome is PassRun.RAN
+    assert [
+        entry["scope"]
+        for entry in logs
+        if entry["event"] == "supervisor_scope_alarm_raised"
+    ] == [REF.key, OTHER.key]
+
+
 async def test_a_whole_tick_over_observable_lanes_reports_that_it_ran():
     port = await board(lanes=LANES)
 
