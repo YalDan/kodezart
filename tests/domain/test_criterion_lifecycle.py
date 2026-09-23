@@ -1371,11 +1371,12 @@ def widened_verdict_fields(
     holds, without being that enum, so ``prior_verdict: AuditVerdict |
     None`` is reported under a name no table row carries.
 
-    Blind spots: a verdict carried under a new name with an annotation that
-    reaches no enum of the table (``outcome: str``) is not seen; and every
-    enum-annotated partition field lends its name to the name rule, so an
-    enum ``kind`` joining the partition would make a partition member's
-    ``Literal`` discriminator under that name a reported field.
+    A member of such an enum counts as the enum itself, so a verdict
+    narrowed to ``Literal[AuditVerdict.HOLDS]`` under a new name is reported
+    too.
+
+    Blind spot: a verdict carried under a new name with an annotation that
+    reaches no enum of the table (``outcome: str``) is not seen.
     """
     enums = {annotation for _, annotation in verdict_enum_fields(records)}
     return tuple(
@@ -1384,10 +1385,16 @@ def widened_verdict_fields(
         if carries_graded_sha(record)
         for field, info in sorted(record.model_fields.items())
         if not _is_enum(info.annotation)
-        and (
-            field in names
-            or any(field in fields_reaching(record, enum) for enum in enums)
-        )
+        and (field in names or _reaches_a_table_enum(info.annotation, enums))
+    )
+
+
+def _reaches_a_table_enum(annotation: object, enums: set[type[Enum]]) -> bool:
+    """Whether an annotation reaches one of *enums* or one of its members."""
+    return any(
+        found is enum or isinstance(found, enum)
+        for enum in enums
+        for found in _annotation_leaves(annotation)
     )
 
 
@@ -1629,6 +1636,10 @@ VERDICT_ENUM_TABLE: tuple[tuple[str, object], ...] = (
     ("criterion_lifecycle.CriterionCrossOff.state", CrossOffState),
 )
 TABLE_VERDICT_NAMES = sorted({site.rsplit(".", 1)[1] for site, _ in VERDICT_ENUM_TABLE})
+TABLE_VERDICT_ENUMS = sorted(
+    {annotation for _, annotation in VERDICT_ENUM_TABLE},
+    key=lambda enum: enum.__name__,
+)
 
 
 def verdict_names() -> frozenset[str]:
@@ -1674,18 +1685,52 @@ def test_a_widened_verdict_beside_a_graded_sha_leaves_the_table_and_is_reported(
     )
 
 
+def test_the_table_enums_the_new_name_controls_run_over_are_read_off_the_table():
+    assert TABLE_VERDICT_ENUMS
+    assert AuditVerdict in TABLE_VERDICT_ENUMS
+    assert CrossOffState in TABLE_VERDICT_ENUMS
+    assert RederivationClass in TABLE_VERDICT_ENUMS
+
+
 @pytest.mark.parametrize("field", ["prior_verdict", "outcome"])
-def test_a_widened_verdict_under_a_name_no_table_row_carries_is_reported(field):
+@pytest.mark.parametrize("enum", TABLE_VERDICT_ENUMS, ids=lambda enum: enum.__name__)
+def test_a_widened_verdict_under_a_name_no_table_row_carries_is_reported(enum, field):
     probe = create_model(
         "Probe",
         __base__=CamelCaseModel,
         evidence=(CriterionEvidence, ...),
-        **{field: (AuditVerdict | None, None)},
+        **{field: (enum | None, None)},
     )
     records = {**domain_records(), "probe.Probe": probe}
     assert field not in verdict_names()
     assert widened_verdict_fields(records, verdict_names()) == (
-        (f"probe.Probe.{field}", AuditVerdict | None),
+        (f"probe.Probe.{field}", enum | None),
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "annotation"),
+    [
+        (
+            "prior_verdict",
+            Literal[AuditVerdict.HOLDS, AuditVerdict.REFUTED] | None,
+        ),
+        ("outcome", Literal[AuditVerdict.HOLDS]),
+    ],
+)
+def test_a_literal_of_table_enum_members_under_a_new_name_is_reported(
+    field, annotation
+):
+    probe = create_model(
+        "Probe",
+        __base__=CamelCaseModel,
+        evidence=(CriterionEvidence, ...),
+        **{field: (annotation, None)},
+    )
+    records = {**domain_records(), "probe.Probe": probe}
+    assert field not in verdict_names()
+    assert widened_verdict_fields(records, verdict_names()) == (
+        (f"probe.Probe.{field}", annotation),
     )
 
 
