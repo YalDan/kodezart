@@ -45,7 +45,10 @@ from kodezart.services.amendment_writeback import (
 from kodezart.services.audit_sessions import judge_in_workspace
 from kodezart.services.owned_workspace import owned_workspace
 from kodezart.services.ruling_records import RulingRecordReader
-from kodezart.services.scope_membership import read_scope_members
+from kodezart.services.scope_membership import (
+    read_scope_members,
+    read_subtree_criteria,
+)
 from kodezart.services.tracker_artifacts import read_tracker_artifact
 from kodezart.types.domain.agent import AMENDMENT_JUDGMENT_SCHEMA, Ruling
 from kodezart.types.domain.amendment import (
@@ -167,6 +170,12 @@ class NativeAmendments:
         self, spec: TrackerSpec
     ) -> tuple[tuple[TrackerIssue, ...], tuple[tuple[TrackerComment, Ruling], ...]]:
         try:
+            criteria = await read_subtree_criteria(
+                tracker=self._tracker, subject=spec.subject
+            )
+            # The registry is read over every member, the criteria and the
+            # issues around them alike; the criteria come from the one
+            # subtree reading and nowhere else.
             members = await read_scope_members(
                 tracker=self._tracker,
                 scope=ScopeRef(kind=ScopeKind.ISSUE, key=spec.subject),
@@ -183,10 +192,7 @@ class NativeAmendments:
                 "Current ruling membership could not be read"
             ) from exc
         criterion_issues = tuple(
-            sorted(
-                (i for i in members.values() if "criterion" in i.issue_labels),
-                key=lambda issue: issue.issue_key,
-            )
+            sorted(criteria.values(), key=lambda issue: issue.issue_key)
         )
         if not {str(ref) for ref in spec.criteria} <= {
             issue.issue_key for issue in criterion_issues
