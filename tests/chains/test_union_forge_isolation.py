@@ -32,6 +32,7 @@ from tests.chains.test_delivery_coordinator import repository as repository
 from tests.chains.test_union_exit_invariance import (
     CONFLICTING_EDITS,
     INDEPENDENT_EDITS,
+    UNION_MODULES,
     RecordingPublisher,
     build_delivery,
 )
@@ -119,15 +120,6 @@ MERGE_STATE_NAMES: frozenset[str] = frozenset(
 DECLARED_BY: dict[str, frozenset[str]] = {
     "kodezart.core.protocols": frozenset({"PRState"}),
 }
-
-#: The union step's own modules, where the merge-state vocabulary is
-#: forbidden outright rather than merely uncalled.
-UNION_MODULES: tuple[str, ...] = (
-    "kodezart.chains.delivery_coordinator",
-    "kodezart.services.union_tick",
-    "kodezart.services.union_composition",
-    "kodezart.services.union_identity",
-)
 
 #: Each forge READ port, its exact surface, how its double is BUILT and that
 #: double's surface.  The double is built rather than named because a surface
@@ -600,7 +592,11 @@ def test_no_module_the_union_step_reaches_reads_a_member_by_a_computed_name() ->
 
 
 def test_the_union_steps_own_modules_name_the_merge_state_reader_nowhere() -> None:
-    """The narrow rule, scoped to where it applies: the step's own modules."""
+    """The narrow rule, scoped to where it applies: the step's own modules.
+
+    There the merge-state vocabulary is forbidden outright rather than merely
+    uncalled.
+    """
     for name in UNION_MODULES:
         source = inspect.getsource(importlib.import_module(name))
         tree = ast.parse(source)

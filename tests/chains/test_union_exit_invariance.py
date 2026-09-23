@@ -1,11 +1,20 @@
-"""PR114 real-Git exit and ref-invariance scenarios, without source scanners.
+"""PR114 real-Git exit and ref-invariance scenarios.
 
-The named scenarios exercise cleanup and publication invariance directly;
-no AST inventory or object-holdings heuristic is treated as runtime proof.
+The named scenarios exercise cleanup and publication invariance directly.
+Which exits there ARE is read off the step's own source rather than
+remembered: every ``raise`` statement in the union step's modules is a site
+one scenario must name, and a scenario that names one proves it drove that
+site from the traceback it caught, not from the wording of a message.  The
+census says which exits exist; only the scenarios are runtime proof.
 """
 
+import ast
 import asyncio
+import importlib
+import inspect
+import traceback
 from contextlib import suppress
+from functools import partial
 from pathlib import Path
 
 import pytest
@@ -29,7 +38,9 @@ from tests.chains.test_delivery_coordinator import (
     PROJECT,
     RaisingRunner,
     Scope,
+    work_ref,
 )
+from tests.name_resolution import definitions
 from tests.services import test_union_composition as pinned
 
 INDEPENDENT_EDITS = {lane: (f"{lane}.txt", lane) for lane in OPENED_ORDER}
@@ -38,6 +49,125 @@ CONFLICTING_EDITS = {
     "a": ("api.py", "def build(credentials):\n    return credentials\n"),
 }
 COMPOSED_CHECK = pinned.entry().checks[0].command
+
+#: A declared chain whose one step exits non-zero, so the composed result is
+#: RED with its checks observed: the composed return carrying a failure.
+FAILING_CHECKS = (CheckStep(name="gate", command="false"),)
+
+#: The union step's own modules: where every exit of verifying is written.
+UNION_MODULES: tuple[str, ...] = (
+    "kodezart.chains.delivery_coordinator",
+    "kodezart.services.union_tick",
+    "kodezart.services.union_composition",
+    "kodezart.services.union_identity",
+)
+
+
+def _raised(node: ast.Raise) -> str:
+    """What a raise statement raises, and the reason it gives when it gives one.
+
+    A bare ``raise`` re-raises what it is handling and is spelled ``raise``.
+    A reason written as one literal is quoted as that text; one computed from
+    locals is quoted as the expression that computes it.
+    """
+    if node.exc is None:
+        return "raise"
+    exc = node.exc
+    if not isinstance(exc, ast.Call):
+        return ast.unparse(exc)
+    raised = ast.unparse(exc.func)
+    for keyword in exc.keywords:
+        if keyword.arg == "reason":
+            value = keyword.value
+            text = (
+                value.value
+                if isinstance(value, ast.Constant) and isinstance(value.value, str)
+                else ast.unparse(value)
+            )
+            return f"{raised}: {text}"
+    return raised
+
+
+def _left_by(node: ast.Raise, parents: dict[int, ast.AST]) -> frozenset[int]:
+    """The lines an error sent by *node* leaves its frame from.
+
+    A raise with an operand sends a new error from its own line.  A bare
+    ``raise`` sends the error it is handling on with that error's own
+    traceback, which still reads the line of the guarded body the error left
+    first, so its lines are the body of the ``try`` whose handler it sits in.
+    """
+    if node.exc is not None:
+        return frozenset({node.lineno})
+    current: ast.AST = node
+    while not isinstance(current, ast.ExceptHandler):
+        current = parents[id(current)]
+    guarded = parents[id(current)]
+    assert isinstance(guarded, ast.Try | ast.TryStar)
+    return frozenset(
+        line
+        for statement in guarded.body
+        for line in range(statement.lineno, (statement.end_lineno or 0) + 1)
+    )
+
+
+def exit_sites() -> dict[str, tuple[str, frozenset[int]]]:
+    """Every raise statement in the union step's modules: site -> (file, lines).
+
+    Keyed by the function the statement sits in and what it raises, so a row
+    names the exit in the code's own words.  Two statements with one key would
+    make a row ambiguous, so that fails here.  Bounded by the syntax trees of
+    ``UNION_MODULES``; a raise inside a collaborator the step calls (the
+    runner, the planner, the git port) is that collaborator's, and a row that
+    drives one names no site.
+    """
+    sites: dict[str, tuple[str, frozenset[int]]] = {}
+    for name in UNION_MODULES:
+        module = importlib.import_module(name)
+        tree = ast.parse(inspect.getsource(module))
+        where = definitions(tree)
+        parents = {
+            id(child): node
+            for node in ast.walk(tree)
+            for child in ast.iter_child_nodes(node)
+        }
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Raise):
+                site = f"{where[id(node)]}: {_raised(node)}"
+                assert site not in sites, site
+                sites[site] = (
+                    str(inspect.getsourcefile(module)),
+                    _left_by(node, parents),
+                )
+    return sites
+
+
+EXIT_SITES: dict[str, tuple[str, frozenset[int]]] = exit_sites()
+
+
+def passed_through(error: BaseException) -> frozenset[tuple[str, int]]:
+    """Every (file, line) *error* left a frame through, and the errors behind it.
+
+    A traceback holds one entry per frame the error passed through, at the
+    line it left that frame by, so the line of the raise statement that sent
+    it is among them however the message reads.  A cancellation awaited from
+    outside its task is a fresh error whose context is the one the step
+    raised, so the context and the cause are followed too, bounded by the
+    errors already read.
+    """
+    lines: set[tuple[str, int]] = set()
+    seen: set[int] = set()
+    pending: list[BaseException | None] = [error]
+    while pending:
+        current = pending.pop()
+        if current is None or id(current) in seen:
+            continue
+        seen.add(id(current))
+        lines.update(
+            (frame.filename, frame.lineno)
+            for frame in traceback.extract_tb(current.__traceback__)
+        )
+        pending.extend((current.__cause__, current.__context__))
+    return frozenset(lines)
 
 
 class Fixture:
@@ -259,6 +389,55 @@ class BlockedCreate(RecordingPublisher):
         await self.release.wait()
 
 
+class MovingAfterComposing(RecordingPublisher):
+    """Heads that read true until a scratch tree has been composed, then move.
+
+    The other way to the same refusal: the reads around the fetch agree, the
+    step composes and checks a real scratch tree, and only the read that
+    would authorize returning it disagrees.  Every later read moves, so the
+    bounded attempts run out after a composition, not before one.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.head_reads = 0
+
+    async def remote_branch_sha(self, cwd: str, remote: str, branch: str) -> str | None:
+        sha = await super().remote_branch_sha(cwd, remote, branch)
+        if sha is None or not self.created:
+            return sha
+        self.head_reads += 1
+        return f"{self.head_reads:040x}"
+
+
+class UnreadableHeads(RecordingPublisher):
+    """A remote whose head read fails as a git command fails."""
+
+    async def remote_branch_sha(self, cwd: str, remote: str, branch: str) -> str | None:
+        raise GitOperationError(f"the head of {branch} did not read")
+
+
+class UnfetchableRemote(RecordingPublisher):
+    """A remote whose heads read but whose fetch fails as a git command fails."""
+
+    async def fetch(self, repo_path: str) -> None:
+        raise GitOperationError(f"{repo_path} could not fetch")
+
+
+class SubstitutedObjects(RecordingPublisher):
+    """A repository whose replacement namespace names a substitution."""
+
+    async def has_replace_refs(self, cwd: str) -> bool:
+        return True
+
+
+class UnreadableReplacements(RecordingPublisher):
+    """A repository whose replacement namespace does not read."""
+
+    async def has_replace_refs(self, cwd: str) -> bool:
+        raise GitOperationError(f"the replacement namespace of {cwd} did not read")
+
+
 async def drive_green(fixture) -> None:
     result = await fixture.coordinator().verify()
     assert result.outcome is UnionOutcome.GREEN
@@ -270,46 +449,128 @@ async def drive_merge_conflict(fixture) -> None:
     assert result.merge_conflict is not None
 
 
-async def drive_pathless_conflict(fixture) -> None:
-    with pytest.raises(MergeConflictError):
+async def drive_failing_chain(fixture) -> None:
+    """The composed return, carrying a chain that ran and failed."""
+    fixture.with_checks(FAILING_CHECKS)
+    result = await fixture.coordinator().verify()
+    assert result.outcome is UnionOutcome.RED
+    assert result.checks is not None
+    assert result.merge_conflict is None
+
+
+async def refused(
+    fixture, error: type[BaseException], match: str | None
+) -> BaseException:
+    """Verify, require the refusal named, and hand it back for its site."""
+    with pytest.raises(error, match=match) as caught:
         await fixture.coordinator().verify()
+    return caught.value
 
 
-async def drive_unclassifiable_chain(fixture) -> None:
+async def drive_pathless_conflict(fixture) -> BaseException:
+    return await refused(fixture, MergeConflictError, "could not be merged")
+
+
+async def drive_unclassifiable_chain(fixture) -> BaseException:
     repeated = CheckStep(name="gate", command="true")
     fixture.with_checks((repeated, repeated))
-    with pytest.raises(CheckChainExecutionError):
-        await fixture.coordinator().verify()
+    return await refused(fixture, CheckChainExecutionError, None)
 
 
-async def drive_undeclared_chain(fixture) -> None:
+async def drive_undeclared_chain(fixture) -> BaseException:
     fixture.with_checks(())
-    with pytest.raises(CheckChainExecutionError):
-        await fixture.coordinator().verify()
+    return await refused(fixture, CheckChainExecutionError, "no check chain")
 
 
-async def drive_unobservable_chain(fixture) -> None:
-    with pytest.raises(CheckChainExecutionError):
+async def drive_unobservable_chain(fixture) -> BaseException:
+    with pytest.raises(CheckChainExecutionError) as caught:
         await fixture.coordinator(RaisingRunner()).verify()
+    return caught.value
 
 
-async def drive_unstable_heads(fixture) -> None:
-    with pytest.raises(UnionUnstableError):
-        await fixture.coordinator().verify()
+async def drive_unstable_heads(fixture) -> BaseException:
+    """The refusal reached before anything is composed."""
+    error = await refused(fixture, UnionUnstableError, None)
+    assert fixture.git.created == []
+    return error
 
 
-async def drive_cached_reuse(fixture) -> None:
+async def drive_unstable_after_composing(fixture) -> BaseException:
+    """The same refusal, reached after a scratch tree really existed."""
+    error = await refused(fixture, UnionUnstableError, None)
+    assert fixture.git.created != []
+    return error
+
+
+async def drive_no_participating_lane(fixture) -> BaseException:
+    """A scope whose every member is a criterion: nothing to compose."""
+    fixture.tracker.scope_memberships[PROJECT] = tuple(
+        f"{lane}-check" for lane in OPENED_ORDER
+    )
+    return await refused(fixture, UnionHeadReadError, "no participating lane")
+
+
+async def drive_no_deliverable_ref(fixture) -> BaseException:
+    fixture.tracker.recorded_work_refs[OPENED_ORDER[0]] = []
+    return await refused(fixture, UnionHeadReadError, "records no deliverable ref")
+
+
+async def drive_two_deliverable_refs(fixture) -> BaseException:
+    lane = OPENED_ORDER[0]
+    fixture.tracker.recorded_work_refs[lane].append(
+        work_ref(lane, f"work/{lane}-again", fixture.sha(lane))
+    )
+    return await refused(fixture, UnionHeadReadError, "more than one deliverable")
+
+
+async def drive_absent_branch(fixture) -> BaseException:
+    """A lane whose recorded branch the remote does not carry."""
+    lane = OPENED_ORDER[0]
+    fixture.tracker.recorded_work_refs[lane] = [
+        work_ref(lane, "work/absent-from-the-remote", fixture.sha(lane))
+    ]
+    return await refused(fixture, UnionHeadReadError, "absent on the remote")
+
+
+async def drive_unreadable_head(fixture) -> BaseException:
+    return await refused(fixture, UnionHeadReadError, "no readable commit identity")
+
+
+async def drive_unfetchable_remote(fixture) -> BaseException:
+    return await refused(fixture, UnionHeadReadError, "could not be fetched")
+
+
+async def drive_substituted_objects(fixture) -> BaseException:
+    return await refused(fixture, UnionHeadReadError, "substitutes Git objects")
+
+
+async def drive_unreadable_replacements(fixture) -> BaseException:
+    return await refused(fixture, UnionHeadReadError, "namespace is unreadable")
+
+
+async def drive_cached_reuse(
+    fixture,
+    *,
+    outcome: UnionOutcome = UnionOutcome.GREEN,
+    conflict: bool = False,
+    checks: tuple[CheckStep, ...] | None = None,
+) -> None:
     """One coordinator asked twice while no head moves, so the second ask reuses.
 
     Reuse is a third way verifying returns and the one no scenario reached: it
     composes nothing, so a publication placed on it sits behind every witness
     the composing rows carry.  The record and the refs are read again
     immediately before the second ask, so what this row measures is that ask by
-    itself rather than the pair of them.
+    itself rather than the pair of them.  The first answer is any cached kind —
+    green, a merge conflict or a failing chain — because the step caches every
+    one of them and answers the second ask from each the same way.
     """
+    if checks is not None:
+        fixture.with_checks(checks)
     coordinator = fixture.coordinator()
     first = await coordinator.verify()
-    assert first.outcome is UnionOutcome.GREEN
+    assert first.outcome is outcome
+    assert (first.merge_conflict is not None) is conflict
     published, before = list(fixture.git.publications), await fixture.refs()
 
     second = await coordinator.verify()
@@ -321,7 +582,7 @@ async def drive_cached_reuse(fixture) -> None:
     assert await fixture.refs() == before
 
 
-async def drive_roster_change(fixture) -> None:
+async def drive_roster_change(fixture) -> BaseException:
     """Membership moves once the composed chain has run, before the last check.
 
     The mutation is made from the chain the step itself runs, which is the
@@ -338,11 +599,12 @@ async def drive_roster_change(fixture) -> None:
     runner = MovingRosterRunner(
         timeout=AppConfig().union_check_step_timeout_seconds,
     )
-    with pytest.raises(UnionHeadReadError, match="roster changed"):
+    with pytest.raises(UnionHeadReadError, match="roster changed") as caught:
         await fixture.coordinator(runner).verify()
+    return caught.value
 
 
-async def drive_cancellation(fixture) -> None:
+async def drive_cancellation(fixture) -> BaseException:
     task = asyncio.create_task(fixture.coordinator().verify())
     try:
         await asyncio.wait_for(fixture.git.entered.wait(), 10)
@@ -353,41 +615,184 @@ async def drive_cancellation(fixture) -> None:
         assert not task.done()
     finally:
         fixture.git.release.set()
-        with pytest.raises(asyncio.CancelledError):
+        with pytest.raises(asyncio.CancelledError) as caught:
             await asyncio.wait_for(task, 10)
+    return caught.value
 
 
+#: Every way verifying leaves, each with the raise site it drives: a key of
+#: EXIT_SITES, or None where it returns, or where what it raises is a
+#: collaborator's own error passing through.  The census below requires the
+#: named sites to be every raise the step's modules write, so an exit added
+#: without a scenario fails there rather than standing unwitnessed.
 EXIT_SCENARIOS = (
-    ("a green union", None, RecordingPublisher, drive_green),
-    ("a merge conflict", CONFLICTING_EDITS, RecordingPublisher, drive_merge_conflict),
-    ("a conflict naming no path", None, PathlessConflict, drive_pathless_conflict),
+    ("a green union", None, RecordingPublisher, drive_green, None),
+    (
+        "a merge conflict",
+        CONFLICTING_EDITS,
+        RecordingPublisher,
+        drive_merge_conflict,
+        None,
+    ),
+    ("a failing chain", None, RecordingPublisher, drive_failing_chain, None),
+    (
+        "a conflict naming no path",
+        None,
+        PathlessConflict,
+        drive_pathless_conflict,
+        "UnionComposition.verify: raise",
+    ),
     (
         "a chain that cannot be classified",
         None,
         RecordingPublisher,
         drive_unclassifiable_chain,
+        "UnionComposition.verify: CheckChainExecutionError: '; '.join(failures)",
     ),
     (
         "a repository declaring no chain",
         None,
         RecordingPublisher,
         drive_undeclared_chain,
+        "UnionComposition.verify: CheckChainExecutionError: no check chain is declared",
     ),
     (
         "a chain that cannot be observed",
         None,
         RecordingPublisher,
         drive_unobservable_chain,
+        None,
     ),
-    ("cancellation while composing", None, BlockedCreate, drive_cancellation),
-    ("heads that will not hold still", None, MovingHeads, drive_unstable_heads),
-    ("a roster that changed underneath", None, RecordingPublisher, drive_roster_change),
-    ("unchanged heads asked twice", None, RecordingPublisher, drive_cached_reuse),
+    (
+        "cancellation while composing",
+        None,
+        BlockedCreate,
+        drive_cancellation,
+        "UnionComposition.verify: asyncio.CancelledError",
+    ),
+    (
+        "heads that will not hold still",
+        None,
+        MovingHeads,
+        drive_unstable_heads,
+        "UnionTick.verify: UnionUnstableError",
+    ),
+    (
+        "heads that move once composed",
+        None,
+        MovingAfterComposing,
+        drive_unstable_after_composing,
+        "UnionTick.verify: UnionUnstableError",
+    ),
+    (
+        "a roster that changed underneath",
+        None,
+        RecordingPublisher,
+        drive_roster_change,
+        "ScopeUnionCoordinator.verify.validate_roster: UnionHeadReadError: "
+        "the scope union roster changed during verification",
+    ),
+    (
+        "a scope with no participating lane",
+        None,
+        RecordingPublisher,
+        drive_no_participating_lane,
+        "ScopeUnionCoordinator._roster: UnionHeadReadError: "
+        "the scope contains no participating lane to compose",
+    ),
+    (
+        "a lane recording no deliverable ref",
+        None,
+        RecordingPublisher,
+        drive_no_deliverable_ref,
+        "ScopeUnionCoordinator._lane_branch: UnionHeadReadError: "
+        "f'{reason}: {issue_key}'",
+    ),
+    (
+        "a lane recording two deliverable refs",
+        None,
+        RecordingPublisher,
+        drive_two_deliverable_refs,
+        "ScopeUnionCoordinator._lane_branch: UnionHeadReadError: "
+        "f'{reason}: {issue_key}'",
+    ),
+    (
+        "a branch absent from the remote",
+        None,
+        RecordingPublisher,
+        drive_absent_branch,
+        "UnionTick._read_heads: UnionHeadReadError: "
+        "the planned branch is absent on the remote",
+    ),
+    (
+        "a head that does not read",
+        None,
+        UnreadableHeads,
+        drive_unreadable_head,
+        "UnionTick._read_heads: UnionHeadReadError: "
+        "the planned branch has no readable commit identity",
+    ),
+    (
+        "a remote that does not fetch",
+        None,
+        UnfetchableRemote,
+        drive_unfetchable_remote,
+        "UnionTick._fetch: UnionHeadReadError: "
+        "the configured remote could not be fetched",
+    ),
+    (
+        "a repository substituting objects",
+        None,
+        SubstitutedObjects,
+        drive_substituted_objects,
+        "require_union_object_identity: UnionHeadReadError: "
+        "the repository substitutes Git objects behind union commit names",
+    ),
+    (
+        "a replacement namespace that does not read",
+        None,
+        UnreadableReplacements,
+        drive_unreadable_replacements,
+        "require_union_object_identity: UnionHeadReadError: "
+        "the repository's Git replacement namespace is unreadable",
+    ),
+    (
+        "unchanged heads asked twice",
+        None,
+        RecordingPublisher,
+        drive_cached_reuse,
+        None,
+    ),
+    (
+        "a merge conflict asked twice",
+        CONFLICTING_EDITS,
+        RecordingPublisher,
+        partial(drive_cached_reuse, outcome=UnionOutcome.RED, conflict=True),
+        None,
+    ),
+    (
+        "a failing chain asked twice",
+        None,
+        RecordingPublisher,
+        partial(drive_cached_reuse, outcome=UnionOutcome.RED, checks=FAILING_CHECKS),
+        None,
+    ),
 )
 
 
+def test_every_raise_the_step_writes_is_an_exit_some_scenario_drives() -> None:
+    """The exit table is the step's own raise statements, read, not remembered.
+
+    Not parametrised, so an empty census fails here by itself: a scan that
+    found no raise would otherwise make every row's site claim vacuous.
+    """
+    assert EXIT_SITES, "the union modules write no raise statement"
+    named = {row[4] for row in EXIT_SCENARIOS if row[4] is not None}
+    assert named == set(EXIT_SITES), sorted(named ^ set(EXIT_SITES))
+
+
 @pytest.mark.parametrize(
-    "name, edits, publisher, drive",
+    "name, edits, publisher, drive, site",
     EXIT_SCENARIOS,
     ids=[row[0] for row in EXIT_SCENARIOS],
 )
@@ -397,12 +802,17 @@ async def test_named_union_exit_preserves_real_refs_and_removes_scratch(
     edits,
     publisher,
     drive,
+    site,
 ):
     fixture = await build_delivery(tmp_path / "world", edits=edits, git=publisher())
     before = await fixture.refs()
 
-    await drive(fixture)
+    raised = await drive(fixture)
 
+    if site is not None:
+        assert raised is not None, name
+        path, lines = EXIT_SITES[site]
+        assert {(path, line) for line in lines} & passed_through(raised), (name, site)
     assert fixture.git.publications == [], name
     assert await fixture.refs() == before, name
     assert fixture.git.created == fixture.git.removed, name
