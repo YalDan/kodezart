@@ -157,7 +157,10 @@ def imported_modules(
 
 
 def submodules_named(node: ast.ImportFrom) -> list[str]:
-    """The modules under the source tree a from-import takes from its package."""
+    """The modules under the source tree a from-import takes from its package.
+
+    Read as absolute names, which relies on the ban on relative imports.
+    """
     return [
         f"{node.module}.{alias.name}"
         for alias in node.names

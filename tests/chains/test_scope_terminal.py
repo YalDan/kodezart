@@ -15,6 +15,7 @@ import asyncio
 import dataclasses
 import inspect
 import sys
+from functools import partial
 from pathlib import Path
 from typing import get_args, get_type_hints
 
@@ -833,6 +834,8 @@ def terminal_modules(
     literal (``importlib.import_module``) and an attribute chain off an
     imported package all reach the module they load. A module outside
     *within* is not taken; the limits are ``modules_named``'s own.
+    The linter's ban on relative imports (``ban-relative-imports = "all"``)
+    refuses that spelling in the tree besides.
     """
     return set(module_closure(TERMINAL_SEED, within=within, root=root)) | {
         TERMINAL_VECTOR
@@ -858,7 +861,9 @@ def vocabulary_sites(
     An import of a listed module in any of its spellings (dotted, from the
     module, or taken by name from its package) is one site.  Otherwise an
     imported alias, a bare name or an attribute in *names* is a site, and so
-    is a string constant exactly equal to one of them.
+    is a string constant exactly equal to one of them.  A from-import's
+    module is read as an absolute name, which relies on the linter's ban on
+    relative imports (``ban-relative-imports = "all"``).
     """
     tree = ast.parse(source)
     sites: list[str] = []
@@ -894,6 +899,13 @@ def vocabulary_sites(
     return sites
 
 
+#: The merge-state scan, bound to its vocabulary once: every scan below and
+#: every control of it reads the same names and modules.
+merge_state_sites = partial(
+    vocabulary_sites, names=MERGE_STATE_NAMES, modules=MERGE_STATE_MODULES
+)
+
+
 def test_no_module_of_the_terminal_names_a_merge_or_a_pull_request_lifecycle():
     modules = terminal_modules()
     # Non-vacuity: the surface actually reaches the act, both of its readings
@@ -904,17 +916,13 @@ def test_no_module_of_the_terminal_names_a_merge_or_a_pull_request_lifecycle():
         "kodezart.domain.scope_terminal",
         "kodezart.services.lane_records",
     } <= modules
+    # One binding for the scan: the one that sees a merge is the one run.
+    scan = merge_state_sites
+    assert all(scan(source, label="control") for source, _ in MERGE_STATE_CONTROLS)
     offenders = {
         module: sites
         for module in sorted(modules)
-        if (
-            sites := vocabulary_sites(
-                source_of(module),
-                label=module,
-                names=MERGE_STATE_NAMES,
-                modules=MERGE_STATE_MODULES,
-            )
-        )
+        if (sites := scan(source_of(module), label=module))
     }
     assert offenders == {}
 
@@ -964,9 +972,7 @@ MERGE_STATE_CONTROLS = (
     ids=[source for source, _ in MERGE_STATE_CONTROLS],
 )
 def test_the_merge_state_detector_sees_each_shape_it_claims_to(source, expected):
-    sites = vocabulary_sites(
-        source, label="control", names=MERGE_STATE_NAMES, modules=MERGE_STATE_MODULES
-    )
+    sites = merge_state_sites(source, label="control")
     assert len(sites) == 1 and expected in sites[0], sites
 
 
@@ -986,12 +992,7 @@ def test_the_merge_state_detector_finds_the_modules_that_do_name_one():
     unseen = [
         path.name
         for path in controls
-        if not vocabulary_sites(
-            path.read_text(encoding="utf-8"),
-            label=path.name,
-            names=MERGE_STATE_NAMES,
-            modules=MERGE_STATE_MODULES,
-        )
+        if not merge_state_sites(path.read_text(encoding="utf-8"), label=path.name)
     ]
     assert unseen == []
 
@@ -1009,7 +1010,12 @@ UNION_NAMES = frozenset(
 
 
 def union_producers() -> frozenset[str]:
-    """The union module and every module under the source tree importing it."""
+    """The union module and every module under the source tree importing it.
+
+    A relative import resolves against the module it is written in, and the
+    linter's ban on relative imports (``ban-relative-imports = "all"``)
+    refuses that spelling in the tree besides.
+    """
     return frozenset(
         {UNION_MODULE}
         | {
@@ -1023,6 +1029,11 @@ def union_producers() -> frozenset[str]:
             )
         }
     )
+
+
+#: The union scan, bound to its vocabulary once: the guard, its controls and
+#: its producer check read the same names and the same producers.
+union_sites = partial(vocabulary_sites, names=UNION_NAMES, modules=union_producers())
 
 
 def classes_in(hint: object) -> set[type]:
@@ -1099,11 +1110,15 @@ def test_no_module_of_the_terminal_reaches_a_union_value():
     producing its values, and none names a union type or outcome value.
     """
     modules = terminal_modules() | terminal_input_modules()
-    producers = union_producers()
-    # Non-vacuity: the producers are found, the vocabulary is the union's,
-    # and the reading the terminal is handed is on the scanned surface, down
-    # to the address a field of a field carries and the core module the
-    # terminal imports.
+    # One binding for the scan: the one that sees a union reading is the one
+    # run, over the producers it is bound to.
+    scan = union_sites
+    assert all(scan(source, label="control") for source, _ in UNION_CONTROLS)
+    producers = scan.keywords["modules"]
+    # Non-vacuity: the producers the scan is bound to are found, the
+    # vocabulary is the union's, and the reading the terminal is handed is on
+    # the scanned surface, down to the address a field of a field carries and
+    # the core module the terminal imports.
     assert producers >= {"kodezart.domain.union_facts", "kodezart.services.union_tick"}
     assert {"UnionCompositionResult", "UnionRemediationEntry"} <= UNION_NAMES
     assert {
@@ -1118,34 +1133,50 @@ def test_no_module_of_the_terminal_reaches_a_union_value():
     offenders = {
         module: sites
         for module in sorted(modules)
-        if (
-            sites := vocabulary_sites(
-                source_of(module),
-                label=module,
-                names=UNION_NAMES,
-                modules=producers,
-            )
-        )
+        if (sites := scan(source_of(module), label=module))
     }
     assert offenders == {}
 
 
-#: One control per spelling of a union reading the detector claims to see.
+#: One control per spelling of a union reading the detector claims to see,
+#: each with the site it must report: a from-import of a producer taking a
+#: name outside the vocabulary is seen by its module and by nothing else.
 UNION_CONTROLS = (
-    "from kodezart.types.domain.union import UnionOutcome",
-    "import kodezart.domain.union_facts",
-    "from kodezart.domain import union_facts",
-    "x.UnionCompositionResult",
-    'outcome == "red"',
+    (
+        "from kodezart.types.domain.union import UnionOutcome",
+        "kodezart.types.domain.union import",
+    ),
+    ("import kodezart.domain.union_facts", "kodezart.domain.union_facts import"),
+    ("from kodezart.domain import union_facts", "kodezart.domain.union_facts import"),
+    (
+        "from kodezart.domain.union_facts import union_facts",
+        "kodezart.domain.union_facts import",
+    ),
+    (
+        "from kodezart.chains.delivery_coordinator import ScopeUnionCoordinator",
+        "kodezart.chains.delivery_coordinator import",
+    ),
+    ("x.UnionCompositionResult", ".UnionCompositionResult"),
+    ("isinstance(seen, UnionCompositionResult)", "control:1: UnionCompositionResult"),
+    ('outcome == "red"', '"red"'),
 )
 
 
-@pytest.mark.parametrize("source", UNION_CONTROLS)
-def test_the_union_detector_sees_each_shape_it_claims_to(source):
-    sites = vocabulary_sites(
-        source, label="control", names=UNION_NAMES, modules=union_producers()
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    UNION_CONTROLS,
+    ids=[source for source, _ in UNION_CONTROLS],
+)
+def test_the_union_detector_sees_each_shape_it_claims_to(source, expected):
+    sites = union_sites(source, label="control")
+    assert len(sites) == 1 and expected in sites[0], sites
+
+
+def test_a_module_taken_from_its_package_is_an_import_of_that_module():
+    """The package-level from-import resolves to the module it takes."""
+    assert "kodezart.domain.union_facts" in imported_modules(
+        ast.parse("from kodezart.domain import union_facts"), ("kodezart.",)
     )
-    assert len(sites) == 1, sites
 
 
 def test_the_union_detector_finds_every_producer():
@@ -1153,12 +1184,7 @@ def test_the_union_detector_finds_every_producer():
     unseen = [
         module
         for module in sorted(union_producers())
-        if not vocabulary_sites(
-            source_of(module),
-            label=module,
-            names=UNION_NAMES,
-            modules=union_producers(),
-        )
+        if not union_sites(source_of(module), label=module)
     ]
     assert unseen == []
 
@@ -1367,7 +1393,8 @@ def git_port_sites(source: str, *, label: str, module: str) -> list[str]:
     Blind spots, stated rather than hidden: a reach through ``getattr`` with a
     computed name is not seen, and a name spelled inside a larger string
     annotation is not seen, because the literal arm is an equality and not a
-    substring.
+    substring.  The linter's ban on relative imports refuses that spelling
+    in the tree besides.
     """
     names = git_port_names()
     sites: list[str] = []

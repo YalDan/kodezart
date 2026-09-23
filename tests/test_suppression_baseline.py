@@ -320,6 +320,9 @@ CONFIG_BASELINE: dict[str, object] = {
                 "A",
                 "ARG",
                 "RUF",
+                # Relative imports are refused: the static guards resolve
+                # every import as an absolute module name.
+                "TID",
             ),
             "ignore": ("S101",),
             "per-file-ignores": {
@@ -342,6 +345,7 @@ CONFIG_BASELINE: dict[str, object] = {
                 "tests/types/**/*.py": ("A005",),
             },
             "isort": {"known-first-party": ("kodezart",)},
+            "flake8-tidy-imports": {"ban-relative-imports": "all"},
         },
         "format": {"quote-style": "double", "indent-style": "space"},
     },
