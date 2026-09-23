@@ -14,7 +14,7 @@ from kodezart.domain.errors import (
 )
 from kodezart.domain.ticket import format_fire_spec
 from kodezart.types.domain.fire_spec import TrackerSpec
-from kodezart.types.domain.tracker import WorkflowStateKind
+from kodezart.types.domain.tracker import WorkflowStateKind, is_non_counting
 from tests.fakes import (
     FakeLinearMcpServer,
     FakeMcpIssue,
@@ -164,8 +164,6 @@ async def test_an_abandoned_criterion_without_a_check_neither_joins_nor_refuses(
     A criterion the board Canceled or closed as a Duplicate counts for
     nothing, so it neither joins the composed specification nor refuses the
     read it is present in, however unreadable its own body is (KOD-794).
-    The control moves the same body into an open state: the Check validation
-    is unchanged there, and it names that criterion.
     """
     before = tracker_writes()
 
@@ -175,16 +173,44 @@ async def test_an_abandoned_criterion_without_a_check_neither_joins_nor_refuses(
     assert ABANDONED not in spec.criteria
     assert tracker_writes() == before
 
+
+#: Every state a criterion counts in and still owes work in, read off the
+#: fixture's own state table so a state added there is covered here too.
+COUNTING_OPEN_STATES: tuple[str, ...] = tuple(
+    name
+    for name, kind in STATE_TYPES.items()
+    if not is_non_counting(WorkflowStateKind(kind))
+    and WorkflowStateKind(kind) is not WorkflowStateKind.COMPLETED
+)
+
+
+@pytest.mark.parametrize("delivering", [False, True], ids=["entry", "delivering"])
+@pytest.mark.parametrize("state", COUNTING_OPEN_STATES)
+@pytest.mark.parametrize("abandoned_pair", ["Canceled"], indirect=True, ids=str)
+async def test_a_counting_criterion_without_a_check_refuses_at_the_spec_read(
+    tracker, server, tracker_writes, state, delivering
+):
+    """The Check validation is the spec read's own, in every counting state.
+
+    The same body the abandoned case drops is moved into each state a
+    criterion counts in.  Only the owed kind is read again one step deeper,
+    so a refusal in any other state is the spec read's alone, and it names
+    the subject and the criterion before anything is written.
+    """
+    assert COUNTING_OPEN_STATES
     if isinstance(tracker, FakeTrackerPort):
         tracker.issues[ABANDONED] = tracker.issues[ABANDONED].model_copy(
-            update={"state_kind": WorkflowStateKind.UNSTARTED}
+            update={"state_kind": WorkflowStateKind(STATE_TYPES[state])}
         )
     else:
-        server.issues[ABANDONED].status = "Todo"
-        server.issues[ABANDONED].status_type = STATE_TYPES["Todo"]
+        server.issues[ABANDONED].status = state
+        server.issues[ABANDONED].status_type = STATE_TYPES[state]
+    before = tracker_writes()
 
     with pytest.raises(InvalidFireCriterionError) as raised:
-        await TrackerCriteria(tracker=tracker).read_entry(issue_key=SUBJECT)
+        await TrackerCriteria(tracker=tracker).read_entry(
+            issue_key=SUBJECT, delivering=delivering
+        )
 
     assert raised.value.issue_key == SUBJECT
     assert raised.value.criterion_key == ABANDONED
