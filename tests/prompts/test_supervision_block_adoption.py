@@ -13,14 +13,19 @@ longer states.
   tag, is the block's section.  The block file itself is pinned by its
   sha256 as the text of record.
 * Writer Discipline and Supervision Boundaries adopt by effect: every sentence
-  of the block's version is carried over in order, and the only sentences that
-  differ are the ones whose cross-references name a block section the base
-  file does not have.  Those are re-pointed at a rule the base states, by its
-  tag, or keep the referenced rule's own words inline where the base states
-  it nowhere; the spent Scan Window row carries nothing, since the base
-  window has no upper bound and its status update is the checkpoint.  The
-  table also pins the one sentence whose temporal references are restated
-  against this pass (KOD-577), and neither section carries a word of the
+  of the block's version is carried over in order, and the sentences that
+  differ are pinned in one table.  Most are the ones whose cross-references
+  name a block section the base file does not have.  Those are re-pointed
+  at a rule the base states, by its tag, or keep the referenced rule's own
+  words inline where the base states it nowhere, with one exception: the
+  enumeration after "Every other write you make is one this prompt already
+  defines" is dropped by decision, not re-pointed, because the base defines
+  more writes than the block's closed list and in the base the status
+  update is the checkpoint.  The spent Scan Window row carries nothing,
+  since the base window has no upper bound.  The table also pins the one
+  sentence whose temporal references are restated against this pass
+  (KOD-577) and the one sentence that says a verification push is never
+  work started on an issue, and neither section carries a word of the
   cadence list the pass templates are held to.  Its limit: a temporal
   phrase that is on neither the table nor that list is not seen.
 * Every adopted section sits between the base's top-level ``<tag>`` sections
@@ -82,7 +87,7 @@ BY_EFFECT: tuple[str, ...] = ("Writer Discipline", BOUNDARIES)
 
 ADOPTED: tuple[str, ...] = VERBATIM + BY_EFFECT
 
-#: block sentence -> adopted sentence, for exactly the sentences whose
+#: block sentence -> adopted sentence, for the sentences whose
 #: cross-references name a section of the block the base file does not have
 #: (Atomicity Guards, Reply Criteria, Build Verification, Queue State
 #: Transitions, Lifecycle States, Health Mapping, Scan Window).  Each points
@@ -90,13 +95,17 @@ ADOPTED: tuple[str, ...] = VERBATIM + BY_EFFECT
 #: status update is the checkpoint, so neither a bound nor a marker advance
 #: is carried.  It also holds the one sentence whose temporal references are
 #: restated against this pass (KOD-577): "this loop", "at once" and "the
-#: expected steady state".  Asserted equal to the set of sentences that
-#: differ, so it cannot grow unnoticed.
+#: expected steady state", and the last sentence of Supervision Boundaries,
+#: which adds that a branch pushed for verification is never work started on
+#: an issue, so the queue-state rule does not read the pass's own
+#: verification pushes as work started.  Asserted equal to the set of
+#: sentences that differ, so it cannot grow unnoticed.
 REPOINTED: dict[str, str] = {
     "Re-read a surface immediately before writing it, per the Atomicity Guards "
     "above, and abandon the write if it moved after this pass's frozen upper "
     "bound.": "Re-read a surface immediately before writing it and abandon the "
-    "write if the surface changed after this pass read it.",
+    "write if the surface differs from what this pass read when it formed the "
+    "write.",
     "Write each finding as it is formed to the item that owns the surface it "
     "concerns, as a comment under criterion (iii) of the Reply Criteria, "
     "carrying the evidence and the interim reading you will proceed under; the "
@@ -112,10 +121,10 @@ REPOINTED: dict[str, str] = {
     "under Build Verification, and the tracker and the knowledge surfaces this "
     "operation records are the only places a finding survives the pass.": "Keep "
     "no finding in a private surface only: a scratch workspace used for "
-    "verification is permitted and its results are reported as scratch "
-    "results, never presented as results for the project itself, and the "
-    "tracker and the knowledge surfaces this operation records are the only "
-    "places a finding survives the pass.",
+    "verification beyond the builds step 1 of <process> runs is permitted and "
+    "its results are reported as scratch results, never presented as results "
+    "for the project itself, and the tracker and the knowledge surfaces this "
+    "operation records are the only places a finding survives the pass.",
     "On the strength of a finding you never halt a run, never block a "
     "cross-off and never move a workflow state: a finding is an observation, "
     "and the only transitions this pass performs are the ones Queue State "
@@ -124,6 +133,9 @@ REPOINTED: dict[str, str] = {
     "never block a cross-off and never move a workflow state: a finding is an "
     "observation, and the only transitions this pass performs are the ones "
     "<authority> and <process> already rule, on the evidence they require.",
+    # Not re-pointed: the enumeration is dropped by decision.  The base
+    # defines more writes than the block's closed list, and in the base the
+    # status update is the checkpoint, so no marker advance is a write.
     "Every other write you make is one this prompt already defines — the "
     "replies the Reply Criteria allow, one status update per initiative, and "
     "the single marker advance.": "Every other write you make is one this "
@@ -134,6 +146,10 @@ REPOINTED: dict[str, str] = {
     "outside this pass, and several requests open during this pass — in "
     "parallel or stacked — are what this pass expects to find rather than a "
     "condition to resolve.",
+    "Push what you composed so a human can look at it; opening the request is "
+    "theirs, not yours.": "Push what you composed so a human can look at it; "
+    "opening the request is theirs, not yours, and a branch you push for "
+    "verification is never work started on an issue.",
 }
 
 #: The three prohibitions removed from the base GitHub rule, because
@@ -148,10 +164,10 @@ REMOVED: tuple[str, ...] = (
 #: Boundaries and adds only what that section does not cover.
 AUTHORITY_GITHUB_RULE = (
     "- Write to GitHub beyond what `Supervision Boundaries` allows. All "
-    "communication happens in Linear, so no pull-request or issue "
-    "comments and no labels. (Reading includes history: a synced issue's "
-    "past body revisions via the mirror's edit history are yours to "
-    "read.)"
+    "communication happens in Linear, so no GitHub pull-request or issue "
+    "comments and no GitHub labels. (Reading includes history: a synced "
+    "issue's past body revisions via the mirror's edit history are yours "
+    "to read.)"
 )
 
 #: The closing boundary line, whole: it does not restate the GitHub boundary.
