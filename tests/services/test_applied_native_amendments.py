@@ -560,6 +560,20 @@ async def test_undemonstrable_here_upholds_at_the_environment_reason_touching_no
             UpheldReason.GROUND_NOT_REPRODUCED,
             id="a_matched_repository_at_its_default_environment_leaves_it_unknown",
         ),
+        pytest.param(
+            "credentials",
+            {CheckPrerequisite.NETWORK: False},
+            REPO_URL,
+            UpheldReason.GROUND_NOT_REPRODUCED,
+            id="another_capability_declared_absent_is_not_undemonstrability",
+        ),
+        pytest.param(
+            "network",
+            {CheckPrerequisite.NETWORK: False},
+            "https://example.invalid/owner/other",
+            UpheldReason.GROUND_NOT_REPRODUCED,
+            id="an_undeclared_repository_borrows_no_other_declaration",
+        ),
     ],
 )
 async def test_undemonstrability_conjoins_the_typed_claim_and_the_declared_environment(
@@ -574,7 +588,9 @@ async def test_undemonstrability_conjoins_the_typed_claim_and_the_declared_envir
     which is the fail-closed arm the resolver alone cannot show. Another matches
     a repository that leaves `runner_environment` at its default: an omitted
     capability is unknown, not absent, so that refusal falls back to the ground
-    as well.
+    as well. A claim of one capability against another's declared absence is
+    matched to its own entry and falls back the same way, and a running
+    repository no declaration covers borrows no other repository's environment.
 
     In every row the departure is refused and the criterion stands: its text and
     its state are what they were, and only the escalated row's classification

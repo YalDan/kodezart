@@ -842,6 +842,26 @@ def test_actual_scope_egress_roundtrips_required_nulls_and_rejects_bad_native_re
             "ground_not_reproduced",
             id="an_undeclared_capability_is_unknown_not_absent",
         ),
+        # The claimed capability is matched to its own declared entry: another
+        # capability's absence says nothing about the one claimed.
+        pytest.param(
+            "credentials",
+            {CheckPrerequisite.NETWORK: False},
+            "ground_not_reproduced",
+            id="another_capability_declared_absent_leaves_the_claimed_one_unknown",
+        ),
+        pytest.param(
+            "network",
+            {CheckPrerequisite.NETWORK: True, CheckPrerequisite.CREDENTIALS: False},
+            "ground_not_reproduced",
+            id="the_claimed_capability_declared_present_beside_an_absent_one",
+        ),
+        pytest.param(
+            "credentials",
+            {CheckPrerequisite.NETWORK: True, CheckPrerequisite.CREDENTIALS: False},
+            "environment_lacks_capability",
+            id="the_claimed_capability_declared_absent_beside_a_present_one",
+        ),
     ],
 )
 def test_missing_capability_requires_a_typed_claim_absent_from_declared_capabilities(
