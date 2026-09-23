@@ -6034,7 +6034,7 @@
    "test_the_shipped_scope_config_answers_each_adapter_point_of_need"
   ],
   "tests/tracker/test_adapter_roles.py": [
-   "test_every_class_of_the_adapter_answers_for_exactly_one_role",
+   "test_every_class_of_the_adapter_declares_exactly_one_roles_members",
    "test_only_the_session_constructs_and_it_declares_no_member",
    "test_the_composed_adapter_holds_every_role_class_over_one_session",
    "test_one_adapter_object_holds_the_one_caller_it_was_given",
