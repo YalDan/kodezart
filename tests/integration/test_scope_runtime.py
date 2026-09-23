@@ -2037,47 +2037,90 @@ REAPING_JOB = "reaping-job"
 
 
 async def test_a_ticks_identity_resolves_to_its_evidence_row_and_its_records_commit():
-    """One tick, resolved both ways: to the board row and to the record.
+    """Each tick, resolved from what the walk emitted to the board and the record.
 
-    For each criterion the walk finished, the identity the tick was written
-    under is a sub-issue of the lane its record is addressed under; the board
-    holds that sub-issue finished; its Evidence row carries the sha the record
-    names as this lane's head, and that sha is one of the record's own commit
-    rows; and the deliverable the record names stands at exactly that commit
-    after the consolidation. Nothing is opened under the artifact directory to
-    answer any of it — the walk over the sources keeps that directory
-    unreadable, and the tracker is what every answer here came from.
+    Lane A owes two criteria and finishes them at different iterations: the
+    first grading passes one, which stands (it declares a cost and a prefix
+    the next commit does not touch), and the second passes the other. Each
+    identity is
+    taken from the iteration events the walk emitted — a criterion id the
+    grading passed for the first time, at the sha that iteration was read at
+    — and not from how the board was seeded. Each is resolved through the
+    port: its issue names the parent it is a criterion of; the lane record
+    read under that parent is the one the walk wrote; the board holds the
+    criterion finished; and its Evidence row carries exactly the sha its own
+    grading was read at, which is one of that record's commit rows. The two
+    shas differ, so a row stamped with the loop's or the record's head
+    instead of its own grading's is seen; only the last one is the head the
+    deliverable stands at after the consolidation. Nothing is opened under
+    the artifact directory to answer any of it — the walk over the sources
+    keeps that directory unreadable, and the tracker is what every answer
+    here came from.
     """
+    first, second = A_KEYS
     repos = WalkRepos()
-    port = board(lanes=("A", "B"))
+    port = board(lanes=("A",), checks=TWO_CHECKS)
     harness = resumable(
         port=port,
         repos=repos,
-        lanes=("A", "B"),
-        evaluations=[*one_check_echoes("A"), *one_check_echoes("B")],
+        max_iterations=2,
+        evaluations=[
+            # The first grading passes one criterion and declares its cost with
+            # a prefix no later commit touches, so the grading stands and the
+            # next iteration carries it rather than grading it again.
+            criteria_echo(
+                keys=A_KEYS,
+                passed={first},
+                declared={
+                    first: {
+                        "rederivationClass": "expensive",
+                        "exercisedPaths": ["docs/"],
+                    }
+                },
+            ),
+            *(criteria_echo(keys=A_KEYS, passed=set(A_KEYS)) for _ in range(3)),
+        ],
     )
     events = await bounded_walk(harness)
 
     assert lane_failures(events) == ()
-    assert len(ticks_of(events)) == TICKS_OF_A_TWO_LANE_WALK
     assert harness.artifacts.persist_calls == []
     assert harness.artifacts.clean_calls == []
-    for lane in ("A", "B"):
-        key = f"{lane}/check"
-        criterion = port.issues[key]
-        record = await lane_record(port, lane)
-        assert criterion.parent_key == lane
+    graded_at: dict[str, str] = {}
+    for event in events:
+        if isinstance(event, ScopeLaneEvent) and isinstance(
+            event.event, WorkflowIterationEvent
+        ):
+            iteration = event.event
+            assert iteration.commit_sha is not None
+            for result in iteration.evaluation.criteria_results:
+                if result.passed:
+                    graded_at.setdefault(str(result.criterion_id), iteration.commit_sha)
+    assert set(graded_at) == set(A_KEYS)
+    assert graded_at[first] != graded_at[second]
+
+    records = []
+    for key, graded_sha in graded_at.items():
+        criterion = await port.read_issue(issue_key=key)
+        assert criterion.parent_key is not None
+        record = await lane_record(port, criterion.parent_key)
+        records.append(record)
         assert criterion.state_kind is WorkflowStateKind.COMPLETED
         assert (key, LifecycleStage.DONE) in port.workflow_writes
-        graded_sha = parse_criterion_evidence(criterion.body).graded_sha
-        assert graded_sha == record.head_sha
-        assert graded_sha in {row.sha for row in record.commits}
-        deliverable = recorded_branches(record=record).deliverable_branch
-        assert repos.head_of(deliverable) == graded_sha
+        row = parse_criterion_evidence(criterion.body).graded_sha
+        assert row == graded_sha
+        assert row in {commit.sha for commit in record.commits}
+    # One record answers both, and it is the one the walk wrote for the lane.
+    assert records[0] == records[1]
+    record = records[0]
+    # The first criterion was graded before the lane's last commit: its row
+    # is not the record's head, and only the last grading's sha is where the
+    # deliverable stands.
+    assert graded_at[first] != record.head_sha
+    assert graded_at[second] == record.head_sha
+    deliverable = recorded_branches(record=record).deliverable_branch
+    assert repos.head_of(deliverable) == graded_at[second]
 
-
-#: The ticks two single-criterion lanes' accepted walk observes.
-TICKS_OF_A_TWO_LANE_WALK = 3
 
 #: Two more criteria under lane A, so one iteration can pass some of its
 #: roster and fail the rest and the loop has somewhere left to go.
