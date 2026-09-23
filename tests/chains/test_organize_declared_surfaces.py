@@ -71,26 +71,42 @@ def addresses(key, kinds=GROOM_LINES):
     return frozenset(f"{kind}|issue|{key}|" for kind in kinds)
 
 
+CRITERION_CHILD = "FIX-CHECK"
+ESCALATED = "FIX-ESCALATED"
+
+
 async def test_the_round_holds_the_whole_declared_set_before_its_first_write():
     """Every declared kind, on every member of the snapshot, before any write.
 
     The sibling already carries the marker, so the round spends no session
     on it and still declares it: the set is the snapshot's, not the work
-    roster's.
+    roster's. The same holds for the record-shaped members, which are no
+    work subject at all: a criterion child and a member carrying the
+    escalation label.
     """
     owner, board, _ = factory()
     member(board, SIBLING, labels=["graph complete"])
+    member(board, CRITERION_CHILD, labels=["check"])
+    member(board, ESCALATED, labels=["graph complete", "needs decision"])
+    keys = (CLAIMED_ISSUE, SIBLING, CRITERION_CHILD, ESCALATED)
     board.pause = lambda name, args: name == "save_issue" and "description" in args
     task = asyncio.create_task(run_owner(owner))
     try:
         await asyncio.wait_for(board.reached.wait(), timeout=10)
-        declared = addresses(CLAIMED_ISSUE) | addresses(SIBLING)
+        declared = frozenset().union(*(addresses(key) for key in keys))
         (nonce,) = {nonce for _, nonce, _ in acquisitions(board)}
-        assert held(board) == [(JOB, nonce, declared)] * 2
-        assert [args["issueId"] for args in board.lease_creations()] == [
-            CLAIMED_ISSUE,
-            SIBLING,
-        ]
+        assert held(board) == [(JOB, nonce, declared)] * len(keys)
+        assert sorted(args["issueId"] for args in board.lease_creations()) == sorted(
+            keys
+        )
+        for key in (CRITERION_CHILD, ESCALATED):
+            (marker,) = [
+                _read(comment.body)
+                for comment in board.grants()
+                if comment.issue_id == key
+            ]
+            assert marker == (JOB, nonce, declared)
+            assert addresses(key) <= marker[2]
     finally:
         board.resume.set()
     report = await task
