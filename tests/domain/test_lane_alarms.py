@@ -220,6 +220,24 @@ def test_a_lapse_under_a_deliverable_child_is_keyed_to_its_parent_and_its_lane()
     assert [r.subject for r in records] == [at(FIRST, parent="LANE-1/deliverable")]
 
 
+def test_a_descendant_criterions_lapse_on_a_ready_lane_is_discharged_by_that_lane():
+    """The lane re-derives, so a lapse under its deliverable child is owed to it.
+
+    The twin of the waiting case above on a ready lane. The criterion's parent
+    is the deliverable child, which fires nothing; the lane above it is the one
+    the walk runs, so its readiness discharges the lapse.
+    """
+    criteria = (criterion(FIRST, parent="LANE-1/deliverable"), criterion(SECOND))
+
+    records = compose(
+        standing=Ready(roster=criteria, gap=criteria),
+        criteria=criteria,
+        events=(said(CROSSED_OFF, FIRST), said(LAPSED, FIRST)),
+    )
+
+    assert records == ()
+
+
 def test_a_finished_lane_is_read_with_no_roster_and_no_gap():
     """A finished lane with a raised tally is cleared, as it was before."""
     stalled = ("sha-one", "sha-two")
