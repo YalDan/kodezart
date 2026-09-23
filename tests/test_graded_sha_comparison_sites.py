@@ -20,9 +20,13 @@ a class body, a function, a lambda, a comprehension):
   ``attrgetter`` takes), a ``match`` class pattern keyed on it, or a
   variable annotated as the Evidence record and used whole (iterated,
   dumped, handed on), which reads every field it has.  The annotation names
-  the record by the record's own name or by object, through the module's
-  imports: an import under another name, a module alias, and either inside
-  ``Optional`` or ``Annotated``.  Inside that same scope the value is
+  the record by the record's own name or by object: each name in it is
+  resolved in the module's own namespace after import, and through the
+  module's imports for a name the running module does not bind (an import
+  made only under ``TYPE_CHECKING``).  So an import under another name, a
+  module alias, a ``type`` alias, a plain or ``TypeAlias`` alias the module
+  binds, a string annotation, and any of these inside ``Optional``,
+  ``Annotated`` or a union, each name it.  Inside that same scope the value is
   followed through every binding form to a fixed point: assignment,
   unpacking, a container stored into by subscript, a ``for`` target,
   ``with ... as``, the walrus, a comprehension target, a ``match`` capture,
@@ -74,14 +78,24 @@ import ast
 import copy
 import json
 import sys
+import typing
 from collections import Counter
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from functools import cache
 from importlib import import_module
+from importlib.abc import SourceLoader
 from importlib.util import resolve_name
 from inspect import signature
 from pathlib import Path
-from typing import NamedTuple
+from types import ModuleType
+from typing import (
+    Annotated,
+    ForwardRef,
+    NamedTuple,
+    TypeAliasType,
+    get_args,
+    get_origin,
+)
 
 import pytest
 
@@ -311,33 +325,178 @@ def _dotted(node: ast.AST, imports: Mapping[str, str]) -> str | None:
     return None
 
 
-def _names_the_record(annotation: ast.AST | None, imports: Mapping[str, str]) -> bool:
+def _module_name(module: str) -> str:
+    """The dotted name a module of the scanned tree is imported under."""
+    parts = [SOURCE.name, *Path(module).with_suffix("").parts]
+    return ".".join(parts[:-1] if parts[-1] == "__init__" else parts)
+
+
+class _Lines(SourceLoader):
+    """Module-level lines held in memory, run by the import system."""
+
+    def __init__(self, module: str, text: str) -> None:
+        self._module = module
+        self._text = text
+
+    def get_filename(self, fullname: str) -> str:
+        return self._module
+
+    def get_data(self, path: str) -> bytes:
+        return self._text.encode()
+
+
+def _namespace(module: str, text: str) -> Mapping[str, object]:
+    """The module's own namespace after import, as the running program has it.
+
+    The file on disk is imported and its namespace read.  Text that is not
+    the file on disk -- a plant, or a new module -- is that namespace with
+    the text's own module-level statements the file does not have run over
+    a copy of it, in order, by the import system.  A definition or a class
+    the file already has is the file's, whatever is planted in its body.  A
+    statement that raises keeps what it bound before it raised, as an import
+    that fails part-way does.  Nothing is called that the module's own
+    import would not call.
+    """
+    name = _module_name(module)
+    shipped = SHIPPED.get(module)
+    imported: Mapping[str, object] = {}
+    kept: Counter[str] = Counter()
+    defined: frozenset[str] = frozenset()
+    unrun: list[Exception] = []
+    if shipped is not None:
+        try:
+            imported = vars(import_module(name))
+        except Exception as error:
+            unrun.append(error)
+        if text == shipped:
+            return imported
+        body = ast.parse(shipped).body
+        kept = Counter(ast.dump(statement) for statement in body)
+        defined = frozenset(
+            statement.name for statement in body if isinstance(statement, NAMED)
+        )
+    target = ModuleType(name)
+    vars(target).update(imported)
+    target.__package__ = _package(module)
+    for statement in ast.parse(text).body:
+        written = ast.dump(statement)
+        if kept[written]:
+            kept[written] -= 1
+        elif not (isinstance(statement, NAMED) and statement.name in defined):
+            try:
+                _Lines(module, ast.unparse(statement)).exec_module(target)
+            except Exception as error:
+                unrun.append(error)
+    return vars(target)
+
+
+def _looked_up(node: ast.expr, namespace: Mapping[str, object]) -> object:
+    """The object a name or an attribute chain names in *namespace*.
+
+    A name the module does not bind is looked up among ``typing``'s names,
+    which an annotation may spell without importing them.  Nothing found is
+    None.
+    """
+    if isinstance(node, ast.Name):
+        return namespace.get(node.id, vars(typing).get(node.id))
+    if isinstance(node, ast.Attribute):
+        return getattr(_looked_up(node.value, namespace), node.attr, None)
+    return None
+
+
+def _parsed(text: str) -> list[ast.AST]:
+    """A string annotation, parsed as the expression it spells, if it is one."""
+    try:
+        return [ast.parse(text, mode="eval").body]
+    except SyntaxError:
+        return []
+
+
+def _names_the_record(
+    annotation: ast.AST | None,
+    imports: Mapping[str, str],
+    namespace: Callable[[], Mapping[str, object]],
+) -> bool:
     """Whether an annotation names the Evidence record, by its name or by object.
 
     The record's own name is enough.  So is any name or dotted path the
-    module's imports resolve to the record itself: an import under another
-    name, a module alias, and either one inside ``Optional``, ``Annotated``
-    or a union.
+    module's imports resolve to the record itself.  Every name and dotted
+    path is also resolved in the module's own namespace after import (see
+    ``_namespace``), and what it resolves to is unwrapped: a ``type``
+    alias to its value, ``Annotated`` to what it annotates, ``Optional``, a
+    union and any other generic to its arguments, and a string (a string
+    annotation, a forward reference) to the expression it spells, resolved
+    the same way.  The annotation names the record when anything it
+    unwraps to is the record.  A name the running module does not bind (an
+    import made only under ``TYPE_CHECKING``) is resolved through the
+    imports alone.
+
+    The walk ends: each node, each string and each object is taken once,
+    and the annotation, the strings it spells and the objects the namespace
+    holds are finite.
     """
-    return annotation is not None and any(
-        (isinstance(node, ast.Name) and node.id == RECORD)
-        or (isinstance(node, ast.Attribute) and node.attr == RECORD)
-        or (
-            (path := _dotted(node, imports)) is not None
-            and _resolved(path) is CriterionEvidence
-        )
-        for node in ast.walk(annotation)
-    )
+    if annotation is None:
+        return False
+    nodes: list[ast.AST] = [annotation]
+    objects: list[object] = []
+    spelled: set[str] = set()
+    met: list[object] = []
+    while nodes or objects:
+        if nodes:
+            node = nodes.pop()
+            if (
+                (isinstance(node, ast.Name) and node.id == RECORD)
+                or (isinstance(node, ast.Attribute) and node.attr == RECORD)
+                or (
+                    (path := _dotted(node, imports)) is not None
+                    and _resolved(path) is CriterionEvidence
+                )
+            ):
+                return True
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                objects.append(node.value)
+            elif isinstance(node, (ast.Name, ast.Attribute)):
+                objects.append(_looked_up(node, namespace()))
+            nodes.extend(ast.iter_child_nodes(node))
+            continue
+        item = objects.pop()
+        if any(item is seen for seen in met):
+            continue
+        met.append(item)
+        if item is CriterionEvidence:
+            return True
+        if isinstance(item, str):
+            if item not in spelled:
+                spelled.add(item)
+                nodes.extend(_parsed(item))
+        elif isinstance(item, ForwardRef):
+            objects.append(item.__forward_arg__)
+        elif isinstance(item, TypeAliasType):
+            try:
+                objects.append(item.__value__)
+            except Exception:
+                objects.append(None)
+        elif isinstance(item, (list, tuple)):
+            objects.extend(item)
+        elif get_origin(item) is Annotated:
+            objects.append(get_args(item)[0])
+        else:
+            objects.extend([get_origin(item), *get_args(item)])
+    return False
 
 
-def _annotated(owned: list[ast.AST], imports: Mapping[str, str]) -> frozenset[str]:
+def _annotated(
+    owned: list[ast.AST],
+    imports: Mapping[str, str],
+    namespace: Callable[[], Mapping[str, object]],
+) -> frozenset[str]:
     """The names this scope annotates as the Evidence record."""
     return frozenset(
         node.target.id
         for node in owned
         if isinstance(node, ast.AnnAssign)
         and isinstance(node.target, ast.Name)
-        and _names_the_record(node.annotation, imports)
+        and _names_the_record(node.annotation, imports, namespace)
     )
 
 
@@ -413,8 +572,12 @@ def _render(clause: ast.AST) -> str:
 class _Module:
     """One module, read for the scopes that read the graded sha directly."""
 
-    def __init__(self, tree: ast.Module, module: str) -> None:
+    def __init__(self, text: str, module: str) -> None:
+        tree = ast.parse(text)
         self.imports = dict(_imports(tree, _package(module)))
+        self._text = text
+        self._module = module
+        self._namespace: Mapping[str, object] | None = None
         self.parents = {
             child: node
             for node in ast.walk(tree)
@@ -422,6 +585,12 @@ class _Module:
         }
         self.readers: dict[str, Counter[str]] = {}
         self._scope(tree, MODULE, frozenset(), frozenset(), frozenset())
+
+    def namespace(self) -> Mapping[str, object]:
+        """The module's namespace after import, read once and only if asked."""
+        if self._namespace is None:
+            self._namespace = _namespace(self._module, self._text)
+        return self._namespace
 
     def _reads(self, node: ast.AST, records: frozenset[str]) -> bool:
         """Whether *node* reads the graded sha directly."""
@@ -520,11 +689,11 @@ class _Module:
         shadowed = frozenset(parameter.arg for parameter in parameters)
         records = (
             (typed - shadowed)
-            | _annotated(owned, self.imports)
+            | _annotated(owned, self.imports, self.namespace)
             | frozenset(
                 parameter.arg
                 for parameter in parameters
-                if _names_the_record(parameter.annotation, self.imports)
+                if _names_the_record(parameter.annotation, self.imports, self.namespace)
             )
         )
         carriers = self._settle(node, owned, (closure - shadowed) | defaulted, records)
@@ -568,7 +737,7 @@ def readers(sources: dict[str, str]) -> dict[str, Counter[str]]:
     """
     found: dict[str, Counter[str]] = {}
     for module, text in sources.items():
-        for label, uses in _Module(ast.parse(text), module).readers.items():
+        for label, uses in _Module(text, module).readers.items():
             found[f"{module}::{label}"] = uses
     return found
 
@@ -656,12 +825,13 @@ def _scope_node(tree: ast.Module, label: str) -> ast.AST | None:
     return node
 
 
-def planted(site: str, block: str) -> dict[str, Counter[str]]:
+def planted(site: str, block: str, module_lines: str = "") -> dict[str, Counter[str]]:
     """The site's module read again with *block* written into the site.
 
     The block goes in as the first statement of the scope's body, indented
     to it; at module scope it goes at the end.  Where it goes inside the
     scope does not matter: bindings are settled over the whole scope.
+    *module_lines* go at the end of the module, after the block.
     """
     module, _, label = site.partition("::")
     source = SHIPPED[module]
@@ -675,7 +845,8 @@ def planted(site: str, block: str) -> dict[str, Counter[str]]:
         assert first.lineno > node.lineno, site
         at, indent = first.lineno - 1, " " * first.col_offset
     written = [f"{indent}{line}" for line in block.splitlines(keepends=True)]
-    return readers({module: "".join([*lines[:at], *written, *lines[at:]])})
+    text = "".join([*lines[:at], *written, *lines[at:]])
+    return readers({module: text + module_lines})
 
 
 def alone(source: str) -> dict[str, Counter[str]]:
@@ -1202,6 +1373,48 @@ BINDINGS = {
         "reader.py::lapsed",
         "return head in vars(evidence).values()",
     ),
+    "a-record-through-a-type-statement": (
+        f"from {CriterionEvidence.__module__} import {RECORD}\n"
+        f"type Evidence = {RECORD}\n"
+        "def lapsed(evidence: Evidence, head_sha):\n"
+        "    return any(value == head_sha for _, value in evidence)\n",
+        "reader.py::lapsed",
+        "return any((value == head_sha for _, value in evidence))",
+    ),
+    "a-record-through-an-assigned-alias": (
+        f"from {CriterionEvidence.__module__} import {RECORD}\n"
+        f"Evidence = {RECORD}\n"
+        "def lapsed(evidence: Evidence, head_sha):\n"
+        "    return head_sha in dict(evidence).values()\n",
+        "reader.py::lapsed",
+        "return head_sha in dict(evidence).values()",
+    ),
+    "a-record-through-a-typealias-annotation": (
+        "from typing import TypeAlias\n"
+        f"from {CriterionEvidence.__module__} import {RECORD}\n"
+        f"Ev: TypeAlias = {RECORD}\n"
+        "def lapsed(evidence, head_sha):\n"
+        "    kept: Ev = evidence\n"
+        "    return head_sha in dict(kept).values()\n",
+        "reader.py::lapsed",
+        "return head_sha in dict(kept).values()",
+    ),
+    "a-record-in-a-string-annotation": (
+        f"from {CriterionEvidence.__module__} import {RECORD}\n"
+        f"def lapsed(evidence: '{RECORD}', head_sha):\n"
+        "    return head_sha in dict(evidence).values()\n",
+        "reader.py::lapsed",
+        "return head_sha in dict(evidence).values()",
+    ),
+    "a-record-in-a-string-imported-only-for-type-checking": (
+        "from typing import TYPE_CHECKING\n"
+        "if TYPE_CHECKING:\n"
+        f"    from {CriterionEvidence.__module__} import {RECORD} as Ev\n"
+        "def lapsed(evidence: 'Ev | None', head_sha):\n"
+        "    return head_sha in dict(evidence).values()\n",
+        "reader.py::lapsed",
+        "return head_sha in dict(evidence).values()",
+    ),
 }
 
 
@@ -1283,6 +1496,91 @@ def test_a_name_imported_as_another_class_is_not_the_record():
         "    return head_sha in dict(evidence).values()\n"
     )
     assert alone(source) == {}
+
+
+#: The record named through a binding the module makes itself, as module-level
+#: lines and the annotation that spells the binding.  None is an import of
+#: the name the annotation uses, so each is found only in the module's own
+#: namespace, or, for the string, by reading what it spells.
+RECORD_ALIASES = {
+    "a-type-statement": (f"type _Recorded = {RECORD}\n", "_Recorded"),
+    "an-assigned-alias": (f"_Recorded = {RECORD}\n", "_Recorded"),
+    "a-typealias-annotation": (
+        f"from typing import TypeAlias\n_Recorded: TypeAlias = {RECORD}\n",
+        "_Recorded",
+    ),
+    "a-string-annotation": ("", f"'{RECORD}'"),
+}
+
+
+def _aliased(form: str) -> tuple[str, str]:
+    """The module-level lines a record alias needs, and a whole read through it."""
+    lines, annotation = RECORD_ALIASES[form]
+    header = f"from {CriterionEvidence.__module__} import {RECORD}\n{lines}"
+    use = (
+        f"recorded: {annotation} = cross_off.evidence\n"
+        "if head_sha not in dict(recorded).values():\n"
+        "    rederive.append(cross_off)\n"
+        "    continue\n"
+    )
+    return header, use
+
+
+@pytest.mark.parametrize("form", list(RECORD_ALIASES))
+def test_a_record_named_through_the_modules_own_binding_is_reported(form):
+    """A record type the module aliases itself is the record, by object.
+
+    Planted as a new module and inside the lane reader, where the rule is
+    consulted: in each the whole read is a use of the graded sha.
+    """
+    header, use = _aliased(form)
+    source = header + "def lapsed(cross_off, head_sha, rederive):\n"
+    source += _indented("for _ in (cross_off,):\n" + _indented(use))
+    assert findings(alone(source), REGISTERED) == [
+        "reader.py::lapsed reads the graded sha and is not registered"
+    ]
+    site = "domain/lapse.py::held_standing"
+    module = site.partition("::")[0]
+    anchor = "        state = graded_state(\n"
+    assert SHIPPED[module].count(anchor) == 1
+    written = SHIPPED[module].replace(anchor, _indented(_indented(use)) + anchor)
+    found = findings(readers({module: written + header}), REGISTERED)
+    read = "if head_sha not in dict(recorded).values():\n    ..."
+    assert found == [f"{site} uses it at {[read]} beyond its row, and not at []"]
+
+
+@pytest.mark.parametrize("form", list(RECORD_ALIASES))
+def test_a_record_named_through_an_alias_in_any_registered_reader_is_reported(form):
+    """The same aliased record, read whole inside every registered reader."""
+    lines, annotation = RECORD_ALIASES[form]
+    header = f"from {CriterionEvidence.__module__} import {RECORD}\n{lines}"
+    block = f"_record: {annotation} = evidence\n_planted = dict(_record)\n"
+    missed = [
+        site
+        for site in PLANT_SITES
+        if not findings(planted(site, block, module_lines=header), REGISTERED)
+    ]
+    assert missed == []
+
+
+def test_an_alias_or_a_string_naming_another_class_is_not_the_record():
+    """Resolution is by object: an alias of another class, a string that names
+    another class, and a string that is no expression at all, stay out."""
+    base = CriterionEvidence.__mro__[1]
+    importing = f"from {base.__module__} import {base.__name__}\n"
+    sources = (
+        importing + f"type Evidence = {base.__name__}\n"
+        "def lapsed(evidence: Evidence, head_sha):\n"
+        "    return head_sha in dict(evidence).values()\n",
+        importing + f"Evidence = {base.__name__}\n"
+        "def lapsed(evidence: Evidence, head_sha):\n"
+        "    return head_sha in dict(evidence).values()\n",
+        f"def lapsed(evidence: '{base.__name__}', head_sha):\n"
+        "    return head_sha in dict(evidence).values()\n",
+        "def lapsed(evidence: 'the recorded grading', head_sha):\n"
+        "    return head_sha in dict(evidence).values()\n",
+    )
+    assert [source for source in sources if alone(source)] == []
 
 
 def test_naming_the_graded_sha_without_comparing_it_is_not_a_site():
