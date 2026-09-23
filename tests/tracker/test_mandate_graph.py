@@ -114,10 +114,10 @@ async def test_disappearing_obligation_never_manufactures_closure(
 
 
 @pytest.mark.parametrize("state", ["Canceled", "Duplicate"])
-async def test_a_canceled_or_duplicate_criterion_closes_the_ruling_window(
+async def test_a_canceled_or_duplicate_criterion_closes_the_growth_window(
     tracker, state
 ):
-    """The rulings no longer outpace closure: the criterion counts for nothing."""
+    """Growth no longer outpaces closure: the criterion counts for nothing."""
     await tracker.restore_workflow_state(issue_key="criterion/open", state_name=state)
     assert await observe_ruling_growth(tracker=tracker, **arguments()) is None
 

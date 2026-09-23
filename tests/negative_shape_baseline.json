@@ -6234,7 +6234,7 @@
   "tests/tracker/test_mandate_graph.py": [
    "test_ruling_service_uses_current_criterion_state_and_actual_config",
    "test_disappearing_obligation_never_manufactures_closure",
-   "test_a_canceled_or_duplicate_criterion_closes_the_ruling_window",
+   "test_a_canceled_or_duplicate_criterion_closes_the_growth_window",
    "test_closure_on_another_declared_lane_issue_is_observed",
    "test_real_membership_collector_detects_structural_addition",
    "test_collector_state_only_reopening_stays_quiet",
