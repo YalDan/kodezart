@@ -371,7 +371,7 @@ def test_the_escalation_question_names_the_capability_and_the_revival_condition(
     criterion is also offered the cancellation left to a person; a pinned subject
     is named as itself and offered nothing a criterion alone has. A reason that
     raises no escalation, and a missing-capability reason with no typed claim to
-    name, refuse before any backend call rather than composing an empty question.
+    name, refuse as types rather than composing an empty question.
     """
     value = record()
     claim = AmendmentClaim.model_validate(
@@ -906,6 +906,12 @@ def test_a_measured_cost_reason_keeps_its_measurement_and_never_authorizes_an_am
 #: The rule each anchored row must be refused by; the other rows are refused by
 #: whichever rule their mutation breaks.
 REFUSING_RULE = {
+    "environment_without_escalation": (
+        "only a refusal at an escalating reason carries escalation"
+    ),
+    "ground_with_escalation": (
+        "only a refusal at an escalating reason carries escalation"
+    ),
     "environment_without_capability": "requires the typed claimed capability",
 }
 
