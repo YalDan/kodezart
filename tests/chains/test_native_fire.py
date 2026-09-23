@@ -1351,17 +1351,14 @@ class NativeExecutor(FakeAgentExecutor):
 class CountingTracker(FakeTrackerPort):
     def __init__(self):
         source = tracker()
-        # The source board's markers too: a lane this board serves posts on
-        # its run-event stream whenever a reading comes back empty, and a
-        # port with no prefixes could render no such event.
+        # The source board's markers too, the same ones the engine writes
+        # under: a lane this board serves posts on its run-event stream
+        # whenever a reading comes back empty, and its cross-offs record
+        # their gradings there (KOD-506), so a port with no prefixes could
+        # render no such event and answer for no lane.
         super().__init__(
             issues=list(source.issues.values()),
             criteria_stage_label_key=STAGE_KEY,
-            # The same markers the engine writes under, as every other board
-            # in this module takes them: a lane's cross-offs record their
-            # gradings on its stream, so a board with no event identity could
-            # answer for no lane (KOD-506).
-            marker_prefixes=native_operation().marker_prefixes,
             scope_label_members=source.scope_label_members,
             marker_prefixes=source.marker_prefixes,
         )
