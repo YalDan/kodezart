@@ -12,6 +12,7 @@ import collections
 import functools
 import importlib.util
 import inspect
+import math
 import pathlib
 import re
 import types
@@ -2844,32 +2845,52 @@ def _ifs_in(statement):
     ]
 
 
-def _acts_after_a_route(block, routed):
-    """Whether *block* goes on past one of its *routed* calls and falls through.
+def _ways_to_hold(test):
+    """How many ways *test* can hold: one per disjunct of its ``or``.
 
-    Such a branch rejoins the node with something done since its own check,
-    which the path around it never did.  A branch that ends in a return,
-    a raise, a ``continue`` or a ``break`` never rejoins at all.
+    An ``or`` holds by any one of its operands, and an ``and`` by one way
+    of each of its operands at once; any other condition holds one way.
+    """
+    if isinstance(test, ast.BoolOp) and isinstance(test.op, ast.Or):
+        return sum(_ways_to_hold(value) for value in test.values)
+    if isinstance(test, ast.BoolOp):
+        return math.prod(_ways_to_hold(value) for value in test.values)
+    return 1
+
+
+def _reaches_past(block, routed):
+    """Whether *block* falls through having passed one of its *routed* calls.
+
+    Such a branch rejoins the node with a check behind it, and what it did
+    around that check, which another branch never did.  A branch that ends
+    in a return, a raise, a ``continue`` or a ``break`` never rejoins at
+    all; a compound last statement is read block by block.
     """
     if not block or isinstance(block[-1], _EXITS):
         return False
-    return any(_holds(statement, routed) for statement in block[:-1]) or any(
-        _acts_after_a_route(inner, routed) for inner in _blocks_of(block[-1])
-    )
+    if any(_holds(statement, routed) for statement in block[:-1]):
+        return True
+    inner = _blocks_of(block[-1])
+    if not inner:
+        return _holds(block[-1], routed)
+    return any(_reaches_past(branch, routed) for branch in inner)
 
 
 def _arms_into(call, function, routed):
     """How many arms of *function* reach *call*, read off its source.
 
-    Every branch of an earlier ``if`` that acts after a *routed* call and
-    then falls through is an arm of its own into *call*; the path that takes
-    none of them is one more, when every such ``if`` can be passed some other
-    way.  An ``if`` is earlier when it comes before *call* in a block that
-    holds *call*, at any depth, looking through ``with``, ``for``, ``try``
-    and ``match`` blocks to the ``if`` statements inside them.  Each block
+    An earlier ``if`` with a branch that passes a *routed* call and falls
+    through is one arm per way into each branch of it that falls through:
+    the body once per disjunct of its condition's ``or``, the ``else``
+    once.  The path that takes no such branch is one more, when every
+    earlier ``if`` can be passed some other way.  An ``if`` that encloses
+    *call* in its body adds an arm per further disjunct of its condition.
+    An ``if`` is earlier when it comes before *call* in a block that holds
+    *call*, at any depth, looking through ``with``, ``for``, ``try`` and
+    ``match`` blocks to the ``if`` statements inside them.  Each block
     holding *call* is read once, so the walk is bounded by the function.
     """
-    acting, around = 0, True
+    arms, around, guards = 0, True, 0
     block = function.body
     while block:
         index = next(
@@ -2877,22 +2898,47 @@ def _arms_into(call, function, routed):
         )
         for earlier in block[:index]:
             for branching in _ifs_in(earlier):
-                branches = [branching.body, branching.orelse]
-                own = [_acts_after_a_route(branch, routed) for branch in branches]
-                acting += sum(own)
-                around = around and any(
-                    not taken and not (branch and isinstance(branch[-1], _EXITS))
-                    for branch, taken in zip(branches, own, strict=True)
+                sides = [
+                    (branching.body, _ways_to_hold(branching.test)),
+                    (branching.orelse, 1),
+                ]
+                bearing = any(_reaches_past(side, routed) for side, _ in sides)
+                taken = [
+                    bearing and bool(side) and not isinstance(side[-1], _EXITS)
+                    for side, _ in sides
+                ]
+                arms += sum(
+                    ways for (_, ways), took in zip(sides, taken, strict=True) if took
                 )
+                around = around and any(
+                    not took and not (side and isinstance(side[-1], _EXITS))
+                    for (side, _), took in zip(sides, taken, strict=True)
+                )
+        holding = block[index]
+        if isinstance(holding, ast.If) and any(
+            _holds(statement, [call]) for statement in holding.body
+        ):
+            guards += _ways_to_hold(holding.test) - 1
         block = next(
             (
                 inner
-                for inner in _blocks_of(block[index])
+                for inner in _blocks_of(holding)
                 if any(_holds(statement, [call]) for statement in inner)
             ),
             None,
         )
-    return acting + around
+    reached = arms + around
+    return reached + guards if reached else 0
+
+
+def _routes_in(module, tree, functions):
+    """Each holder's routes to *functions* in one module (see ``routes_to``)."""
+    routes = collections.Counter()
+    located = _located_calls_in(module, tree, functions)
+    for holder, call, function in located:
+        routed = [other for _, other, owner in located if owner is function]
+        routes[holder] += _arms_into(call, function, routed) if function else 1
+    return routes
 
 
 def routes_to(*functions):
@@ -2904,10 +2950,7 @@ def routes_to(*functions):
     """
     routes = collections.Counter()
     for module, tree in _package_modules():
-        located = _located_calls_in(module, tree, functions)
-        for holder, call, function in located:
-            routed = [other for _, other, owner in located if owner is function]
-            routes[holder] += _arms_into(call, function, routed) if function else 1
+        routes.update(_routes_in(module, tree, functions))
     return dict(routes)
 
 
@@ -3569,3 +3612,221 @@ def test_a_same_named_function_in_another_module_is_not_the_check(tmp_path):
         require_current_native_snapshot
     )
     assert _calls_in(module, tree, _probe_targets(probe)) == []
+
+
+# ---------------------------------------------------------------------------
+# The route analyzer's own controls: a small module fed to ``_routes_in``,
+# one function per shape an arm into a call can take.  Every branch of the
+# analyzer is held here, so deleting one changes a count (KOD-652).
+# ---------------------------------------------------------------------------
+
+#: A module whose functions each reach the snapshot check along arms of one
+#: shape.  ``len(state)`` stands for whatever a branch does after its check.
+ROUTES_PROBE = """
+import contextlib
+
+from kodezart.chains.criteria import require_current_native_snapshot as check
+
+
+def straight(state):
+    check(state)
+
+
+def wrapped_by_or(state):
+    if state.a or state.b:
+        check(state)
+
+
+def wrapped_by_and_of_ors(state):
+    if (state.a or state.b) and (state.c or state.d or state.e):
+        check(state)
+
+
+def wrapped_in_else(state):
+    if state.a or state.b:
+        pass
+    else:
+        check(state)
+
+
+def after_acting_if(state):
+    if state.a:
+        check(state)
+        len(state)
+    check(state)
+
+
+def after_if_ending_on_route(state):
+    if state.a:
+        check(state)
+    check(state)
+
+
+def after_route_in_nested_block(state):
+    if state.a:
+        with contextlib.nullcontext():
+            check(state)
+    check(state)
+
+
+def after_if_else(state):
+    if state.a:
+        check(state)
+    else:
+        len(state)
+    check(state)
+
+
+def after_two_if_elses(state):
+    if state.a:
+        check(state)
+    else:
+        check(state)
+    if state.b:
+        check(state)
+    else:
+        len(state)
+    check(state)
+
+
+def after_acting_or(state):
+    if state.a or state.b:
+        check(state)
+        len(state)
+    check(state)
+
+
+def after_exiting_if(state):
+    if state.a:
+        check(state)
+        return
+    check(state)
+
+
+def after_nested_exit(state):
+    if state.a:
+        if state.b:
+            check(state)
+            return
+    check(state)
+
+
+def after_if_else_one_side_exits(state):
+    if state.a:
+        check(state)
+        len(state)
+    else:
+        return
+    check(state)
+
+
+def after_if_else_without_route(state):
+    if state.a:
+        len(state)
+    else:
+        len(state)
+    check(state)
+
+
+def unreachable(state):
+    if state.a:
+        return
+    else:
+        raise ValueError(state)
+    if state.b or state.c:
+        check(state)
+
+
+def through_with(state):
+    with contextlib.nullcontext():
+        if state.a:
+            check(state)
+            len(state)
+    check(state)
+
+
+def through_try(state):
+    try:
+        len(state)
+    except ValueError:
+        if state.a:
+            check(state)
+            len(state)
+    check(state)
+
+
+def through_match(state):
+    match state.kind:
+        case "one":
+            if state.a:
+                check(state)
+                len(state)
+    check(state)
+
+
+def nested_holding_block(state):
+    if state.x:
+        if state.a:
+            check(state)
+            len(state)
+        check(state)
+"""
+
+#: How many routes each function of the probe has to the check, read by
+#: hand off the shape: one per call and per arm of the function into it.
+ROUTE_ARMS = {
+    # one call, one arm
+    "straight": 1,
+    # entered by either disjunct
+    "wrapped_by_or": 2,
+    # (a | b) and (c | d | e): two ways times three
+    "wrapped_by_and_of_ors": 6,
+    # the else of an or is entered one way
+    "wrapped_in_else": 1,
+    # 1, then 2: after the branch, and around it
+    "after_acting_if": 3,
+    # 1, then 2: a branch ending on its check still rejoins after it
+    "after_if_ending_on_route": 3,
+    # 1, then 2: the check sits one block deeper in the branch
+    "after_route_in_nested_block": 3,
+    # 1, then 2: either side, and no way around an if/else
+    "after_if_else": 3,
+    # 1, 1, 2 (either side of the first), then 4 (either side of each)
+    "after_two_if_elses": 8,
+    # 2 (a guard of two disjuncts), then 3: after each disjunct, and around
+    "after_acting_or": 5,
+    # 1, then 1: the branch never rejoins
+    "after_exiting_if": 2,
+    # 1, then 1: the only branch holding a check leaves from inside it
+    "after_nested_exit": 2,
+    # 1, then 1: the side that leaves is no arm, and no way around
+    "after_if_else_one_side_exits": 2,
+    # an if/else with no check in it is no arm of its own
+    "after_if_else_without_route": 1,
+    # nothing passes the if/else, so no disjunct of the guard is reached
+    "unreachable": 0,
+    # 1, then 2, the if read through the with
+    "through_with": 3,
+    # 1, then 2, the if read through the except handler
+    "through_try": 3,
+    # 1, then 2, the if read through the case
+    "through_match": 3,
+    # 1, then 2: the acting if sits inside the block that holds the call
+    "nested_holding_block": 3,
+}
+
+
+def test_the_route_analyzer_counts_each_arm_of_each_shape(tmp_path):
+    """Each probe function has exactly the routes its shape gives it.
+
+    Not parametrised: one reading of the probe, compared whole.  A branch
+    of the analyzer that is deleted changes the count of a shape that needs
+    it, so the two tables differ (KOD-652).
+    """
+    module, tree = _probe_module(tmp_path, "routes_probe", ROUTES_PROBE)
+    for name in ROUTE_ARMS:
+        assert inspect.isfunction(vars(module)[name]), name
+
+    routes = _routes_in(module, tree, (require_current_native_snapshot,))
+
+    assert {holder: count for (_, holder), count in routes.items()} == ROUTE_ARMS
