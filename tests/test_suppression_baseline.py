@@ -429,6 +429,10 @@ DIRECTIVE_CONTROLS: tuple[str, ...] = (
     # bare, and the bare spelling above does not read the prefixed one.
     "# ruff: isort: skip_file",
     "# ruff: isort: off",
+    # The linter's own range pair: every line between the two halves is out
+    # of reach for the named rules.  The tree carries neither half today.
+    "# ruff: disable[F401]",
+    "# ruff: enable[F401]",
     "# mypy: ignore-errors",
     "# mypy: disable-error-code=attr-defined",
     "# mypy: allow-untyped-defs",
