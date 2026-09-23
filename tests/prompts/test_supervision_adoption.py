@@ -66,9 +66,12 @@ def test_scan_window_row_is_spent_and_the_files_own_rule_stands_alone():
     whole, read from the template.  With the base remainder pinned whole
     beside them, a window bound or a marker advance written anywhere in the
     base fails whatever its wording.  The base's own asserts on the same two
-    sentences stand beside the pins as the base had them.
+    sentences stand beside the pins as the base had them.  No line of the
+    template states an upper bound, the adopted sections included, whether
+    or not a re-pointed row covers it.
     """
     text = template()
+    assert "upper bound" not in text.casefold()
     assert text.count("Scan window:") == 1
     assert (
         "Scan window: issues updated since the most recent status update posted by "
