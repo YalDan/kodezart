@@ -3,8 +3,10 @@
 import re
 from datetime import date
 from pathlib import Path
+from typing import get_args
 
 import pytest
+from pydantic import BaseModel
 
 from kodezart.adapters.toml_operation_config import (
     RETIRED_SCOPE_KEYS,
@@ -36,6 +38,7 @@ from kodezart.types.domain.operation import (
     CHECKPOINT_DOCUMENT_KEY,
     LifecycleStage,
     OperationConfig,
+    OrganizeScopeBinding,
     PrincipalRole,
     QueueState,
     RunKind,
@@ -477,6 +480,70 @@ def test_no_deployment_knob_lives_in_the_operation_config() -> None:
         assert deployment_knob not in fields
 
 
+def _models_in(annotation: object) -> list[type[BaseModel]]:
+    """Every model an annotation names, through containers, unions and aliases."""
+    if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+        return [annotation]
+    return [model for arg in get_args(annotation) for model in _models_in(arg)]
+
+
+def operation_models() -> list[type[BaseModel]]:
+    """Every model an operator configures, derived from the operation's fields."""
+    found: list[type[BaseModel]] = []
+    pending: list[type[BaseModel]] = [OperationConfig]
+    while pending:
+        model = pending.pop(0)
+        if model in found:
+            continue
+        found.append(model)
+        for field in model.model_fields.values():
+            pending.extend(_models_in(field.annotation))
+    return found
+
+
+#: Word stems a field restricting who may set a label would be named by, and
+#: the phrases that name such a restriction without one.
+RESTRICTION_STEMS = ("approver", "principal", "setter")
+RESTRICTION_PHRASES = ("set_by", "label_role", "gate_role")
+#: The one field that names principals and restricts no label: the roster of
+#: people escalations are addressed to, which says who is asked a question and
+#: nothing about who may put a member on a scope.
+EXEMPT = {("OperationConfig", "principals")}
+
+
+def _restricts(field: str) -> bool:
+    words = [
+        word.lower()
+        for word in re.split(r"[_\W]+|(?<=[a-z0-9])(?=[A-Z])", field)
+        if word
+    ]
+    return any(
+        word.startswith(stem) for word in words for stem in RESTRICTION_STEMS
+    ) or any(phrase in field.lower() for phrase in RESTRICTION_PHRASES)
+
+
+def test_the_operation_models_are_derived_from_the_operation_fields() -> None:
+    """The per-phase row and the scope binding are reached, not listed."""
+    models = operation_models()
+    assert models[0] is OperationConfig
+    assert {MandateSpec, OrganizeScopeBinding} <= set(models), models
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "gate_approver",
+        "allowed_principals",
+        "triage_setter_role",
+        "triage_approver_only",
+        "label_set_by",
+        "gate_role",
+    ],
+)
+def test_the_restriction_match_sees_each_field_shape(field: str) -> None:
+    assert _restricts(field)
+
+
 def test_no_operation_field_restricts_who_may_set_a_scope_label() -> None:
     """Nothing an operator configures says who may put a gate member on a scope.
 
@@ -484,14 +551,18 @@ def test_no_operation_field_restricts_who_may_set_a_scope_label() -> None:
     the predicate asks whether the scope carries the row's configured member
     and nothing about the hand that wrote it. A field naming a setter would be
     the first place that reading could be taken back, so its absence is pinned
-    on both the operation and the per-phase row, and the halt causes the pass
-    can report are pinned to the five it declares — a setter-role refusal is
-    not among them and is absent rather than unreachable.
+    on every model the operation reaches through its fields, and the halt
+    causes the pass can report are pinned to the five it declares — a
+    setter-role refusal is not among them and is absent rather than
+    unreachable.
     """
-    restriction = re.compile(r"setter|set_by|label_role|gate_role")
-    for model in (OperationConfig, MandateSpec):
-        offenders = [field for field in model.model_fields if restriction.search(field)]
-        assert offenders == [], (model.__name__, offenders)
+    offenders = [
+        (model.__name__, field)
+        for model in operation_models()
+        for field in model.model_fields
+        if _restricts(field) and (model.__name__, field) not in EXEMPT
+    ]
+    assert offenders == []
     assert {cause.name for cause in StageHaltCause} == {
         "ADMISSION_EXHAUSTED",
         "CONVERGENCE_EXHAUSTED",
