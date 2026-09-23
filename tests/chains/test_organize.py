@@ -2626,21 +2626,14 @@ async def test_an_undemonstrable_deliverable_is_refused_and_relocated_on_the_boa
     ]
 
 
-@pytest.mark.parametrize("named", [False, True])
-async def test_a_criterion_naming_no_demonstration_is_refused_before_it_is_created(
-    monkeypatch, named
-):
-    """A criterion child is created only once something can fill its Evidence.
+OBSERVATION = "The recorded observation of the prepared bytes."
 
-    The author either names the runnable test that will demonstrate the
-    criterion or names nothing; naming nothing is refused before the child
-    exists. The created child's Evidence row is still empty.
-    """
-    h = owner_harness()
-    owner, board, executor = h.factory(under_approval=True, body=h.PREPARED_BODY)
+
+def rename_criteria(monkeypatch, executor, rename):
+    """Every scripted criteria proposal, each of its items passed through *rename*."""
     original = executor.stream
 
-    async def stripped(**kwargs):
+    async def renamed(**kwargs):
         async for event in original(**kwargs):
             payload = event.structured_output
             if payload.get("kind") == "criteria":
@@ -2648,31 +2641,57 @@ async def test_a_criterion_naming_no_demonstration_is_refused_before_it_is_creat
                     structured_output={
                         **payload,
                         "criteria": [
-                            {
-                                name: value
-                                for name, value in item.items()
-                                if name not in ("runnable_test", "named_observation")
-                            }
-                            for item in payload["criteria"]
+                            rename(dict(item)) for item in payload["criteria"]
                         ],
                     }
                 )
             yield event
 
-    if not named:
-        monkeypatch.setattr(executor, "stream", stripped)
+    monkeypatch.setattr(executor, "stream", renamed)
 
-    def children():
-        return [
-            native
-            for native in board.server.issues.values()
-            if native.parent_id == CLAIMED_ISSUE
-        ]
 
-    if not named:
+def naming_nothing(item):
+    return {
+        name: value
+        for name, value in item.items()
+        if name not in ("runnable_test", "named_observation")
+    }
+
+
+def naming_an_observation(item):
+    return {**naming_nothing(item), "named_observation": OBSERVATION}
+
+
+def criterion_children(board):
+    return [
+        native
+        for native in board.server.issues.values()
+        if native.parent_id == CLAIMED_ISSUE
+    ]
+
+
+@pytest.mark.parametrize("named", ["none", "test", "observation"])
+async def test_a_criterion_naming_no_demonstration_is_refused_before_it_is_created(
+    monkeypatch, named
+):
+    """A criterion child is created only once something can fill its Evidence.
+
+    The author names the runnable test that will demonstrate the criterion,
+    names only the observation that will be recorded instead, or names
+    nothing; naming nothing is refused before the child exists. Either name
+    alone is enough, and the created child's Evidence row is still empty.
+    """
+    h = owner_harness()
+    owner, board, executor = h.factory(under_approval=True, body=h.PREPARED_BODY)
+    if named == "none":
+        rename_criteria(monkeypatch, executor, naming_nothing)
+    elif named == "observation":
+        rename_criteria(monkeypatch, executor, naming_an_observation)
+
+    if named == "none":
         with pytest.raises(OrganizeWriteRefusalError, match="names no demonstration"):
             await h.run_owner(owner)
-        assert children() == []
+        assert criterion_children(board) == []
         assert not [
             args
             for name, args in board.calls
@@ -2680,7 +2699,80 @@ async def test_a_criterion_naming_no_demonstration_is_refused_before_it_is_creat
         ]
         return
     assert (await h.run_owner(owner)).halt is None
-    created = children()
+    created = criterion_children(board)
     assert [native.description.endswith("**Evidence:**\n") for native in created] == [
         True
+    ]
+
+
+async def test_a_replayed_child_naming_nothing_stays_dry_beside_a_new_named_one(
+    monkeypatch,
+):
+    """Only the criteria a step is about to create must name a demonstration.
+
+    The criteria stage converges, its marker is then removed, and one
+    spec_gap re-author is forced. The re-author proposes the existing child
+    again naming nothing, beside a new child naming its runnable test.
+    Nothing is refused: the new child is created and the existing one is
+    left exactly as it was.
+    """
+    import re
+
+    h = owner_harness()
+    owner, board, _executor = h.factory(under_approval=True, body=h.PREPARED_BODY)
+    assert (await h.run_owner(owner)).halt is None
+    (existing,) = criterion_children(board)
+    before = (existing.title, existing.description, list(existing.labels))
+    board.server.issues[CLAIMED_ISSUE].labels.remove("criteria complete")
+    again, board, executor = h.factory(
+        under_approval=True,
+        body=h.PREPARED_BODY,
+        board=board,
+        criteria=(existing.title, "Check second bytes"),
+    )
+    rename_criteria(
+        monkeypatch,
+        executor,
+        lambda item: naming_nothing(item) if item["title"] == existing.title else item,
+    )
+    renamed = executor.stream
+    refused = []
+
+    async def refuse_once(**kwargs):
+        title = kwargs["output_format"]["schema"].get("title")
+        keys = re.findall(r"<issue_key>(.*?)</issue_key>", kwargs["prompt"])
+        async for event in renamed(**kwargs):
+            if title == "AdmissionJudgment" and keys[-1:] == [CLAIMED_ISSUE]:
+                if not refused:
+                    refused.append(kwargs["prompt"])
+                    event = result(
+                        structured_output={
+                            "issue_id": CLAIMED_ISSUE,
+                            "verdict": "not_buildable",
+                            "refusal_kind": "spec_gap",
+                            "evidence": "A second criterion is owed.",
+                            "invented_decision": "Add the second criterion.",
+                        }
+                    )
+            yield event
+
+    monkeypatch.setattr(executor, "stream", refuse_once)
+    board.calls.clear()
+    report = await h.run_owner(again)
+    assert refused
+    assert [
+        call
+        for call in executor.calls
+        if "Author criterion sub-issue proposals" in call["prompt"]
+    ]
+    assert report.halt is None
+    assert [native.title for native in criterion_children(board)] == [
+        existing.title,
+        "Check second bytes",
+    ]
+    assert (existing.title, existing.description, list(existing.labels)) == before
+    assert not [
+        args
+        for name, args in board.calls
+        if name == "save_issue" and args.get("id") == existing.id
     ]
