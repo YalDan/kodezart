@@ -268,7 +268,7 @@
   "tests/integration/test_scope_entry.py": 75,
   "tests/integration/test_scope_heartbeat.py": 46,
   "tests/integration/test_scope_launch_freshness.py": 5,
-  "tests/integration/test_scope_runtime.py": 508,
+  "tests/integration/test_scope_runtime.py": 514,
   "tests/integration/test_scope_union.py": 48,
   "tests/integration/test_self_running_chain.py": 21,
   "tests/integration/test_session_resume.py": 6,
@@ -362,7 +362,7 @@
   "tests/services/test_scope_resolution.py": 7,
   "tests/services/test_scope_runtime.py": 55,
   "tests/services/test_scope_runtime_static.py": 10,
-  "tests/services/test_scope_terminal.py": 99,
+  "tests/services/test_scope_terminal.py": 106,
   "tests/services/test_session_grant_threading.py": 13,
   "tests/services/test_structured_run_records.py": 55,
   "tests/services/test_supervisor_pass.py": 18,
@@ -3889,7 +3889,8 @@
    "test_a_put_back_that_cannot_be_written_rests_that_lane_and_the_walk_goes_on",
    "test_a_closed_lane_whose_record_cannot_be_read_is_not_offered_again",
    "test_a_killed_scope_run_re_enters_from_the_tracker_alone",
-   "test_a_lane_that_progressed_and_then_closes_nothing_halts_on_the_bound"
+   "test_a_lane_that_progressed_and_then_closes_nothing_halts_on_the_bound",
+   "test_a_halted_lane_the_board_closes_before_the_exit_reads_done"
   ],
   "tests/integration/test_scope_union.py": [
    "test_a_two_lane_scope_is_composed_once_for_the_whole_walk",

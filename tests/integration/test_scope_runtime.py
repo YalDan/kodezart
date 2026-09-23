@@ -4235,6 +4235,58 @@ async def test_a_lane_that_progressed_and_then_closes_nothing_halts_on_the_bound
     assert terminal.outcome is WorkflowOutcome.scope_stopped_short
 
 
+async def test_a_halted_lane_the_board_closes_before_the_exit_reads_done():
+    """The terminal reads a halted lane from the board, not from the walk.
+
+    A closes nothing and halts on the bound. The put-back then closes
+    ``A/check`` on the board, and B fires and converges. At the clean exit
+    the board says both lanes are done, so the terminal says so too: a
+    terminal handed anything the walk remembered about A's halt — a
+    field set on it, an alias, a helper, a collaborator it shares with the
+    walker — would report A as not done.
+    """
+    repos = WalkRepos()
+    port = board(lanes=("A", "B"))
+    put_back = port.restore_workflow_state
+
+    async def put_back_then_close(*, issue_key, state_name):
+        await put_back(issue_key=issue_key, state_name=state_name)
+        if issue_key == "A":
+            port.issues["A/check"] = port.issues["A/check"].model_copy(
+                update={"state_kind": WorkflowStateKind.COMPLETED, "state_name": "Done"}
+            )
+
+    port.restore_workflow_state = put_back_then_close
+    harness = resumable(
+        port=port,
+        repos=repos,
+        lanes=("A", "B"),
+        max_iterations=1,
+        evaluations=[
+            *(
+                criteria_echo(keys=("A/check",), passed=set())
+                for _ in range(STALLED_FIRE_GRADINGS)
+            ),
+            *one_check_echoes("B", rounds=2),
+        ],
+    )
+    with structlog.testing.capture_logs() as logs:
+        events = await bounded_walk(harness, job="halted-then-closed-job")
+
+    assert lane_failures(events) == ()
+    assert [
+        event["lane"] for event in logs if event.get("event") == "scope_lane_plateaued"
+    ] == ["A"]
+    assert "A" in ticks_of(events)[-1].rested_lanes
+    assert port.issues["A/check"].state_kind is WorkflowStateKind.COMPLETED
+    terminal = events[-1]
+    assert isinstance(terminal, ScopeTerminalEvent)
+    assert [(entry.issue, entry.done) for entry in terminal.lanes] == [
+        ("A", True),
+        ("B", True),
+    ]
+
+
 async def test_a_put_back_that_cannot_be_written_rests_that_lane_and_the_walk_goes_on(
     monkeypatch,
 ):
