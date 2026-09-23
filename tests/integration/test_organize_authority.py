@@ -16,6 +16,7 @@ from kodezart.domain.errors import OrganizeWriteRefusalError
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.operation import ScopeLabel
 from kodezart.types.domain.organize import MandateKind
+from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from tests.chains.test_native_fire import TRUNK_BRANCHES, WORK_SHA, native_evaluation
 from tests.fakes import (
     SUPPRESS_ALL_SKILLS,
@@ -130,6 +131,44 @@ async def test_a_milestone_whose_project_lacks_triage_stays_idle():
     assert port.classification_writes == []
     for key in lanes:
         assert GROOM_MARKER not in port.issues[key].issue_labels
+
+
+@pytest.mark.parametrize(
+    ("issue_carries", "grooms"),
+    [(True, True), (False, False)],
+    ids=["issue-carries-triage", "project-alone-carries-triage"],
+)
+async def test_an_issue_addressed_scope_reads_triage_off_the_addressed_issue(
+    issue_carries, grooms
+):
+    """The bound of the walk on an issue-addressed scope, made visible.
+
+    The owning project carries triage in both arms. Only the addressed
+    issue's own members open the pre-approval gate on an issue-addressed
+    scope: with triage on the issue the lane is groomed, and with triage on
+    the project alone nothing opens, no session runs and nothing is written.
+    """
+    lanes = ("A",)
+    port = board(lanes=lanes, approved=False)
+    port.scope_label_members[SCOPE] = frozenset({ScopeLabel.TRIAGE})
+    scope = ScopeRef(kind=ScopeKind.ISSUE, key="A")
+    if issue_carries:
+        port.scope_label_members[scope] = frozenset({ScopeLabel.TRIAGE})
+    organizer, operation, executor = groomer(port, lanes=lanes)
+
+    report = await organizer.run(
+        scope=scope, repository=operation.repos[0], job_id="groom-job"
+    )
+
+    assert report.halt is None
+    if grooms:
+        assert report.completed_phases == (MandateKind.GROOM,)
+        assert port.classification_writes == [("A", GROOM_MARKER)]
+        return
+    assert report.completed_phases == ()
+    assert executor.organize_calls == []
+    assert port.classification_writes == []
+    assert GROOM_MARKER not in port.issues["A"].issue_labels
 
 
 def swallow_marker_writes(port, executor):
