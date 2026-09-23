@@ -488,6 +488,8 @@ async def test_a_graph_write_inside_the_declared_set_lands(monkeypatch):
     edging(board, executor, monkeypatch, SIBLING)
     report = await run_owner(owner)
     assert report.halt is None
+    # The positive control for the cases that read no renewal at all.
+    assert renewals(board)
     assert ("blockedBy", SIBLING) in board.server.issues[CLAIMED_ISSUE].relations
     assert ("blocks", CLAIMED_ISSUE) in board.server.issues[SIBLING].relations
     assert "graph complete" in board.server.issues[CLAIMED_ISSUE].labels
@@ -561,6 +563,15 @@ async def test_the_refused_write_lands_once_the_next_round_declares_the_member(
     assert ("blockedBy", LATE) in board.server.issues[CLAIMED_ISSUE].relations
     assert "needs decision" not in board.server.issues[LATE].labels
     assert "graph complete" in board.server.issues[LATE].labels
+    # Two rounds, two acquisitions, and the edge lands under the second.
+    first, second = dict.fromkeys(nonce for _, nonce, _ in acquisitions(board))
+    assert first != second
+    landed = min(
+        index
+        for index, (name, args) in enumerate(board.calls)
+        if name == "save_issue" and "blockedBy" in args
+    )
+    assert opened(board)[second] < landed
 
 
 async def test_an_answer_that_writes_nothing_is_not_weighed_against_the_set(
