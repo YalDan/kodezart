@@ -351,6 +351,11 @@ DIRECTIVE_CONTROLS: tuple[str, ...] = (
     # The same formatter honours the whole-region pair of the formatter it
     # replaced, so that pair is in the same family.  The tree carries none.
     "# yapf: disable",
+    # The linter honours a range suppression under its own prefix: every
+    # line between the pair is exempt from the named rules.  The tree
+    # carries none today.
+    "# ruff: disable[E501]",
+    "# ruff: enable[E501]",
 )
 
 #: The files a tool discovers instead of, or ahead of, the project file.
@@ -359,14 +364,19 @@ DIRECTIVE_CONTROLS: tuple[str, ...] = (
 #: project file, or anywhere under a walked tree, makes the pinned table
 #: above meaningless for everything below it.  The project file's own name
 #: is a row here because a second copy of it under a walked tree is read the
-#: same way; the pinned one at the root is not a hit.
+#: same way; the pinned one at the root is not a hit.  The runner searches
+#: its own files, dotted and bare, ahead of the project file, so each of them
+#: is a row too.
 FOREIGN_TOOL_FILES: tuple[str, ...] = (
     ".flake8",
     ".mypy.ini",
+    ".pytest.ini",
+    ".pytest.toml",
     ".ruff.toml",
     "mypy.ini",
     "pyproject.toml",
     "pytest.ini",
+    "pytest.toml",
     "ruff.toml",
     "setup.cfg",
     "tox.ini",
