@@ -16,6 +16,7 @@ import pytest
 from pydantic import BaseModel
 
 from kodezart.chains.audit_sweep import MANDATED_ARMS, AuditReadObservation
+from kodezart.domain.errors import AgentSDKError
 from kodezart.domain.run_event_stream import LaneRunEvent
 from kodezart.types.domain.agent import AUDIT_MANDATE_SCHEMA
 from kodezart.types.domain.audit import AuditVerdict
@@ -92,6 +93,37 @@ async def test_a_refuted_restamp_carries_a_mandate_verdict(
     assert restamp_defect_class(trace) in call["prompt"]
     assert trace.reason in call["prompt"]
     assert f"<head_sha>{HEAD}</head_sha>" in call["prompt"]
+    assert tracker_writes() == before
+
+
+@pytest.mark.parametrize("mode", ["current", "lapse"])
+async def test_a_failed_restamp_mandate_keeps_the_raw_trace_and_its_reason(
+    setup, tracker, server, tracker_writes, mode
+):
+    """A restamp hunt that fails keeps the raw trace beside the reason.
+
+    No report is built, so the refutation stands as the raw REFUTED trace
+    with the reason its hunt could not run, which is what the runtime then
+    refuses the subject on, lapse included; nothing is written.
+    """
+    build, executor, *_ = setup
+    await refuted_restamp(tracker, server, mode)
+
+    async def during(kwargs):
+        if kwargs["output_format"]["schema"] == AUDIT_MANDATE_SCHEMA:
+            raise AgentSDKError(
+                "restamp mandate session unavailable", error_kind="fixture"
+            )
+
+    executor.during = during
+    before = tracker_writes()
+    observation = (await build().run()).observations[0]
+
+    assert observation.restamp.verdict is AuditVerdict.REFUTED
+    assert observation.restamp_report is None
+    assert observation.unavailable_reason.startswith("AgentSDKError: ")
+    assert "restamp mandate session unavailable" in observation.unavailable_reason
+    assert observation.evidence.is_lapse is (mode == "lapse")
     assert tracker_writes() == before
 
 
