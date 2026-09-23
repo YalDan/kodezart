@@ -91,14 +91,14 @@ async def groom(port, *, lanes, executor=None, job="groom-job"):
 async def test_a_milestone_addressed_scope_grooms_on_its_projects_triage():
     """A milestone has no label level; the triage member above it opens the gate.
 
-    Nothing is written onto any member's scope-member set: the gate is a
-    property of the addressed scope and of the containers above it, and the
-    pass reads it rather than materializing it per member.
+    The phase marker is the only thing written: one classification per lane,
+    in lane order, and nothing else — the gate is a property of the addressed
+    scope and of the containers above it, and the pass reads it rather than
+    materializing it on any member.
     """
     lanes = ("A", "B")
     port = under_milestone(board(lanes=lanes, approved=False))
     port.scope_label_members[SCOPE] = frozenset({ScopeLabel.TRIAGE})
-    seeded = dict(port.scope_label_members)
 
     report, executor = await groom(port, lanes=lanes)
 
@@ -106,14 +106,30 @@ async def test_a_milestone_addressed_scope_grooms_on_its_projects_triage():
     assert report.completed_phases == (MandateKind.GROOM,)
     for key in lanes:
         assert GROOM_MARKER in port.issues[key].issue_labels
-    assert [
-        issue_key
-        for issue_key, classification in port.classification_writes
-        if classification == GROOM_MARKER
-    ] == list(lanes)
-    # One admission session per lane, and no member gained a scope member.
+    assert port.classification_writes == [(key, GROOM_MARKER) for key in lanes]
+    # One admission session per lane.
     assert sorted({key for key, _, _ in executor.admissions}) == list(lanes)
-    assert port.scope_label_members == seeded
+
+
+async def test_a_milestone_whose_project_lacks_triage_stays_idle():
+    """The same composition, the same milestone, and no triage above it.
+
+    Nothing opens the gate, so grooming has nobody to act on: no session
+    opens and nothing is written.
+    """
+    lanes = ("A", "B")
+    port = under_milestone(board(lanes=lanes, approved=False))
+    port.scope_label_members[SCOPE] = frozenset()
+
+    report, executor = await groom(port, lanes=lanes)
+
+    assert report.halt is None
+    assert report.completed_phases == ()
+    assert executor.organize_calls == []
+    assert executor.admissions == []
+    assert port.classification_writes == []
+    for key in lanes:
+        assert GROOM_MARKER not in port.issues[key].issue_labels
 
 
 def swallow_marker_writes(port, executor):
