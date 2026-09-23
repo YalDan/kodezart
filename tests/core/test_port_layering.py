@@ -9,9 +9,35 @@ is never written down beside it. A port member is held to what it may name
 (the domain's own types and the standard library) rather than to one
 forbidden prefix, and the walk is shown, on a module planted to break it,
 to see every shape it claims to.
+
+The layer scan reads a dynamic import the way it reads an import
+statement: a call whose callee resolves, through the module's own
+bindings, to ``importlib.import_module``, ``importlib.__import__`` or the
+builtin ``__import__`` -- imported under any alias, copied into another
+name by an assignment or a walrus, or fetched with ``getattr`` and a
+literal attribute name -- and handed a literal module name.  A callee
+spelled ``import_module`` or ``__import__`` on anything else still counts.
+Outside every static guard's reach:
+
+- a value handed across a function boundary, where the other function is
+  not resolved at this site (returned from a helper, stored on an object
+  and read elsewhere, or passed through a container built elsewhere);
+- a name built at run time;
+- a binding made only when a function runs (``setattr`` or ``globals()``
+  inside a function body).
+
+The graph framework is admitted to the inner layers by distribution: a
+module under its package is admitted when the file it resolves to is one
+its three distributions install, so a module another distribution
+installs under the same package (the Postgres checkpointer and store) is
+refused however it is named.
 """
 
 import ast
+import builtins
+import functools
+import importlib.machinery
+import importlib.metadata
 import importlib.util
 import inspect
 import sys
@@ -35,6 +61,7 @@ from kodezart.types.domain.scope import (
 from kodezart.types.domain.scope_runtime import ScopeLaneEvent, ScopeWalkEvent
 from kodezart.types.domain.scope_terminal import ScopeTerminalEvent
 from kodezart.types.domain.surface import SurfaceLease, WritableSurface
+from tests.negative_shape import dotted
 
 SOURCE_ROOT = Path(__file__).resolve().parents[2] / "src"
 PACKAGE = "kodezart"
@@ -412,9 +439,18 @@ def _refused(name: str) -> bool:
 
 
 #: The third-party packages an inner layer may import, whole.  The graph
-#: framework is admitted apart from its database-backed checkpointer, below.
+#: framework is admitted by distribution instead, below.
 LAYER_FRAMEWORKS = frozenset({"pydantic", "langchain_core", "typing_extensions"})
 GRAPH_FRAMEWORK = "langgraph"
+#: The distributions whose modules under the graph framework's package an
+#: inner layer may import.  Every other distribution installing a module
+#: there -- the database-backed checkpointer and store among them -- is
+#: refused by the file the module resolves to, not by its name.
+GRAPH_DISTRIBUTIONS = frozenset(
+    {"langgraph", "langgraph-checkpoint", "langgraph-prebuilt"}
+)
+GRAPH_DATABASE_DISTRIBUTION = "langgraph-checkpoint-postgres"
+#: The one module path of that distribution the checkpointer opens.
 GRAPH_DATABASE = "langgraph.checkpoint.postgres"
 #: What one core module may import beyond the inner layers' rule, by module:
 #: the checkpointer opens the database the graph runs on, and the logging
@@ -430,13 +466,71 @@ def _within(name: str, package: str) -> bool:
     return name == package or name.startswith(f"{package}.")
 
 
+@functools.cache
+def _installed_files(distribution: str) -> frozenset[Path]:
+    """Every file one installed distribution put on disk, resolved."""
+    files = importlib.metadata.distribution(distribution).files or ()
+    return frozenset(Path(str(entry.locate())).resolve() for entry in files)
+
+
+def _resolved_spec(name: str) -> tuple[importlib.machinery.ModuleSpec | None, bool]:
+    """The deepest module a dotted name reaches, found without importing it.
+
+    Walked one segment at a time through each package's own search path,
+    so no package's code runs to answer; bounded by the name's segments.
+    Answers the spec and whether it is the whole name: a name imported
+    FROM a module (a class, a function) reaches that module and no further.
+    """
+    parts = name.split(".")
+    spec = importlib.machinery.PathFinder.find_spec(parts[0])
+    reached = 1
+    while spec is not None and reached < len(parts):
+        locations = spec.submodule_search_locations
+        if locations is None:
+            break
+        inner = importlib.machinery.PathFinder.find_spec(
+            f"{spec.name}.{parts[reached]}", list(locations)
+        )
+        if inner is None:
+            break
+        spec, reached = inner, reached + 1
+    return spec, reached == len(parts)
+
+
+def _shipped_by_graph_framework(name: str) -> bool:
+    """Whether the module a graph-framework name reaches is an admitted one's.
+
+    A module with a file of its own is admitted when that file is one the
+    admitted distributions installed.  A namespace package has no file:
+    it is admitted when it is the whole name and an admitted distribution
+    installed a file inside it, and a name reaching past one into nothing
+    installed is refused.
+    """
+    spec, whole = _resolved_spec(name)
+    if spec is None:
+        return False
+    admitted = frozenset().union(
+        *(_installed_files(distribution) for distribution in GRAPH_DISTRIBUTIONS)
+    )
+    if spec.origin is not None and spec.has_location:
+        return Path(spec.origin).resolve() in admitted
+    locations = [
+        Path(entry).resolve() for entry in spec.submodule_search_locations or ()
+    ]
+    return whole and any(
+        location in path.parents for path in admitted for location in locations
+    )
+
+
 def _importable(name: str, *, module: str) -> bool:
     """Whether a module of an inner layer may import this module at all.
 
     The standard library, this package outside its adapters, and the few
     frameworks the inner layers are built on, nothing else: stated as what
     is admitted rather than as a derived forbidden set, so a vendor SDK no
-    adapter happens to import is refused as surely as one that does.
+    adapter happens to import is refused as surely as one that does.  The
+    graph framework is admitted by the distribution that installed the
+    module a name reaches.
     """
     root = name.partition(".")[0]
     if root in sys.stdlib_module_names:
@@ -446,23 +540,122 @@ def _importable(name: str, *, module: str) -> bool:
     if root == PACKAGE:
         return not _names_vendor(name)
     if root == GRAPH_FRAMEWORK:
-        return not _within(name, GRAPH_DATABASE)
+        return _shipped_by_graph_framework(name)
     return root in LAYER_FRAMEWORKS
 
 
-def _is_import(node: ast.Import | ast.ImportFrom | ast.Call) -> bool:
-    """Whether a node imports: a statement, or a call to a dynamic import."""
+#: The callables that import the module they are handed by name.
+DYNAMIC_IMPORTS = frozenset(
+    {"importlib.import_module", "importlib.__import__", "builtins.__import__"}
+)
+#: The modules those callables are bound from.
+DYNAMIC_IMPORT_ROOTS = ("importlib", "builtins")
+
+
+def _dynamic_rooted(origin: str) -> bool:
+    return any(_within(origin, root) for root in DYNAMIC_IMPORT_ROOTS)
+
+
+def _resolve(node: ast.expr, bindings: dict[str, str]) -> str | None:
+    """The dotted origin an expression names, through the module's bindings.
+
+    A name-or-attribute chain has its head replaced by what the module
+    bound it to; a head the module never bound and the interpreter's
+    builtins define is the builtin.  ``getattr(x, "name")`` with a literal
+    name is ``x.name``.
+    """
+    if (
+        isinstance(node, ast.Call)
+        and _resolve(node.func, bindings) == "builtins.getattr"
+        and len(node.args) == 2
+    ):
+        base = _resolve(node.args[0], bindings)
+        attribute = _string(node.args[1])
+        return None if base is None or attribute is None else f"{base}.{attribute}"
+    chain = dotted(node)
+    if chain is None:
+        return None
+    head, _, rest = chain.partition(".")
+    origin = bindings.get(head)
+    if origin is None:
+        if head not in vars(builtins):
+            return None
+        origin = f"builtins.{head}"
+    return f"{origin}.{rest}" if rest else origin
+
+
+def import_bindings(tree: ast.Module) -> dict[str, str]:
+    """Local name -> the origin under ``importlib`` or ``builtins`` it is bound to.
+
+    One forward pass in source order, as ``negative_shape.form_bindings``
+    reads the census's forms: ``import importlib as loader`` binds
+    ``loader``, ``from importlib import import_module as load`` binds
+    ``load``, and an assignment, an annotated assignment or a walrus whose
+    value resolves under either root binds its target, wherever it sits.
+    A rebinding to anything else leaves the binding standing, which is the
+    safe direction for a guard.  Bounded by the parse: each node is
+    visited once.
+    """
+    bindings: dict[str, str] = {}
+    nodes = sorted(
+        (
+            node
+            for node in ast.walk(tree)
+            if isinstance(
+                node,
+                ast.Import
+                | ast.ImportFrom
+                | ast.Assign
+                | ast.AnnAssign
+                | ast.NamedExpr,
+            )
+        ),
+        key=lambda node: (node.lineno, node.col_offset),
+    )
+    for node in nodes:
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if _dynamic_rooted(alias.name):
+                    local = alias.asname or alias.name.partition(".")[0]
+                    bindings[local] = alias.name if alias.asname else local
+        elif isinstance(node, ast.ImportFrom):
+            origin = node.module or ""
+            if node.level == 0 and _dynamic_rooted(origin):
+                for alias in node.names:
+                    if alias.name != "*":
+                        bindings[alias.asname or alias.name] = f"{origin}.{alias.name}"
+        else:
+            if node.value is None:
+                continue
+            copied = _resolve(node.value, bindings)
+            if copied is None or not _dynamic_rooted(copied):
+                continue
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            for target in targets:
+                if isinstance(target, ast.Name):
+                    bindings[target.id] = copied
+    return bindings
+
+
+def _is_import(
+    node: ast.Import | ast.ImportFrom | ast.Call, bindings: dict[str, str]
+) -> bool:
+    """Whether a node imports: a statement, or a call to a dynamic import.
+
+    The callee is resolved through the module's bindings, so an alias of
+    the import function is one.  A callee spelled ``import_module`` or
+    ``__import__`` that resolves to nothing the module bound is read as
+    one too.
+    """
     if not isinstance(node, ast.Call):
         return True
-    callee = node.func
-    called = (
-        callee.attr
-        if isinstance(callee, ast.Attribute)
-        else callee.id
-        if isinstance(callee, ast.Name)
-        else None
-    )
-    return called in {"import_module", "__import__"}
+    if _resolve(node.func, bindings) in DYNAMIC_IMPORTS:
+        return True
+    chain = dotted(node.func)
+    return chain is not None and chain.rpartition(".")[2] in {
+        "import_module",
+        "__import__",
+    }
 
 
 @dataclass(frozen=True)
@@ -478,8 +671,9 @@ def scan_layers(source_root: Path, layers: Sequence[str]) -> LayerScan:
 
     Import statements are read from the syntax tree, so a mention in a
     docstring is not an import, and an import inside a function body or
-    under ``TYPE_CHECKING`` still is.  A name is refused when it is an
-    adapter or a derived vendor SDK, and an imported name also when the
+    under ``TYPE_CHECKING`` still is.  A dynamic import is read through the
+    module's bindings (``import_bindings``).  A name is refused when it is
+    an adapter or a derived vendor SDK, and an imported name also when the
     inner layers' admission does not name it.
     """
     scanned: dict[str, list[str]] = {}
@@ -489,6 +683,7 @@ def scan_layers(source_root: Path, layers: Sequence[str]) -> LayerScan:
             module = _module_name(path, source_root=source_root)
             scanned.setdefault(layer, []).append(module)
             tree = ast.parse(path.read_text(encoding="utf-8"))
+            bindings = import_bindings(tree)
             for node in ast.walk(tree):
                 if not isinstance(node, ast.Import | ast.ImportFrom | ast.Call):
                     continue
@@ -496,7 +691,7 @@ def scan_layers(source_root: Path, layers: Sequence[str]) -> LayerScan:
                     node, module=module, is_package=path.name == "__init__.py"
                 ):
                     if _refused(name) or (
-                        _is_import(node)
+                        _is_import(node, bindings)
                         and not name.startswith(".")
                         and not _importable(name, module=module)
                     ):
@@ -512,12 +707,17 @@ def test_the_types_domain_and_chains_layers_import_no_vendor_module() -> None:
     there imports an adapter or a vendor SDK, however the import is
     spelled. A call handed such a name — a dynamic import — counts too.
     What they may import is the standard library, this package outside its
-    adapters, pydantic, langchain_core, typing_extensions and langgraph
-    without its postgres checkpointer; two core modules are stated apart.
+    adapters, pydantic, langchain_core, typing_extensions and the modules
+    langgraph's own three distributions install, which leaves out the
+    Postgres checkpointer and store another distribution installs; two
+    core modules are stated apart.
     """
     scan = scan_layers(SOURCE_ROOT, INNER_LAYERS)
 
     assert scan.refused == []
+    assert all(_installed_files(distribution) for distribution in GRAPH_DISTRIBUTIONS)
+    assert _installed_files(GRAPH_DATABASE_DISTRIBUTION)
+    assert GRAPH_DATABASE_DISTRIBUTION not in GRAPH_DISTRIBUTIONS
     assert set(scan.scanned) == set(INNER_LAYERS)
     assert sum(len(modules) for modules in scan.scanned.values()) >= 266
     assert {"anyio", "claude_agent_sdk", "httpx", "mcp"} <= VENDOR_SDKS
@@ -529,8 +729,13 @@ def test_the_types_domain_and_chains_layers_import_no_vendor_module() -> None:
 #: a docstring, which is not an import.
 PLANTED_LAYER = '''"""Mentions kodezart.adapters.linear, which imports nothing."""
 
+import builtins
 import importlib
+import importlib as loader_module
+from importlib import import_module as load
 from typing import TYPE_CHECKING
+
+import langgraph.unshipped_backend
 
 import kodezart.adapters.linear.wire
 from kodezart.adapters.linear.markers import LinearMarkers
@@ -551,6 +756,23 @@ def vendors() -> None:
     from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
     import psycopg
     importlib.import_module("anthropic")
+    from langgraph.store.postgres.aio import AsyncPostgresStore
+
+
+def aliased(through: object) -> None:
+    load("anthropic.types")
+    loader_module.import_module("pydantic_ai.agent")
+    __import__("anthropic.lib")
+    builtins.__import__("pydantic_ai.models")
+    importlib.__import__("anthropic.resources")
+    getattr(importlib, "import_module")("pydantic_ai.tools")
+    copied = importlib.import_module
+    copied("anthropic.pagination")
+    annotated: object = loader_module.import_module
+    annotated("pydantic_ai.usage")
+    if walrus := loader_module.import_module:
+        walrus("pydantic_ai.result")
+    through.import_module("anthropic._client")
 
 
 def dynamic() -> None:
@@ -564,11 +786,20 @@ def dynamic() -> None:
 def test_the_scan_reports_every_planted_import_and_no_prose(tmp_path: Path) -> None:
     """The scan's own positive control: one that finds nothing looks green.
 
-    A plain, a from, a relative, a vendor SDK, a TYPE_CHECKING, a
-    function-body and four dynamic imports are each reported on their own
-    line, and so is every package the admission does not name, however no
-    adapter imports it; the docstring's mention is not, and a clean layer
-    importing only admitted packages reports none.
+    A plain, a from, a relative, a vendor SDK, a TYPE_CHECKING and a
+    function-body import are each reported on their own line, and so is
+    every dynamic import: through the module, by keyword, relative, and
+    through the import function bound under an alias by an import, an
+    assignment, an annotated assignment or a walrus, fetched by a literal
+    ``getattr``, taken from ``importlib`` or the builtins, or spelled on
+    an object the module never bound.  So is every package the admission
+    does not name, however no adapter imports it, and every module under
+    the graph framework's package that its admitted distributions do not
+    install: the Postgres checkpointer and store, and a name nothing
+    installs.  The docstring's mention is not reported, and a clean layer
+    importing only admitted packages -- a module of each admitted graph
+    distribution and the framework's namespace package among them --
+    reports none.
     """
     package = tmp_path / PACKAGE
     (package / "domain").mkdir(parents=True)
@@ -579,7 +810,10 @@ def test_the_scan_reports_every_planted_import_and_no_prose(tmp_path: Path) -> N
         "from pydantic import BaseModel\n"
         "from langchain_core.messages import BaseMessage\n"
         "from typing_extensions import TypedDict\n"
+        "import langgraph\n"
         "from langgraph.graph import StateGraph\n"
+        "from langgraph.checkpoint.base import BaseCheckpointSaver\n"
+        "from langgraph.prebuilt import ToolNode\n"
         "from kodezart.domain.errors import SurfaceLeaseError\n",
         encoding="utf-8",
     )
@@ -609,7 +843,61 @@ def test_the_scan_reports_every_planted_import_and_no_prose(tmp_path: Path) -> N
         "from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver",
         "import psycopg",
         'importlib.import_module("anthropic")',
+        "from langgraph.store.postgres.aio import AsyncPostgresStore",
+        "import langgraph.unshipped_backend",
+        'load("anthropic.types")',
+        'loader_module.import_module("pydantic_ai.agent")',
+        '__import__("anthropic.lib")',
+        'builtins.__import__("pydantic_ai.models")',
+        'importlib.__import__("anthropic.resources")',
+        'getattr(importlib, "import_module")("pydantic_ai.tools")',
+        'copied("anthropic.pagination")',
+        'annotated("pydantic_ai.usage")',
+        'walrus("pydantic_ai.result")',
+        'through.import_module("anthropic._client")',
     }
+
+
+#: One module of an inner layer holding each shape the scan states it does
+#: not read: the import function handed across a function boundary, a
+#: module name built at run time, and a binding made only when a function
+#: runs.  Each hands a vendor SDK to a dynamic import, and none is seen.
+UNSEEN_LAYER = """import importlib
+
+
+def _loader() -> object:
+    return importlib.import_module
+
+
+def across_a_boundary() -> None:
+    _loader()("anthropic")
+
+
+def built_at_run_time() -> None:
+    importlib.import_module("anth" + "ropic")
+
+
+def bound_when_run() -> None:
+    globals()["later"] = importlib.import_module
+    later("pydantic_ai")
+"""
+
+
+def test_the_scan_does_not_read_past_its_stated_limit(tmp_path: Path) -> None:
+    """Each shape outside the scan's reach is unseen, so the limit is a fact.
+
+    The module docstring states the limit; this holds it.  A shape here
+    that starts being reported means the reach grew and the docstring is
+    owed an edit.
+    """
+    layer = tmp_path / PACKAGE / "domain"
+    layer.mkdir(parents=True)
+    (layer / "unseen.py").write_text(UNSEEN_LAYER, encoding="utf-8")
+
+    scan = scan_layers(tmp_path, ("domain",))
+
+    assert scan.scanned == {"domain": [f"{PACKAGE}.domain.unseen"]}
+    assert scan.refused == []
 
 
 def test_core_imports_its_infrastructure_only_where_stated(tmp_path: Path) -> None:
