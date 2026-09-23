@@ -11,6 +11,7 @@ the owner renders it, so a row repointed at another role reddens here.
 """
 
 import json
+import re
 
 import pytest
 
@@ -22,22 +23,48 @@ from kodezart.types.domain.prompts import PromptKey
 from tests.integration.test_scope_deployment import SCOPE_EXAMPLE
 from tests.prompts.sets import OPUS_SET, ORGANIZE_CASE, V5_SET
 from tests.prompts.test_prompt_wiring import load_registry
+from tests.prompts.test_set_completeness import shipped_sets
 
-SETS = [OPUS_SET, V5_SET]
+SETS = shipped_sets()
 
-#: The four parts of the organizational predicate, each by the phrases the
-#: rubric states its substance in and no line wraps. A part reworded away is a
-#: part nothing asks for, and a part whose substance is weakened — an edge
-#: that need not cross a container, a choice merely visible to its owner, a
+#: The four parts of the organizational predicate, each numbered item of the
+#: rubric by its whole text, whitespace-normalised. A part reworded away, a
+#: defining clause reversed or dropped while its headline stays — an edge that
+#: need not cross a container, a dependency in prose that is acceptable, a
+#: choice that is settled rather than open, a date order turned around, a
 #: criterion a member only may carry — is a different predicate.
 FOUR_PARTS = (
-    "blocking edge",
-    "including edges that cross a container",
-    "is assigned to the person",
-    "accountable",
-    "Target dates are ordered",
-    "already carries at least one criterion",
+    "1. Every dependency the body states exists as a blocking edge on the board,"
+    " including edges that cross a container: a dependency named in prose and"
+    " absent from the graph is a defect of this mandate.",
+    "2. Every member that records an open human choice is assigned to the person"
+    " accountable for that choice, so the choice has an owner rather than a"
+    " reader.",
+    "3. Target dates are ordered: nothing is dated earlier than something it"
+    " depends on, and an undated member that something dated depends on is a"
+    " defect.",
+    "4. Every member that will be executed already carries at least one criterion"
+    " item, so what would be graded is written down before execution is planned.",
 )
+
+
+def normalised(text: str) -> str:
+    """*text* with every run of whitespace read as one space."""
+    return " ".join(text.split())
+
+
+def numbered_items(text: str) -> list[str]:
+    """Every numbered item of *text*, each with its continuation lines, whole."""
+    items: list[list[str]] = []
+    for line in text.splitlines():
+        if re.match(r"\d+\. ", line):
+            items.append([line])
+        elif items and line.startswith(" ") and line.strip():
+            items[-1].append(line)
+        elif items and not line.strip():
+            items.append([])
+    return [normalised(" ".join(item)) for item in items if item]
+
 
 #: The four parts are a conjunction: every one must hold.
 CONJUNCTION = "only when all four conditions below hold"
@@ -57,6 +84,11 @@ IMPLEMENTATION_TEST = (
     "demonstrated in the declared grading environment",
     "implemented from its own specification",
 )
+
+
+def test_the_shipped_sets_are_read_off_the_tree() -> None:
+    """The derived set list is not empty, and holds both sets shipped today."""
+    assert {OPUS_SET, V5_SET} <= set(SETS), SETS
 
 
 def row_of(kind: MandateKind):
@@ -87,8 +119,7 @@ def test_the_shipped_pre_approval_rubric_states_the_four_parts(set_name: str) ->
     )
     assert len(rows) == 1
     rubric = rendered_rubric(set_name, rows[0].spec.rubric_prompt_key)
-    for part in FOUR_PARTS:
-        assert part in rubric, part
+    assert numbered_items(rubric) == list(FOUR_PARTS)
     assert CONJUNCTION in rubric
     for exclusion in EXCLUSION:
         assert exclusion in rubric, exclusion
@@ -119,7 +150,7 @@ def test_no_pre_approval_accept_condition_names_the_dry_implementation(
         # The presence side: the rubric is inside the wrapper, whole.
         assert rubric in rendered, wrapper.value
         for part in FOUR_PARTS:
-            assert part in rendered, (wrapper.value, part)
+            assert part in normalised(rendered), (wrapper.value, part)
 
 
 @pytest.mark.parametrize("set_name", SETS)
