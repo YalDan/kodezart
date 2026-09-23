@@ -26,10 +26,11 @@ class AuditTerminalReader:
     The full sweep's selection, claim execution and publication remain separate.
     Read failures or changing observations raise; none is a healthy terminal.
 
-    Whether the family owes anything is the subtree arithmetic's own reading,
-    consulted here rather than restated: a criterion the board closed without
-    an established supersession is owed, which is the answer every other
-    reader of a finished state gets (KOD-443).
+    Whether the family owes anything is the one arithmetic's reading,
+    consulted here rather than restated, over the direct criterion family the
+    port returns: a criterion the board closed without an established
+    supersession is owed (KOD-443).  The family below a deliverable child is
+    not read here (KOD-894).
     """
 
     def __init__(

@@ -28,10 +28,11 @@ from kodezart.types.domain.audit_terminal import (
 )
 from kodezart.types.domain.criterion_evidence import CriterionEvidence
 from kodezart.types.domain.criterion_lifecycle import UndemonstratedReason
-from kodezart.types.domain.operation import OperationConfig
+from kodezart.types.domain.operation import LifecycleStage, OperationConfig
 from kodezart.types.domain.pr_state import PRLifecycle, PRState
 from kodezart.types.domain.run_event import UNDEMONSTRATED_EVENT_KINDS, RunEventKind
 from kodezart.types.domain.run_state import LaneRunState
+from kodezart.types.domain.tracker import WorkflowStateKind
 from tests.adapters.test_github_api import _make_client
 from tests.domain.test_lane_record import record_data
 from tests.fakes import FakeGitService, FakeMcpIssue, FakePRStateReader, FakeRepoCache
@@ -344,6 +345,36 @@ async def test_expected_review_requires_parent_state_and_every_completed_criteri
     with pytest.raises(AuditClaimReadError, match="expected review terminal"):
         await reader.observe(REQUEST)
     assert not git.calls and not forge[2]
+
+
+async def _refused_with_an_open_criterion(setup, tracker, forge, kind):
+    """The root reads In Review, so only the family's arithmetic can refuse."""
+    reader, git, *_ = setup
+    assert (await tracker.read_issue(issue_key=CHILD)).state_kind is kind
+    assert (await tracker.read_issue(issue_key=ISSUE)).state_name == (
+        WORKFLOW_STATE_NAMES[LifecycleStage.IN_REVIEW]
+    )
+    with pytest.raises(AuditClaimReadError, match="not established"):
+        await reader.observe(REQUEST)
+    assert not git.calls and not forge[2]
+
+
+async def test_a_started_criterion_under_a_root_in_review_is_no_established_terminal(
+    setup, tracker, forge
+):
+    await tracker.set_workflow_state(issue_key=CHILD, stage=LifecycleStage.IN_PROGRESS)
+    await _refused_with_an_open_criterion(
+        setup, tracker, forge, WorkflowStateKind.STARTED
+    )
+
+
+async def test_an_unstarted_criterion_under_a_root_in_review_is_no_established_terminal(
+    setup, tracker, forge
+):
+    await tracker.restore_workflow_state(issue_key=CHILD, state_name="Todo")
+    await _refused_with_an_open_criterion(
+        setup, tracker, forge, WorkflowStateKind.UNSTARTED
+    )
 
 
 # ---------------------------------------------------------------------------

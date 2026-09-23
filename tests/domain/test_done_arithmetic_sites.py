@@ -152,20 +152,30 @@ EXEMPT = {
         "one claim's admissibility, on the record that carries the claim"
     ),
     "domain/dispatch.py::clause_open": (
-        "selection over issues that are not criteria: a blocker is no criterion "
-        "sub-issue and no rollup answers whether one blocks"
+        "reads whether a blocking clause is open from the blocker issue's own "
+        "state, not its subtree, as KOD-188, KOD-285, KOD-217 and KOD-717 "
+        "require; the scope walker answers discharge through "
+        "SubtreeClosure.is_closed"
     ),
     "domain/topology.py::plan_topology": (
-        "the same selection over blockers, while the plan's edges are ordered"
+        "orders the plan's edges by the blocker issue's own state, not its "
+        "subtree, as KOD-188, KOD-285, KOD-217 and KOD-717 require; the scope "
+        "walker answers discharge through SubtreeClosure.is_closed"
     ),
     "domain/organize.py::organize_gap": (
         "selection over organize children, which are not criterion sub-issues"
     ),
     "services/base_resolver.py::BaseResolver._input_for": (
-        "selection over decision records, which are not criterion sub-issues"
+        "reads each blocker's own state (blocker.state_kind), not its subtree, "
+        "when it builds a base's input, as KOD-188, KOD-285, KOD-217 and "
+        "KOD-717 require; the scope walker answers discharge through "
+        "SubtreeClosure.is_closed"
     ),
     "services/base_resolver.py::BaseResolver.unrecorded_closed_blockers": (
-        "the same selection over blockers, read for the ones nobody recorded"
+        "reads each blocker's own state, not its subtree, for the closed "
+        "blockers nobody recorded, as KOD-188, KOD-285, KOD-217 and KOD-717 "
+        "require; the scope walker answers discharge through "
+        "SubtreeClosure.is_closed"
     ),
     "services/organize_owner.py::OrganizeOwner.run": (
         "selection over organize children, at the heartbeat that walks them"
