@@ -220,7 +220,13 @@ async def test_two_tests_that_each_lost_an_assertion_mint_two_marks_under_one_le
         ref=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT),
     )
     held: list[list[WritableSurface]] = []
+    acquisitions: list[str] = []
     original = port.create_criterion_if_absent
+    acquire = port.acquire_surfaces
+
+    async def counted(**kwargs):
+        acquisitions.append(kwargs["holder"])
+        return await acquire(**kwargs)
 
     async def recorded(**kwargs):
         held.append(
@@ -229,6 +235,7 @@ async def test_two_tests_that_each_lost_an_assertion_mint_two_marks_under_one_le
         return await original(**kwargs)
 
     port.create_criterion_if_absent = recorded
+    port.acquire_surfaces = counted
 
     with pytest.raises(AssertionWeakenedError) as caught:
         await refuse(
@@ -247,6 +254,8 @@ async def test_two_tests_that_each_lost_an_assertion_mint_two_marks_under_one_le
     assert len(minted) == 2
     assert caught.value.marks == tuple(minted)
     assert held == [[surface], [surface]]
+    # One lease for both mints, not one per mint.
+    assert acquisitions.count(HOLDER) == 1
     assert all(
         issue.state_kind is WorkflowStateKind.UNSTARTED for issue in minted.values()
     )

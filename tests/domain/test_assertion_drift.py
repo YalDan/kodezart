@@ -162,15 +162,21 @@ def test_counted_so_a_reorder_loses_nothing_and_a_dropped_duplicate_loses_one():
 
 
 def test_a_reformatted_assertion_loses_nothing():
+    """A moved, rewrapped assertion with a new message is the same condition.
+
+    What differs between the two readings is the line and the message; the
+    unparsed condition is canonical, so it reads the same in both, and the
+    case pins that the loss is independent of where the assertion sits and
+    what it says on failure.
+    """
     before = assertions('def test_behavior():\n    assert calls == 1, "old message"\n')
     after = assertions(
         "# heading\n\ndef test_behavior():\n"
         '    assert (\n        calls  ==  1\n    ), "new message"\n'
     )
 
-    assert (
-        before[0].expression != after[0].expression or before[0].line != after[0].line
-    )
+    assert before[0].line != after[0].line
+    assert before[0].expression == after[0].expression
     assert lost_assertions(before=before, after=after) == ()
 
 
