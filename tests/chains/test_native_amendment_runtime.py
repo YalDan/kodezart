@@ -573,7 +573,7 @@ async def test_an_amendment_refused_loop_leaves_only_its_own_cross_offs(reposito
 
 
 @pytest.mark.parametrize(
-    "max_iterations,fails_owed,verdict,settled,cost",
+    "max_iterations,fails_owed,verdict,settled,cost,refusals,rounds",
     [
         pytest.param(
             3,
@@ -581,6 +581,8 @@ async def test_an_amendment_refused_loop_leaves_only_its_own_cross_offs(reposito
             AcceptVerdict.accepted,
             WorkflowStateKind.COMPLETED,
             None,
+            1,
+            2,
             id="cleared_gate",
         ),
         pytest.param(
@@ -589,7 +591,19 @@ async def test_an_amendment_refused_loop_leaves_only_its_own_cross_offs(reposito
             AcceptVerdict.rejected,
             WorkflowStateKind.UNSTARTED,
             None,
+            1,
+            2,
             id="iteration_ceiling",
+        ),
+        pytest.param(
+            4,
+            True,
+            AcceptVerdict.rejected,
+            WorkflowStateKind.UNSTARTED,
+            None,
+            2,
+            4,
+            id="repeated_refusal_then_graded_rounds_to_the_ceiling",
         ),
         pytest.param(
             3,
@@ -597,6 +611,8 @@ async def test_an_amendment_refused_loop_leaves_only_its_own_cross_offs(reposito
             AcceptVerdict.accepted,
             WorkflowStateKind.COMPLETED,
             "uneconomic",
+            1,
+            2,
             id="measured_uneconomic_cost",
         ),
         pytest.param(
@@ -605,6 +621,8 @@ async def test_an_amendment_refused_loop_leaves_only_its_own_cross_offs(reposito
             AcceptVerdict.accepted,
             WorkflowStateKind.COMPLETED,
             "affordable",
+            1,
+            2,
             id="measured_affordable_cost",
         ),
         pytest.param(
@@ -613,12 +631,14 @@ async def test_an_amendment_refused_loop_leaves_only_its_own_cross_offs(reposito
             AcceptVerdict.accepted,
             WorkflowStateKind.COMPLETED,
             "unmeasured",
+            1,
+            2,
             id="unmeasured_cost",
         ),
     ],
 )
 async def test_an_undemonstrable_refusal_grades_nothing_and_ordinary_stops_end_the_loop(
-    repository, max_iterations, fails_owed, verdict, settled, cost
+    repository, max_iterations, fails_owed, verdict, settled, cost, refusals, rounds
 ):
     """The refusal round grades nothing and the next round drives the criterion.
 
@@ -637,6 +657,13 @@ async def test_an_undemonstrable_refusal_grades_nothing_and_ordinary_stops_end_t
     recorded at the ground. Each decides before the capability is asked, and in
     each the criterion, its state unmoved, is in round two's driving set just
     the same.
+
+    One row repeats the refusal: rounds one and two both claim the absent
+    capability, each refusal a new occurrence escalated on a sub-issue already
+    classified `decision`, and rounds three and four claim nothing and fail the
+    criterion. Two graded rounds after the refusals, with a continue decision
+    between them, run to the ceiling of four, so neither a stop nor a budget
+    cut keyed to a refusal, or to a repeated one, can hide behind the ceiling.
     """
     port = None
     writes = 0
@@ -667,11 +694,12 @@ async def test_an_undemonstrable_refusal_grades_nothing_and_ordinary_stops_end_t
             payload["measured_by"] = "timed the actual base demonstration"
         elif title == "NativeWriterOutput":
             writes += 1
-            if writes > 1:
+            if writes == 2:
                 classified_before_round_two.append(
                     "decision" in port.issues[DIRECT_OWED].issue_labels
                 )
                 states_before_round_two.append(port.issues[DIRECT_OWED].state_kind)
+            if writes > refusals:
                 payload["claims"] = []
         elif title == "AcceptanceCriteriaOutput":
             keys = dispatched_keys(kwargs["prompt"], port)
@@ -704,34 +732,57 @@ async def test_an_undemonstrable_refusal_grades_nothing_and_ordinary_stops_end_t
                     last = value
                 elif isinstance(value, NativeAmendmentEvent):
                     reports.append(value)
-        assert writes == 2
-        assert [bool(event.report.upheld) for event in reports] == [True, False]
-        refusal = reports[0].report.upheld[0]
+        assert writes == rounds
+        assert [bool(event.report.upheld) for event in reports] == [True] * refusals + [
+            False
+        ] * (rounds - refusals)
+        refused = [event.report.upheld[0] for event in reports[:refusals]]
         escalated = cost in (None, "uneconomic")
+        for refusal in refused:
+            assert refusal.subject.id == DIRECT_OWED
+            assert (
+                refusal.reason
+                is {
+                    None: UpheldReason.ENVIRONMENT_LACKS_CAPABILITY,
+                    "uneconomic": UpheldReason.COST_MEASURED_UNECONOMIC,
+                    "affordable": UpheldReason.COST_MEASURED_AFFORDABLE,
+                    "unmeasured": UpheldReason.GROUND_NOT_REPRODUCED,
+                }[cost]
+            )
+            assert refusal.publication.kind == (
+                "escalated" if escalated else "recorded"
+            )
+        # Each refusal is an occurrence of its own, with its own record and,
+        # when escalated, its own escalation, even on a sub-issue already
+        # classified `decision` by the one before.
         assert (
-            refusal.reason
-            is {
-                None: UpheldReason.ENVIRONMENT_LACKS_CAPABILITY,
-                "uneconomic": UpheldReason.COST_MEASURED_UNECONOMIC,
-                "affordable": UpheldReason.COST_MEASURED_AFFORDABLE,
-                "unmeasured": UpheldReason.GROUND_NOT_REPRODUCED,
-            }[cost]
+            len({refusal.publication.record.artifact.native_ref for refusal in refused})
+            == refusals
         )
-        assert refusal.publication.kind == ("escalated" if escalated else "recorded")
+        assert len(
+            {
+                refusal.publication.escalation.artifact.native_ref
+                for refusal in refused
+                if refusal.publication.kind == "escalated"
+            }
+        ) == (refusals if escalated else 0)
         assert classified_before_round_two == [escalated]
         assert states_before_round_two == [entered]
-        # One evaluation, and the refused criterion was in what it graded.
-        assert len(dispatched) == 1
-        assert DIRECT_OWED in dispatched[0]
+        # One evaluation per graded round, and the refused criterion was in
+        # what each of them graded.
+        assert len(dispatched) == rounds - refusals
+        assert all(DIRECT_OWED in keys for keys in dispatched)
         assert last is not None
         iteration = last["iteration"]
         assert isinstance(iteration, WorkflowIterationEvent)
         assert iteration.verdict is verdict
-        assert iteration.iteration == 2
-        # The ceiling row stops at its ceiling; the cleared row stops below it.
+        assert iteration.iteration == rounds
+        # The ceiling rows stop at their ceiling; the cleared rows stop below it.
         assert (iteration.iteration == max_iterations) is fails_owed
-        # The refusal round left no record of its own: the only one is round two's.
-        assert [record.iteration for record in iteration.trajectory.records] == [2]
+        # A refusal round leaves no record of its own: only graded rounds do.
+        assert [record.iteration for record in iteration.trajectory.records] == list(
+            range(refusals + 1, rounds + 1)
+        )
         assert iteration.trajectory.plateaued is False
         assert port.issues[DIRECT_OWED].state_kind is settled
     finally:
