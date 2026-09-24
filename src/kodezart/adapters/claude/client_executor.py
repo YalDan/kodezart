@@ -1,17 +1,23 @@
 """Claude interactive executor — uses ClaudeSDKClient."""
 
 from collections.abc import AsyncGenerator, Sequence
+from typing import Final
 
 # Claude Agent SDK API surface verified against claude-agent-sdk ~=0.2.151
 # (ProcessError.exit_code: int | None; ProcessError.stderr: str | None;
 # ResultError subclasses ProcessError and adds the CLI's result payload).
 from claude_agent_sdk import (
+    TERMINAL_TASK_STATUSES,
     ClaudeAgentOptions,
     ClaudeSDKClient,
     ClaudeSDKError,
     CLIConnectionError,
+    Message,
     ProcessError,
     ResultError,
+    TaskNotificationMessage,
+    TaskStartedMessage,
+    TaskUpdatedMessage,
 )
 
 from kodezart.adapters.claude.agents_mapping import (
@@ -57,6 +63,21 @@ from kodezart.types.domain.subagents import (
     AgentDefinition,
     SessionPolicy,
 )
+
+#: The task type a Workflow tool launch runs as. The harness answers the
+#: launch at once and hands the workflow's report to the session in a later
+#: turn, so a session that launched one is not over at its first result.
+_WORKFLOW_TASK_TYPE: Final = "local_workflow"
+
+
+def _track_workflows(message: Message, running: set[str]) -> None:
+    """Keep *running* to the workflows this session launched and has not seen end."""
+    if isinstance(message, TaskStartedMessage):
+        if message.task_type == _WORKFLOW_TASK_TYPE:
+            running.add(message.task_id)
+    elif isinstance(message, TaskNotificationMessage | TaskUpdatedMessage):
+        if message.status in TERMINAL_TASK_STATUSES:
+            running.discard(message.task_id)
 
 
 def _redacted_stderr(exc: ProcessError) -> str | None:
@@ -233,11 +254,16 @@ class ClaudeClientExecutor:
                 options=options,
             ) as client:
                 await client.query(session_prompt)
-                async for message in client.receive_response():
-                    for event in map_message(message):
-                        self._confirm_output_style(event)
-                        self._confirm_tracker_server(event, session_type)
-                        yield event
+                running: set[str] = set()
+                while True:
+                    async for message in client.receive_response():
+                        _track_workflows(message, running)
+                        for event in map_message(message):
+                            self._confirm_output_style(event)
+                            self._confirm_tracker_server(event, session_type)
+                            yield event
+                    if not running:
+                        break
         except ResultError as exc:
             # Ahead of the ProcessError arm, which this SDK type subclasses:
             # below it a terminal error result reaches the workflow as a bare
