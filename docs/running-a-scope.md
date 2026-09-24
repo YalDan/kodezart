@@ -179,8 +179,9 @@ limit well above the longest walk you expect, not above one CI wait.
   one whose cadence pair is set; the per-issue dispatch pass is named by
   `scheduled_pass_not_selected`, and the fire-prep and grooming passes by
   `scheduled_pass_not_configured` until their pairs are. The organize tick's
-  interval is `KODEZART_ORGANIZE__INTERVAL_SECONDS` and nothing else; the
-  scheduler sleeps one interval before the first tick.
+  interval is `KODEZART_ORGANIZE__INTERVAL_SECONDS` and nothing else. The
+  fire-prep and grooming passes, when their pairs are set, run their first
+  tick at boot; every other pass sleeps one interval before its first tick.
 
 Neither "not wired" line appears here: the roster, the tracker and the forge
 token are all present, so every pass whose cadence pair is set is scheduled. A

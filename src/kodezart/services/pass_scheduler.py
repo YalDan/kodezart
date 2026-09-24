@@ -76,6 +76,12 @@ class ScheduledPass:
     #: wired with a report by composition; a recording failure is its own
     #: loud event and never breaks the cadence.
     report: RunReport | None = None
+    #: Whether the first tick runs at boot rather than one interval later.
+    #: The intake passes carry it (owner, 2026-09-24): a configured pass is
+    #: triggered when the process comes up, so a restart never leaves the
+    #: board unread for a whole cadence. Every other pass keeps sleeping its
+    #: interval first.
+    tick_at_boot: bool = False
 
 
 class PassScheduler:
@@ -132,7 +138,13 @@ class PassScheduler:
         await self._log.ainfo("pass_scheduler_stopped")
 
     async def _drive(self, entry: ScheduledPass) -> None:
-        """Sleep the pass's own interval, run one tick, repeat until cancelled."""
+        """Run one tick, then sleep the pass's own interval and tick, until cancelled.
+
+        A pass marked ``tick_at_boot`` runs its first tick before any sleep;
+        every other pass waits one interval first.
+        """
+        if entry.tick_at_boot:
+            await self._tick(entry)
         while True:
             await self._sleep(entry.interval_seconds)
             await self._tick(entry)

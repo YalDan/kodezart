@@ -8,6 +8,7 @@ against a literal in the code, which is the one thing this has to catch.
 """
 
 import ast
+import asyncio
 from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime, tzinfo
 from pathlib import Path
@@ -398,17 +399,30 @@ async def _runtime(
     )
 
 
+async def _settle_requests(metronome: Metronome, count: int) -> None:
+    """Wait until every driver has run its boot tick and asked for its sleep.
+
+    With a limit of zero no sleep completes, so what the scheduler ran is
+    exactly the boot ticks; each driver then asks for its interval once.
+    """
+    for _ in range(count * 500):
+        if len(metronome.requested) >= count:
+            return
+        await asyncio.sleep(0)
+    raise AssertionError(f"only {metronome.requested} requested, expected {count}")
+
+
 async def test_each_pass_sends_its_own_rendered_prompt_on_its_own_cadence(
     tmp_path: Path,
 ) -> None:
     """One tick each: two sessions, two prompts, two configured intervals."""
     registered, runner = await _registrations(tmp_path)
     prompts = load_registry(bindings=dict(bindings_for(example_config())))
-    metronome = Metronome(limit=len(registered))
+    metronome = Metronome(limit=0)
     scheduler = PassScheduler(passes=registered, sleep=metronome.sleep)
 
     await scheduler.start()
-    await _settle(metronome.parked)
+    await _settle_requests(metronome, len(registered))
     await scheduler.stop()
 
     assert set(metronome.requested) == {FIRE_PREP_INTERVAL, GROOMING_INTERVAL}
@@ -467,10 +481,11 @@ async def test_gating_is_per_pass_configuration_and_the_defaults_differ(
 
     Asserted through a tick rather than by reading the wiring: what
     matters is that a quiet board skips one pass and still runs the other.
+    The tick observed is the one at boot; no sleep completes.
     """
     tracker = FakeTrackerPort()
     registered, runner = await _registrations(tmp_path, tracker=tracker)
-    metronome = Metronome(limit=len(registered))
+    metronome = Metronome(limit=0)
     scheduler = PassScheduler(passes=registered, sleep=metronome.sleep)
 
     await scheduler.start()
@@ -501,7 +516,7 @@ async def test_an_operator_can_gate_or_ungate_any_pass(tmp_path: Path) -> None:
         grooming_pass_gate_signals=[PassSignal.issues_changed],
         fire_prep_pass_gate_signals=[],
     )
-    metronome = Metronome(limit=len(gated))
+    metronome = Metronome(limit=0)
     scheduler = PassScheduler(passes=gated, sleep=metronome.sleep)
 
     await scheduler.start()
@@ -521,11 +536,11 @@ async def test_a_declared_signal_with_no_tracker_runs_the_pass_ungated(
 ) -> None:
     """Absent gate and quiet gate are different states, never conflated."""
     registered, runner = await _registrations(tmp_path, tracker=None)
-    metronome = Metronome(limit=len(registered))
+    metronome = Metronome(limit=0)
     scheduler = PassScheduler(passes=registered, sleep=metronome.sleep)
 
     await scheduler.start()
-    await _settle(metronome.parked)
+    await _settle_requests(metronome, len(registered))
     await scheduler.stop()
 
     assert len(runner.calls) == len(registered), (
@@ -1616,11 +1631,11 @@ async def test_adding_a_pass_is_a_table_row(tmp_path: Path) -> None:
         fire_prep_pass_gate_signals=[PassSignal.approved_changed],
         grooming_pass_gate_signals=[PassSignal.approved_changed],
     )
-    metronome = Metronome(limit=len(registered))
+    metronome = Metronome(limit=0)
     scheduler = PassScheduler(passes=registered, sleep=metronome.sleep)
 
     await scheduler.start()
-    await _settle(metronome.parked)
+    await _settle_requests(metronome, len(registered))
     await scheduler.stop()
 
     assert len(runner.calls) == len(registered)
@@ -1891,3 +1906,26 @@ def test_the_dispatch_family_asks_for_its_prefixes_only_when_it_is_selected(
     assert "base_spec" in wanted[DispatchWorkflow.FIRE]
     assert "base_spec" not in wanted[DispatchWorkflow.SCOPE]
     assert wanted[DispatchWorkflow.SCOPE] < wanted[DispatchWorkflow.FIRE]
+
+
+async def test_the_intake_passes_tick_at_boot_and_the_dispatcher_does_not(
+    tmp_path: Path,
+) -> None:
+    """Fire prep and grooming run when the process comes up (owner, 2026-09-24)."""
+    runtime = await _runtime(
+        tmp_path,
+        tracker=FakeTrackerPort(),
+        runner=FakeAgentRunner(events=[]),
+        github_api=FakeDeliveryProbe(),
+        fire_prep_pass_gate_signals=[],
+        grooming_pass_gate_signals=[],
+    )
+    at_boot = {entry.name: entry.tick_at_boot for entry in runtime.scheduler.passes}
+    assert at_boot[PromptKey.FIRE_PREP_PASS.value] is True
+    assert at_boot[PromptKey.GROOMING_PASS.value] is True
+    assert all(
+        flag is False
+        for name, flag in at_boot.items()
+        if name.startswith(f"{_DISPATCH_NAME}:")
+    )
+    assert any(name.startswith(f"{_DISPATCH_NAME}:") for name in at_boot)

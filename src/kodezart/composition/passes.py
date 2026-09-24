@@ -597,6 +597,8 @@ async def build_prompt_passes(
                 session_type=SessionType.SCHEDULED_PASS,
             ),
             report=run_report(recorder, _record_kind_for(key), key.value),
+            # The intake runs when the process comes up (owner, 2026-09-24).
+            tick_at_boot=True,
         )
         for key, row in schedule.items()
     ]

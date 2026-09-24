@@ -9,6 +9,12 @@ concerns.
 
 ## [Unreleased]
 
+### Changed
+
+- The fire-prep and grooming passes run their first tick at boot when their
+  cadence pairs are set (`ScheduledPass.tick_at_boot`); every other pass still
+  sleeps one interval before its first tick.
+
 ## [0.3.0] - 2026-09-24
 
 ### Added

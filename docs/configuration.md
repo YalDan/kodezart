@@ -165,7 +165,9 @@ scheduled. Setting one half of a pair without the other refuses at load, naming
 both. The dispatch pair drives one of two workflows, and
 `KODEZART_DISPATCH_WORKFLOW` says which: `fire` (the default) schedules the
 per-issue dispatch passes, `scope` schedules the standing scopes' heartbeat, and
-boot names the other with `scheduled_pass_not_selected`.
+boot names the other with `scheduled_pass_not_selected`. Fire preparation and
+grooming run their first tick at boot; every other pass runs its first tick one
+interval after boot.
 
 Escalation ageing uses recorded run progress. The implementation defaults
 allow five lane commits after a question is raised, or ten walker ticks after
