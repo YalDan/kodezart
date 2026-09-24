@@ -4944,6 +4944,8 @@ KEYED_DISPATCH_COUNTS = {
     "prompt_pass.py": 1,
     # The removal and the second grading of one mutation reading.
     "mutation_survival.py": 2,
+    # One organize phase's session, with the tracker tools the host attaches.
+    "organize_session_owner.py": 1,
 }
 
 
