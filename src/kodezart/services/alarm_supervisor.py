@@ -19,6 +19,7 @@ from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.owned_tasks import settle
 from kodezart.core.protocols import RunAlarmTracker
 from kodezart.domain.comment_markers import configured_marker_prefix
+from kodezart.domain.derived_writes import derived_writes
 from kodezart.domain.lane_alarms import (
     OBSERVED_ALARMS,
     LaneStanding,
@@ -118,6 +119,7 @@ class AlarmSupervisor:
         for record in _announceable(lane=lane, stored=stored, desired=desired):
             await self._announce(lane_key=lane_key, record=record, events=events)
 
+    @derived_writes("record_run_alarm")
     async def _write_records(
         self, *, lane_key: str, records: Sequence[RunAlarm]
     ) -> None:
@@ -127,6 +129,10 @@ class AlarmSupervisor:
         around a write. It is itself a comment on the carrier, so a tick that
         took one on finding nothing to say would write on every healthy tick
         and the quiet run would not be quiet.
+
+        Derived: the record is arithmetic over facts the tracker already carries, so
+        there is no authored commit to verify it against and re-judging it would be no
+        second judgement (KOD-843).
         """
         async with RunSurfaceLease(
             tracker=self._tracker,
@@ -154,6 +160,7 @@ class AlarmSupervisor:
             ),
         )
 
+    @derived_writes("post_run_event")
     async def _announce(
         self, *, lane_key: str, record: RunAlarm, events: Sequence[LaneRunEvent]
     ) -> None:
@@ -163,6 +170,9 @@ class AlarmSupervisor:
         from what it wrote, so a condition firing across many ticks is
         announced once and an announcement lost with its tick is made by the
         next one.
+
+        Derived: the event announces a record already written and says nothing that
+        record does not (KOD-843).
         """
         due = alarm_event_due(record=record, events=events)
         if due is None:

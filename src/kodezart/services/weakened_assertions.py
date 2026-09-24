@@ -40,6 +40,7 @@ from kodezart.domain.amendment import (
 )
 from kodezart.domain.assertion_drift import lost_assertions, weakening_mark
 from kodezart.domain.criterion_creation import criterion_body
+from kodezart.domain.derived_writes import derived_writes
 from kodezart.domain.errors import AssertionComparisonError, GitSourceReadError
 from kodezart.services.assertion_drift import AssertionDriftDetector
 from kodezart.services.run_surface_lease import RunSurfaceLease
@@ -72,6 +73,7 @@ class WeakenedAssertionMarks:
         self._lease_seconds = lease_seconds
         self._log: BoundLogger = get_logger(__name__)
 
+    @derived_writes("create_criterion_if_absent", "reset_criterion_pending")
     async def refuse_weakening(
         self,
         *,
@@ -90,6 +92,12 @@ class WeakenedAssertionMarks:
         else is compared first, gated next, and minted last, so a gate that
         would alter the mark's bytes refuses before the lane carries
         anything.
+
+        Derived: the mark's whole text is arithmetic over two pinned Git objects and a
+        pinned record, and the commit it describes is refused, so there is no judged
+        commit to verify it against and re-judging that arithmetic would be no second
+        judgement. Moving a crossed-off mark back to unstarted carries no text at all,
+        only the state the refused commit's arithmetic calls for (KOD-843).
         """
         if not designated:
             return

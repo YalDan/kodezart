@@ -246,6 +246,7 @@ class TrackerLaneStateWriter:
             )
         return record
 
+    @derived_writes("upsert_comment")
     async def record_landing(
         self, *, lane: LaneBinding, repo_path: str, landed_sha: str
     ) -> LaneRunState | None:
@@ -275,6 +276,10 @@ class TrackerLaneStateWriter:
 
         A record whose last act is already *landed_sha* writes nothing, so a
         retried landing is not a second row and re-reads no interval.
+
+        Derived: the row carries the tip a consolidation returned, the changeset counts
+        and the subject, facts any process can read back off git, and no second session
+        re-reading them would add anything (KOD-806).
         """
         marker, _ = self._markers(lane.lane_key)
         branch_url = self._branch_url(lane)
@@ -582,6 +587,7 @@ class TrackerLaneStateWriter:
                     events=events,
                 )
 
+    @derived_writes("post_run_event")
     async def _undemonstrated(
         self,
         *,
@@ -605,6 +611,9 @@ class TrackerLaneStateWriter:
         refutation are, because it writes no row: it is no entry of that
         history, and the row's writes between two equal readings do not make
         the second one a new fact.
+
+        Derived: the event is a kind, a sub-issue key and the sha the grading was read
+        at, and nothing authored (KOD-843).
         """
         event = LaneRunEvent(
             kind=UNDEMONSTRATED_EVENT_KINDS[reason],
@@ -617,6 +626,7 @@ class TrackerLaneStateWriter:
                 self._tracker.post_run_event(issue_key=lane.lane_key, event=event)
             )
 
+    @derived_writes("post_run_event")
     async def record_node_sessions(
         self, *, lane: LaneBinding, started: Sequence[NodeSessionStartedEvent]
     ) -> None:
@@ -629,6 +639,9 @@ class TrackerLaneStateWriter:
         invocation declared. The stream is read once, before any post, so an
         opening already announced — by this call or an earlier one on a
         resumed lane — posts nothing, and an empty observation reads nothing.
+
+        Derived: each event is a kind, the invocation the harness declared and the
+        session id the native stream reported, and nothing authored (KOD-843).
         """
         if not started:
             return
@@ -648,7 +661,7 @@ class TrackerLaneStateWriter:
             )
             posted.add(event)
 
-    @derived_writes("set_workflow_state")
+    @derived_writes("set_workflow_state", "post_run_event")
     async def _write_one(
         self,
         *,
@@ -720,7 +733,9 @@ class TrackerLaneStateWriter:
         announcement of a transition that never landed says something untrue.
 
         Derived: the transition states the pass the grading already settled and carries
-        no text of its own (KOD-806).
+        no text of its own (KOD-806). The two accounts it posts on the lane's stream,
+        the grading and the cross-off, are each a kind, a sub-issue key and the sha the
+        grading was read at, and nothing authored (KOD-843).
         """
         issue = await self._tracker.read_issue(issue_key=criterion.id)
         require_tickable(issue=issue, criterion=criterion)
