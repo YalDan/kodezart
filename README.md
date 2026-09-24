@@ -383,6 +383,17 @@ lifecycle state mappings, repositories and their check commands, a read-side
 document registry, reference knowledge, named infrastructure endpoints, and
 initiatives.
 
+**The operation config is kodezart's boundary, not a piece of work.** It says
+where kodezart is allowed to work: these teams, these repositories, and
+optionally only these projects. Every agent session gets that boundary as
+context, "you may work here", and nothing more is decided from it. The work is
+found on the board: any initiative, project, milestone or issue inside the
+boundary that carries the approval label (`scope_labels.approved`) is one scope
+run, and nothing is ever written into config per scope. Which repository a
+lane's work lands in is that lane's business, decided by the agent building it
+with every repository of the boundary in front of it; the boundary is never
+read as a choice of repository.
+
 The split is deliberate. Deployment and infrastructure knobs plus every secret
 stay in `AppConfig` (env). Cadence lives exclusively in scheduler
 configuration — prompt templates carry no frequency words. Per-fire parameters
