@@ -250,6 +250,7 @@ keys = [
     "grooming_pass",
     "organize_author",
     "organize_criteria_author",
+    "organize_session",
 ]
 
 # One level below the generative roles: grading a changeset against explicit

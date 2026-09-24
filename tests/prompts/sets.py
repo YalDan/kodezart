@@ -129,6 +129,20 @@ EXTENDED_CASES: dict[str, tuple[PromptKey, dict[str, object]]] = {
     "organize_criteria_author": (PromptKey.ORGANIZE_CRITERIA_AUTHOR, ORGANIZE_CASE),
     "organize_groom_rubric": (PromptKey.ORGANIZE_GROOM_RUBRIC, {}),
     "organize_spec_rubric": (PromptKey.ORGANIZE_SPEC_RUBRIC, {}),
+    #: services/organize_session_owner.py ``render``: the scope, the phase's
+    #: marker, the members that owe it and which phase's rubric runs.
+    "organize_session": (
+        PromptKey.ORGANIZE_SESSION,
+        {
+            "scope_kind": "project",
+            "scope_key": "golden-project",
+            "phase_marker": "graph complete",
+            "owed_members": ("external/42", "external/43"),
+            "phase_groom": True,
+            "phase_ticket": None,
+            "phase_criteria": None,
+        },
+    ),
     "content_audit": (
         PromptKey.CONTENT_AUDIT,
         {"content": AUDITED_PAYLOAD, "destination": AUDIT_DESTINATION},

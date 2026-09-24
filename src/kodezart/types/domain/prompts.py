@@ -58,6 +58,11 @@ class PromptKey(StrEnum):
     #: session of its own: it is the standard a judging role is handed.
     ORGANIZE_GROOM_RUBRIC = "organize_groom_rubric"
     ORGANIZE_SPEC_RUBRIC = "organize_spec_rubric"
+    #: One organize phase, done by one session with the tracker tools the
+    #: host attaches: the session reads the scope, does the phase's work on
+    #: the board and adds the phase's marker; kodezart reads the board once
+    #: afterwards and reports.
+    ORGANIZE_SESSION = "organize_session"
     #: What lives where.  A prelude composed into a session that is granted
     #: the knowledge server, and into no other — a key rather than set-level
     #: fragment metadata, so it enters this census and the set-completeness

@@ -86,6 +86,15 @@ PER_CALL_VARIABLE_NAMES: frozenset[str] = frozenset(
         "refutation_evidence",
         "defect_class",
         "verification_goal",
+        # The organize session: the addressed scope, the phase's marker, the
+        # members that owe it, and which phase's rubric the session runs.
+        "scope_kind",
+        "scope_key",
+        "phase_marker",
+        "owed_members",
+        "phase_groom",
+        "phase_ticket",
+        "phase_criteria",
     }
 )
 
