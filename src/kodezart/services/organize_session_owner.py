@@ -18,6 +18,7 @@ tracker calls per settling round; one session with the tracker tools took
 """
 
 from collections.abc import Sequence
+from typing import NamedTuple
 
 from kodezart.core.constants import UNATTENDED_PERMISSION_MODE
 from kodezart.core.logging import get_logger
@@ -49,6 +50,16 @@ from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.subagents import NO_SUBAGENTS
+
+
+class _RunFields(NamedTuple):
+    """The run's identity as every phase's log line carries it."""
+
+    run_identity: str
+    repository: str
+    base_ref: str
+    visibility: str
+    scope: dict[str, object]
 
 
 def tracker_tool_selector(server_name: str) -> str:
@@ -103,13 +114,13 @@ class OrganizeSessionOwner:
         nothing else.
         """
         approved = await scope_approved(ref=scope, tracker=self._approvals)
-        run: dict[str, object] = {
-            "run_identity": job_id,
-            "repository": repo_url,
-            "base_ref": base_ref,
-            "visibility": visibility.value,
-            "scope": scope.model_dump(),
-        }
+        run = _RunFields(
+            run_identity=job_id,
+            repository=repo_url,
+            base_ref=base_ref,
+            visibility=visibility.value,
+            scope=scope.model_dump(),
+        )
         completed: list[MandateKind] = []
         for phase in self._phases:
             marker = split_label_key(phase.spec.terminal_marker_key)[1]
@@ -214,17 +225,25 @@ class OrganizeSessionOwner:
     async def _settled(
         self,
         phase: ResolvedMandateSpec,
-        run: dict[str, object],
+        run: _RunFields,
         *,
         gate_open: bool,
         owed: tuple[str, ...],
         left: tuple[str, ...],
         report: str | None = None,
     ) -> None:
-        """The one log event a phase writes, whatever it found."""
+        """The one log event a phase writes, whatever it found.
+
+        Every field is named here: an event handed a field set at runtime
+        has no one shape a reader can pin, and the log scan refuses it.
+        """
         await self._log.ainfo(
             "organize_phase_settled",
-            **run,
+            run_identity=run.run_identity,
+            repository=run.repository,
+            base_ref=run.base_ref,
+            visibility=run.visibility,
+            scope=run.scope,
             phase=phase.spec.kind.value,
             gate=phase.spec.gate_label_key,
             gate_open=gate_open,
