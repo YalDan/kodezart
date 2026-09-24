@@ -586,6 +586,44 @@ def label_set_verifications(sessions: PortExecutor) -> list[str]:
     return verified
 
 
+#: The line every lease marker a round writes carries.
+LEASE_RECORD = "kind: lease\n"
+
+
+def beside_the_round_lease(writes: tuple[object, ...]) -> list[object]:
+    """The writes in *writes* other than a round's own lease records.
+
+    A round takes its declared set before its first session and withdraws it
+    when it ends (KOD-558): the markers it posts and edits, and their
+    deletion, leave the board as they found it. An implementation whose
+    journal keeps no lease record hands none of them here.
+    """
+    lease_ids = {
+        args.get("id")
+        for name, args in (write for write in writes if _is_call(write))
+        if name == "save_comment" and LEASE_RECORD in str(args.get("body", ""))
+    }
+    return [
+        write
+        for write in writes
+        if not _is_call(write)
+        or not (
+            LEASE_RECORD in str(write[1].get("body", ""))
+            or (write[0] == "delete_comment" and write[1].get("id") in lease_ids)
+        )
+    ]
+
+
+def _is_call(write: object) -> bool:
+    """Whether *write* is an adapter call: a tool name and its arguments."""
+    return (
+        isinstance(write, tuple)
+        and len(write) == 2
+        and isinstance(write[0], str)
+        and isinstance(write[1], dict)
+    )
+
+
 async def test_the_body_edit_asserts_its_revision_before_it_edits(
     short_body_board: ReplayBoard,
 ) -> None:
@@ -595,7 +633,8 @@ async def test_the_body_edit_asserts_its_revision_before_it_edits(
     revision before it writes, so a body somebody else moved in between is a
     body this proposal was never about: the write refuses by name and the
     board is left exactly as it was. Without that re-read the proposal lands
-    on top of the other writer's words.
+    on top of the other writer's words. The round's own lease is taken and
+    withdrawn around that refusal, and no marker of it is left behind.
     """
     written = len(short_body_board.observed())
     owner, sessions = short_body_board.owner(
@@ -610,7 +649,12 @@ async def test_the_body_edit_asserts_its_revision_before_it_edits(
     assert sessions.named(PROPOSAL_SCHEMA, CLAIMED_ISSUE), (
         "the refusal is about a proposal that was actually made"
     )
-    assert len(short_body_board.observed()) == written
+    assert beside_the_round_lease(short_body_board.observed()[written:]) == []
+    assert not [
+        comment
+        for comment in short_body_board.server.comments
+        if LEASE_RECORD in comment.body
+    ]
     assert (
         await short_body_board.tracker.read_issue(issue_key=CLAIMED_ISSUE)
     ).body == SHORT_BODY
