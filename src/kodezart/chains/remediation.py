@@ -30,6 +30,7 @@ from kodezart.types.domain.fire_spec import TrackerSpec
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.remediation import RemediationPlan
 from kodezart.types.domain.run_records import RunIdentity
+from kodezart.types.domain.scope import ScopeRef
 from kodezart.types.domain.session import SessionType, ToolPreset
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.workflow import RemediationRequest
@@ -68,6 +69,7 @@ class RemediationChain:
         repo_url: str | None,
         cache_key: str,
         run_identity: RunIdentity | None = None,
+        scope: ScopeRef | None = None,
     ) -> AsyncIterator[AgentEvent]:
         """Draft one remediation ticket for *request*."""
         prompt = self._prompts.template_for(PromptKey.REMEDIATION_TICKET).render(
@@ -80,7 +82,7 @@ class RemediationChain:
 
         native = isinstance(request.original_spec, TrackerSpec)
         spec = request.original_spec
-        if isinstance(spec, TrackerSpec):
+        if isinstance(spec, TrackerSpec) and scope is None:
             current = await current_native_criteria(
                 spec=spec,
                 reader=self._criteria_reader,

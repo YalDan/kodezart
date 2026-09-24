@@ -11,10 +11,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import RetryPolicy
 
-from kodezart.chains.criteria import (
-    require_current_native_snapshot,
-    revalidate_criteria,
-)
+from kodezart.chains.criteria import revalidate_criteria
 from kodezart.chains.fire_consolidation import FireConsolidation
 from kodezart.chains.fire_implementation import FireImplementation
 from kodezart.chains.fire_remediation import FireRemediation
@@ -24,7 +21,8 @@ from kodezart.chains.fire_time_ruling import (
     route_after_questions,
     rule_open_questions,
 )
-from kodezart.core.protocols import FireCriteriaSource, LaneStateWriter
+from kodezart.chains.scope_stages import ScopeStages
+from kodezart.core.protocols import FireCriteriaSource
 from kodezart.core.retry import DelayFloor, RetryFloor, should_retry
 from kodezart.domain.accept_gate import (
     gate_cleared,
@@ -38,7 +36,6 @@ from kodezart.domain.criteria_feasibility import (
 from kodezart.domain.errors import (
     ScopedExecutionUnavailableError,
 )
-from kodezart.domain.fire_spec import body_digest
 from kodezart.domain.git_url import resolve_repo_url
 from kodezart.domain.outcome import classify_outcome
 from kodezart.domain.thread_id import workflow_thread_id
@@ -49,7 +46,6 @@ from kodezart.types.domain.agent import (
     WorkflowCompleteEvent,
 )
 from kodezart.types.domain.branch import BaseSpec
-from kodezart.types.domain.fire_spec import TrackerSpec
 from kodezart.types.domain.gating import (
     RepoVisibility,
 )
@@ -60,8 +56,7 @@ from kodezart.types.domain.lane_entry import (
     ResumedLane,
 )
 from kodezart.types.domain.run_records import RunIdentity
-from kodezart.types.domain.run_state import LaneBinding
-from kodezart.types.domain.scope import ScopeKind, ScopeRef
+from kodezart.types.domain.scope import ScopeRef
 from kodezart.types.domain.session import AllowedTools, PermissionMode
 from kodezart.types.domain.workflow import (
     ExecutionContext,
@@ -94,14 +89,18 @@ def fire_terminal(state: WorkflowState) -> WorkflowCompleteEvent:
 
 
 class RalphWorkflowEngine:
-    """One node set, two compositions, over one shared run state.
+    """One node set, three compositions, over one shared run state.
 
     The arms differ only in where the fire's subject and criteria come
     from.  The authored arm generates a ticket and a criteria set in the
     graph.  The tracker-native arm is EXECUTION-ONLY: it generates
     neither, and re-validates at head the criterion sub-issues an
     organize pass already staged, and answers the fire's open questions
-    onto the tracker, before it reaches the loop.
+    onto the tracker, before it reaches the loop.  An engine given the
+    scope *stages* holds the scope run instead of the authored arm: it
+    grooms and preps the parent the run is addressed at, takes the
+    criteria the board then lists, and asks the board after the merge
+    whether everything below the parent is finished.
     """
 
     def __init__(
@@ -119,7 +118,7 @@ class RalphWorkflowEngine:
         delay_floor_for: DelayFloor,
         criteria: FireCriteriaSource | None = None,
         rulings: FireTimeRulings | None = None,
-        lane_state: LaneStateWriter | None = None,
+        stages: ScopeStages | None = None,
     ) -> None:
         self.specification = specification
         self.implementation = implementation
@@ -128,10 +127,7 @@ class RalphWorkflowEngine:
         self.remediation = remediation
         self.criteria = criteria
         self.rulings = rulings
-        # The same writer the committing loop records through: the landing act
-        # is a row on the one record, so it is written at the one site rather
-        # than by a second writer of the same comment.
-        self._lane_state = lane_state
+        self._stages = stages
         self._git_base_url = git_base_url
         self.checkpointer = checkpointer
         self.retry = RetryPolicy(
@@ -140,9 +136,11 @@ class RalphWorkflowEngine:
             retry_on=should_retry,
         )
         self.floor = RetryFloor(delay_floor_for)
-        self.graph: FireGraph = self._build_graph(criteria=None).compile(
-            checkpointer=self.checkpointer
-        )
+        self.graph: FireGraph = (
+            self._build_graph(criteria=None)
+            if stages is None
+            else self._build_scope_graph(stages)
+        ).compile(checkpointer=self.checkpointer)
         self.native_graph: FireGraph | None = (
             None
             if criteria is None
@@ -199,18 +197,16 @@ class RalphWorkflowEngine:
     def _composition(self, scope: ScopeRef | None) -> FireGraph:
         """The composition this run's addressing selects, or its refusal.
 
-        An addressed run is a tracker-native fire: the subject is the
-        issue the scope names, and the criteria are its own sub-issues.
+        An engine given the scope stages holds the scope run as its graph.
+        Otherwise an addressed run is a tracker-native fire: the subject is
+        the issue the scope names, and the criteria are its own sub-issues.
         A deployment with no tracker-native criteria stage wired cannot
         serve one, and says so before any node runs.
         """
-        if scope is None:
+        if scope is None or self._stages is not None:
             return self.graph
         if self.native_graph is None:
             msg = "Scoped execution requires the scope entry pipeline"
-            raise ScopedExecutionUnavailableError(msg, ref=scope)
-        if scope.kind is not ScopeKind.ISSUE:
-            msg = "A tracker-native fire is addressed to one issue"
             raise ScopedExecutionUnavailableError(msg, ref=scope)
         return self.native_graph
 
@@ -275,27 +271,7 @@ class RalphWorkflowEngine:
             self.floor(self.implementation.run_ralph_loop),
             retry_policy=self.retry,
         )
-        graph.add_node(
-            "merge_to_feature",
-            self.floor(self._merge_to_feature),
-            retry_policy=self.retry,
-        )
-        graph.add_node(
-            "land_best_iteration",
-            self.floor(self._land_best_iteration),
-            retry_policy=self.retry,
-        )
-        graph.add_node(
-            "review_against_ticket",
-            self.floor(self.review.review_against_ticket),
-            retry_policy=self.retry,
-        )
-        graph.add_node(
-            "remediate",
-            self.floor(self.remediation.remediate),
-            retry_policy=self.retry,
-        )
-        graph.add_node("complete", self._complete_node)
+        self._add_shared_nodes(graph)
 
         # The two artifact writes are the authored arm's: both are keyed
         # off a generated ticket, which the native arm has not got.
@@ -378,6 +354,118 @@ class RalphWorkflowEngine:
         graph.add_edge("complete", END)
         return graph
 
+    def _add_shared_nodes(
+        self, graph: StateGraph[WorkflowState, None, WorkflowState, WorkflowState]
+    ) -> None:
+        """The nodes from the merge onward, the same on every composition."""
+        graph.add_node(
+            "merge_to_feature",
+            self.floor(self.consolidation.merge_to_feature),
+            retry_policy=self.retry,
+        )
+        graph.add_node(
+            "land_best_iteration",
+            self.floor(self.consolidation.land_best_iteration),
+            retry_policy=self.retry,
+        )
+        graph.add_node(
+            "review_against_ticket",
+            self.floor(self.review.review_against_ticket),
+            retry_policy=self.retry,
+        )
+        graph.add_node(
+            "remediate",
+            self.floor(self.remediation.remediate),
+            retry_policy=self.retry,
+        )
+        graph.add_node("complete", self._complete_node)
+
+    def _build_scope_graph(
+        self, stages: ScopeStages
+    ) -> StateGraph[WorkflowState, None, WorkflowState, WorkflowState]:
+        """The scope run: groom, prep, the loop, the merge, then the board's answer.
+
+        The parent is groomed and prepped by one session each; prep's
+        criteria are what the loop and the review grade. After a merge the
+        board is asked whether everything below the parent is finished: if
+        so the review runs, if not a remediation round goes back into the
+        loop while rounds remain. A remediation round, from here or from
+        the delivery around this graph, re-enters at the loop.
+        """
+        graph: StateGraph[WorkflowState, None, WorkflowState, WorkflowState] = (
+            StateGraph(WorkflowState)
+        )
+        graph.add_node(
+            "resolve_visibility",
+            self.floor(self.specification.resolve_visibility),
+            retry_policy=self.retry,
+        )
+        graph.add_node("groom", self.floor(stages.groom), retry_policy=self.retry)
+        graph.add_node("prep", self.floor(stages.prep), retry_policy=self.retry)
+        graph.add_node(
+            "run_ralph_loop",
+            self.floor(self.implementation.run_ralph_loop),
+            retry_policy=self.retry,
+        )
+        graph.add_node(
+            "scope_done", self.floor(stages.scope_done), retry_policy=self.retry
+        )
+        self._add_shared_nodes(graph)
+        graph.add_conditional_edges(
+            START,
+            self._route_entry,
+            {
+                "resolve_visibility": "resolve_visibility",
+                "generate_criteria": "run_ralph_loop",
+            },
+        )
+        graph.add_edge("resolve_visibility", "groom")
+        graph.add_edge("groom", "prep")
+        graph.add_conditional_edges(
+            "prep",
+            self._route_after_scope_prep,
+            {"run_ralph_loop": "run_ralph_loop", "complete": "complete"},
+        )
+        graph.add_edge("run_ralph_loop", "merge_to_feature")
+        graph.add_conditional_edges(
+            "merge_to_feature",
+            self._route_after_merge,
+            {
+                "review_against_ticket": "scope_done",
+                "remediate": "remediate",
+                "land_best_iteration": "land_best_iteration",
+                "complete": "complete",
+            },
+        )
+        graph.add_conditional_edges(
+            "scope_done",
+            self._route_after_scope_done,
+            {
+                "review_against_ticket": "review_against_ticket",
+                "remediate": "remediate",
+                "complete": "complete",
+            },
+        )
+        graph.add_conditional_edges(
+            "review_against_ticket",
+            self._route_after_review,
+            {"remediate": "remediate", "complete": "complete"},
+        )
+        graph.add_edge("remediate", "run_ralph_loop")
+        graph.add_edge("land_best_iteration", "complete")
+        graph.add_edge("complete", END)
+        return graph
+
+    def _route_after_scope_prep(self, state: WorkflowState) -> str:
+        """A parent prep left no criterion under has nothing to grade."""
+        return "complete" if state["criteria_infeasible"] else "run_ralph_loop"
+
+    def _route_after_scope_done(self, state: WorkflowState) -> str:
+        """Review a finished parent; an unfinished one is a failed review."""
+        if state["review_passed"]:
+            return "review_against_ticket"
+        return self._route_after_review(state)
+
     def _route_after_validation(self, state: WorkflowState) -> str:
         """Halt, regenerate, or proceed — computed from the sweep alone."""
         if state["criteria_infeasible"]:
@@ -455,102 +543,12 @@ class RalphWorkflowEngine:
             return "remediate"
         return "complete"
 
-    async def _merge_to_feature(
-        self, state: WorkflowState, config: RunnableConfig
-    ) -> dict[str, object]:
-        """Recheck the judgment before consolidation, including checkpoint replay."""
-        await require_current_native_snapshot(state, reader=self.criteria)
-        return await self.consolidation.merge_to_feature(state, config)
-
-    async def _land_best_iteration(
-        self, state: WorkflowState, config: RunnableConfig
-    ) -> dict[str, object]:
-        """Keep best-iteration publication tied to the judged obligations."""
-        await require_current_native_snapshot(state, reader=self.criteria)
-        landed = await self.consolidation.land_best_iteration(state, config)
-        await self._record_landing(state, config, landed=landed)
-        return landed
-
-    async def _record_landing(
-        self,
-        state: WorkflowState,
-        config: RunnableConfig,
-        *,
-        landed: dict[str, object],
-    ) -> None:
-        """Put the stall exit's best act on this lane's record, where re-entry reads it.
-
-        The record's rows are the acts a re-entry resolves: a lane re-entered
-        against the last act the loop recorded would resume from the work the
-        best iteration was chosen over (KOD-705). This step is the one that
-        has both the lane and the best iteration, so the row is written here,
-        through the writer the loop's own commits go through.
-
-        When the landing put the best iteration ON the deliverable branch, the
-        act recorded is the consolidated tip. Otherwise — a consolidation that
-        did not integrate, or a forge-less landing that published nothing —
-        the act recorded is the best commit itself, which is one of the loop
-        branch's own commits. A stall exit with no commit records nothing, and
-        neither does a lane whose subject is not a tracker one, which has no
-        record at all. A tracker lane with no record on its board yet — a
-        commit pushed whose record write then failed — is the writer's to
-        skip: it logs the skip and writes nothing, and the delivery after
-        this step still opens the pull request.
-
-        The row is bound to the loop branch the best commit was pushed on,
-        which is not the run's current loop branch when a later remediation
-        round committed nothing: a round that committed nothing may push its
-        branch at its cut point, but that push is not an iteration commit and
-        never replaces an earlier best, and a record naming that round's
-        branch would re-enter the lane at its cut point and not at its best.
-        Where the branch holding the best is not known, nothing is written
-        and the record keeps the association it had.
-        """
-        spec = state["fire_spec"]
-        if not isinstance(spec, TrackerSpec):
-            return
-        landed_sha = (
-            landed.get("feature_tip_sha")
-            if landed.get("feature_branch") == state["feature_branch"]
-            else state["best_iteration_sha"]
-        )
-        loop_branch = state["best_iteration_branch"]
-        if not isinstance(landed_sha, str) or loop_branch is None:
-            return
-        ctx = ExecutionContext.from_configurable(config)
-        if ctx.surface_holder is None:
-            raise NativeWriteRefusalError(
-                "The landing act has no holder to record the run under"
-            )
-        if self._lane_state is None:
-            raise NativeWriteRefusalError(
-                "Native execution requires the lane state writer"
-            )
-        await self._lane_state.record_landing(
-            lane=LaneBinding(
-                lane_key=spec.subject,
-                body_digest=body_digest(spec.body),
-                loop_branch=loop_branch,
-                deliverable_branch=state["feature_branch"],
-                base=ctx.base_spec,
-                repo_url=ctx.repo_url,
-                repo_path=ctx.repo_path,
-                run_id=ctx.surface_holder,
-                visibility=state["repo_visibility"],
-            ),
-            # The same tree this step's own consolidation reads the run in:
-            # the two shas of the interval are read there and nowhere else.
-            repo_path=await self.consolidation.repo_dir(config),
-            landed_sha=landed_sha,
-        )
-
     async def _complete_node(
         self,
         state: WorkflowState,
         config: RunnableConfig,
     ) -> dict[str, object]:
-        """Emit the fire terminal only under current criterion authority."""
-        await require_current_native_snapshot(state, reader=self.criteria)
+        """Emit the fire terminal."""
         _ = config
         writer = get_stream_writer()
         writer(fire_terminal(state))
@@ -626,6 +624,9 @@ class RalphWorkflowEngine:
             base_spec=base_spec,
             permission_mode=permission_mode,
             allowed_tools=allowed_tools,
+            # Only the scope composition's nodes are told the parent: a
+            # tracker-native fire addressed at one issue reads its own roster.
+            scope=scope if self._stages is not None else None,
         )
         configurable: dict[str, object] = ctx.model_dump()
         if self.checkpointer is not None:

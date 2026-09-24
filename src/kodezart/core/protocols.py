@@ -2599,6 +2599,8 @@ class QualityGate(Protocol):
     ``base_stale`` is what the entry read of the lane's recorded dispatch
     base against the base resolving now: when it is true, every grading the
     loop would carry from one iteration to the next lapses.
+    ``scope`` is the parent a scope run is addressed at, which its sessions
+    are told and its implementer works below on the board.
     """
 
     def run(
@@ -2621,6 +2623,7 @@ class QualityGate(Protocol):
         run_identity: RunIdentity | None = None,
         surface_holder: str | None = None,
         repo_visibility: RepoVisibility,
+        scope: ScopeRef | None = None,
     ) -> AsyncIterator[AgentEvent]:
         """Iterate execute/evaluate until pass or max."""
         ...
@@ -2661,8 +2664,13 @@ class Remediator(Protocol):
         repo_url: str | None,
         cache_key: str,
         run_identity: RunIdentity | None = None,
+        scope: ScopeRef | None = None,
     ) -> AsyncIterator[AgentEvent]:
-        """Draft the remediation ticket for one round."""
+        """Draft the remediation ticket for one round.
+
+        ``scope`` is the parent a scope run is addressed at; that run's
+        criteria are the ones on the request, and no roster is read here.
+        """
         ...
 
 

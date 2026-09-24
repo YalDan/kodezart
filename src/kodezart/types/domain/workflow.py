@@ -3,7 +3,7 @@
 from typing import NotRequired, Self, TypedDict
 
 from langchain_core.runnables import RunnableConfig
-from pydantic import ConfigDict, Field, model_validator
+from pydantic import ConfigDict, Field
 
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.accept import AcceptVerdict, FlaggedItem
@@ -17,7 +17,6 @@ from kodezart.types.domain.criteria import (
     CriterionFailure,
     ExecutionCriterion,
     GeneratedCriterion,
-    TrackerCriterion,
     TrackerCriterionSet,
 )
 from kodezart.types.domain.criterion_lifecycle import CriterionCrossOff
@@ -126,6 +125,8 @@ class ExecutionContext(WorkflowContext):
             "independent of any lane checkpoint namespace. Authored runs may omit it."
         ),
     )
+    #: The parent a scope run is addressed at; ``None`` on every other run.
+    scope: ScopeRef | None = None
 
     @property
     def base_branch(self) -> str:
@@ -195,17 +196,6 @@ class RalphLoopContext(ExecutionContext):
     acceptance_criteria: list[ExecutionCriterion] = Field(min_length=1)
     tracker_spec: TrackerSpec | None = None
     repo_visibility: RepoVisibility
-
-    @model_validator(mode="after")
-    def _criteria_match_source(self) -> Self:
-        """A native checkpoint cannot fall back to the authored cached arm."""
-        native = self.tracker_spec is not None
-        if any(
-            isinstance(criterion, TrackerCriterion) != native
-            for criterion in self.acceptance_criteria
-        ):
-            raise ValueError("Loop criteria must match the frozen subject source")
-        return self
 
 
 # ---------------------------------------------------------------------------

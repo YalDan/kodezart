@@ -56,6 +56,7 @@ from kodezart.domain.lapse import GradedState, HeldStanding, held_standing
 from kodezart.domain.prompt_variables import (
     changeset_variables,
     execution_criteria_variables,
+    scope_variables,
     tracker_checks_section,
 )
 from kodezart.domain.thread_id import ralph_thread_id
@@ -108,6 +109,7 @@ from kodezart.types.domain.ralph_outcome import (
 )
 from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.run_state import LaneBinding
+from kodezart.types.domain.scope import ScopeRef
 from kodezart.types.domain.session import (
     AllowedTools,
     PermissionMode,
@@ -202,6 +204,7 @@ class RalphLoop:
         run_identity: RunIdentity | None = None,
         surface_holder: str | None = None,
         repo_visibility: RepoVisibility,
+        scope: ScopeRef | None = None,
     ) -> AsyncIterator[AgentEvent]:
         """Execute the quality-gating loop.
 
@@ -226,6 +229,7 @@ class RalphLoop:
             acceptance_criteria=acceptance_criteria,
             tracker_spec=tracker_spec,
             repo_visibility=repo_visibility,
+            scope=scope,
         )
         configurable: dict[str, object] = ctx.model_dump()
         if self._checkpointer is not None:
@@ -431,7 +435,13 @@ class RalphLoop:
             permission_mode=ctx.permission_mode,
             allowed_tools=ctx.allowed_tools,
             skills=self._prompts.session_skills(PromptKey.IMPLEMENTATION, self._skills),
-            session_type=SessionType.TICKET_FIRE,
+            # A scope run's implementer keeps the board current as it works,
+            # so it runs as the board session kind, which carries the tracker.
+            session_type=(
+                SessionType.ORGANIZE_PASS
+                if ctx.scope is not None
+                else SessionType.TICKET_FIRE
+            ),
             run_identity=ctx.run_identity,
             session_policy=self._prompts.session_policy(PromptKey.IMPLEMENTATION),
             visibility=ctx.repo_visibility,
@@ -707,6 +717,7 @@ class RalphLoop:
                 {
                     **execution_criteria_variables(for_session),
                     **changeset_variables(changeset),
+                    **({} if ctx.scope is None else scope_variables(ctx.scope)),
                 },
             )
             nonlocal evaluation_attempt

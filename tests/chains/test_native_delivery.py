@@ -14,7 +14,6 @@ from typing import ClassVar
 
 import httpx
 import pytest
-import structlog
 from langgraph.checkpoint.memory import InMemorySaver
 from typing_extensions import is_protocol
 
@@ -27,7 +26,6 @@ from kodezart.chains import (
 from kodezart.chains.criteria import TrackerCriteria, require_current_native_snapshot
 from kodezart.chains.lane_delivery import LaneDeliveryCoordinator
 from kodezart.chains.native_delivery import NativeLaneWorkflow
-from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.composition.delivery import build_native_lane_workflow
 from kodezart.config.app import AppConfig
 from kodezart.core.errors import NoStructuredOutputError
@@ -35,7 +33,6 @@ from kodezart.core.protocols import (
     AgentRunner,
     CIMonitor,
     FireCriteriaReader,
-    FireCriteriaSource,
     ForgeQuery,
     GitService,
     LaneStateWriter,
@@ -59,7 +56,6 @@ from kodezart.domain.errors import (
 )
 from kodezart.domain.stall_report import DO_NOT_MERGE_PREFIX
 from kodezart.services.lane_records import LaneRecordReader
-from kodezart.services.lane_state_writer import TrackerLaneStateWriter
 from kodezart.types.domain.agent import (
     AcceptanceCriteriaOutput,
     ResultEvent,
@@ -284,13 +280,8 @@ def composed(
     evaluations=None,
     forge_present=True,
     loop=None,
-    record_writer=False,
 ):
-    """The native lane graph over one fire, as composition assembles it.
-
-    *record_writer* hands the delivering step the fire's own record writer,
-    the one composition hands both seats, instead of the recording double.
-    """
+    """The native lane graph over one fire, as composition assembles it."""
     tracker = CountingTracker()
     executor = NativeExecutor(
         evaluations or [native_evaluation(), native_evaluation()] * (rounds + 1)
@@ -321,7 +312,7 @@ def composed(
     wire = ForgeWire(red_first=red)
     wire.current_sha = lambda: NEXT_SHA if len(merger.calls) > 1 else SHA
     forge = _make_client(wire) if forge_present else None
-    lane_state = fire._lane_state if record_writer else RecordingLaneState()
+    lane_state = RecordingLaneState()
     lane = build_native_lane_workflow(
         fire=fire,
         lane_state=lane_state,
@@ -435,20 +426,12 @@ async def test_a_stalled_lane_opens_and_watches_its_pull_request_like_any_other(
     From there the lane opens one pull request and watches its checks exactly
     as an accepted lane does: one create, one watch, one record, and nothing
     the forge saw carries the authored arm's marker (KOD-327).
-
-    The scripted loop records no commit, so this lane has no record on its
-    board when the stall exit lands its best iteration. Such a lane has
-    nothing to re-enter from, so the landing act is skipped and says so in a
-    log line naming the lane and the landed sha; refusing the landing would
-    have refused the delivery with it, and the work would never reach a pull
-    request (KOD-705).
     """
     lane, state, config, wire, forge, executor, tracker, lane_state = composed(
         loop=stalled_loop()
     )
     try:
-        with structlog.testing.capture_logs() as logs:
-            reports, events, final = await run(lane, state, config)
+        reports, events, final = await run(lane, state, config)
         terminal = next(
             event for event in events if isinstance(event, WorkflowCompleteEvent)
         )
@@ -474,13 +457,6 @@ async def test_a_stalled_lane_opens_and_watches_its_pull_request_like_any_other(
         assert lane_state.pull_requests == [
             (result.lane_key, result.pr, RepoVisibility.PRIVATE)
         ]
-        # The landing act was skipped, once, for this lane at the landed sha,
-        # and no first record was composed out of it.
-        assert [
-            (entry["lane"], entry["landed_sha"])
-            for entry in logs
-            if entry["event"] == "lane_landing_not_recorded"
-        ] == [(SUBJECT, result.final_commit_sha)]
         assert (
             await LaneRecordReader(tracker=tracker, operation=native_operation()).find(
                 issue_key=SUBJECT, lane_key=SUBJECT
@@ -491,51 +467,6 @@ async def test_a_stalled_lane_opens_and_watches_its_pull_request_like_any_other(
         assert all(
             DO_NOT_MERGE_PREFIX not in wire.creates[0][key]
             for key in ("title", "body", "head", "base")
-        )
-    finally:
-        await forge.close()
-
-
-async def test_a_stalled_lane_with_no_record_delivers_through_the_record_writer():
-    """The delivery write on a lane with no record is skipped like the landing.
-
-    Composition hands one record writer to the fire and to the lane, so the
-    delivering step here writes through the same writer the landing did. The
-    lane has no record: the landing act is skipped and logged, the pull
-    request is opened and watched, and the pull-request write is skipped and
-    logged the same way, naming the lane and the pull request. The delivery
-    completes and no first record is composed out of either (KOD-705).
-    """
-    lane, state, config, wire, forge, _, tracker, lane_state = composed(
-        loop=stalled_loop(), record_writer=True
-    )
-    try:
-        assert lane_state is lane.fire._lane_state
-        assert isinstance(lane_state, TrackerLaneStateWriter)
-        with structlog.testing.capture_logs() as logs:
-            reports, _, final = await run(lane, state, config)
-        assert len(reports) == 1
-        assert isinstance(final["delivery"], CompletedLaneDelivery)
-        result = reports[0].delivery.result
-        assert result.outcome is WorkflowOutcome.stalled_pr_opened
-        assert len(wire.creates) == 1
-        assert len(wire.watches) == 1
-        assert [
-            (entry["lane"], entry["landed_sha"])
-            for entry in logs
-            if entry["event"] == "lane_landing_not_recorded"
-        ] == [(SUBJECT, result.final_commit_sha)]
-        assert [
-            (entry["lane"], entry["pull_request"])
-            for entry in logs
-            if entry["event"] == "lane_pull_request_not_recorded"
-        ] == [(result.lane_key, result.pr.url)]
-        assert result.lane_key == SUBJECT
-        assert (
-            await LaneRecordReader(tracker=tracker, operation=native_operation()).find(
-                issue_key=SUBJECT, lane_key=SUBJECT
-            )
-            is None
         )
     finally:
         await forge.close()
@@ -1067,15 +998,6 @@ def deliver_step_handing_to_the_coordinator(at):
 #: earlier barriers on the tracker's roster, with the set arriving just
 #: before that call.
 SNAPSHOT_GATED_REACH = {
-    node_of(RalphWorkflowEngine._merge_to_feature): {
-        "entry": lambda at: at.lane.fire._merge_to_feature(at.entered(), at.config),
-    },
-    node_of(RalphWorkflowEngine._land_best_iteration): {
-        "entry": lambda at: at.lane.fire._land_best_iteration(at.entered(), at.config),
-    },
-    node_of(RalphWorkflowEngine._complete_node): {
-        "entry": lambda at: at.lane.fire._complete_node(at.entered(), at.config),
-    },
     node_of(NativeLaneWorkflow._deliver): {
         "entry": lambda at: at.lane._deliver(at.entered(), at.config),
         "coordinator": deliver_step_handing_to_the_coordinator,
@@ -1534,8 +1456,9 @@ class DriveLaneState(DrivePort):
 
 
 #: The fake behind each port, keyed by the port the constructors name by
-#: object.  Both criteria ports are the one reader: the composition hands
-#: the engine's criteria source to the coordinator as its reader.
+#: object.  The criteria reader is also the engine's criteria source: the
+#: composition hands the engine's criteria source to the coordinator as its
+#: reader.
 PORT_FAKES = {
     AgentRunner: DriveRunner,
     GitService: DriveGit,
@@ -1543,7 +1466,6 @@ PORT_FAKES = {
     ForgeQuery: DriveForgeQuery,
     CIMonitor: DriveChecks,
     FireCriteriaReader: DriveCriteria,
-    FireCriteriaSource: DriveCriteria,
     PRStateReader: DrivePRState,
     PromptSetProvider: DrivePrompts,
     OutboundContentGate: DriveGate,
@@ -1600,7 +1522,7 @@ class DrivenLane:
             **COORDINATOR_SETTINGS,
         )
         self.lane._lane_state = by_port[LaneStateWriter]
-        self.lane.fire.criteria = by_port[FireCriteriaSource]
+        self.lane.fire.criteria = by_port[FireCriteriaReader]
         consolidation = self.lane.fire.consolidation
         for ledger in (
             consolidation._merger.calls,
@@ -1699,15 +1621,6 @@ def drive_completing(at):
 #: that branches on the state it is handed is driven in the shape its
 #: first reach above gives it; the other shapes stay with the reaches.
 GATED_DRIVES = {
-    node_of(RalphWorkflowEngine._merge_to_feature): lambda at: (
-        at.lane.fire._merge_to_feature(at.state, at.config)
-    ),
-    node_of(RalphWorkflowEngine._land_best_iteration): lambda at: (
-        at.lane.fire._land_best_iteration(at.state, at.config)
-    ),
-    node_of(RalphWorkflowEngine._complete_node): lambda at: at.lane.fire._complete_node(
-        at.state, at.config
-    ),
     node_of(NativeLaneWorkflow._deliver): drive_handed_off,
     node_of(NativeLaneWorkflow._remediate): drive_remediating,
     node_of(NativeLaneWorkflow._complete): drive_completing,

@@ -346,6 +346,7 @@ class GatedQualityGate:
         run_identity: RunIdentity | None = None,
         surface_holder: str | None = None,
         repo_visibility: RepoVisibility = RepoVisibility.UNKNOWN,
+        scope: ScopeRef | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
         self.calls += 1
         if self.calls == self._gate_on_call:

@@ -127,6 +127,7 @@ class FireRemediation:
             repo_url=ctx.repo_url,
             cache_key=ctx.cache_key,
             run_identity=ctx.run_identity,
+            scope=ctx.scope,
         ):
             writer(event)
             if isinstance(event, WorkflowRemediationEvent):

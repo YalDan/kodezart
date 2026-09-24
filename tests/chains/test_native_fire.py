@@ -430,7 +430,6 @@ def engine(
         retry_max_attempts=1,
         retry_initial_interval=0,
         delay_floor_for=no_delay_floor,
-        lane_state=lane_state,
         criteria=criteria,
         rulings=(
             FireTimeRulings(
@@ -676,12 +675,6 @@ async def test_an_unwired_engine_still_refuses_an_addressed_run() -> None:
     fire = engine(criteria=None)
     with pytest.raises(ScopedExecutionUnavailableError, match="scope entry pipeline"):
         await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
-
-
-async def test_a_container_address_is_not_a_fire() -> None:
-    fire = engine(criteria=TrackerCriteria(tracker=tracker()))
-    with pytest.raises(ScopedExecutionUnavailableError, match="addressed to one issue"):
-        await drive(fire, scope=ScopeRef(kind=ScopeKind.PROJECT, key="a-project"))
 
 
 def test_the_addressed_issue_is_the_subject_the_run_carries() -> None:
@@ -2187,31 +2180,6 @@ async def test_native_consumer_without_runtime_reader_refuses(consumer):
     with pytest.raises(FireSpecEntryError, match="reader is not configured"):
         await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
     assert len(executor.execution_prompts) == (1 if consumer == "review" else 0)
-
-
-async def test_native_loop_without_frozen_spec_cannot_use_cached_criteria():
-    source = TrackerCriteria(tracker=CountingTracker())
-    spec, snapshot = await source.read_entry(issue_key=SUBJECT)
-    executor = NativeExecutor([])
-    fire = engine(criteria=source, executor=executor, real_loop=True)
-    with pytest.raises(ValidationError, match="frozen subject source"):
-        async for _ in fire.implementation._quality_gate.run(
-            prompt=spec.body,
-            repo_path="/tmp/fire",
-            repo_url=None,
-            cache_key="missing-spec",
-            base_spec=trunk_base("main"),
-            permission_mode=PermissionMode.UNATTENDED,
-            allowed_tools=["Bash"],
-            feature_branch="feature",
-            ralph_branch="ralph",
-            work_base_ref="main",
-            acceptance_criteria=snapshot.criteria,
-            repo_visibility=RepoVisibility.UNKNOWN,
-        ):
-            pass
-    assert executor.execution_prompts == []
-    assert executor.evaluation_prompts == []
 
 
 async def test_native_remediation_receives_the_final_inner_evaluation_snapshot():

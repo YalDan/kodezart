@@ -4949,6 +4949,9 @@ KEYED_DISPATCH_COUNTS = {
     "mutation_survival.py": 2,
     # One organize phase's session, with the tracker tools the host attaches.
     "organize_session_owner.py": 1,
+    # One organize phase's session, groom or prep, with the tracker tools its
+    # session kind is given.
+    "scope_stages.py": 1,
 }
 
 

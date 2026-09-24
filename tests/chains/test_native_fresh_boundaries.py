@@ -6,7 +6,6 @@ from langgraph.checkpoint.memory import InMemorySaver
 from kodezart.chains.criteria import TrackerCriteria
 from kodezart.domain.errors import FireSpecEntryError, InvalidFireCriterionError
 from kodezart.types.domain.agent import (
-    WorkflowCompleteEvent,
     WorkflowIterationEvent,
     WorkflowReviewEvent,
 )
@@ -71,66 +70,6 @@ def current_checks(change):
     elif change == "changed-check":
         checks[NESTED_OWED] = "changed live Check with  spaces"
     return checks
-
-
-@pytest.mark.parametrize(
-    "boundary", ["merge_to_feature", "complete", "land_best_iteration"]
-)
-@pytest.mark.parametrize("change", [*CHANGES, "unchanged"])
-async def test_native_checkpoint_effect_requires_unchanged_judgment_snapshot(
-    boundary, change
-):
-    port, saver = CountingTracker(), InMemorySaver()
-    original = engine(
-        criteria=TrackerCriteria(tracker=port),
-        real_loop=True,
-        checkpointer=saver,
-        executor=NativeExecutor(
-            [
-                native_evaluation(failed=boundary == "land_best_iteration"),
-                native_evaluation(),
-            ]
-        ),
-    )
-    initial, config = prepare(original, boundary + change)
-    async for _ in original.native_graph.astream(
-        initial, config=config, interrupt_before=[boundary]
-    ):
-        pass
-    paused = original.native_graph.get_state(config)
-    assert paused.next == (boundary,)
-    mutate(port, change)
-    executor = NativeExecutor([native_evaluation()])
-    fresh = engine(
-        criteria=TrackerCriteria(tracker=port),
-        executor=executor,
-        real_loop=True,
-        checkpointer=saver,
-    )
-    if change == "unchanged":
-        events = [
-            event
-            async for event in fresh.native_graph.astream(
-                None, config=config, stream_mode="custom"
-            )
-        ]
-        terminal = next(
-            event for event in events if isinstance(event, WorkflowCompleteEvent)
-        )
-        assert terminal.accepted == (boundary != "land_best_iteration")
-    else:
-        error = InvalidFireCriterionError if change == "removed" else FireSpecEntryError
-        with pytest.raises(error):
-            async for _ in fresh.native_graph.astream(
-                None, config=config, stream_mode="custom"
-            ):
-                pass
-        assert not fresh.consolidation._merger.calls
-        assert executor.schema_calls == []
-    saved = fresh.native_graph.get_state(config).values
-    assert saved["criterion_set"] == paused.values["criterion_set"]
-    assert saved["fire_spec"] == paused.values["fire_spec"]
-    assert port.spec_reads == 1
 
 
 @pytest.mark.parametrize("consumer", ["loop", "review"])

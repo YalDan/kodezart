@@ -18,6 +18,7 @@ from kodezart.domain.accept_gate import (
 )
 from kodezart.domain.amendment import NativeAmendmentRefusalError
 from kodezart.domain.lane_entry import recorded_entry
+from kodezart.domain.prompt_variables import scope_variables
 from kodezart.domain.ticket import format_fire_spec
 from kodezart.domain.workflow_state import (
     current_fire_spec,
@@ -48,6 +49,7 @@ from kodezart.types.domain.gating import (
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.remediation import RemediationPlan
 from kodezart.types.domain.run_records import RunIdentity
+from kodezart.types.domain.scope import ScopeRef
 from kodezart.types.domain.session import AllowedTools, PermissionMode
 from kodezart.types.domain.workflow import (
     ExecutionContext,
@@ -99,6 +101,7 @@ class FireImplementation:
         run_identity: RunIdentity | None = None,
         surface_holder: str | None = None,
         repo_visibility: RepoVisibility,
+        scope: ScopeRef | None = None,
     ) -> WorkflowIterationEvent:
         """Delegate to the quality gate for iterative execution."""
         writer = get_stream_writer()
@@ -122,6 +125,7 @@ class FireImplementation:
             run_identity=run_identity,
             surface_holder=surface_holder,
             repo_visibility=repo_visibility,
+            scope=scope,
         ):
             writer(event)
             if isinstance(event, NativeAmendmentEvent):
@@ -151,14 +155,18 @@ class FireImplementation:
         The round's ticket and the ref its branch is cut from arrive the
         same way — off the state a remediation round wrote — so a round
         implementing a fix is built on the tree that fix is about.
+
+        A scope run grades the criteria its prep left on the state, and its
+        implementer is told the parent it works below.
         """
         ctx = ExecutionContext.from_configurable(config)
 
         spec = current_fire_spec(state)
         criterion_set = state["criterion_set"]
-        if isinstance(spec, TrackerSpec):
+        native = spec if isinstance(spec, TrackerSpec) and ctx.scope is None else None
+        if native is not None:
             criterion_set = await current_native_criteria(
-                spec=spec,
+                spec=native,
                 reader=self._criteria_reader,
                 held=recorded_native_roster(criterion_set),
             )
@@ -169,9 +177,12 @@ class FireImplementation:
         if isinstance(remediation, RemediationPlan):
             task_md += "\n\n## Remediation\n" + remediation.instructions
 
+        bindings: dict[str, object] = {"task_md": task_md}
+        if ctx.scope is not None:
+            bindings.update(scope_variables(ctx.scope))
         implementation_prompt = self._prompts.template_for(
             PromptKey.IMPLEMENTATION,
-        ).render({"task_md": task_md})
+        ).render(bindings)
 
         entered = recorded_entry(state["lane_entry"])
         last_iteration_event = await self.run_quality_gate(
@@ -191,14 +202,15 @@ class FireImplementation:
             permission_mode=ctx.permission_mode,
             allowed_tools=ctx.allowed_tools,
             acceptance_criteria=criteria,
-            tracker_spec=spec if isinstance(spec, TrackerSpec) else None,
+            tracker_spec=native,
             cache_key=ctx.cache_key,
             run_identity=ctx.run_identity,
             surface_holder=ctx.surface_holder,
             repo_visibility=state["repo_visibility"],
+            scope=ctx.scope,
         )
 
-        if isinstance(spec, TrackerSpec):
+        if native is not None:
             # The gate reconciles result text to its dispatched Check snapshot.
             # Preserve that final iteration's snapshot for failure evidence;
             # later execution/review still rereads the tracker at its barrier.

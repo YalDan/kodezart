@@ -28,6 +28,7 @@ from kodezart.domain.fan_in import fan_in_report, require_permutation
 from kodezart.domain.prompt_variables import (
     changeset_variables,
     execution_criteria_variables,
+    scope_variables,
 )
 from kodezart.domain.workflow_state import (
     current_fire_spec,
@@ -106,7 +107,8 @@ class FireReview:
 
         async def review() -> IterationGrade:
             nonlocal criterion_set
-            if isinstance(spec, TrackerSpec):
+            # A scope run reviews the criteria its prep left on the state.
+            if isinstance(spec, TrackerSpec) and ctx.scope is None:
                 criterion_set = await current_native_criteria(
                     spec=spec,
                     reader=self._criteria_reader,
@@ -117,6 +119,7 @@ class FireReview:
                 {
                     **execution_criteria_variables(criteria),
                     **changeset_variables(changeset),
+                    **({} if ctx.scope is None else scope_variables(ctx.scope)),
                 },
             )
             result_event, rate_limit_rejected = await drain(

@@ -1103,8 +1103,8 @@ async def test_the_completion_node_emits_exactly_the_terminal_for_every_native_s
     it — with the stream writer a graph run would hand it and a config
     carrying a thread id, over tracker-native states: each carries the
     subject's issue key, a tracker spec and the roster the engine's reader
-    answers, so the snapshot check the node runs first admits it, and the
-    reader is shown asked once per state.  The states are one per outcome
+    answers, and the reader is shown never asked: the node reads nothing
+    before it emits.  The states are one per outcome
     the shipped classifier names — derived from the classifier's source, so
     a member it starts producing is a run missing here; among them the
     plateau with the trajectory's flag set and, under the same loop exit,
@@ -1200,7 +1200,7 @@ async def test_the_completion_node_emits_exactly_the_terminal_for_every_native_s
                 )
                 assert keys_in(dump) & forbidden == set(), rendering
     assert driven == len(runs) * len(axes)
-    assert criteria.asked == [native_spec()] * driven
+    assert criteria.asked == []
 
 
 #: The completion node, the builder it hands the writer's event through,
@@ -1213,7 +1213,7 @@ async def test_the_completion_node_emits_exactly_the_terminal_for_every_native_s
 #: derived from the node's own source and its builder's.
 CONSTRUCTION_SITE: dict[Callable[..., object], str] = {
     RalphWorkflowEngine._complete_node: (
-        "2cfefe7e6204a4eae0c49a59fc3cec325996dad611de2fe6caac2a75b1b300ed"
+        "48eac8e20f09d78cf877fb7757c8358241bde4e48c8ab450ba8dd0bc4ba64e7e"
     ),
     fire_terminal: "266b5d0a53e674c24e69768ca423520c429d26bdc93cdb06813cb2bff99b3285",
     gate_cleared: "d946d1754e3e827be61ef888723ad0fa88ef5ef5845e4c48409c76ac905426f3",

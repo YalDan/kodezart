@@ -1778,6 +1778,7 @@ class FakeQualityGate:
         run_identity: RunIdentity | None = None,
         surface_holder: str | None = None,
         repo_visibility: RepoVisibility = RepoVisibility.UNKNOWN,
+        scope: ScopeRef | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
         self.calls.append(
             {
@@ -1893,6 +1894,7 @@ class FakeRemediator:
         repo_url: str | None,
         cache_key: str,
         run_identity: RunIdentity | None = None,
+        scope: ScopeRef | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
         self.calls.append(request)
         yield WorkflowRemediationEvent(
