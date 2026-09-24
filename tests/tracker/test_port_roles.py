@@ -204,7 +204,7 @@ def test_every_exempted_member_is_a_member_of_the_port_today():
     guard lets through.
     """
     assert RUN_RECORD_EXEMPTION == frozenset(
-        {"record_run_alarm", "read_run_alarm", "post_run_event", "lane_run_events"}
+        {"record_run_alarm", "read_run_alarms", "post_run_event", "lane_run_events"}
     )
     assert RUN_RECORD_EXEMPTION <= port_members()
     assert EXEMPT_UNTIL_KOD_390 <= port_members()

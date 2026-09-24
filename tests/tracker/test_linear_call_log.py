@@ -130,9 +130,7 @@ async def criterion_reopen(tracker) -> None:
 
 async def run_alarm(tracker) -> None:
     value = alarm()
-    await tracker.read_run_alarm(
-        issue_key=APPROVED_ISSUE, subject=value.subject, signal=value.signal
-    )
+    await tracker.read_run_alarms(issue_key=APPROVED_ISSUE)
     async with RunSurfaceLease(
         tracker=tracker,
         job_id=HOLDER,
