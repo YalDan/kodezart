@@ -169,7 +169,12 @@ async def test_an_abandoned_criterion_without_a_check_neither_joins_nor_refuses(
 
     spec, _ = await TrackerCriteria(tracker=tracker).read_entry(issue_key=SUBJECT)
 
-    assert spec.criteria == (CRITERION, GRADED, "grandchild/1")
+    assert spec.criteria == (
+        CRITERION,
+        GRADED,
+        "grandchild/1",
+        "great-grandchild/1",
+    )
     assert ABANDONED not in spec.criteria
     assert tracker_writes() == before
 
