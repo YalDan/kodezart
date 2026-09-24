@@ -37,7 +37,6 @@ from kodezart.domain.errors import (
     OrganizeSurfaceResidualError,
     OrganizeWriteRefusalError,
     OutboundContentBlockedError,
-    SurfaceContendedError,
     SurfaceLeaseError,
     WriteBackReadError,
 )
@@ -1453,10 +1452,30 @@ class OrganizeOwner:
                                     declared=declared,
                                 )
                             except OrganizeSurfaceResidualError as exc:
-                                # The round holds the residual and works
-                                # on: the next round declares from a fresh
-                                # snapshot, and one that survives to the
-                                # bound is written at the halt.
+                                # The write needs a surface inside the scope
+                                # and outside the round's declared set, which
+                                # another run may hold or be bidding for. The
+                                # round writes nothing there and holds the
+                                # residual: the dry round reports the class
+                                # again, the next round declares from a fresh
+                                # snapshot, and a residual that survives to
+                                # the bound is written at the halt with the
+                                # finding it left open. A lease this run
+                                # itself lost is not this case: renewal raises
+                                # and stops the run. A declared-set member
+                                # another run holds refuses the whole round
+                                # before any session.
+                                for unheld in sorted(
+                                    exc.surfaces,
+                                    key=lambda item: (item.ref.key, item.kind.value),
+                                ):
+                                    await self._log.awarning(
+                                        "organize_surface_unheld",
+                                        issue_key=request.issue_key,
+                                        phase=phase.spec.kind.value,
+                                        surface_kind=unheld.kind.value,
+                                        scope_key=unheld.ref.key,
+                                    )
                                 for formed in surface_findings(
                                     outside=exc.surfaces,
                                     phase=phase.spec.kind.value,
@@ -1499,25 +1518,6 @@ class OrganizeOwner:
                                         ),
                                     ),
                                 ) from exc
-                            except SurfaceContendedError as unheld:
-                                # Another run holds, or is bidding for, a surface
-                                # this write needs. The subject's membership and
-                                # gate were re-asked before its lease was taken,
-                                # and graph peers are re-asked under the lease. A
-                                # lease this run itself lost is not this case: it
-                                # is the base SurfaceLeaseError and stops the run.
-                                # The round repairs nothing here; the dry round
-                                # reports the class again and the bound reports it
-                                # with its finding.
-                                await self._log.awarning(
-                                    "organize_surface_unheld",
-                                    issue_key=request.issue_key,
-                                    phase=phase.spec.kind.value,
-                                    surface_kind=unheld.surface_kind,
-                                    scope_key=unheld.scope_key,
-                                    current_holder=unheld.current_holder,
-                                )
-                                break
                             if verified_write.verdict is not AuditVerdict.HOLDS:
                                 raise _HaltRequestError(
                                     cause=StageHaltCause.ADMISSION_EXHAUSTED,

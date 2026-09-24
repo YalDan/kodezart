@@ -4137,9 +4137,9 @@ async def test_a_groom_refusal_with_no_finding_after_the_roster_empties_still_ha
     assert report.completed_phases == ()
 
 
-def description_surface(key):
+def graph_surface(key):
     return WritableSurface(
-        kind=SurfaceKind.ISSUE_DESCRIPTION,
+        kind=SurfaceKind.ISSUE_GRAPH,
         ref=ScopeRef(kind=ScopeKind.ISSUE, key=key),
     )
 
@@ -4171,92 +4171,203 @@ def drop_the_mandate(monkeypatch, executor):
     monkeypatch.setattr(executor, "stream", repaired)
 
 
+#: A member approved in its own right: its own run's container, which an
+#: issue-scope run may hold, inside a scope still in triage.
+APPROVED_PEER = "FIX-APPROVED"
+#: The criterion child the mandate's finding is owned by.
+MANDATE_OWNER = "restating-criterion"
+#: The mandating sentence, planted in the subject's body and quoted by the
+#: finding: it asks for a relation onto the approved member.
+RELATION_MANDATE = (
+    "This issue must stay blocked by the approved member until that member lands."
+)
+
+
+def cross_container_mandate(monkeypatch):
+    """A mandate whose repair is a relation onto a member another run owns.
+
+    Over the pre-approval row, the one row that writes the graph. The scope
+    is still in triage and ``APPROVED_PEER`` carries its own approval, so the
+    grooming round's declared set leaves it out: an edge onto it needs its
+    graph address, which is inside the scope and outside the set. Until that
+    edge exists the subject's judge refuses the subject, the criterion
+    child's verification names the mandating sentence as a MANDATE finding,
+    and the subject's author answers with exactly that edge.
+    """
+    import re
+
+    h = owner_harness()
+    owner, board, executor = h.factory(
+        body=f"{RELATION_MANDATE} {h.PREPARED_BODY}", convergence_bound=2
+    )
+    board.server.issues[APPROVED_PEER] = FakeMcpIssue(
+        id=APPROVED_PEER,
+        parent_id=CLAIMED_ISSUE,
+        description=h.PREPARED_BODY,
+        labels=["approved scope"],
+    )
+    board.server.issues[MANDATE_OWNER] = FakeMcpIssue(
+        id=MANDATE_OWNER,
+        parent_id=CLAIMED_ISSUE,
+        description=h.RESTATING_BODY,
+        labels=["check"],
+    )
+    original = executor.stream
+
+    def related():
+        return ("blockedBy", APPROVED_PEER) in board.server.issues[
+            CLAIMED_ISSUE
+        ].relations
+
+    async def scripted(**kwargs):
+        title = kwargs["output_format"]["schema"].get("title")
+        keys = re.findall(r"<issue_key>(.*?)</issue_key>", kwargs["prompt"])
+        async for event in original(**kwargs):
+            if related():
+                yield event
+                continue
+            if title == "OrganizeProposal" and keys[-1:] == [CLAIMED_ISSUE]:
+                event = result(
+                    structured_output={
+                        "kind": "graph",
+                        "issue_id": CLAIMED_ISSUE,
+                        "changes": [{"kind": "blocked_by", "add": [APPROVED_PEER]}],
+                    }
+                )
+            elif title == "AdmissionJudgment" and keys[-1:] == [CLAIMED_ISSUE]:
+                event = result(
+                    structured_output={
+                        "issue_id": CLAIMED_ISSUE,
+                        "verdict": "not_buildable",
+                        "evidence": "The mandated dependency is not recorded.",
+                        "refusal_kind": "spec_gap",
+                        "invented_decision": "Record the dependency the mandate names.",
+                    }
+                )
+            elif (
+                title == "AdmissionJudgment"
+                and keys[-1:] == [MANDATE_OWNER]
+                and h.VERIFY_OPENING in kwargs["prompt"]
+            ):
+                event = result(
+                    structured_output={
+                        **event.structured_output,
+                        "findings": [
+                            {
+                                "issue_id": MANDATE_OWNER,
+                                "defect_class": h.REGROWTH_CLASS,
+                                "evidence": "The child waits on an unrecorded edge.",
+                                "role": "mandate",
+                                "mandate_text": RELATION_MANDATE,
+                            }
+                        ],
+                    }
+                )
+            yield event
+
+    monkeypatch.setattr(executor, "stream", scripted)
+    return owner, board
+
+
+def escalated(board):
+    """Every escalation record on the board, as the comments carrying it."""
+    h = owner_harness()
+    return [
+        comment
+        for comment in board.server.comments
+        if comment.body.startswith(h.ESCALATION_MARKER)
+    ]
+
+
 @pytest.mark.parametrize("held", [True, False])
 async def test_a_surface_held_by_another_run_leaves_the_mandate_open_and_escalated(
     monkeypatch, held
 ):
-    """An unheld in-scope surface stops the round and keeps the finding open.
+    """An unheld in-scope surface stops the write and keeps the finding open.
 
-    The author's fix drops the mandating sentence, so a write that lands
-    repairs the mandate and the stage converges: that is the control row.
-    With another pass holding the subject's description through the same
-    adapter, the stage's own write cannot be made. The round writes nothing
-    there, the verification that follows names the mandate class again, and
-    the convergence bound reports the surviving finding and escalates it on
-    the issue that owns it. Nothing is marked complete.
+    The control row: the author's fix drops the mandating sentence, so a
+    write that lands repairs the mandate and the stage converges.
+
+    The held row: the mandate asks for a relation onto a member approved in
+    its own right, whose graph surface another pass holds through the same
+    adapter. That address is inside the scope and outside the grooming
+    round's declared set, so the write is refused before it reaches the
+    board and nothing is written there. The verification that follows names
+    the mandate class again, so the stage is not dry, and the convergence
+    bound reports the surviving finding with its quoted sentence and
+    escalates it on the issue that owns it. Nothing is marked complete.
     """
     h = owner_harness()
-    owner, board, executor, _observed = h.regrowth(monkeypatch, mandate=True)
-    drop_the_mandate(monkeypatch, executor)
     if not held:
+        owner, board, executor, _observed = h.regrowth(monkeypatch, mandate=True)
+        drop_the_mandate(monkeypatch, executor)
         report = await h.run_owner(owner)
         assert report.halt is None
         assert "body complete" in board.server.issues[CLAIMED_ISSUE].labels
         return
+    owner, board = cross_container_mandate(monkeypatch)
     with structlog.testing.capture_logs() as logs:
         async with RunSurfaceLease(
             tracker=board.tracker(),
             job_id="another-pass",
-            surfaces=frozenset({description_surface(CLAIMED_ISSUE)}),
+            surfaces=frozenset({graph_surface(APPROVED_PEER)}),
             lease_seconds=60.0,
         ):
             report = await h.run_owner(owner)
     halt = report.halt
     assert report.completed_phases == ()
-    assert not {"body complete", "criteria complete"} & set(
-        board.server.issues[CLAIMED_ISSUE].labels
-    )
+    assert "graph complete" not in board.server.issues[CLAIMED_ISSUE].labels
     assert halt.cause == "convergence_exhausted"
     assert halt.bound.rounds_used == 2
-    assert [(f.issue_id, f.role, f.mandate_text) for f in halt.surviving_findings] == [
-        ("restating-criterion", DefectRole.MANDATE, h.MANDATE_SENTENCE)
-    ]
-    escalations = [
-        comment
-        for comment in board.server.comments
-        if comment.body.startswith(h.ESCALATION_MARKER)
-    ]
-    # The subject's refused admission is escalated beside the surviving
-    # finding: its body is still the draft the held lease kept in place.
+    assert [
+        (f.issue_id, f.role, f.mandate_text)
+        for f in halt.surviving_findings
+        if f.role is DefectRole.MANDATE
+    ] == [(MANDATE_OWNER, DefectRole.MANDATE, RELATION_MANDATE)]
+    # The refused address is recorded too: on the subject, since the member
+    # that owns it is on the other side of approval and can take no record.
+    assert [
+        (f.issue_id, f.defect_class)
+        for f in halt.surviving_findings
+        if f.role is not DefectRole.MANDATE
+    ] == [(CLAIMED_ISSUE, "undeclared_surface")]
+    escalations = escalated(board)
+    # The subject's refused admission and its refused address are escalated
+    # beside the surviving mandate: two records on the subject, one on the
+    # issue that owns the finding, and none on the member another run holds.
     assert sorted(comment.issue_id for comment in escalations) == [
         CLAIMED_ISSUE,
-        "restating-criterion",
+        CLAIMED_ISSUE,
+        MANDATE_OWNER,
     ]
-    owning = [
-        comment for comment in escalations if comment.issue_id == "restating-criterion"
-    ]
+    owning = [comment for comment in escalations if comment.issue_id == MANDATE_OWNER]
     assert len(owning) == 1
-    assert h.MANDATE_SENTENCE in owning[0].body
-    assert "needs decision" in board.server.issues["restating-criterion"].labels
-    assert (
-        board.server.issues[CLAIMED_ISSUE].description
-        == f"{h.MANDATE_SENTENCE} {h.DRAFT_BODY}"
-    )
+    assert RELATION_MANDATE in owning[0].body
+    assert "needs decision" in board.server.issues[MANDATE_OWNER].labels
+    assert ("blockedBy", APPROVED_PEER) not in board.server.issues[
+        CLAIMED_ISSUE
+    ].relations
     assert [
         args
         for name, args in board.calls
-        if name == "save_issue"
-        and "description" in args
-        and args.get("id") == CLAIMED_ISSUE
+        if name == "save_issue" and "blockedBy" in args
     ] == []
     unheld = [record for record in logs if record["event"] == "organize_surface_unheld"]
-    # One per round: the surface is still held when the second round reaches
-    # the same write, and each round says so under its own name.
+    # One per round: the second round reaches the same write, and each round
+    # says so under its own name.
     assert len(unheld) == 2
     assert all(
         (
             record["issue_key"],
             record["phase"],
-            record["current_holder"],
             record["surface_kind"],
             record["scope_key"],
         )
         == (
             CLAIMED_ISSUE,
-            "ticket",
-            "another-pass",
-            SurfaceKind.ISSUE_DESCRIPTION.value,
-            CLAIMED_ISSUE,
+            "groom",
+            SurfaceKind.ISSUE_GRAPH.value,
+            APPROVED_PEER,
         )
         for record in unheld
     )
@@ -4267,20 +4378,21 @@ async def test_a_surface_another_run_is_bidding_for_leaves_the_mandate_open(
 ):
     """A race the backend has not settled is a surviving finding, not a crash.
 
-    Another pass takes the subject's description through the same adapter,
-    and every later write the backend stamps shares that grant's instant.
-    The stage's own bid then meets a grant it cannot order itself against,
-    so the acquisition is refused with no settled holder. The round writes
-    nothing there and the convergence bound reports the mandate it left.
+    Another pass takes the approved member's graph surface through the same
+    adapter, and every later write the backend stamps shares that grant's
+    instant, so a bid on that surface could not be ordered against it. The
+    address is outside the grooming round's declared set, so the round never
+    bids for it: the write is refused before it reaches the board, and the
+    convergence bound reports the mandate it left and escalates it on the
+    issue that owns it.
     """
     h = owner_harness()
-    owner, board, executor, _observed = h.regrowth(monkeypatch, mandate=True)
-    drop_the_mandate(monkeypatch, executor)
+    owner, board = cross_container_mandate(monkeypatch)
     with structlog.testing.capture_logs() as logs:
         async with RunSurfaceLease(
             tracker=board.tracker(),
             job_id="another-pass",
-            surfaces=frozenset({description_surface(CLAIMED_ISSUE)}),
+            surfaces=frozenset({graph_surface(APPROVED_PEER)}),
             lease_seconds=60.0,
         ):
             (grant,) = board.grants()
@@ -4289,18 +4401,23 @@ async def test_a_surface_another_run_is_bidding_for_leaves_the_mandate_open(
     halt = report.halt
     assert report.completed_phases == ()
     assert halt.cause == "convergence_exhausted"
-    assert [(f.issue_id, f.role, f.mandate_text) for f in halt.surviving_findings] == [
-        ("restating-criterion", DefectRole.MANDATE, h.MANDATE_SENTENCE)
+    assert [
+        (f.issue_id, f.role, f.mandate_text)
+        for f in halt.surviving_findings
+        if f.role is DefectRole.MANDATE
+    ] == [(MANDATE_OWNER, DefectRole.MANDATE, RELATION_MANDATE)]
+    owning = [
+        comment for comment in escalated(board) if comment.issue_id == MANDATE_OWNER
     ]
-    assert (
-        board.server.issues[CLAIMED_ISSUE].description
-        == f"{h.MANDATE_SENTENCE} {h.DRAFT_BODY}"
-    )
+    assert [RELATION_MANDATE in comment.body for comment in owning] == [True]
+    assert ("blockedBy", APPROVED_PEER) not in board.server.issues[
+        CLAIMED_ISSUE
+    ].relations
     unheld = [record for record in logs if record["event"] == "organize_surface_unheld"]
     assert unheld
     assert all(
-        (record["issue_key"], record["current_holder"], record["scope_key"])
-        == (CLAIMED_ISSUE, None, CLAIMED_ISSUE)
+        (record["issue_key"], record["surface_kind"], record["scope_key"])
+        == (CLAIMED_ISSUE, SurfaceKind.ISSUE_GRAPH.value, APPROVED_PEER)
         for record in unheld
     )
 
