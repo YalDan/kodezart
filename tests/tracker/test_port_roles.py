@@ -1296,11 +1296,15 @@ def test_a_role_nothing_in_the_run_takes_is_reported():
 
 
 def test_wiring_an_unwired_consumer_takes_its_role_off_the_list():
-    """The exemption reddens the day one of those consumers is wired."""
+    """The exemption reddens the day one of those consumers is wired.
+
+    Every service taking the role alone is wired on its own, so the role
+    leaves the list whichever of its consumers the run comes to reach.
+    """
     sources = source_tree()
     text = port_module_text()
     role = min(UNWIRED_CONSUMER_ROLES)
-    (module,) = (
+    modules = [
         path
         for path, source in sorted(sources.items())
         if role in annotation_names(source, path)
@@ -1309,10 +1313,14 @@ def test_wiring_an_unwired_consumer_takes_its_role_off_the_list():
             other in annotation_names(source, path)
             for other in UNWIRED_CONSUMER_ROLES - {role}
         )
-    )
-    dotted = module.removesuffix(".py").replace("/", ".")
-    sources["main.py"] += (
-        f"\nimport {LinearMcpTracker.__module__.split('.')[0]}.{dotted}\n"
-    )
+    ]
+    assert modules
+    assert role in unreached_roles(sources, text)
+    for module in modules:
+        dotted = module.removesuffix(".py").replace("/", ".")
+        wired = dict(sources)
+        wired["main.py"] += (
+            f"\nimport {LinearMcpTracker.__module__.split('.')[0]}.{dotted}\n"
+        )
 
-    assert role not in unreached_roles(sources, text)
+        assert role not in unreached_roles(wired, text), module
