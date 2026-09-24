@@ -303,6 +303,13 @@ DASH = " — "
 #: added between them, is a change here whatever it is spelled with.
 OUTSIDE_THE_STANDARD: tuple[str, ...] = (
     "kodezart house rules:",
+    "Scope discipline: build what the task states and stop there. No setting, "
+    "layer, port, record or state machine the task does not need, and no "
+    "handling for a rare or improbable case the task does not name: that case "
+    "is its own backlog item. Tests: one test per stated behaviour, at the level "
+    "that shows it; no test for a case that cannot occur, no test that pins how "
+    "the code is written rather than what it does, and deleted code takes the "
+    "tests that pin it with it.",
     "Hard prohibitions: no mocked or hardcoded values outside tests, no silent "
     "fallbacks, no backwards-compatibility shims, no fabricated success signals "
     "(returning OK without doing the work, swallowing errors, catching "
@@ -340,14 +347,14 @@ STANDARD_OPENING = "Engineering standard:"
 #: second group lands inside the standard's own paragraph.
 NINTH_OUTSIDE: dict[str, tuple[str, str]] = {
     "adjacent_on_a_later_line": (
-        "task requires.\n\nHard prohibitions:",
+        "task requires.\n\nScope discipline:",
         "task requires.\n\nAlso required of every change:\nYAGNI — Build nothing "
-        "until it is asked for.\n\nHard prohibitions:",
+        "until it is asked for.\n\nScope discipline:",
     ),
     "adjacent_unspaced_em_dash": (
-        "task requires.\n\nHard prohibitions:",
+        "task requires.\n\nScope discipline:",
         "task requires.\n\nAlso required of every change:\nYAGNI—Build nothing "
-        "until it is asked for.\n\nHard prohibitions:",
+        "until it is asked for.\n\nScope discipline:",
     ),
     "further_out_em_dash": (
         "\nCross-component conventions (naming patterns,",

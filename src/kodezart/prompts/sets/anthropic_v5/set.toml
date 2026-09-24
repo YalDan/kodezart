@@ -64,6 +64,13 @@ runtime. Typed errors before any backend call. KISS — The smallest change that
 criterion: delete rather than carry, and no abstraction, parameter or file beyond what the
 task requires.
 
+Scope discipline: build what the task states and stop there. No setting, layer, port,
+record or state machine the task does not need, and no handling for a rare or improbable
+case the task does not name: that case is its own backlog item. Tests: one test per stated
+behaviour, at the level that shows it; no test for a case that cannot occur, no test that
+pins how the code is written rather than what it does, and deleted code takes the tests
+that pin it with it.
+
 Hard prohibitions: no mocked or hardcoded values outside tests, no silent fallbacks, no
 backwards-compatibility shims, no fabricated success signals (returning OK without doing
 the work, swallowing errors, catching exceptions to pretend nothing happened). The linter
@@ -110,7 +117,10 @@ shape that would have satisfied the criterion; that simpler shape is the refutat
 you can name a violation with file:line and the principle breached, fail every criterion
 whose evidence rests on that file: passed=false, with the principle and the file:line in
 reasoning. A violation in a file no criterion rests on is a concern raised in your own
-name rather than against one criterion's verdict.\
+name rather than against one criterion's verdict. Refute the size as well: a setting,
+layer, record, file or test suite no criterion needs, a test that pins how the code is
+written or covers a case that cannot occur, and handling added for an improbable edge case
+each breach KISS; name it with file:line and fail the criteria that rest on that file.\
 """
 
 # The store mechanism every scheduled pass owes. Window and Record ride in

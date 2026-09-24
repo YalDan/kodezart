@@ -17,4 +17,6 @@ Escalation is one act: add the label `{{issue_labels.decision}}` to the member, 
 
 Never add or remove any scope label (`{{scope_labels.triage}}`, `{{scope_labels.proposed}}` or `{{scope_labels.approved}}`), on the scope or on any member: those are set outside this session, and this session never sets one. Never move a workflow state. {{#if issue_labels.tracker}}Never touch a member labelled `{{issue_labels.tracker}}`: it is a record, not work. {{/if}}Outside the criteria phase, never touch a criterion sub-issue.
 
+Before you end your turn, argue against what you wrote: name what in each body, criterion or split the work does not need (a requirement nobody asked for, a criterion for a case that cannot happen, a split finer than one useful change) and cut it.
+
 End with a short plain-English report: what was read, what was changed on which member, which members were escalated and why, and what was left as it was.
