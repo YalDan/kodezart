@@ -65,6 +65,7 @@ from kodezart.types.domain.dispatch import PassSignal, SelfWriteLedger
 from kodezart.types.domain.operation import (
     DocumentSystem,
     OperationConfig,
+    OperationMemberAbsentError,
     RepoEntry,
     RunKind,
 )
@@ -237,6 +238,37 @@ def prompt_pass_schedule(config: AppConfig) -> dict[PromptKey, _PromptPassRow]:
     }
 
 
+def organize_tick_schedule(
+    config: AppConfig, *, grooming: _PromptPassRow
+) -> _PromptPassRow:
+    """The organize tick's cadence and budget: its own settings, else *grooming*'s.
+
+    The tick is scheduled under the grooming pass's row and used to take that
+    row's numbers outright, so the operator's six-hour grooming cadence made
+    a triaged scope wait up to six hours for its groom phase (2026-09-24).
+    ``KODEZART_ORGANIZE__INTERVAL_SECONDS`` and ``__TIMEOUT_SECONDS`` are the
+    tick's own; each one left unset keeps the grooming value, so a deployment
+    that sets neither keeps the cadence it had. The gate stays the grooming
+    row's: the tick has no gate of its own.
+    """
+    own = config.organize
+    if own is None:
+        return grooming
+    return _PromptPassRow(
+        interval_seconds=(
+            grooming.interval_seconds
+            if own.interval_seconds is None
+            else own.interval_seconds
+        ),
+        timeout_seconds=(
+            grooming.timeout_seconds
+            if own.timeout_seconds is None
+            else own.timeout_seconds
+        ),
+        signals=grooming.signals,
+    )
+
+
 def absent_roster(operation: OperationConfig) -> tuple[str, ...]:
     """The roster collections a scheduled template enumerates and *operation* lacks.
 
@@ -285,6 +317,151 @@ def session_passes_wire(operation: OperationConfig) -> bool:
     return not runs_scope_flow(operation) and not absent_roster(operation)
 
 
+def dispatch_passes_wire(
+    operation: OperationConfig | None, *, tracker_present: bool, delivery_present: bool
+) -> bool:
+    """Whether the per-issue dispatch passes wire here.
+
+    A dialled tracker to claim on, a delivery probe to answer "is this issue
+    already delivered?", and an operation that does not work scope by scope.
+    Named once: the wiring reads it, and so does the marker prefix check
+    that has to know which passes the wiring will build.
+    """
+    return (
+        tracker_present
+        and delivery_present
+        and operation is not None
+        and not runs_scope_flow(operation)
+    )
+
+
+def scope_passes_wire(
+    operation: OperationConfig | None, *, tracker_present: bool
+) -> bool:
+    """Whether the scope passes wire here: a dialled tracker and declared scopes.
+
+    Three passes stand or fall on this one answer — the organize tick, the
+    standing scopes' heartbeat and the supervisor tick — because all three
+    read the same declared rows.
+    """
+    return tracker_present and operation is not None and runs_scope_flow(operation)
+
+
+#: The marker purposes each pass family asks the operation for. Measured
+#: 2026-09-24 by reading every ``configured_marker_prefix(purpose=...)``,
+#: ``_prefix("...")`` and ``*_PURPOSE`` site under ``src`` and the port
+#: methods behind them; a purpose asked some other way is a hole here.
+#:
+#: ``scope`` is the organize tick, the scope runs its heartbeat submits and
+#: the supervisor tick: ``claim`` on every leased write (the surface lease
+#: the organize tick releases was the first live refusal), ``issue_identity``
+#: on description edits and split creation, ``work_ref`` on a lane's base,
+#: ``run_state`` and ``run_event`` on the lane record, ``ruling``,
+#: ``escalation`` and ``decision`` on the questions a run raises and reads
+#: back, ``amendment`` on the write-back, ``run_alarm`` on the supervisor's
+#: record. ``dispatch`` is what the per-issue dispatch pass and its
+#: lifecycle writer ask at their own tick; the fire a dispatch queues asks
+#: for the lane purposes at its point of use, and that stays a point-of-use
+#: refusal so that a v0.2 operation file boots as it did. ``audit`` is the
+#: audit pass: its own ``audit`` records, published under a lease
+#: (``claim``), the lane records, run events and split children its sweep
+#: reads (``run_state``, ``run_event``, ``issue_identity``), the rulings
+#: its drift arm reads, the escalations it raises, and ``repository`` when
+#: it routes an unbound team's lane. The legacy prompt passes are agent
+#: sessions and ask for none: a session reaches the tracker through the MCP
+#: its host attaches, not through the tracker this process dialled.
+MARKER_PURPOSES_BY_FAMILY: Mapping[str, frozenset[str]] = {
+    "scope": frozenset(
+        {
+            "amendment",
+            "claim",
+            "decision",
+            "escalation",
+            "issue_identity",
+            "ruling",
+            "run_alarm",
+            "run_event",
+            "run_state",
+            "work_ref",
+        }
+    ),
+    "dispatch": frozenset(
+        {"base_spec", "claim", "repository", "run_outcome", "work_ref"}
+    ),
+    "audit": frozenset(
+        {
+            "audit",
+            "claim",
+            "escalation",
+            "issue_identity",
+            "repository",
+            "ruling",
+            "run_event",
+            "run_state",
+        }
+    ),
+}
+
+
+def wired_marker_purposes(
+    *,
+    config: AppConfig,
+    operation: OperationConfig | None,
+    tracker_present: bool,
+    delivery_present: bool,
+) -> frozenset[str]:
+    """Every marker purpose a pass that WILL wire on this deployment can ask for.
+
+    Read off the same predicates the wiring builds on, so a purpose only an
+    unwired family asks for is never demanded: a scope deployment is not
+    refused over ``base_spec``, and a per-issue one is not refused over
+    ``run_alarm``. With no tracker dialled nothing here writes through one,
+    and the answer is empty.
+    """
+    families: list[str] = []
+    if scope_passes_wire(operation, tracker_present=tracker_present):
+        families.append("scope")
+    if dispatch_passes_wire(
+        operation, tracker_present=tracker_present, delivery_present=delivery_present
+    ):
+        families.append("dispatch")
+    if config.audit is not None and tracker_present:
+        families.append("audit")
+    return frozenset().union(*(MARKER_PURPOSES_BY_FAMILY[name] for name in families))
+
+
+def _verify_marker_prefixes(
+    *,
+    config: AppConfig,
+    operation: OperationConfig | None,
+    tracker: TrackerPort | None,
+    github_api: DeliveryProbe | None,
+) -> None:
+    """Refuse the boot over every marker prefix a wired pass can ask for and lacks.
+
+    All of them at once, sorted, in the same ``marker_prefixes['purpose']``
+    spelling the point-of-use refusal uses, so one boot names the whole
+    edit rather than one key per tick. Before this check the first grooming
+    tick with work refused 30 s in, at the surface lease's release, over a
+    file that boot had accepted four times (measured 2026-09-24).
+    """
+    if operation is None:
+        return
+    wanted = wired_marker_purposes(
+        config=config,
+        operation=operation,
+        tracker_present=tracker is not None,
+        delivery_present=github_api is not None,
+    )
+    missing = sorted(wanted - operation.marker_prefixes.keys())
+    if not missing:
+        return
+    raise OperationMemberAbsentError(
+        missing=", ".join(f"marker_prefixes[{purpose!r}]" for purpose in missing),
+        stops="a scheduled pass that reads or writes those comment identities",
+    )
+
+
 def _record_kind_for(key: PromptKey) -> RunKind:
     """The record kind a scheduled prompt pass reports as — total, or loud.
 
@@ -330,7 +507,7 @@ async def build_prompt_passes(
     scheduled: list[ScheduledPass] = []
     if organize is not None:
         key = PromptKey.GROOMING_PASS
-        row = schedule.pop(key)
+        row = organize_tick_schedule(config, grooming=schedule.pop(key))
         scheduled.append(
             ScheduledPass(
                 name=key.value,
@@ -742,8 +919,11 @@ async def verify_pass_preflight(
 ) -> None:
     """Every boot refusal the scheduled passes can raise, before anything runs.
 
-    All three refusals are decided by CONFIGURATION plus one tracker round
+    All of these refusals are decided by CONFIGURATION plus one tracker round
     trip, and none of them needs a queue, an executor or a workflow engine.
+    Among them the marker prefixes: every purpose a pass that will wire can
+    ask for must be declared, and a boot lacking any is refused naming all
+    of them (:func:`wired_marker_purposes`).
     Before all of them the alarm table is checked total, which needs nothing
     at all: a signal of the vocabulary with no fold refuses the boot here and
     is never asked about again.
@@ -768,6 +948,11 @@ async def verify_pass_preflight(
     # configuration must not reach a scheduler. Its answer is read nowhere
     # here, because which templates render is decided by the wiring predicate.
     verify_organize_configuration(config=config, operation=operation, tracker=tracker)
+    # Before the audit check, which refuses its own three prefixes one at a
+    # time: here a missing audit prefix is named beside every other one.
+    _verify_marker_prefixes(
+        config=config, operation=operation, tracker=tracker, github_api=github_api
+    )
     verify_audit_configuration(
         config=config, operation=operation, tracker=tracker, forge=audit_forge
     )
@@ -827,11 +1012,17 @@ async def build_dispatch_runtime(
     # scope by scope and has no use for a pass that scans a whole board — and
     # the passes do not run, named, never inferred from an empty schedule.
     built: DispatchPasses | None = None
+    # The ``is not None`` clauses after each predicate repeat what it already
+    # answered, for the type checker's narrowing only.
     if (
-        dialled is not None
+        dispatch_passes_wire(
+            operation,
+            tracker_present=dialled is not None,
+            delivery_present=github_api is not None,
+        )
+        and dialled is not None
         and operation is not None
         and github_api is not None
-        and not runs_scope_flow(operation)
     ):
         built = await build_dispatch_passes(
             config=config,
@@ -914,7 +1105,11 @@ async def build_dispatch_runtime(
     # deployment work scope by scope", read off the same copy every other arm
     # here reads: a tick observing rows the organize tick never grooms would
     # be this factory holding two opinions about one operation.
-    if dialled is not None and operation is not None and runs_scope_flow(operation):
+    if (
+        scope_passes_wire(operation, tracker_present=dialled is not None)
+        and dialled is not None
+        and operation is not None
+    ):
         scheduled.append(
             build_supervisor_pass(
                 config=config, operation=operation, tracker=dialled.tracker

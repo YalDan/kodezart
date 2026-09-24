@@ -200,10 +200,10 @@ def test_the_shipped_file_declares_no_table_the_scope_path_never_reads() -> None
 
 
 #: Every purpose a marker prefix can be asked for is named in the source by one
-#: of three shapes. The floor below keeps an empty derivation from making the
+#: of four shapes. The floor below keeps an empty derivation from making the
 #: subset assertion say nothing.
 PURPOSE_FLOOR: frozenset[str] = frozenset(
-    {"run_state", "run_event", "ruling", "amendment"}
+    {"run_state", "run_event", "ruling", "amendment", "repository"}
 )
 
 SRC = Path(__file__).resolve().parents[2] / "src"
@@ -227,11 +227,14 @@ def _string(node: ast.expr | None) -> str | None:
 def marker_purposes_read_under_src() -> set[str]:
     """Every marker purpose the source can ask for, off the syntax tree.
 
-    Three shapes, because the code asks in three ways: a `purpose=` keyword on
+    Four shapes, because the code asks in four ways: a `purpose=` keyword on
     any call; the sole positional argument of a call whose function name ends in
-    `_prefix`; and a module-level name ending in `_PURPOSE`.
+    `_prefix`; the first of the two positional arguments of a call whose
+    function name ends in `_pattern` (`LinearMarkers._pattern(purpose, suffix)`,
+    the one way `repository` is asked for); and a module-level name ending in
+    `_PURPOSE`.
 
-    A purpose named some fourth way is a blind spot stated here rather than
+    A purpose named some fifth way is a blind spot stated here rather than
     hidden. It would make this guard accept a declared member nothing reads,
     which is the direction that costs a reader a false promise and not a run.
     """
@@ -247,6 +250,13 @@ def marker_purposes_read_under_src() -> set[str]:
             if (
                 _called_name(node.func).endswith("_prefix")
                 and len(node.args) == 1
+                and not node.keywords
+                and (value := _string(node.args[0]))
+            ):
+                found.add(value)
+            if (
+                _called_name(node.func).endswith("_pattern")
+                and len(node.args) == 2
                 and not node.keywords
                 and (value := _string(node.args[0]))
             ):

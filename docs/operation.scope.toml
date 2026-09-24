@@ -104,10 +104,17 @@ done = "Done"
 # marker. An absent purpose is refused at its point of use — the walk resolves
 # run_state and run_event together before it records a lane, and re-reads the
 # lane record under run_state when it re-enters.
+# Boot checks this table against every purpose a pass it schedules can ask
+# for, and refuses naming every missing key at once (KOD-1235).
 [marker_prefixes]
 run_outcome = "kodezart-run-outcome"
 run_state = "kodezart-run-state"
 run_event = "kodezart-run-event"
+# Every leased write, the organize tick's surface lease among them, is
+# arbitrated by this fenced block; a lease cannot be released without it.
+claim = "kodezart-claim"
+# A lane's base is resolved from the work refs recorded under this prefix.
+work_ref = "kodezart-workref"
 # The organize owner's split creation reads this before it writes a split, and
 # refuses naming marker_prefixes['issue_identity'] without it.
 issue_identity = "kodezart-issue"
@@ -118,6 +125,9 @@ ruling = "kodezart-ruling"
 escalation = "kodezart-escalation"
 decision = "kodezart-decision"
 audit = "kodezart-audit"
+# The audit pass routes a lane whose team is bound to no repository by the
+# repository recorded under this prefix, so a configured audit asks for it.
+repository = "kodezart-repo"
 # The observation tick this file schedules records each lane's run-shape alarm
 # under this prefix, and refuses that lane by name without it.
 run_alarm = "kodezart-run-alarm"

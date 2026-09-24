@@ -186,6 +186,10 @@ done = "Done"
 
 [marker_prefixes]
 run_outcome = "fixture-run-outcome"
+claim = "fixture-claim"
+work_ref = "fixture-work-ref"
+base_spec = "fixture-base-spec"
+repository = "fixture-repository"
 
 {RUN_EVENT_TOML}
 
