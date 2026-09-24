@@ -965,12 +965,12 @@ session over the whole board. Every later tick first asks a gate question: one
 short session of the same kind, with the same tracker tools, given the window
 since the last tick of that pass that ran, the declared teams and
 repositories, and what the pass acts on, and answering in one fixed shape
-(`run`, `moved`, `reason`). `pass_gate_asked` names the pass, the window start
-and the engine and effort the question runs at; `pass_gate_answered` carries
-the answer. On `run: false` the pass sleeps its interval
+(`run`, `moved`, `reason`). `agent_question_asked` (key `pass_gate`) names the
+engine and effort the question runs at; `pass_gate_answered` names the pass and
+carries the answer. On `run: false` the pass sleeps its interval
 (`scheduled_pass_skipped` names the tick); on `run: true` the session opens as
 usual; an answer that is missing or that cannot be read is named in
-`pass_gate_unanswered` and the pass runs. The question runs on whatever engine
+`agent_question_unanswered` and the pass runs. The question runs on whatever engine
 `KODEZART_AGENT__SESSION_MODELS` pins the `pass_gate` key to — pin it to the
 cheapest engine the provider offers; unset, it runs on
 `KODEZART_AGENT__MODEL`. The dispatch pass keeps its deterministic gate over

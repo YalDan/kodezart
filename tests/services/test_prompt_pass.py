@@ -504,15 +504,16 @@ class TestTheGateQuestion:
         assert gate["output_format"] == GATE_OUTPUT_FORMAT
         assert gate["session_type"] is SessionType.SCHEDULED_PASS
         assert gate["permission_mode"] is PERMISSION_MODE
-        assert gate["allowed_tools"] == ["Bash"]
+        assert gate["allowed_tools"] == []
         assert gate["workspace_path"] == WORKSPACE
         assert gate["session_policy"] == registry.session_policy(PromptKey.PASS_GATE)
         assert gate["skills"] == registry.session_skills(
             PromptKey.PASS_GATE, ALL_SKILLS
         )
-        asked = terminal_event(logs, "pass_gate_asked")
-        assert asked["name"] == PromptKey.GROOMING_PASS.value
-        assert asked["window_start"] == TICK.isoformat()
+        asked = terminal_event(logs, "agent_question_asked")
+        assert asked["key"] == PromptKey.PASS_GATE.value
+        answered = terminal_event(logs, "pass_gate_answered")
+        assert answered["name"] == PromptKey.GROOMING_PASS.value
         assert asked["effort"] == SessionEffort.MAX.value
         assert asked["model"] is None
         # The gate is asked first, and the pass session comes after it.
@@ -598,10 +599,10 @@ class TestTheGateQuestion:
             assert await pass_.run(NEXT_TICK) is PassRun.RAN
 
         assert len(runner.pass_calls()) == 2
-        unanswered = terminal_event(logs, "pass_gate_unanswered")
+        unanswered = terminal_event(logs, "agent_question_unanswered")
         assert unanswered["log_level"] == "warning"
-        assert unanswered["name"] == PromptKey.GROOMING_PASS.value
-        assert unanswered["error"] == "the gate session ended with no structured answer"
+        assert unanswered["key"] == PromptKey.PASS_GATE.value
+        assert unanswered["error"] == "the session ended with no structured answer"
         assert [
             record["event"]
             for record in logs
@@ -619,8 +620,8 @@ class TestTheGateQuestion:
             assert await pass_.run(NEXT_TICK) is PassRun.RAN
 
         assert len(runner.pass_calls()) == 2
-        unanswered = terminal_event(logs, "pass_gate_unanswered")
-        assert unanswered["name"] == PromptKey.GROOMING_PASS.value
+        unanswered = terminal_event(logs, "agent_question_unanswered")
+        assert unanswered["key"] == PromptKey.PASS_GATE.value
         assert "run" in str(unanswered["error"])
         assert "reason" in str(unanswered["error"])
 
@@ -647,7 +648,7 @@ class TestTheGateQuestion:
         assert gate["session_policy"].model == GATE_MODEL
         assert gate["session_policy"].effort is SessionEffort.MAX
         assert all(call["session_policy"].model is None for call in runner.pass_calls())
-        asked = terminal_event(logs, "pass_gate_asked")
+        asked = terminal_event(logs, "agent_question_asked")
         assert asked["model"] == GATE_MODEL
         assert asked["effort"] == SessionEffort.MAX.value
 

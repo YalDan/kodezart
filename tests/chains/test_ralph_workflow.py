@@ -4942,6 +4942,9 @@ KEYED_DISPATCH_COUNTS = {
     "remediation.py": 1,
     "ticket_generation.py": 2,
     "prompt_pass.py": 1,
+    # One board question answered in a typed shape, shared by every key
+    # that asks one.
+    "agent_question.py": 1,
     # The removal and the second grading of one mutation reading.
     "mutation_survival.py": 2,
     # One organize phase's session, with the tracker tools the host attaches.

@@ -15,8 +15,9 @@ interval; ``run: true`` opens it; an answer that is missing or that cannot
 be read runs the pass, named in its own event, because a broken answer is
 never a reason to leave the board unread.  The gate is the same shape as
 every other structured session here — a prompt key, a template, an output
-model whose schema is the wire contract, and one call through the runner —
-and its engine is whatever ``session_models`` pins the ``pass_gate`` key to.
+model whose schema is the wire contract, asked through the one shared
+question (``services/agent_question.py``) — and its engine is whatever
+``session_models`` pins the ``pass_gate`` key to.
 
 One class for every prompt pass rather than one per pass.  The passes
 differ in exactly one value — which template to render — so a second copy
@@ -42,14 +43,11 @@ import asyncio
 from collections import Counter
 from datetime import datetime
 
-from pydantic import ValidationError
-
 from kodezart.core.error_egress import redact_credentials
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import AgentRunner, PromptSetProvider
-from kodezart.core.stream_drain import drain
+from kodezart.services.agent_question import ask
 from kodezart.types.domain.agent import (
-    PASS_GATE_SCHEMA,
     ErrorEvent,
     PassGateOutput,
     ResultEvent,
@@ -60,7 +58,6 @@ from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.session import AllowedTools, PermissionMode, SessionType
 from kodezart.types.domain.skills import SkillsSelection
-from kodezart.types.domain.subagents import NO_SUBAGENTS
 
 _log: BoundLogger = get_logger(__name__)
 
@@ -208,58 +205,26 @@ class PromptPass:
     async def _ask(self, *, window_start: datetime) -> PassGateOutput | None:
         """The gate question over *window_start*, or ``None`` for no usable answer.
 
-        The same session kind and grant as the pass, because the question
-        is about the same board through the same tracker tools; the engine
-        and effort are the ``pass_gate`` key's own policy.  A stream that
-        ends with no structured output, or with one the output model
-        refuses, is named and answered ``None``: the caller runs the pass
+        Asked through :func:`ask` on the ``pass_gate`` key's own policy.  A
+        missing or unreadable answer is ``None``, and the caller runs the pass
         on it.  A raise is not an answer and propagates to the scheduler.
         """
         name = self._key.value
-        policy = self._prompts.session_policy(PromptKey.PASS_GATE)
-        prompt = self._prompts.template_for(PromptKey.PASS_GATE).render(
-            gate_render_bindings(name=name, window_start=window_start)
+        answer = await ask(
+            runner=self._runner,
+            prompts=self._prompts,
+            skills=self._skills,
+            workspace_path=self._workspace_path,
+            key=PromptKey.PASS_GATE,
+            bindings=gate_render_bindings(name=name, window_start=window_start),
+            answer=PassGateOutput,
         )
-        await _log.ainfo(
-            "pass_gate_asked",
-            name=name,
-            window_start=window_start.isoformat(),
-            model=policy.model,
-            effort=None if policy.effort is None else policy.effort.value,
-        )
-        result, _rate_limit_rejected = await drain(
-            self._runner.stream_in_workspace(
-                prompt=prompt,
-                workspace_path=self._workspace_path,
-                permission_mode=self._permission_mode,
-                allowed_tools=self._allowed_tools,
-                skills=self._prompts.session_skills(PromptKey.PASS_GATE, self._skills),
-                session_type=self._session_type,
-                agents=NO_SUBAGENTS,
-                session_policy=policy,
-                output_format={"type": "json_schema", "schema": PASS_GATE_SCHEMA},
-            ),
-            site="pass_gate",
-        )
-        if result is None or result.structured_output is None:
-            await _log.awarning(
-                "pass_gate_unanswered",
+        if answer is not None:
+            await _log.ainfo(
+                "pass_gate_answered",
                 name=name,
-                error="the gate session ended with no structured answer",
+                run=answer.run,
+                moved_count=len(answer.moved),
+                reason=answer.reason,
             )
-            return None
-        try:
-            answer = PassGateOutput.model_validate(result.structured_output)
-        except ValidationError as exc:
-            await _log.awarning(
-                "pass_gate_unanswered", name=name, error=redact_credentials(str(exc))
-            )
-            return None
-        await _log.ainfo(
-            "pass_gate_answered",
-            name=name,
-            run=answer.run,
-            moved_count=len(answer.moved),
-            reason=answer.reason,
-        )
         return answer

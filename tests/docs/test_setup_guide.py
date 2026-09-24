@@ -45,9 +45,9 @@ CITED_EVENTS: frozenset[str] = frozenset(
         "pass_scheduler_started",
         "pass_gate_delta",
         "dispatch_pass_completed",
-        "pass_gate_asked",
+        "agent_question_asked",
         "pass_gate_answered",
-        "pass_gate_unanswered",
+        "agent_question_unanswered",
         "scheduled_pass_skipped",
     },
 )
