@@ -622,7 +622,8 @@ class TestARefusedCredential:
         With the cool-down elapsed, the next call presents the credential
         again and is answered once the server accepts it.
         """
-        monkeypatch.setattr(http_tool_caller, "_REFUSAL_COOLDOWN_SECONDS", 0.0)
+        cool_down = 0.2
+        monkeypatch.setattr(http_tool_caller, "_REFUSAL_COOLDOWN_SECONDS", cool_down)
         server = _FakeStreamableServer(
             on_call=_CallBehaviour.UNWELL_ONCE,
             unwell_status=HTTPStatus.UNAUTHORIZED,
@@ -633,6 +634,7 @@ class TestARefusedCredential:
         with pytest.raises(McpCredentialRefusedError):
             await caller.call_tool(name="get_issue", arguments={})
         server.initialize_status = HTTPStatus.OK
+        await asyncio.sleep(cool_down * 2)
 
         answer = await caller.call_tool(name="list_issues", arguments={})
 
