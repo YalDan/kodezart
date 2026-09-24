@@ -607,7 +607,39 @@ class TestARefusedCredential:
         with pytest.raises(McpCredentialRefusedError):
             await caller.call_tool(name="list_issues", arguments={})
 
-        assert server.requests.count("initialize") == 2, "nothing dials after the latch"
+        assert server.requests.count("initialize") == 2, (
+            "nothing dials in the cool-down"
+        )
+        await caller.close()
+
+    async def test_after_the_cool_down_the_credential_is_presented_again(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A refusal is a cool-down, not a latch (KOD-1237).
+
+        Measured 2026-09-24: the hosted server answers 401 invalid_token for a
+        key whose hourly request budget is spent, and the budget refills.
+        With the cool-down elapsed, the next call presents the credential
+        again and is answered once the server accepts it.
+        """
+        monkeypatch.setattr(http_tool_caller, "_REFUSAL_COOLDOWN_SECONDS", 0.0)
+        server = _FakeStreamableServer(
+            on_call=_CallBehaviour.UNWELL_ONCE,
+            unwell_status=HTTPStatus.UNAUTHORIZED,
+        )
+        caller = caller_fixture(client_factory=client_over(server.transport))
+        await caller.open()
+        server.initialize_status = HTTPStatus.UNAUTHORIZED
+        with pytest.raises(McpCredentialRefusedError):
+            await caller.call_tool(name="get_issue", arguments={})
+        server.initialize_status = HTTPStatus.OK
+
+        answer = await caller.call_tool(name="list_issues", arguments={})
+
+        assert answer == {"id": "K-1"}
+        assert server.requests.count("initialize") == 3, (
+            "presented again after the cool-down"
+        )
         await caller.close()
 
 

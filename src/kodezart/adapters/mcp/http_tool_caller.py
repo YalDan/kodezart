@@ -31,6 +31,7 @@ its failures are called, and the credential a refusal latches.
 """
 
 import asyncio
+import time
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager
 from datetime import timedelta
@@ -68,6 +69,10 @@ _PROBE_REQUEST_ID: Final[int] = 1
 #: Both bodies a streamable-HTTP endpoint may answer an ``initialize`` POST
 #: with.  Sent so a healthy server answers the probe rather than refusing
 #: its content negotiation, which would read as a broken endpoint.
+#: How long a refused credential is held without dialing before it is
+#: presented again.  One presentation per minute while refused: enough to
+#: notice a refilled budget, never one attempt per call.
+_REFUSAL_COOLDOWN_SECONDS: float = 60.0
 #: How long a refusal's body is waited for before its status stands alone.
 _REASON_READ_SECONDS: float = 1.0
 _PROBE_ACCEPT: Final[str] = "application/json, text/event-stream"
@@ -162,17 +167,20 @@ class _RemoteServer(HostedSessionTransport):
         #: exercises the probe over the very client the live session runs
         #: on, rather than over one built beside it.
         self._client_factory: HttpxClientFactory = client_factory
-        #: Whether the server has answered this session's CREDENTIAL with a
+        #: When the server last answered this session's CREDENTIAL with a
         #: refusal — a 401 met while the credential was being presented, at
-        #: the probe or at a session's initialize.  Latched, because a
-        #: credential does not heal: once it is refused every later failure
-        #: of this session is that same refusal.  A 401 met on a call inside
-        #: an open session is NOT that: measured 2026-09-24, a long-lived key
-        #: was answered 401 once in about a thousand calls and accepted on
-        #: the next request, so such an answer is an error status like any
-        #: other, the session collapse is reopened once, and the credential
-        #: is judged again at that reopen's initialize.
-        self._credential_refused: bool = False
+        #: the probe or at a session's initialize — or ``None`` once a later
+        #: presentation was accepted.  A cool-down, not a latch: measured
+        #: 2026-09-24, the vendor's hosted server answers 401 ``invalid_token``
+        #: for a long-lived key whose hourly request budget is spent, and the
+        #: budget refills; a refusal held for the life of the process turned
+        #: that hour into an outage until reboot.  While the cool-down runs,
+        #: every call is refused without dialing (one presentation per
+        #: cool-down, never one per call); after it, the credential is
+        #: presented again and judged again.  A 401 met on a call inside an
+        #: open session is an error status like any other: the collapse is
+        #: reopened once and the credential is judged at that handshake.
+        self._refused_at: float | None = None
         #: Whether the credential is being presented right now — the probe's
         #: initialize, or a session's handshake — which is the only time a
         #: 401 speaks about the credential rather than about one request.
@@ -233,8 +241,16 @@ class _RemoteServer(HostedSessionTransport):
                 body=await self._reason(response),
             )
             if self._presenting_credential:
-                self._credential_refused = True
+                self._refused_at = time.monotonic()
         self._last_error_status = response.status_code if response.is_error else None
+
+    @property
+    def _credential_refused(self) -> bool:
+        """Whether the last presentation was refused and its cool-down still runs."""
+        return (
+            self._refused_at is not None
+            and time.monotonic() - self._refused_at < _REFUSAL_COOLDOWN_SECONDS
+        )
 
     async def _reason(self, response: httpx.Response) -> str:
         """The answer's body, bounded in size and in time.
@@ -284,6 +300,7 @@ class _RemoteServer(HostedSessionTransport):
                 await session.initialize()
             finally:
                 self._presenting_credential = False
+            self._refused_at = None
             yield session
 
     def call_timeout(self) -> timedelta:
@@ -312,9 +329,11 @@ class _RemoteServer(HostedSessionTransport):
         return CallFailed()
 
     def may_reopen(self) -> bool:
-        """A credential this server has already refused is asked nothing.
+        """A credential refused inside its cool-down is asked nothing.
 
-        A new session presents the same token to the same refusal.
+        A new session would present the same token to the same refusal;
+        after the cool-down, one is allowed to, because the refusal may
+        have been a budget that has since refilled.
         """
         return not self._credential_refused
 
@@ -374,6 +393,7 @@ class _RemoteServer(HostedSessionTransport):
                 f"the MCP server answered the credential check with HTTP {status_code}",
                 server_name=self.server_name,
             )
+        self._refused_at = None
         await self._log.ainfo(
             "mcp_credential_accepted",
             server_name=self.server_name,
