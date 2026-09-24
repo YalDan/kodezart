@@ -252,20 +252,34 @@ async def test_a_network_failure_mid_call_surfaces_as_the_transport_error() -> N
     assert excinfo.value.tool_name == "get_issue"
 
 
-async def answer_with(caller: HttpMcpToolCaller, status: HTTPStatus) -> None:
+async def answer_with(
+    caller: HttpMcpToolCaller,
+    status: HTTPStatus,
+    *,
+    presenting_credential: bool = True,
+) -> None:
     """Let the server answer one request with *status*.
 
     Driven through the caller's OWN client factory rather than around it,
     so what is exercised is the wiring the live session runs on: the MCP
     client raises its status error inside the task group that drives the
     session, and this hook is the only place the status is still legible.
+
+    By default the answered request is the credential's presentation (the
+    probe, or a handshake), because that is the answer a refusal is read
+    off; ``presenting_credential=False`` answers an ordinary call instead.
     """
-    async with caller._server.http_client(
-        headers={},
-        timeout=httpx.Timeout(5.0),
-    ) as client:
-        for hook in client.event_hooks["response"]:
-            await hook(httpx.Response(status_code=status))
+    server = caller._server
+    server._presenting_credential = presenting_credential
+    try:
+        async with server.http_client(
+            headers={},
+            timeout=httpx.Timeout(5.0),
+        ) as client:
+            for hook in client.event_hooks["response"]:
+                await hook(httpx.Response(status_code=status))
+    finally:
+        server._presenting_credential = False
 
 
 class _Endpoint:
@@ -538,6 +552,63 @@ class TestARefusedCredential:
         async with serving(caller, _StubSession()):
             with pytest.raises(McpTransportError):
                 await caller.call_tool(name="get_issue", arguments={})
+
+    async def test_a_refusal_answered_mid_session_does_not_latch(self) -> None:
+        """A 401 off one CALL is an error status, not the credential's refusal.
+
+        Measured 2026-09-24 (KOD-1236): a long-lived key was answered 401
+        once in about a thousand calls and accepted on the next request,
+        and the latch left every pass of that boot refusing without dialing.
+        Only the credential's presentation — the probe, or a handshake —
+        answers for the credential.
+        """
+        caller = caller_fixture()
+        await answer_with(caller, HTTPStatus.UNAUTHORIZED, presenting_credential=False)
+
+        async with serving(caller, _StubSession()):
+            with pytest.raises(McpTransportError) as excinfo:
+                await caller.call_tool(name="get_issue", arguments={})
+
+        assert not isinstance(excinfo.value, McpCredentialRefusedError)
+
+    async def test_one_mid_session_refusal_is_reopened_and_the_call_goes_again(
+        self,
+    ) -> None:
+        """The whole path: one 401 on a call, one reopen, the call answered."""
+        server = _FakeStreamableServer(
+            on_call=_CallBehaviour.UNWELL_ONCE,
+            unwell_status=HTTPStatus.UNAUTHORIZED,
+        )
+        caller = caller_fixture(client_factory=client_over(server.transport))
+        await caller.open()
+
+        with structlog.testing.capture_logs() as logs:
+            first = await caller.call_tool(name="get_issue", arguments={})
+
+        assert first == {"id": "K-1"}
+        assert server.calls == ["tools/call"] * 2, "the refused call went again"
+        assert [log["event"] for log in logs].count("mcp_session_reopened") == 1
+        await caller.close()
+
+    async def test_a_refusal_that_persists_at_the_reopen_is_the_credential_class(
+        self,
+    ) -> None:
+        """The paired negative: the handshake after the collapse is the judge."""
+        server = _FakeStreamableServer(
+            on_call=_CallBehaviour.UNWELL_ONCE,
+            unwell_status=HTTPStatus.UNAUTHORIZED,
+        )
+        caller = caller_fixture(client_factory=client_over(server.transport))
+        await caller.open()
+        server.initialize_status = HTTPStatus.UNAUTHORIZED
+
+        with pytest.raises(McpCredentialRefusedError):
+            await caller.call_tool(name="get_issue", arguments={})
+        with pytest.raises(McpCredentialRefusedError):
+            await caller.call_tool(name="list_issues", arguments={})
+
+        assert server.requests.count("initialize") == 2, "nothing dials after the latch"
+        await caller.close()
 
 
 @asynccontextmanager

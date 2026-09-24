@@ -159,10 +159,21 @@ class _RemoteServer(HostedSessionTransport):
         #: exercises the probe over the very client the live session runs
         #: on, rather than over one built beside it.
         self._client_factory: HttpxClientFactory = client_factory
-        #: Whether the server has answered this session's credential with a
-        #: refusal.  Latched, because a credential does not heal: once it is
-        #: refused every later failure of this session is that same refusal.
+        #: Whether the server has answered this session's CREDENTIAL with a
+        #: refusal — a 401 met while the credential was being presented, at
+        #: the probe or at a session's initialize.  Latched, because a
+        #: credential does not heal: once it is refused every later failure
+        #: of this session is that same refusal.  A 401 met on a call inside
+        #: an open session is NOT that: measured 2026-09-24, a long-lived key
+        #: was answered 401 once in about a thousand calls and accepted on
+        #: the next request, so such an answer is an error status like any
+        #: other, the session collapse is reopened once, and the credential
+        #: is judged again at that reopen's initialize.
         self._credential_refused: bool = False
+        #: Whether the credential is being presented right now — the probe's
+        #: initialize, or a session's handshake — which is the only time a
+        #: 401 speaks about the credential rather than about one request.
+        self._presenting_credential: bool = False
         #: The status of the LAST response the session saw, when it was an
         #: error.  A session whose stream collapses right after the server
         #: answered with a status did not lose a request in flight — the
@@ -199,8 +210,17 @@ class _RemoteServer(HostedSessionTransport):
         )
 
     async def _observe_status(self, response: httpx.Response) -> None:
-        """Off one response: latch a refused credential, remember an error status."""
-        if response.status_code == HTTPStatus.UNAUTHORIZED:
+        """Off one response: latch a refused credential, remember an error status.
+
+        Only a 401 answered while the credential is being PRESENTED latches
+        the refusal.  One answered mid-session stays an error status the
+        reopen policy already knows: the collapse is reopened once, the
+        handshake presents the credential again, and a 401 there latches.
+        """
+        if (
+            response.status_code == HTTPStatus.UNAUTHORIZED
+            and self._presenting_credential
+        ):
             self._credential_refused = True
         self._last_error_status = response.status_code if response.is_error else None
 
@@ -234,7 +254,11 @@ class _RemoteServer(HostedSessionTransport):
                 read_timeout_seconds=self.call_timeout(),
             ) as session,
         ):
-            await session.initialize()
+            self._presenting_credential = True
+            try:
+                await session.initialize()
+            finally:
+                self._presenting_credential = False
             yield session
 
     def call_timeout(self) -> timedelta:
@@ -299,6 +323,7 @@ class _RemoteServer(HostedSessionTransport):
             },
             timeout=httpx.Timeout(self._timeout_seconds),
         ) as client:
+            self._presenting_credential = True
             try:
                 async with client.stream(
                     "POST",
@@ -312,6 +337,8 @@ class _RemoteServer(HostedSessionTransport):
                     "the MCP server could not be reached to check the credential",
                     server_name=self.server_name,
                 ) from exc
+            finally:
+                self._presenting_credential = False
         if status_code == HTTPStatus.UNAUTHORIZED:
             raise McpCredentialRefusedError(
                 "the MCP server refused the configured credential",
