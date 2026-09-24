@@ -108,11 +108,12 @@
     ]
   },
   "chains/ralph_loop.py::RalphLoop._cross_off": {
-    "reason": "the sha this attempt graded at, handed to cross_offs_for, which records it on each row; the rows are filtered by the rule's own reading and sent to the lane writer, and no partition is computed here",
+    "reason": "the sha this attempt graded at, handed to cross_offs_for, which records it on each row; the standing and new rows go to the re-derivation check, which reads only each pair's rederivation classes (KOD-890), then are filtered by the rule's own reading and sent to the lane writer, and no partition is computed here",
     "uses": [
       "await lane_state.write_cross_offs(lane=self._lane_binding(ctx), dispatched=tuple((criterion for criterion, _ in decided)), cross_offs=tuple((cross_off for _, cross_off in decided)))",
       "cross_offs = cross_offs_for(results=grade.results, graded_sha=graded_sha, observation=evaluation_observation(session_id=graded_in, iteration=iteration), reasons=reasons, standing=standing, reading=reading)",
       "decided = tuple((pair for pair in zip(roster.criteria, cross_offs, strict=True) if reading.get(pair[1].criterion) is not GradedState.counted))",
+      "held_rederivation_classes((*standing, *cross_offs))",
       "return cross_offs"
     ]
   },
@@ -237,7 +238,7 @@
   "services/lane_lapse_escalation.py::lapse_question": {
     "reason": "the commit a lapsed grading was taken at, recorded as the sha the escalation is raised at",
     "uses": [
-      "return LaneEscalation(issue_id=lane_key, escalation_key=f'{cross_off.criterion}:lapse', raised_by=RunKind.FIRE.value, raised_at_sha=cross_off.evidence.graded_sha, question=f'Re-derive or re-state the observation {cross_off.criterion} was graded on: the paths it exercised have moved since, and this loop cannot perform that observation again.', interim_reading='The criterion is returned to unstarted, carrying the sha it was graded at; nothing counts it until the observation is taken again.', interim_basis=', '.join(cross_off.exercised_paths))"
+      "return LaneEscalation(issue_id=lane_key, escalation_key=lapse_escalation_key(cross_off.criterion), raised_by=RunKind.FIRE.value, raised_at_sha=cross_off.evidence.graded_sha, question=f'Re-derive or re-state the observation {cross_off.criterion} was graded on: the paths it exercised have moved since, and this loop cannot perform that observation again.', interim_reading='The criterion is returned to unstarted, carrying the sha it was graded at; nothing counts it until the observation is taken again.', interim_basis=', '.join(cross_off.exercised_paths))"
     ]
   },
   "services/lane_state_writer.py::TrackerLaneStateWriter._undemonstrated": {
