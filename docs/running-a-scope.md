@@ -104,8 +104,16 @@ export KODEZART_DISPATCH_PASS_INTERVAL_SECONDS=300
 export KODEZART_DISPATCH_PASS_TIMEOUT_SECONDS=240
 export KODEZART_SUPERVISOR_PASS_INTERVAL_SECONDS=300
 export KODEZART_SUPERVISOR_PASS_TIMEOUT_SECONDS=120
+export KODEZART_DISPATCH_WORKFLOW=scope
 export KODEZART_AGENT__DANGEROUSLY_ALLOW_HOST_MCP=true
 ```
+
+`KODEZART_DISPATCH_WORKFLOW=scope` points the dispatch cadence at the standing
+scopes' heartbeat: the approved rows are submitted as scope runs, and the v0.2
+per-issue dispatch passes are not scheduled. Leave it at its default, `fire`,
+and the same pair drives the per-issue passes over the declared team's board
+instead, with the heartbeat left out; either way boot names the one it left out
+with `scheduled_pass_not_selected`.
 
 The last line is what lets the organize stage's sessions reach the tracker:
 each phase is one agent session that works the board with the tracker tools
@@ -152,10 +160,10 @@ current name; every retired spelling is refused rather than ignored.
   interval is unset, naming the pass and the two settings that would schedule
   it. That pass is not scheduled.
 - `pass_scheduler_started` — the scheduler is running, naming each pass it
-  carries and that pass's interval. With the environment above that is one
-  dispatch pass for the declared repository, the observation tick, the organize
-  tick and the standing scopes' heartbeat — each one whose cadence pair is set;
-  the fire-prep and grooming passes are named by
+  carries and that pass's interval. With the environment above that is the
+  observation tick, the organize tick and the standing scopes' heartbeat — each
+  one whose cadence pair is set; the per-issue dispatch pass is named by
+  `scheduled_pass_not_selected`, and the fire-prep and grooming passes by
   `scheduled_pass_not_configured` until their pairs are. The organize tick's
   interval is `KODEZART_ORGANIZE__INTERVAL_SECONDS` and nothing else; the
   scheduler sleeps one interval before the first tick.

@@ -462,13 +462,16 @@ async def test_a_scope_deployment_boots_from_the_shipped_files_and_fires_nothing
             ref.describe() for ref in owned_mappings(loaded)
         }
         # The page's environment sets the organize, dispatch and supervisor
-        # pairs and no session-pass pair: the dispatch pass runs beside the
-        # scope passes, and the two session passes are named as unset.
+        # pairs, no session-pass pair, and the scope workflow: the heartbeat
+        # runs on the dispatch pair, the per-issue dispatch pass is named as
+        # not selected, and the two session passes are named as unset.
         assert [entry.name for entry in app.state.pass_scheduler.passes] == [
-            *(f"dispatch:{repo.url}" for repo in loaded.repos),
             "supervisor",
             ORGANIZE_TICK_NAME,
             HEARTBEAT_PASS,
+        ]
+        assert [e["name"] for e in logged(events, "scheduled_pass_not_selected")] == [
+            "dispatch"
         ]
         assert {
             entry["name"] for entry in logged(events, "scheduled_pass_not_configured")

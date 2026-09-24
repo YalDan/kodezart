@@ -38,7 +38,8 @@ organize_mandates = []
 # Who reads these rows: the organize tick grooms each one before approval on
 # its own cadence (KODEZART_ORGANIZE__INTERVAL_SECONDS); the scope_heartbeat
 # pass submits it as a scope run once it carries scope_labels.approved, on the
-# dispatch cadence and lane, writing nothing to the tracker; the observation
+# dispatch cadence and lane when KODEZART_DISPATCH_WORKFLOW=scope selects it
+# over the per-issue dispatch passes, writing nothing to the tracker; the observation
 # tick reads each row's scope where a tracker is dialled; and the audit
 # collects each row where audit settings are configured. No cadence has a
 # default: a pass whose interval is unset is not scheduled, and boot names it

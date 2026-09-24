@@ -24,7 +24,12 @@ from kodezart.domain.lane_alarms import OBSERVED_ALARMS
 from kodezart.domain.run_alarm_table import AlarmTableError
 from kodezart.services.agent_service import AgentService
 from kodezart.services.run_recorder import RunRecorder
-from kodezart.types.domain.dispatch import PassRun, PassSignal, SelfWriteLedger
+from kodezart.types.domain.dispatch import (
+    DispatchWorkflow,
+    PassRun,
+    PassSignal,
+    SelfWriteLedger,
+)
 from kodezart.types.domain.operation import OperationConfig, OperationMemberAbsentError
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run_alarm import AlarmSignal
@@ -362,9 +367,11 @@ async def test_a_declared_scope_schedules_the_organize_tick_beside_the_per_issue
     Until 2026-09-24 boot read the declared scopes as a reason to withhold the
     per-issue machine. What decides whether a pass runs is its cadence pair,
     and where it works is the declared roster: this deployment gets one
-    dispatch pass per repository, the observation tick, the organize tick, both
-    session passes and the standing scopes' heartbeat, with the lifecycle
-    watcher the fires drain through, and neither "not wired" line.
+    dispatch pass per repository, the observation tick, the organize tick and
+    both session passes, with the lifecycle watcher the fires drain through,
+    and neither "not wired" line. The dispatch workflow is at its default, so
+    the dispatch cadence drives the per-issue passes and the standing scopes'
+    heartbeat is named as not selected.
     """
     config, operation, board, tracker, prompts, ledger = dependencies(tmp_path)
     runtime, logs = await _runtime_over(
@@ -376,11 +383,13 @@ async def test_a_declared_scope_schedules_the_organize_tick_beside_the_per_issue
         ORGANIZE_TICK_NAME,
         PromptKey.FIRE_PREP_PASS.value,
         PromptKey.GROOMING_PASS.value,
-        HEARTBEAT_PASS,
     ]
     assert runtime.lifecycle is not None
     assert _logged(logs, "scheduled_passes_not_wired") == []
     assert _logged(logs, "prompt_passes_not_wired") == []
+    assert [e["name"] for e in _logged(logs, "scheduled_pass_not_selected")] == [
+        HEARTBEAT_PASS
+    ]
     # The one pass named as unset is the audit, which the fixture leaves off.
     assert [e["name"] for e in _logged(logs, "scheduled_pass_not_configured")] == [
         "audit"
@@ -483,6 +492,17 @@ async def test_preflight_asks_exactly_the_scans_the_wired_passes_gate(tmp_path):
         PassSignal.approved_changed,
         PassSignal.issues_changed,
     }
+    # Under the scope workflow the dispatch passes are not scheduled, so their
+    # signal is not a capability this deployment needs.
+    scoped = FakeTrackerPort()
+    await verify_pass_preflight(
+        config=config.model_copy(update={"dispatch_workflow": DispatchWorkflow.SCOPE}),
+        operation=operation,
+        tracker=scoped,
+        github_api=FakeDeliveryProbe(),
+        prompts=prompts,
+    )
+    assert PassSignal.approved_changed not in scoped.capability_probes[0]
     # The fire-prep signal is in the probe for the fire-prep pass alone.
     assert PassSignal.reviews_changed not in {
         scan

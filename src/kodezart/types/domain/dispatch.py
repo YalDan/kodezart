@@ -230,6 +230,20 @@ class DispatchReport(DispatchModel):
     duplicate."""
 
 
+class DispatchWorkflow(StrEnum):
+    """Which workflow the dispatch cadence drives — one of the two, never both.
+
+    ``fire`` is the v0.2 per-issue machine: one dispatch pass per repository,
+    claiming a queue-approved issue into a v0.2 fire.  ``scope`` is the v0.3
+    standing scopes' heartbeat, submitting each approved ``organize_scopes``
+    row as a scope run.  Both run on the dispatch cadence pair, so the
+    setting says which of them that pair schedules (KOD-846).
+    """
+
+    FIRE = "fire"
+    SCOPE = "scope"
+
+
 class PassSignal(StrEnum):
     """The deterministic questions a pass may gate on — one port call each.
 
