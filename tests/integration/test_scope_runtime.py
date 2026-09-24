@@ -3084,23 +3084,26 @@ async def test_a_resumed_lane_reads_its_dispatch_base_live_or_stale_on_the_scope
     monkeypatch.setattr(RalphLoop, "run", recording_run)
     monkeypatch.setattr(ralph_loop, "held_standing", recording_partition)
     owed = ("A/second", "A/third")
+    # A/second holds the expensive class once graded under it, so a grading
+    # that asks about it again states the same class (KOD-890).
+    held_class = {
+        "A/second": {
+            "rederivationClass": "expensive",
+            "exercisedPaths": [UNTOUCHED],
+        }
+    }
     second = resumable(
         port=port,
         repos=repos,
         lanes=STACKED,
         max_iterations=2,
         evaluations=[
+            criteria_echo(keys=owed, passed={"A/second"}, declared=held_class),
             criteria_echo(
-                keys=owed,
-                passed={"A/second"},
-                declared={
-                    "A/second": {
-                        "rederivationClass": "expensive",
-                        "exercisedPaths": [UNTOUCHED],
-                    }
-                },
+                keys=owed if stale else owed[1:],
+                passed=set(owed),
+                declared=held_class,
             ),
-            criteria_echo(keys=owed if stale else owed[1:], passed=set(owed)),
             *(criteria_echo(keys=owed, passed=set(owed)) for _ in range(4)),
         ],
     )
