@@ -1589,8 +1589,8 @@ async def assert_aged_past_its_bound(port, lane, criterion_key):
     was raised at, against a bound of one, and the raise was announced once.
     """
     occurrence = lapse_escalation_key(criterion_key)
-    aged = await port.read_run_alarm(
-        issue_key=lane,
+    aged = stored_alarm(
+        await port.read_run_alarms(issue_key=lane),
         subject=question_subject(lane, occurrence),
         signal=AlarmSignal.ESCALATION_AGEING,
     )
@@ -1629,8 +1629,10 @@ async def test_a_lane_blocked_by_a_held_lane_is_blocked_and_the_question_ages():
     assert await tick(held_pass(port, operation)) is PassRun.RAN
 
     assert (
-        await port.read_run_alarm(
-            issue_key="LANE-C", subject=subject("LANE-C"), signal=SIGNAL
+        stored_alarm(
+            await port.read_run_alarms(issue_key="LANE-C"),
+            subject=subject("LANE-C"),
+            signal=SIGNAL,
         )
         is None
     )
