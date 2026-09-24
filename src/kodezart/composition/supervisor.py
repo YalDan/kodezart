@@ -45,6 +45,7 @@ def build_supervisor_pass(
     questions the ageing arm reads is refused here, typed, before any backend
     call.
     """
+    cadence = config.required_cadence("supervisor")
     configured_marker_prefix(operation.marker_prefixes, purpose="escalation")
     holder = supervisor_holder(operation_name=operation.operation_name)
     records = LaneRecordReader(tracker=tracker, operation=operation)
@@ -100,8 +101,8 @@ def build_supervisor_pass(
     )
     return ScheduledPass(
         name=SUPERVISOR_TICK_NAME,
-        interval_seconds=config.supervisor_pass_interval_seconds,
-        timeout_seconds=config.supervisor_pass_timeout_seconds,
+        interval_seconds=cadence.interval_seconds,
+        timeout_seconds=cadence.timeout_seconds,
         run=observation.run,
         report=None,
     )

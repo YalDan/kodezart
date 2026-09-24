@@ -56,7 +56,7 @@ from tests.tracker.conftest import (
 #: wiring case that used an arbitrary string would never reach the wiring.
 TOKEN = "lin_api_" + "0" * 40
 
-#: A cadence no default would produce, and long enough that no pass fires
+#: A cadence nothing else here sets, and long enough that no pass fires
 #: inside a test: what is asserted is the wiring of the knob, not a tick.
 UNUSUAL_INTERVAL = 607.0
 
@@ -769,14 +769,17 @@ async def test_boot_starts_a_scheduler_carrying_one_dispatch_pass_per_repo(
 ) -> None:
     """AC-20: the scheduler is constructed, driven and stopped by the root.
 
-    The interval asserted here is a value no default would produce, so the
-    assertion is about the knob's consumer and not about a coincidence.
+    The interval asserted here is a value nothing else here sets, so the
+    assertion is about the knob's consumer and not about a coincidence. It
+    has no default: the pass is scheduled because the interval and its
+    timeout are both set.
     """
     monkeypatch.setenv("KODEZART_GITHUB_TOKEN", "fixture-forge-token")
     monkeypatch.setenv(
         "KODEZART_DISPATCH_PASS_INTERVAL_SECONDS",
         str(UNUSUAL_INTERVAL),
     )
+    monkeypatch.setenv("KODEZART_DISPATCH_PASS_TIMEOUT_SECONDS", "240")
     _configure(monkeypatch, tmp_path, _operation_toml())
     app = create_app()
     assert app.state.config.dispatch_pass_interval_seconds == UNUSUAL_INTERVAL

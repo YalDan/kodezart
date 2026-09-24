@@ -9,6 +9,7 @@ import pytest
 from pydantic import ValidationError
 
 from kodezart.config.app import AppConfig
+from kodezart.config.audit import AuditSettings
 from kodezart.services import audit_coverage
 from kodezart.services.audit_coverage import AuditCoverage
 from kodezart.types.domain.audit import AuditCandidate
@@ -17,7 +18,9 @@ from kodezart.types.domain.scope import ScopeKind, ScopeRef
 NOW = datetime(2026, 9, 8, tzinfo=UTC)
 SCOPE = ScopeRef(kind=ScopeKind.PROJECT, key="project")
 CONFIG = AppConfig(
-    audit_sweep_interval_seconds=60, audit_full_sweep_interval_seconds=120
+    audit=AuditSettings(timeout_seconds=30),
+    audit_sweep_interval_seconds=60,
+    audit_full_sweep_interval_seconds=120,
 )
 
 
@@ -55,7 +58,9 @@ async def test_first_delta_and_periodic_full_cover_exact_records():
 async def test_nondivisible_full_interval_uses_last_tick_before_expiry():
     service = AuditCoverage(
         config=AppConfig(
-            audit_sweep_interval_seconds=60, audit_full_sweep_interval_seconds=90
+            audit=AuditSettings(timeout_seconds=30),
+            audit_sweep_interval_seconds=60,
+            audit_full_sweep_interval_seconds=90,
         )
     )
     await cover(service, [row("a")])

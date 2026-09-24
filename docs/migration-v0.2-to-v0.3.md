@@ -19,8 +19,10 @@ never a setting that silently reverts to its default. Rename each key in the
 tables below, keep the flat names listed under [Settings that stay
 flat](#settings-that-stay-flat) exactly as they are, delete the ones under
 [Removed with no replacement](#removed-with-no-replacement), and the service
-boots with the behaviour it had before. No default changed as part of the
-regrouping.
+boots with the behaviour it had before, once the cadences of the passes it runs
+are set (see [Scheduled-pass cadences have no
+default](#4b-scheduled-pass-cadences-have-no-default)). No other default changed
+as part of the regrouping.
 
 ## 1. The naming rule
 
@@ -210,6 +212,31 @@ configured default for that grant alone.
 nothing on the scope path reads it: a run event's comment is rendered from
 `[marker_prefixes]` alone. A table you keep must still name every event kind, or
 the file refuses at load.
+
+## 4b. Scheduled-pass cadences have no default
+
+v0.2 shipped a cadence for every scheduled pass, so a deployment that set none
+ran them all: dispatch every 300 seconds, fire preparation every 3600, grooming
+every 21600. In v0.3 no cadence has a default. A pass runs only when its
+interval and its timeout are both set, and unset means it is not scheduled: boot
+logs `scheduled_pass_not_configured` naming the pass and the two settings, and
+`pass_scheduler_started` lists only the passes that are scheduled. A deployment
+that relied on a default cadence must now set it, as an interval and a timeout
+for each pass it wants:
+
+| Pass | Interval | Timeout |
+| --- | --- | --- |
+| dispatch, and the standing scopes' heartbeat | `KODEZART_DISPATCH_PASS_INTERVAL_SECONDS` | `KODEZART_DISPATCH_PASS_TIMEOUT_SECONDS` |
+| fire preparation | `KODEZART_FIRE_PREP_PASS_INTERVAL_SECONDS` | `KODEZART_FIRE_PREP_PASS_TIMEOUT_SECONDS` |
+| grooming | `KODEZART_GROOMING_PASS_INTERVAL_SECONDS` | `KODEZART_GROOMING_PASS_TIMEOUT_SECONDS` |
+| organize tick | `KODEZART_ORGANIZE__INTERVAL_SECONDS` | `KODEZART_ORGANIZE__TIMEOUT_SECONDS` |
+| supervisor tick | `KODEZART_SUPERVISOR_PASS_INTERVAL_SECONDS` | `KODEZART_SUPERVISOR_PASS_TIMEOUT_SECONDS` |
+| audit | `KODEZART_AUDIT_SWEEP_INTERVAL_SECONDS` | `KODEZART_AUDIT__TIMEOUT_SECONDS` |
+
+The organize tick no longer takes the grooming pass's cadence when its own is
+unset. Setting one half of a pair without the other refuses at load, naming
+both; a pass that should not run is left unset rather than parked on a long
+interval.
 
 ## 5. Removed with no replacement
 

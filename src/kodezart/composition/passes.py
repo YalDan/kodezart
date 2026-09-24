@@ -20,7 +20,7 @@ from kodezart.composition.organize import (
 from kodezart.composition.records import RECORD_KIND_BY_PASS, run_report
 from kodezart.composition.supervisor import build_supervisor_pass
 from kodezart.composition.tracker import DialledTracker
-from kodezart.config.app import AppConfig
+from kodezart.config.app import CADENCE_SETTINGS, AppConfig, CadenceName
 from kodezart.config.knowledge import KnowledgeSettings
 from kodezart.core.constants import UNATTENDED_PERMISSION_MODE
 from kodezart.core.errors import (
@@ -216,56 +216,51 @@ def _assert_renders(*, key: PromptKey, prompts: PromptSetProvider) -> None:
         raise PromptRenderError(msg, missing=error.missing) from error
 
 
+#: Each prompt pass and the group of cadence settings that schedules it.
+_PROMPT_PASS_CADENCE: dict[PromptKey, CadenceName] = {
+    PromptKey.FIRE_PREP_PASS: "fire_prep",
+    PromptKey.GROOMING_PASS: "grooming",
+}
+
+
 def prompt_pass_schedule(config: AppConfig) -> dict[PromptKey, _PromptPassRow]:
-    """One row per scheduled prompt pass: its cadence, its budget, its gate.
+    """One row per prompt pass whose cadence is set: its cadence, budget and gate.
 
-    The table, on its own, because two things read it: the wiring below,
-    and the preflight that boot-renders and capability-checks exactly what
-    the wiring will build.  A second copy of the key set is a second
-    opinion about which passes this deployment schedules.
+    The table, on its own, because three things read it: the wiring below,
+    the gate probe, and the preflight that boot-renders exactly what the
+    wiring will build. A pass whose interval is unset has no row, so none of
+    the three asks anything of a pass that is not scheduled.
     """
-    return {
-        PromptKey.FIRE_PREP_PASS: _PromptPassRow(
-            interval_seconds=config.fire_prep_pass_interval_seconds,
-            timeout_seconds=config.fire_prep_pass_timeout_seconds,
-            signals=config.fire_prep_pass_gate_signals,
-        ),
-        PromptKey.GROOMING_PASS: _PromptPassRow(
-            interval_seconds=config.grooming_pass_interval_seconds,
-            timeout_seconds=config.grooming_pass_timeout_seconds,
-            signals=config.grooming_pass_gate_signals,
-        ),
+    signals = {
+        PromptKey.FIRE_PREP_PASS: config.fire_prep_pass_gate_signals,
+        PromptKey.GROOMING_PASS: config.grooming_pass_gate_signals,
     }
+    rows: dict[PromptKey, _PromptPassRow] = {}
+    for key, name in _PROMPT_PASS_CADENCE.items():
+        cadence = config.pass_cadence(name)
+        if cadence is not None:
+            rows[key] = _PromptPassRow(
+                interval_seconds=cadence.interval_seconds,
+                timeout_seconds=cadence.timeout_seconds,
+                signals=signals[key],
+            )
+    return rows
 
 
-def organize_tick_schedule(
-    config: AppConfig, *, grooming: _PromptPassRow
-) -> _PromptPassRow:
-    """The organize tick's cadence and budget: its own settings, else *grooming*'s.
+async def _log_not_configured(
+    log: BoundLogger, *, name: str, cadence: CadenceName
+) -> None:
+    """Name a pass that would wire here and is not scheduled: its cadence is unset.
 
-    The tick is scheduled under the grooming pass's row and used to take that
-    row's numbers outright, so the operator's six-hour grooming cadence made
-    a triaged scope wait up to six hours for its groom phase (2026-09-24).
-    ``KODEZART_ORGANIZE__INTERVAL_SECONDS`` and ``__TIMEOUT_SECONDS`` are the
-    tick's own; each one left unset keeps the grooming value, so a deployment
-    that sets neither keeps the cadence it had. The gate stays the grooming
-    row's: the tick has no gate of its own.
+    One event per such pass, with the two settings that would schedule it, so
+    an operator reading the boot log for "why is this pass not running?"
+    finds the answer by name rather than by its absence from
+    ``pass_scheduler_started``.
     """
-    own = config.organize
-    if own is None:
-        return grooming
-    return _PromptPassRow(
-        interval_seconds=(
-            grooming.interval_seconds
-            if own.interval_seconds is None
-            else own.interval_seconds
-        ),
-        timeout_seconds=(
-            grooming.timeout_seconds
-            if own.timeout_seconds is None
-            else own.timeout_seconds
-        ),
-        signals=grooming.signals,
+    await log.ainfo(
+        "scheduled_pass_not_configured",
+        name=name,
+        settings=list(CADENCE_SETTINGS[cadence]),
     )
 
 
@@ -492,9 +487,11 @@ async def build_prompt_passes(
 ) -> list[ScheduledPass]:
     """Bind the configured Organize owner and remaining legacy prompt passes.
 
-    Organize uses the existing grooming cadence and report identity, with its
-    own fresh scope reads and explicit repository bindings, and is scheduled
-    FIRST so a deployment that keeps nothing else keeps it.
+    Organize runs under the grooming pass's name and report identity, on its
+    own cadence settings only, with its own fresh scope reads and explicit
+    repository bindings, and is scheduled FIRST so a deployment that keeps
+    nothing else keeps it. Every pass here whose cadence is unset is not
+    scheduled and is named as such.
 
     The remaining prompt rows belong to the per-issue flow: they scan whole
     boards from the legacy team/repository roster and use their configured
@@ -507,16 +504,21 @@ async def build_prompt_passes(
     scheduled: list[ScheduledPass] = []
     if organize is not None:
         key = PromptKey.GROOMING_PASS
-        row = organize_tick_schedule(config, grooming=schedule.pop(key))
-        scheduled.append(
-            ScheduledPass(
-                name=key.value,
-                interval_seconds=row.interval_seconds,
-                timeout_seconds=row.timeout_seconds,
-                run=organize.run,
-                report=run_report(recorder, _record_kind_for(key), key.value),
+        # The grooming pass never runs beside the tick that holds its name.
+        schedule.pop(key, None)
+        cadence = config.pass_cadence("organize")
+        if cadence is None:
+            await _log_not_configured(log, name="organize", cadence="organize")
+        else:
+            scheduled.append(
+                ScheduledPass(
+                    name=key.value,
+                    interval_seconds=cadence.interval_seconds,
+                    timeout_seconds=cadence.timeout_seconds,
+                    run=organize.run,
+                    report=run_report(recorder, _record_kind_for(key), key.value),
+                )
             )
-        )
     absent = absent_roster(operation)
     withheld = runs_scope_flow(operation)
     if absent or withheld:
@@ -529,6 +531,11 @@ async def build_prompt_passes(
             absent=list(absent),
             organize_scopes_declared=withheld,
         )
+        return scheduled
+    for key, cadence_name in _PROMPT_PASS_CADENCE.items():
+        if key not in schedule:
+            await _log_not_configured(log, name=key.value, cadence=cadence_name)
+    if not schedule:
         return scheduled
     working_dir = Path(config.scheduled_pass_working_dir).expanduser()
     working_dir.mkdir(parents=True, exist_ok=True)
@@ -649,6 +656,7 @@ async def build_dispatch_passes(
     repository because the origins are.
     """
     log: BoundLogger = get_logger(__name__)
+    cadence = config.required_cadence("dispatch")
     assembler = FireContextAssembler(
         tracker=tracker,
         gate=gate,
@@ -720,8 +728,8 @@ async def build_dispatch_passes(
         passes=tuple(
             ScheduledPass(
                 name=f"{_DISPATCH_NAME}:{repo.url}",
-                interval_seconds=config.dispatch_pass_interval_seconds,
-                timeout_seconds=config.dispatch_pass_timeout_seconds,
+                interval_seconds=cadence.interval_seconds,
+                timeout_seconds=cadence.timeout_seconds,
                 run=GatedDispatchPass(
                     lifecycle=lifecycle,
                     gate=build_gate(
@@ -777,13 +785,17 @@ async def _verify_wired_gates(
         if session_passes_wire(operation)
         else {}
     )
+    # A pass whose cadence is unset is not scheduled, so its signals are not
+    # a capability this deployment needs: the same order as the wiring, the
+    # predicate first and the cadence after it.
     if (
         github_api is not None
         and not runs_scope_flow(operation)
         and any(operation.teams_scanned_by(repo.url) for repo in operation.repos)
+        and config.pass_cadence("dispatch") is not None
     ):
         wired[_DISPATCH_NAME] = config.dispatch_pass_gate_signals
-    if runs_scope_flow(operation):
+    if runs_scope_flow(operation) and config.pass_cadence("supervisor") is not None:
         # The supervisor tick is registered on exactly this predicate, so its
         # alarms' scans are this deployment's to answer: one entry per alarm
         # it observes, named so a refusal says which alarm needs the scan.
@@ -1006,24 +1018,31 @@ async def build_dispatch_runtime(
     beside a live port skipped every dispatch pass and ran every prompt
     pass ungated, and the log said the tracker was present.
     """
-    # Cadence is scheduler configuration and nothing else. Four
-    # states, none silent: no tracker, no operation config, no delivery probe
-    # to answer "is this issue already delivered?", or an operation that works
-    # scope by scope and has no use for a pass that scans a whole board — and
-    # the passes do not run, named, never inferred from an empty schedule.
+    # Four states, none silent: no tracker, no operation config, no delivery
+    # probe to answer "is this issue already delivered?", or an operation that
+    # works scope by scope and has no use for a pass that scans a whole board
+    # — and the passes do not run, named, never inferred from an empty
+    # schedule. After the predicate, the cadence: a pass that would wire and
+    # whose interval is unset is not scheduled, and is named as such.
     built: DispatchPasses | None = None
-    # The ``is not None`` clauses after each predicate repeat what it already
+    # The ``is not None`` clauses after the predicate repeat what it already
     # answered, for the type checker's narrowing only.
-    if (
-        dispatch_passes_wire(
-            operation,
-            tracker_present=dialled is not None,
-            delivery_present=github_api is not None,
-        )
-        and dialled is not None
-        and operation is not None
-        and github_api is not None
+    if not dispatch_passes_wire(
+        operation,
+        tracker_present=dialled is not None,
+        delivery_present=github_api is not None,
     ):
+        await log.ainfo(
+            "scheduled_passes_not_wired",
+            tracker_present=dialled is not None,
+            operation_config_present=operation is not None,
+            delivery_probe_present=github_api is not None,
+            organize_scopes_declared=operation is not None
+            and runs_scope_flow(operation),
+        )
+    elif config.pass_cadence("dispatch") is None:
+        await _log_not_configured(log, name=_DISPATCH_NAME, cadence="dispatch")
+    elif dialled is not None and operation is not None and github_api is not None:
         built = await build_dispatch_passes(
             config=config,
             operation=operation,
@@ -1037,15 +1056,6 @@ async def build_dispatch_runtime(
             cache=cache,
             integration_workspace_dir=config.git.integration_workspace_dir,
             recorder=recorder,
-        )
-    else:
-        await log.ainfo(
-            "scheduled_passes_not_wired",
-            tracker_present=dialled is not None,
-            operation_config_present=operation is not None,
-            delivery_probe_present=github_api is not None,
-            organize_scopes_declared=operation is not None
-            and runs_scope_flow(operation),
         )
     # The prompt passes need no tracker port to RUN: the session reaches
     # the tracker itself. They need one only to be GATED. What they cannot
@@ -1076,11 +1086,13 @@ async def build_dispatch_runtime(
             skills=skills,
             gate=gate,
         )
+        # Load refuses [audit] without its interval, so this is always set.
+        cadence = config.required_cadence("audit")
         scheduled.append(
             ScheduledPass(
                 name="audit",
-                interval_seconds=config.audit_sweep_interval_seconds,
-                timeout_seconds=config.audit.timeout_seconds,
+                interval_seconds=cadence.interval_seconds,
+                timeout_seconds=cadence.timeout_seconds,
                 run=audit.run,
                 report=run_report(recorder, RunKind.AUDIT, "audit"),
             )
@@ -1096,7 +1108,7 @@ async def build_dispatch_runtime(
             tracker=None if dialled is None else dialled.tracker,
             forge=audit_forge,
         )
-        await log.ainfo("audit_pass_not_wired", reason="audit_unconfigured")
+        await _log_not_configured(log, name="audit", cadence="audit")
     # The observation tick needs a tracker to read and a declared roster to
     # read it for; it needs nothing else, so it is gated on exactly those two
     # and the absent arm names which one was missing rather than leaving an
@@ -1105,21 +1117,19 @@ async def build_dispatch_runtime(
     # deployment work scope by scope", read off the same copy every other arm
     # here reads: a tick observing rows the organize tick never grooms would
     # be this factory holding two opinions about one operation.
-    if (
-        scope_passes_wire(operation, tracker_present=dialled is not None)
-        and dialled is not None
-        and operation is not None
-    ):
-        scheduled.append(
-            build_supervisor_pass(
-                config=config, operation=operation, tracker=dialled.tracker
-            )
-        )
-    else:
+    if not scope_passes_wire(operation, tracker_present=dialled is not None):
         await log.ainfo(
             "supervisor_pass_not_wired",
             tracker_present=dialled is not None,
             scopes_declared=operation is not None and runs_scope_flow(operation),
+        )
+    elif config.pass_cadence("supervisor") is None:
+        await _log_not_configured(log, name=SUPERVISOR_TICK_NAME, cadence="supervisor")
+    elif dialled is not None and operation is not None:
+        scheduled.append(
+            build_supervisor_pass(
+                config=config, operation=operation, tracker=dialled.tracker
+            )
         )
     if operation is not None:
         if dialled is None and (
@@ -1174,12 +1184,15 @@ async def build_dispatch_runtime(
             queue=queue,
             registry=registry,
         )
-        if heartbeat is not None:
+        beat = config.pass_cadence("dispatch")
+        if heartbeat is not None and beat is None:
+            await _log_not_configured(log, name=_HEARTBEAT_NAME, cadence="dispatch")
+        elif heartbeat is not None and beat is not None:
             scheduled.append(
                 ScheduledPass(
                     name=_HEARTBEAT_NAME,
-                    interval_seconds=config.dispatch_pass_interval_seconds,
-                    timeout_seconds=config.dispatch_pass_timeout_seconds,
+                    interval_seconds=beat.interval_seconds,
+                    timeout_seconds=beat.timeout_seconds,
                     run=heartbeat.run,
                 )
             )

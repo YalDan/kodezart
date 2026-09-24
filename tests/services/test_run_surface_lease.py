@@ -33,7 +33,12 @@ from tests.fakes import (
     FakeRepoCache,
     PassThroughGate,
 )
-from tests.services.test_dispatch_pass import INTEGRATION_DIR, operation_config
+from tests.services.test_dispatch_pass import (
+    DISPATCH_INTERVAL_SECONDS,
+    DISPATCH_TIMEOUT_SECONDS,
+    INTEGRATION_DIR,
+    operation_config,
+)
 from tests.tracker.conftest import CLAIMED_ISSUE, FIXTURE_NOW, fixture_server
 from tests.tracker.test_linear_mcp_tracker import tracker_over
 from tests.tracker.test_ownership_arbitration import _WroteTogether
@@ -136,7 +141,10 @@ class _CompletedEngine:
 async def test_composed_outcome_comment_is_held_by_the_actual_queue_job_id(monkeypatch):
     monkeypatch.setenv("KODEZART_TRACKER__SURFACE_LEASE_SECONDS", str(DURATION))
     monkeypatch.setenv("KODEZART_DISPATCH_HOLDER", "separate-deployment")
-    config = AppConfig()
+    config = AppConfig(
+        dispatch_pass_interval_seconds=DISPATCH_INTERVAL_SECONDS,
+        dispatch_pass_timeout_seconds=DISPATCH_TIMEOUT_SECONDS,
+    )
     engine = _CompletedEngine()
     queue = build_job_queue(settings=config.queue, workflow_engine=engine)
     board = _Board()
@@ -221,7 +229,10 @@ def test_missing_marker_purpose_refuses_at_construction_before_any_tracker_mutat
 
 async def test_composed_writer_missing_marker_purpose_refuses_before_tracker_mutation():
     board = _Board()
-    config = AppConfig()
+    config = AppConfig(
+        dispatch_pass_interval_seconds=DISPATCH_INTERVAL_SECONDS,
+        dispatch_pass_timeout_seconds=DISPATCH_TIMEOUT_SECONDS,
+    )
     queue = build_job_queue(settings=config.queue, workflow_engine=_CompletedEngine())
     operation = operation_config().model_copy(update={"marker_prefixes": {}})
     with pytest.raises(OperationMemberAbsentError, match="run_outcome"):
