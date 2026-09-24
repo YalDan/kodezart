@@ -1137,6 +1137,14 @@ SESSION_CLOSURE = {
         "checks": "tuple[kodezart.types.domain.audit_overclaim.OverclaimReading, ...]",
         "byte_pairs": "tuple[kodezart.types.domain.audit_overclaim.AuditBytePair, ...]",
     },
+    "BaseCheckOutput": {
+        "base_check_results": "list[kodezart.types.domain.agent.BaseCheckResult]",
+    },
+    "BaseCheckResult": {
+        "criterion_id": "kodezart.types.domain.criteria.CriterionId",
+        "command": "<class 'str'>",
+        "satisfied_at_base": "<class 'bool'>",
+    },
     "BaseCitation": {
         "path": "<class 'str'>",
         "quote": "<class 'str'>",
@@ -1237,6 +1245,8 @@ SESSION_CLOSURE = {
         "title": "<class 'str'>",
         "check": "<class 'str'>",
         "do": "<class 'str'>",
+        "runnable_test": "str | None",
+        "named_observation": "str | None",
     },
     "CriterionReplacement": {
         "kind": "typing.Literal['criterion']",
