@@ -32,13 +32,14 @@ V5_SET_DIR = default_sets_root() / V5_SET
 #: test that hard-codes the sequence states the ordering twice.
 LADDER: tuple[SessionEffort, ...] = tuple(SessionEffort)
 
-#: The set's own declared role → effort. Every role runs at the maximum:
-#: the owner's ruling of 2026-09-24 ("we always want maximum thinking")
-#: replaced the fire-time ruling FR-2 that ran judgment one level below
-#: authoring and the utility roles at the floor.
-EXPECTED_EFFORT: dict[SessionRole, SessionEffort] = dict.fromkeys(
-    SessionRole, SessionEffort.MAX
-)
+#: The set's own declared role → effort. The judgment roles run at the
+#: maximum and the utility role at the floor (owner ruling of 2026-09-24);
+#: the maximum replaced the fire-time ruling FR-2 that ran judgment one
+#: level below authoring.
+EXPECTED_EFFORT: dict[SessionRole, SessionEffort] = {
+    **dict.fromkeys(SessionRole, SessionEffort.MAX),
+    SessionRole.UTILITY: SessionEffort.LOW,
+}
 
 
 def v5_metadata() -> PromptSetMetadata:
@@ -95,13 +96,17 @@ def test_the_registry_serves_each_key_the_effort_of_its_role(key: PromptKey) -> 
 
 
 def test_every_role_runs_at_the_top_of_the_ladder() -> None:
-    """The substance of the policy since 2026-09-24: no role thinks less."""
+    """The substance of the policy since 2026-09-24: no judgment role thinks
+    less, and the utility role alone runs at the floor."""
     top = LADDER[-1]
     assert top is SessionEffort.MAX
     declared = {
         role: policy.effort for role, policy in v5_metadata().session_roles.items()
     }
-    assert declared == dict.fromkeys(SessionRole, top)
+    assert declared == {
+        **dict.fromkeys(SessionRole, top),
+        SessionRole.UTILITY: LADDER[0],
+    }
 
 
 def test_a_key_no_role_claims_is_a_typed_boot_error(tmp_path: Path) -> None:

@@ -514,7 +514,7 @@ class TestTheGateQuestion:
         assert asked["key"] == PromptKey.PASS_GATE.value
         answered = terminal_event(logs, "pass_gate_answered")
         assert answered["name"] == PromptKey.GROOMING_PASS.value
-        assert asked["effort"] == SessionEffort.MAX.value
+        assert asked["effort"] == SessionEffort.LOW.value
         assert asked["model"] is None
         # The gate is asked first, and the pass session comes after it.
         assert [call["output_format"] for call in runner.calls[-2:]] == [
@@ -646,11 +646,11 @@ class TestTheGateQuestion:
 
         (gate,) = runner.gate_calls()
         assert gate["session_policy"].model == GATE_MODEL
-        assert gate["session_policy"].effort is SessionEffort.MAX
+        assert gate["session_policy"].effort is SessionEffort.LOW
         assert all(call["session_policy"].model is None for call in runner.pass_calls())
         asked = terminal_event(logs, "agent_question_asked")
         assert asked["model"] == GATE_MODEL
-        assert asked["effort"] == SessionEffort.MAX.value
+        assert asked["effort"] == SessionEffort.LOW.value
 
     async def test_a_gate_that_raises_propagates_and_keeps_the_window(self) -> None:
         """A raise is not an answer: the tick fails loudly, nothing is skipped."""

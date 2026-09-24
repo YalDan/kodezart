@@ -246,10 +246,11 @@ tools = ["Read", "Glob", "Grep"]
 # Per-ROLE session policy. Effort, skills and the roster of keys that run
 # under each role, in one place: changing what judgment costs is an edit
 # here, not an edit per key. Effort is NAMED at every role because the
-# harness exposes no way to ask what it resolved. Every role runs at the
-# maximum: the owner's ruling of 2026-09-24 ("we always want maximum
-# thinking") replaced the earlier ladder that ran judgment one level below
-# authoring and the utility roles at the floor. Per-key skill loadouts
+# harness exposes no way to ask what it resolved. The judgment roles run at
+# the maximum and the utility role at the floor, by the owner's ruling of
+# 2026-09-24: the maximum replaced the earlier ladder that ran judgment one
+# level below authoring, and a name, a message or a short structured answer
+# runs at the floor. Per-key skill loadouts
 # are deliberately absent from this set: a loadout has one source, and for
 # this set that source is the role. No template of this set names a skill
 # or when to invoke one — a skill's own description is its trigger.
@@ -336,7 +337,7 @@ keys = ["implementation", "fix"]
 # The roster here and utility_keys above are the same roster, and the
 # metadata model refuses a set where they disagree.
 [session_roles.utility]
-effort = "max"
+effort = "low"
 skills = []
 keys = ["branch_name", "commit_message", "pr_description", "knowledge_map", "fire_record", "native_writer_contract", "mutation_survival", "organize_spec_rubric", "pass_gate", "scope_scan", "scope_done"]
 # The rubric key is on this roster because a rubric opens no session:
