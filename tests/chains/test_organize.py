@@ -1500,9 +1500,23 @@ def gap_home_objects():
 #: computed, which is the surface this guard speaks for.
 GAP_COMPUTATION_MODULES = frozenset(
     {
+        "chains/authored_delivery.py",
+        "chains/authored_publication.py",
+        "chains/criteria.py",
         "chains/delivery_coordinator.py",
+        "chains/fire_consolidation.py",
+        "chains/fire_implementation.py",
+        "chains/fire_remediation.py",
+        "chains/fire_review.py",
+        "chains/fire_specification.py",
+        "chains/lane_delivery.py",
+        "chains/native_delivery.py",
         "chains/organize.py",
+        "chains/ralph_loop.py",
+        "chains/ralph_workflow.py",
+        "chains/remediation.py",
         "chains/scope_walker.py",
+        "composition/delivery.py",
         "composition/engine.py",
         "composition/organize.py",
         "composition/passes.py",
@@ -2996,6 +3010,10 @@ CALL_SITE_OUTCOMES = {
 #: each with why; the trap does not reach them, and the call-site scan above
 #: is what reads them.
 CALL_SITES_NOT_RUN = {
+    ("chains/criteria.py", "TrackerCriteria._finished"): "A method of the "
+    "criteria reader, run on a reading its tracker port took; it hands the "
+    "family to compute_gap and each record to gap_membership, which the trap "
+    "runs as entry points.",
     ("chains/organize.py", "OrganizeAdmission.is_live"): "Async; reads the "
     "current revision through the tracker port.",
     ("domain/stream_signals.py", "lapse_undischarged"): "Folds alarm "
@@ -3046,12 +3064,13 @@ def test_every_call_site_the_fixtures_can_run_is_run_under_the_trap():
     Every call site found by object that is not an entry point the trap
     already runs is either a case of ``call_site_cases`` —
     ``SubtreeClosure._walk`` and ``SubtreeClosure.scope_gap`` — or named in
-    ``CALL_SITES_NOT_RUN`` with why: ``OrganizeAdmission.is_live``,
-    ``build_scope_organizer``, ``observe_ruling_growth``, the organize
-    service's ``_author_write`` and the ``apply`` nested in it,
-    ``_converge``, ``_proof_live``, ``_roster``, ``_route`` and ``run``,
-    ``read_barren_tick`` and ``observe_scope_tally``, each of which needs a
-    tracker port, a service instance or the composition's wiring; and
+    ``CALL_SITES_NOT_RUN`` with why: the criteria reader's ``_finished``,
+    ``OrganizeAdmission.is_live``, ``build_scope_organizer``,
+    ``observe_ruling_growth``, the organize service's ``_author_write`` and
+    the ``apply`` nested in it, ``_converge``, ``_proof_live``, ``_roster``,
+    ``_route`` and ``run``, ``read_barren_tick`` and ``observe_scope_tally``,
+    each of which needs a tracker port, a service instance or the
+    composition's wiring; and
     ``lapse_undischarged``, which takes alarm readings and no tracker
     record.  A new call site reds here until it is one or the other.  Each
     case answers what it was built for over the baseline stamp.

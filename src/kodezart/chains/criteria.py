@@ -19,6 +19,7 @@ from kodezart.domain.errors import (
     TransientAPIError,
 )
 from kodezart.domain.fire_spec import criterion_check, tracker_spec_from_issues
+from kodezart.domain.gap import compute_gap, gap_membership
 from kodezart.domain.lane_entry import require_unamended_subject
 from kodezart.domain.workflow_state import recorded_native_roster
 from kodezart.services.scope_membership import read_scope_members
@@ -29,9 +30,10 @@ from kodezart.types.domain.criteria import (
     TrackerCriterionSet,
 )
 from kodezart.types.domain.fire_spec import TrackerSpec
+from kodezart.types.domain.gap import GapMembership
 from kodezart.types.domain.lane_entry import DeliverOnlyLane
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
-from kodezart.types.domain.tracker import TrackerIssue, WorkflowStateKind, is_open
+from kodezart.types.domain.tracker import TrackerIssue, WorkflowStateKind
 from kodezart.types.domain.workflow import WorkflowState
 
 #: The state a criterion the fire still owes sits in at head.
@@ -296,13 +298,13 @@ class TrackerCriteria:
         that makes it deliverable is that every criterion that counts is
         finished — which is what this lane's own cross-offs recorded.
 
-        Which criteria count is decided by state alone, the three closed
-        kinds apart (KOD-794): a criterion the board Canceled, or closed as
-        a Duplicate of another, is no obligation of anybody's, so it neither
-        joins the roster nor refuses the lane. Every OPEN kind does refuse,
-        naming the criteria it holds for: a criterion reopened between a
-        lane being chosen and its entry is exactly that refusal, and it
-        lands before any session opens.
+        Which criteria count is asked of the one gap arithmetic, which
+        decides it by state alone (KOD-794, KOD-443): a criterion the board
+        Canceled, or closed as a Duplicate of another, is no obligation of
+        anybody's, so it neither joins the roster nor refuses the lane.
+        Every owed kind does refuse, naming the criteria it holds for: a
+        criterion reopened between a lane being chosen and its entry is
+        exactly that refusal, and it lands before any session opens.
 
         A counting roster that comes out empty is refused — a subtree
         holding no criterion at all, and equally one whose criteria were
@@ -310,9 +312,8 @@ class TrackerCriteria:
         refuses such a member: there is no obligation for a delivery to be
         the discharge of.
         """
-        unfinished = sorted(
-            key for key, issue in criteria.items() if is_open(issue.state_kind)
-        )
+        family = [criteria[key] for key in sorted(criteria)]
+        unfinished = [issue.issue_key for issue in compute_gap(family).owed]
         if unfinished:
             raise FireSpecEntryError(
                 issue_key=spec.subject,
@@ -328,7 +329,7 @@ class TrackerCriteria:
         roster = {
             key: criterion_check(criterion=issue, issue_key=spec.subject)
             for key, issue in sorted(criteria.items())
-            if issue.state_kind is HELD_CRITERION_STATE
+            if gap_membership(issue) is GapMembership.DISCHARGED
         }
         if not roster:
             raise FireSpecEntryError(

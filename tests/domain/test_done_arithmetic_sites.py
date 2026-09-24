@@ -194,15 +194,13 @@ EXEMPT = {
     "services/scope_planning.py::read_scope_plan": (
         "selection over dispatch candidates, which are not criterion sub-issues"
     ),
-    "chains/criteria.py::TrackerCriteria._finished": (
-        "consults the one arithmetic once KOD-453's gap (Canceled and Duplicate "
-        "excluded on state alone, KOD-794) is on the union; KOD-443, decided "
-        "2026-09-23 09:15 UTC"
-    ),
     "domain/mandate_graph.py::structural_write_uncrosses_milestone": (
-        "consults the one arithmetic once KOD-453's gap (Canceled and Duplicate "
-        "excluded on state alone, KOD-794) is on the union; KOD-443, decided "
-        "2026-09-23 09:15 UTC"
+        "reads lane-graph members (the fire, its subtree and the milestone's "
+        "members), which are not criterion sub-issues and which compute_gap "
+        "refuses, together with the lane graph's own supersession records; "
+        "services/mandate_graph.py, which collects the graph readings it is "
+        "asked over, has no production importer (KOD-443); moving it onto "
+        "the arithmetic is a backlog item"
     ),
 }
 
