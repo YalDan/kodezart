@@ -8,13 +8,19 @@ deliverable child, and then exit on a gap that never contained it.  Every
 fixture here puts the offending key one level below the filter.
 """
 
+from datetime import timedelta
+
 import pytest
 
 from kodezart.domain.errors import ScopePlanRefusalError, ScopeReadError
 from kodezart.services.scope_planning import read_scope_facts, read_scope_plan
 from kodezart.types.domain.operation import ScopeLabel
-from kodezart.types.domain.scope import ScopeContainer, ScopeKind
-from kodezart.types.domain.tracker import WorkflowStateKind
+from kodezart.types.domain.scope import ScopeContainer, ScopeKind, ScopeRef
+from kodezart.types.domain.tracker import (
+    IssueRelation,
+    IssueRelationKind,
+    WorkflowStateKind,
+)
 from tests.fakes import FakeTrackerPort, make_tracker_issue
 from tests.services.test_scope_dispatcher import PROJECT, enqueued, walk
 
@@ -149,32 +155,96 @@ async def test_a_member_absent_from_its_ancestors_subtree_refuses(
 
 
 @pytest.mark.parametrize("read_scope", [read_scope_plan, read_scope_facts])
-async def test_a_subtree_that_moves_during_planning_never_returns_a_plan(
+async def test_the_plan_is_built_from_one_read_of_the_board(monkeypatch, read_scope):
+    """One family read, one subtree read per root, one read per outside blocker.
+
+    Measured 2026-09-24 (KOD-1241): the same plan was read eight times over
+    and refused when a reread differed. No member is read through the
+    planning read; the family read already carried it whole.
+    """
+    tracker = board(
+        deliverable("root").model_copy(
+            update={
+                "relations": (
+                    IssueRelation(
+                        kind=IssueRelationKind.BLOCKED_BY, issue_key="outside"
+                    ),
+                )
+            }
+        ),
+        record("root-check", parent="root", labels=CRITERION),
+        deliverable("child", parent="root"),
+        record("child-record", parent="child", labels=CRITERION),
+        make_tracker_issue("outside"),
+        members=("root",),
+    )
+    scope_reads: list[ScopeRef] = []
+    planning_reads: list[str] = []
+    original_scope, original_read = tracker.scope_issues, tracker.read_planning_issue
+
+    async def scoped(*, ref):
+        scope_reads.append(ref)
+        return await original_scope(ref=ref)
+
+    async def read(*, issue_key):
+        planning_reads.append(issue_key)
+        return await original_read(issue_key=issue_key)
+
+    monkeypatch.setattr(tracker, "scope_issues", scoped)
+    monkeypatch.setattr(tracker, "read_planning_issue", read)
+    plan = await read_scope(ref=PROJECT, tracker=tracker)
+    assert scope_reads == [PROJECT, ScopeRef(kind=ScopeKind.ISSUE, key="root")]
+    assert planning_reads == ["outside"]
+    assert {issue.issue_key for issue in plan.scope.issues} == {"root", "root-check"}
+    assert {issue.issue_key for issue in plan.dependencies} == {"outside"}
+
+
+@pytest.mark.parametrize("read_scope", [read_scope_plan, read_scope_facts])
+async def test_a_relation_and_a_stamp_the_subtree_read_answers_later_do_not_refuse(
     monkeypatch, read_scope
 ):
-    """The subtree is read twice; a descendant that moved between them refuses.
+    """The family's copy of a member is the plan's; the subtree's is not compared.
 
-    The moved descendant is the deliverable child itself, which no criterion
-    family read covers: only the subtree read sees it at all.
+    A mention of the member elsewhere on the tracker between the two reads
+    gives it a related-to relation and a later ``updated_at``. Neither is a
+    blocking edge, and the plan uses blocking edges alone (KOD-1241).
     """
     tracker = nested_board(deep_state=WorkflowStateKind.UNSTARTED)
     original = tracker.scope_issues
-    reads: list[str] = []
+    family_copy = tracker.issues["root"]
 
     async def scoped(*, ref):
         values = list(await original(ref=ref))
         if ref.kind is not ScopeKind.ISSUE:
             return values
-        reads.append(ref.key)
-        if len(reads) == 1:
-            return values
         return [
-            value.model_copy(update={"body": "moved"})
-            if value.issue_key == "child"
+            value.model_copy(
+                update={
+                    "relations": (
+                        IssueRelation(kind=IssueRelationKind.RELATED, issue_key="x"),
+                    ),
+                    "updated_at": value.updated_at + timedelta(days=1),
+                }
+            )
+            if value.issue_key == "root"
             else value
             for value in values
         ]
 
     monkeypatch.setattr(tracker, "scope_issues", scoped)
-    with pytest.raises(ScopeReadError, match="member subtrees changed"):
-        await read_scope(ref=PROJECT, tracker=tracker)
+    plan = await read_scope(ref=PROJECT, tracker=tracker)
+    assert family_copy in plan.scope.issues
+    assert plan.dependencies == ()
+
+
+async def test_a_blocker_outside_the_scope_is_read_once():
+    """Two members blocked by the same outside issue cost one read of it."""
+    tracker = board(
+        make_tracker_issue("left", blocked_by=("outside",), project_id=PROJECT.key),
+        make_tracker_issue("right", blocked_by=("outside",), project_id=PROJECT.key),
+        make_tracker_issue("outside"),
+        members=("left", "right"),
+    )
+    plan = await read_scope_plan(ref=PROJECT, tracker=tracker)
+    assert tracker.issue_reads.count("outside") == 1
+    assert {issue.issue_key for issue in plan.dependencies} == {"outside"}

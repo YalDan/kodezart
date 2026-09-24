@@ -8,7 +8,12 @@ from kodezart.services.scope_membership import (
     read_member_subtrees,
     read_scope_members,
 )
-from kodezart.types.domain.scope import ResolvedScope, ScopePlanSnapshot, ScopeRef
+from kodezart.types.domain.scope import (
+    ResolvedScope,
+    ScopeKind,
+    ScopePlanSnapshot,
+    ScopeRef,
+)
 from kodezart.types.domain.tracker import TrackerIssue, WorkflowStateKind, is_open
 
 
@@ -78,20 +83,35 @@ async def read_scope_facts(
 async def _read_scope_facts(
     *, ref: ScopeRef, tracker: ScopePlanReader
 ) -> tuple[ScopePlanSnapshot, tuple[TrackerIssue, ...]]:
-    """Share the same native observations and rereads across scope consumers."""
+    """Read the board once and build every scope consumer's facts from that read.
+
+    Three reads and no rereads: the scope family, the subtree under each
+    root member for the descendants a container listing does not carry,
+    and one planning read per blocker outside both. An issue the family
+    or a subtree already holds is never read again; the membership read
+    hydrates every member through the same full issue read the planning
+    read makes, so a second read of it can only answer the same fields or
+    a later moment.
+
+    Measured 2026-09-24 (KOD-1241): this function read a live scope eight
+    times over to build one plan and compared each reread with the first
+    as whole issues. Two mentions of a member elsewhere on the tracker
+    during those reads gave it a related-to relation and a later
+    ``updated_at``, and both planning attempts refused on a fact no plan
+    uses: the topology reads blocking edges alone. The plan is a snapshot
+    of one moment; the walker's own reads and the fire's entry read take
+    a later one on their own.
+    """
     tracker.require_scope_plan_reads()
     members = await read_scope_members(tracker=tracker, scope=ref)
-    for key, issue in members.items():
-        if await tracker.read_planning_issue(issue_key=key) != issue:
-            raise ScopeReadError(f"scope fact changed during planning: {key}", ref=ref)
-    subtree = await read_member_subtrees(tracker=tracker, scope=ref, members=members)
-    for key, issue in subtree.items():
-        if key in members:
-            continue
-        if await tracker.read_planning_issue(issue_key=key) != issue:
-            raise ScopeReadError(
-                f"subtree fact changed during planning: {key}", ref=ref
-            )
+    if ref.kind is ScopeKind.ISSUE:
+        # An issue scope's family is its whole subtree already: the same
+        # read would answer the same rows a second time.
+        subtree = dict(members)
+    else:
+        subtree = await read_member_subtrees(
+            tracker=tracker, scope=ref, members=members
+        )
     facts = dict(members)
     pending = list(members.values())
     while pending:
@@ -99,25 +119,15 @@ async def _read_scope_facts(
         for key in blocker_keys(issue):
             if key in facts:
                 continue
-            dependency = await tracker.read_planning_issue(issue_key=key)
-            if dependency.issue_key != key:
-                raise ScopeReadError(
-                    "dependency read changed the requested identity", ref=ref
-                )
+            dependency = subtree.get(key)
+            if dependency is None:
+                dependency = await tracker.read_planning_issue(issue_key=key)
+                if dependency.issue_key != key:
+                    raise ScopeReadError(
+                        "dependency read changed the requested identity", ref=ref
+                    )
             facts[key] = dependency
             pending.append(dependency)
-    # Check the native observations again before either a refusal or a plan.
-    # A missing or moved dependency is never interpreted as a closed blocker.
-    for key, issue in facts.items():
-        if await tracker.read_planning_issue(issue_key=key) != issue:
-            raise ScopeReadError(f"dependency changed during planning: {key}", ref=ref)
-    if await read_scope_members(tracker=tracker, scope=ref) != members:
-        raise ScopeReadError("scope family changed during planning", ref=ref)
-    if (
-        await read_member_subtrees(tracker=tracker, scope=ref, members=members)
-        != subtree
-    ):
-        raise ScopeReadError("member subtrees changed during planning", ref=ref)
     snapshot = ScopePlanSnapshot(
         scope=ResolvedScope(ref=ref, issues=tuple(members.values())),
         dependencies=tuple(issue for key, issue in facts.items() if key not in members),

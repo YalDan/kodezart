@@ -276,9 +276,13 @@ reader preserves direct criterion children even when container filtering omits
 them, and serves audit collection as well as planning.
 
 The explicit `read_planning_issue` port read requires reported semantic labels
-and full requested dependency relations. Planning re-reads every enumerated
-member through that strict boundary before following dependencies, rechecks all
-facts and the scope family, and refuses omissions or changed observations. Open decisions,
+and full requested dependency relations. Planning reads the board once: the
+scope family, the subtree under each root member, and one planning read per
+blocker outside both; an issue the family already holds is never read again,
+and a dependency read that answers another identity refuses. Since 2026-09-24
+(KOD-1241) nothing is re-read and compared: a member mentioned elsewhere on the
+tracker between two reads gains a related-to relation and a later `updated_at`,
+and that refused a live scope twice over a fact no plan uses. Open decisions,
 backlog-kind criteria and criterion edges leaving their parent's subtree yield
 `ScopePlanRefusalError` with the offending native keys. Existing topology
 arithmetic owns cycle detection. A successful planning snapshot alone makes no

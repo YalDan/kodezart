@@ -1141,7 +1141,9 @@ async def test_named_union_exit_preserves_real_refs_and_removes_scratch(
 COLLABORATOR_FAILURES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("tracker", ("require_scope_plan_reads",)),
     ("tracker", ("scope_issues",)),
-    ("tracker", ("read_planning_issue",)),
+    # ``read_planning_issue`` is asked only for a blocker outside the scope,
+    # which this board has none of, since the plan is built from one read
+    # of the family (KOD-1241, 2026-09-24).
     ("tracker", ("read_criteria",)),
     ("refs", ("work_refs",)),
     ("git", ("remote_branch_sha",)),

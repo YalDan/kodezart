@@ -67,6 +67,12 @@ async def read_member_subtrees(
     member whose parent is itself a member is already inside that ancestor's
     subtree; a member no subtree contains refuses instead of narrowing the
     answer.
+
+    An issue the family and a subtree both hold is the family's copy. Until
+    2026-09-24 the two copies were compared whole and a difference refused
+    (KOD-1241): a mention of a member elsewhere on the tracker between the
+    two reads gives it a new related-to relation and a later ``updated_at``,
+    and that refused a live scope twice over a fact the plan never uses.
     """
     subtree: dict[str, TrackerIssue] = {}
     for key, issue in members.items():
@@ -76,13 +82,7 @@ async def read_member_subtrees(
             tracker=tracker, scope=ScopeRef(kind=ScopeKind.ISSUE, key=key)
         )
         for rooted_key, rooted_issue in rooted.items():
-            established = subtree.get(rooted_key, members.get(rooted_key))
-            if established is not None and established != rooted_issue:
-                raise ScopeReadError(
-                    f"subtree fact contradicts the scope family: {rooted_key}",
-                    ref=scope,
-                )
-            subtree[rooted_key] = rooted_issue
+            subtree[rooted_key] = members.get(rooted_key, rooted_issue)
     absent = members.keys() - subtree.keys()
     if absent:
         raise ScopeReadError(
