@@ -51,7 +51,8 @@ def build_supervisor_pass(
         return read_scope_ready(ref=ref, tracker=tracker)
 
     # The scope's stage barrier at each rung is the service's to read, typed
-    # on the roster role alone; the port is only handed to it here.
+    # on the tally role alone, the roster behind its classification
+    # preflight; the port is only handed to it here.
     def observe_scope(ref: ScopeRef) -> Awaitable[tuple[RunAlarm, ...]]:
         return observe_scope_barrier(
             tracker=tracker,
