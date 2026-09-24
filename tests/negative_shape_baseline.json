@@ -45,6 +45,7 @@
   "tests/adapters/test_subprocess_git.py": 56,
   "tests/adapters/test_tool_selection.py": 22,
   "tests/adapters/test_tracker_self_writes.py": 22,
+  "tests/adapters/test_tracker_session_server.py": 20,
   "tests/api/v1/test_agent.py": 62,
   "tests/api/v1/test_dependencies.py": 52,
   "tests/api/v1/test_health.py": 14,
@@ -1237,6 +1238,15 @@
    "test_a_read_back_that_fails_does_not_fail_the_write_it_recorded",
    "test_every_comment_shaped_write_records_only_its_own_mutations",
    "test_comment_readback_cannot_claim_a_concurrent_principal_movement"
+  ],
+  "tests/adapters/test_tracker_session_server.py": [
+   "test_no_credential_describes_no_server",
+   "test_the_session_server_is_the_client_definition_spelled_once",
+   "test_only_the_scheduled_pass_is_given_the_tracker_server",
+   "test_the_tracker_server_sits_beside_the_granted_knowledge_server",
+   "test_the_prelude_follows_the_knowledge_server_and_not_the_maps_truthiness",
+   "test_a_scheduled_pass_session_carries_the_tracker_server",
+   "test_the_composition_root_builds_the_server_from_the_tracker_settings"
   ],
   "tests/api/v1/test_agent.py": [
    "test_stream_query_returns_events",
