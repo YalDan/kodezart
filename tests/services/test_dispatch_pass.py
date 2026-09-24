@@ -772,6 +772,7 @@ async def test_the_root_gives_every_pass_the_configured_cadence() -> None:
         dispatch_pass_interval_seconds=unusual,
         dispatch_pass_timeout_seconds=DISPATCH_TIMEOUT_SECONDS,
     )
+    assert AppConfig.model_fields["dispatch_pass_interval_seconds"].default is None
 
     tracker = FakeTrackerPort()
     queue = FakeJobQueue()
@@ -805,6 +806,7 @@ async def test_the_root_gives_every_pass_the_configured_budget() -> None:
         dispatch_pass_interval_seconds=DISPATCH_INTERVAL_SECONDS,
         dispatch_pass_timeout_seconds=unusual,
     )
+    assert AppConfig.model_fields["dispatch_pass_timeout_seconds"].default is None
     assert config.dispatch_pass_timeout_seconds != (
         config.dispatch_pass_interval_seconds
     )

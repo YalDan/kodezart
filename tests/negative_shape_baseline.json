@@ -349,7 +349,7 @@
   "tests/services/test_check_classification.py": 19,
   "tests/services/test_claim_heartbeat.py": 44,
   "tests/services/test_dispatch_delta_cancel_independent.py": 3,
-  "tests/services/test_dispatch_pass.py": 69,
+  "tests/services/test_dispatch_pass.py": 71,
   "tests/services/test_fire_context.py": 33,
   "tests/services/test_fire_dispatcher.py": 250,
   "tests/services/test_fire_log_facts.py": 29,
