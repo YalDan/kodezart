@@ -16,14 +16,11 @@ engines = ["claude-opus-5-5", "claude-fable-5-1"]
 # one inside the prompt it joins.
 utility_keys = ["branch_name", "commit_message", "pr_description", "knowledge_map", "fire_record", "native_writer_contract", "mutation_survival", "organize_spec_rubric", "pass_gate", "scope_scan", "scope_done"]
 
-# Which fan-out primitive this set's generative roles are told to use. Set
-# from the harness enumeration's measured verdict, never model-judged: the
-# agent primitive is live under the production session configuration as it
-# stands, while the workflow primitive additionally needs a non-plan
-# permission mode and an allowlist entry that no judgment session in this
-# system has by design. Flipping this value is the whole change if that
-# session-policy ruling ever moves; both fragments are authored below.
-orchestration_primitive = "agent"
+# Which fan-out primitive this set's roles are told to use, set from a
+# measured verdict and never model-judged. The workflow primitive needs the
+# Workflow tool in the session's allowlist and the workflows plugin loaded,
+# and every session policy carries both, in plan mode as well as unattended.
+orchestration_primitive = "workflow"
 
 # Set-level fragment content, bound or composed into members when the set
 # is resolved. A set that declares none of these is composed unchanged.
@@ -35,7 +32,7 @@ that do not apply.\
 """
 
 # Delivered as the session's system-prompt append, never inside a template
-# body. The last paragraph is load-bearing: ending a turn without the
+# body. The early-stopping paragraph is load-bearing: ending a turn without the
 # structured output IS early stopping in this harness, and that is the
 # failure class behind every no-structured-output raise site. Its four
 # named early stops follow the Opus 5.5 prompting guide's instruction for
@@ -91,7 +88,10 @@ carry on with whatever does not depend on an answer, and if you notice yourself 
 a plan or a promise about work not yet done, do that work now. The stops that are wanted
 are the ones where nothing can move without a principal, or where the thing blocking you is
 deliberately protected from you; none of this overrides confirmation for risky or
-destructive actions.\
+destructive actions.
+
+Ultracode: when the work needs investigating, the Workflow tool is your fan-out
+primitive, so run the /kodezart-investigate workflow with your questions.\
 """
 
 # One source, composed into the three templates that need the shared
@@ -163,9 +163,10 @@ Ultrathink. Deeper reasoning is requested for this work — reason as thoroughly
 as the task warrants before you act.\
 """
 
-# The orchestration opt-in's expansion. Declared here so the token exists
-# in exactly one place in the set; which templates carry it, and the graph
-# spec it accompanies, belong to the orchestration deliverable.
+# The orchestration opt-in's expansion, composed into the workflow block;
+# the house rules close with the same opt-in for every session. Which
+# templates carry it, and the graph spec it accompanies, belong to the
+# orchestration deliverable.
 ultracode_instruction = """\
 Ultracode. This work opts into multi-agent orchestration — use the Workflow tool to
 fulfill the investigation, following the spec above.\

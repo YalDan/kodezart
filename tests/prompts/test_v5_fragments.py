@@ -333,6 +333,9 @@ OUTSIDE_THE_STANDARD: tuple[str, ...] = (
     "wanted are the ones where nothing can move without a principal, or where "
     "the thing blocking you is deliberately protected from you; none of this "
     "overrides confirmation for risky or destructive actions.",
+    "Ultracode: when the work needs investigating, the Workflow tool is your "
+    "fan-out primitive, so run the /kodezart-investigate workflow with your "
+    "questions.",
 )
 
 #: The opening words of the standard's own paragraph.

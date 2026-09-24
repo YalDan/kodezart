@@ -17,9 +17,11 @@ from kodezart.adapters.in_repo_prompt_registry import (
     InRepoPromptRegistry,
     default_sets_root,
 )
+from kodezart.adapters.toml_operation_config import load_operation_config
+from kodezart.core.prompt_namespaces import operation_bindings
 from kodezart.core.prompt_rendering import free_binding_names
 from kodezart.types.domain.prompts import OrchestrationPrimitive, PromptKey
-from tests.prompts.sets import ALL_CASES, V5_SET
+from tests.prompts.sets import ALL_CASES, EXAMPLE_OPERATION, V5_SET
 from tests.prompts.test_prompt_wiring import (
     CONFIGURED_INVESTIGATION_CAP,
     load_registry,
@@ -27,9 +29,15 @@ from tests.prompts.test_prompt_wiring import (
 
 V5_SET_DIR = default_sets_root() / V5_SET
 
-#: The two generative keys the slot is filled for.  ``criteria_generation``
-#: in the issue text names the registered key ``acceptance_criteria`` (FR-1).
-SLOTTED_KEYS = (PromptKey.ACCEPTANCE_CRITERIA, PromptKey.TICKET_CREATE)
+#: The keys the slot is filled for: the two generative keys and the two
+#: intake passes.  ``criteria_generation`` in the issue text names the
+#: registered key ``acceptance_criteria`` (FR-1).
+SLOTTED_KEYS = (
+    PromptKey.ACCEPTANCE_CRITERIA,
+    PromptKey.TICKET_CREATE,
+    PromptKey.FIRE_PREP_PASS,
+    PromptKey.GROOMING_PASS,
+)
 EVALUATIVE_KEYS = (
     PromptKey.EVALUATION,
     PromptKey.CRITERIA_VALIDATION,
@@ -51,18 +59,26 @@ def set_with_primitive(
     tmp_path: Path,
     primitive: OrchestrationPrimitive,
 ) -> InRepoPromptRegistry:
-    """The shipped set, copied with one metadata value replaced."""
+    """The shipped set, copied with one metadata value replaced.
+
+    The example operation is bound so the intake passes render; the names
+    are additive and change nothing for a member that references none.
+    """
     root = tmp_path / "sets"
     shutil.copytree(V5_SET_DIR, root / V5_SET)
     metadata = root / V5_SET / "set.toml"
     metadata.write_text(
         metadata.read_text(encoding="utf-8").replace(
-            f'orchestration_primitive = "{OrchestrationPrimitive.AGENT.value}"',
+            f'orchestration_primitive = "{OrchestrationPrimitive.WORKFLOW.value}"',
             f'orchestration_primitive = "{primitive.value}"',
         ),
         encoding="utf-8",
     )
-    return load_registry(sets_root=root, default_set=V5_SET)
+    return load_registry(
+        sets_root=root,
+        default_set=V5_SET,
+        bindings=dict(operation_bindings(load_operation_config(EXAMPLE_OPERATION))),
+    )
 
 
 def render(registry: InRepoPromptRegistry, key: PromptKey) -> str:
@@ -163,7 +179,7 @@ def test_utility_templates_have_no_orchestration_block(key: PromptKey) -> None:
     assert WORKFLOW_INVOCATION not in rendered
 
 
-def test_exactly_the_two_generative_keys_declare_the_slot() -> None:
+def test_exactly_the_slotted_keys_declare_the_slot() -> None:
     """Which members carry the slot is the templates' own census, not a roster."""
     declared = {
         name
@@ -226,7 +242,7 @@ def test_a_member_asking_for_the_slot_in_a_set_without_one_is_a_boot_error(
     metadata = root / V5_SET / "set.toml"
     metadata.write_text(
         metadata.read_text(encoding="utf-8").replace(
-            f'orchestration_primitive = "{OrchestrationPrimitive.AGENT.value}"',
+            f'orchestration_primitive = "{OrchestrationPrimitive.WORKFLOW.value}"',
             "",
         ),
         encoding="utf-8",
