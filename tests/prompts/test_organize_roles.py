@@ -121,6 +121,8 @@ def test_each_rubric_renders_without_placeholders(set_name: str, name: str) -> N
     assert "{{" not in rendered
     assert "Golden source issue body" not in rendered
     assert "Golden mandate rubric" not in rendered
+
+
 #: Every set shipped, read off the sets root rather than listed here, so a set
 #: added beside the two today is held to the same paragraph.
 SHIPPED_SETS = sorted(
