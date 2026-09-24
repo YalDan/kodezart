@@ -71,9 +71,10 @@ TEMPLATE = default_sets_root() / OPUS_SET / "grooming_pass.md"
 
 #: sha256 of the base the block is adopted into: the grooming template at
 #: a047d1fb with principle 3 extended by the quick-win sizing sentences
-#: (KOD-904), a deliberate change to the base text.  The test reads only the
-#: working tree.
-BASE_SHA256 = "81745d371029de5c18070ba23bb19589d1b37aafce7f76e1b9f05b2bfcf790b2"
+#: (KOD-904) and the umbrella/epic in-progress move written as the
+#: ``workflow_states.in_progress`` placeholder (KOD-795), each a deliberate
+#: change to the base text.  The test reads only the working tree.
+BASE_SHA256 = "e0166fa7a2269b4afc0c0dce7dac9b27cb19e517878aea67033f454c8771d29e"
 
 #: KOD-566's own list of the sections adopted byte for byte.
 VERBATIM: tuple[str, ...] = (
