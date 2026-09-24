@@ -905,11 +905,28 @@ config declares at least one team and one repository and declares no
 `prompt_passes_not_wired` naming which it was). What this process attaches to
 a session is the knowledge server it was granted
 (`KODEZART_KNOWLEDGE__SESSION_GRANTS`) and nothing else: it registers no tracker
-MCP server on a session. That registration is host configuration, made where a
-session started in `KODEZART_SCHEDULED_PASS_WORKING_DIR` can see it, and
-nothing here performs or verifies it — do not read a machine-local MCP
-registration you happen to have as a property of the deployment. Attaching the
-tracker to sessions from configuration is planned.
+MCP server on a session, and it starts every session in strict MCP mode, so a
+machine-local registration does not reach a session either. See the known
+issue below; attaching the tracker to sessions from configuration is planned.
+
+## Known issues
+
+**Agent sessions cannot reach the tracker on their own (KOD-1240).** kodezart
+describes exactly one MCP server to a session, the knowledge server it was
+granted, and starts the session with `strict_mcp_config` so nothing else loads.
+Measured on 2026-09-24 through the query endpoint: a session reports
+`mcp_servers: []` and has no tracker tools, so a scheduled pass or a query that
+must read or write the tracker cannot. Turning strict mode off is not the fix:
+in that mode headless Claude Code also loads the host's user-level servers and
+any `.mcp.json` a cloned repository plants in the working directory, which lets
+a repository start a command on the host. The tracker and the knowledge store
+are kodezart's own ports, and not every deployment runs Claude Code with Linear
+and Notion attached, so the engine must not assume the tools a session happens
+to have. Until a session gets the tracker from kodezart's own description
+(server name and URL from the tracker settings, with a stated credential
+policy), the interim is a deliberately dangerous, off-by-default opt-in that
+lets a Claude Code host hand its user-level servers to sessions, accepting the
+planted-server hazard on that host (KOD-1239 lands it and names the setting).
 
 ## Development
 

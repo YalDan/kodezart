@@ -4576,7 +4576,7 @@
    "test_the_role_roster_covers_the_registered_census_and_nothing_else",
    "test_each_role_declares_the_effort_the_ruling_fixed",
    "test_the_registry_serves_each_key_the_effort_of_its_role",
-   "test_judgment_sits_strictly_below_authoring_on_the_ladder",
+   "test_every_role_runs_at_the_top_of_the_ladder",
    "test_a_key_no_role_claims_is_a_typed_boot_error",
    "test_a_set_declaring_both_mechanisms_is_refused",
    "test_a_utility_roster_disagreeing_with_the_utility_role_is_refused",

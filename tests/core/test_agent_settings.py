@@ -32,7 +32,9 @@ OLD = [
 
 def provisioned_home(tmp_path):
     home = tmp_path / "host"
-    registry = make_prompt_provider()
+    # The allowlist covers the loadouts of the set boot resolves (the shipped
+    # default), not the legacy set the fake registry defaults to.
+    registry = make_prompt_provider(AppConfig.model_fields["prompt_set"].default)
     names = sorted(
         {"fixture"}
         | {name for key in PromptKey for name in registry.declared_skills(key)}

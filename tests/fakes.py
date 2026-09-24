@@ -2205,11 +2205,11 @@ class FakeArtifactPersister:
 DEFAULT_PROMPT_SET = "claude-opus"
 
 
-def make_prompt_provider() -> InRepoPromptRegistry:
+def make_prompt_provider(default_set: str = DEFAULT_PROMPT_SET) -> InRepoPromptRegistry:
     """The real in-repo registry addressed by set name — prompts are data."""
     return InRepoPromptRegistry.load(
         sets_root=default_sets_root(),
-        default_set=DEFAULT_PROMPT_SET,
+        default_set=default_set,
         set_overrides={},
         template_overrides={},
         bindings={},

@@ -3,7 +3,10 @@
 # new sections are added by extending PromptSetMetadata additively.
 
 name = "anthropic_v5"
-engines = ["opus-5", "fable-5", "sonnet-5"]
+# The engines this corpus is authored for, by their model ids: the one
+# declaration boot compares KODEZART_AGENT__MODEL and every per-key engine
+# against. A model outside this list is logged as a mismatch, never refused.
+engines = ["claude-opus-5-5", "claude-fable-5-1"]
 
 # Roles that carry no reasoning-depth instruction: they emit a name, a
 # message, a description, or a prelude composed into another session's
@@ -34,7 +37,10 @@ that do not apply.\
 # Delivered as the session's system-prompt append, never inside a template
 # body. The last paragraph is load-bearing: ending a turn without the
 # structured output IS early stopping in this harness, and that is the
-# failure class behind every no-structured-output raise site.
+# failure class behind every no-structured-output raise site. Its four
+# named early stops follow the Opus 5.5 prompting guide's instruction for
+# unattended runs (2026-09-24): naming the specific stops is what the
+# engine responds to, a general "keep going" is not.
 house_rules = """\
 kodezart house rules:
 
@@ -67,8 +73,18 @@ Cross-component conventions (naming patterns, branch formats, message schemas) b
 typed domain models, never in string literals or implicit contracts between files.
 
 Act as soon as you have enough information. Your turn is complete only when you have
-produced the required structured output — if you notice yourself ending with a plan or a
-promise about work not yet done, do that work now.\
+produced the required structured output: a message with no tool call and no structured
+output ends your turn, and the work stops there. Four ways of ending early are not wanted —
+a summary that closes by announcing the next step instead of taking it; an offer to carry
+on unless someone prefers otherwise, which waits for an answer nobody will give; a list of
+decisions for a principal when none of them blocks the rest of the work; and stopping to
+report because the turn has been long or a milestone is done. Status notes and your
+recommendations on open decisions are welcome in the same message as your next tool call;
+carry on with whatever does not depend on an answer, and if you notice yourself ending with
+a plan or a promise about work not yet done, do that work now. The stops that are wanted
+are the ones where nothing can move without a principal, or where the thing blocking you is
+deliberately protected from you; none of this overrides confirmation for risky or
+destructive actions.\
 """
 
 # One source, composed into the three templates that need the shared
@@ -229,16 +245,17 @@ tools = ["Read", "Glob", "Grep"]
 
 # Per-ROLE session policy. Effort, skills and the roster of keys that run
 # under each role, in one place: changing what judgment costs is an edit
-# here, not an edit per key. Effort is NAMED at every role, including the
-# ones that run at the harness default, because "one level below the
-# default" is only a testable relation if the default has a name — and the
-# harness exposes no way to ask what it resolved. Per-key skill loadouts
+# here, not an edit per key. Effort is NAMED at every role because the
+# harness exposes no way to ask what it resolved. Every role runs at the
+# maximum: the owner's ruling of 2026-09-24 ("we always want maximum
+# thinking") replaced the earlier ladder that ran judgment one level below
+# authoring and the utility roles at the floor. Per-key skill loadouts
 # are deliberately absent from this set: a loadout has one source, and for
 # this set that source is the role. No template of this set names a skill
 # or when to invoke one — a skill's own description is its trigger.
 
 [session_roles.generative]
-effort = "xhigh"
+effort = "max"
 skills = ["code-review"]
 keys = [
     "ticket_create",
@@ -246,16 +263,50 @@ keys = [
     "acceptance_criteria",
     "iteration_feedback",
     "remediation_ticket",
-    "fire_prep_pass",
-    "grooming_pass",
     "organize_author",
     "organize_criteria_author",
 ]
 
-# One level below the generative roles: grading a changeset against explicit
-# criteria is cheaper work than authoring one.
+# The two scheduled passes: one unattended session each, working a whole
+# board as the product and project manager. Their loadout is the skills the
+# adopted routines name for that work (KOD-50): the product-management
+# activities of grooming, the engineering, design, data and operations
+# angles of preparing a fire, and the Cloudflare knowledge both ground
+# against. The header tells the session to load a skill when its subject
+# is in play, so the union of both passes' needs is one loadout.
+[session_roles.scheduled_pass]
+effort = "max"
+skills = [
+    "product-management:roadmap-update",
+    "product-management:sprint-planning",
+    "product-management:metrics-review",
+    "product-management:synthesize-research",
+    "product-management:write-spec",
+    "product-management:stakeholder-update",
+    "engineering:architecture",
+    "engineering:code-review",
+    "engineering:system-design",
+    "engineering:testing-strategy",
+    "engineering:debug",
+    "engineering:documentation",
+    "operations:risk-assessment",
+    "design:design-critique",
+    "design:design-system",
+    "design:accessibility-review",
+    "design:ux-copy",
+    "data:analyze",
+    "data:validate-data",
+    "security-review",
+    "cloudflare:cloudflare",
+    "cloudflare:workers-best-practices",
+    "cloudflare:wrangler",
+    "cloudflare:durable-objects",
+    "cloudflare:agents-sdk",
+]
+keys = ["fire_prep_pass", "grooming_pass"]
+
 [session_roles.evaluative]
-effort = "high"
+effort = "max"
 skills = ["code-review", "security-review"]
 keys = [
     "evaluation",
@@ -277,14 +328,14 @@ keys = [
 ]
 
 [session_roles.implementation]
-effort = "xhigh"
+effort = "max"
 skills = ["code-review"]
 keys = ["implementation", "fix"]
 
 # The roster here and utility_keys above are the same roster, and the
 # metadata model refuses a set where they disagree.
 [session_roles.utility]
-effort = "low"
+effort = "max"
 skills = []
 keys = ["branch_name", "commit_message", "pr_description", "knowledge_map", "fire_record", "native_writer_contract", "mutation_survival", "organize_groom_rubric", "organize_spec_rubric"]
 # The two rubric keys are on this roster because a rubric opens no session:

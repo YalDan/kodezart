@@ -15,6 +15,7 @@ from kodezart.types.domain.scope_runtime import ScopeLaneEvent
 from kodezart.types.domain.scope_terminal import ScopeTerminalEvent
 from kodezart.types.domain.session import PermissionMode, SessionType
 from kodezart.types.domain.skills import SkillsSelection
+from kodezart.types.domain.subagents import SessionPolicy
 from kodezart.types.domain.workflow import WorkflowSubmission
 from kodezart.types.requests.agent import (
     HttpPermissionMode,
@@ -123,6 +124,7 @@ class AgentHandler:
                 allowed_tools=request.allowed_tools,
                 skills=self._skills,
                 session_type=SessionType.API_QUERY,
+                session_policy=SessionPolicy(effort=request.effort),
                 session_id=request.session_id,
                 output_format=output_format,
                 cache_key=cache_key,
