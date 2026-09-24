@@ -372,6 +372,7 @@ Every prompt set supplies a separate data file for each organize role:
 | `organize_criteria_author` | Propose criterion sub-issues |
 | `organize_groom_rubric` | The pre-approval row's accept conditions |
 | `organize_spec_rubric` | The run-stage rows' accept conditions |
+| `organize_session` | Do one phase's work on the board with the session's own tracker tools |
 
 The registry resolves each role independently. Removing any required file
 from the selected set aborts prompt boot and names the missing key. The

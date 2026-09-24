@@ -84,6 +84,9 @@ ARTIFACT_TAGS: dict[str, tuple[str, ...]] = {
     # injected artifact of its own and therefore no tag.
     "organize_groom_rubric": (),
     "organize_spec_rubric": (),
+    # The session's prompt lists the marker and the member keys as plain
+    # lines; the members are addresses, not injected artifacts.
+    "organize_session": (),
     "acceptance_criteria": ("ticket",),
     "acceptance_criteria__regeneration_round": ("validation_findings", "ticket"),
     "branch_name": ("task",),

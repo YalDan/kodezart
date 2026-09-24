@@ -265,6 +265,7 @@ keys = [
     "remediation_ticket",
     "organize_author",
     "organize_criteria_author",
+    "organize_session",
 ]
 
 # The two scheduled passes: one unattended session each, working a whole
