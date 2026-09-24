@@ -733,9 +733,12 @@ def test_the_entry_reads_the_recorded_dispatch_base_against_the_implied_one(
     pinned, implied, stale = READINGS[reading]
     assert implied.base_branch == DISPATCHED.base_branch
 
+    # The loop branch stands at the record's last commit act, the one remote
+    # reading under which both kinds enter: a deliver-only lane whose branch
+    # has left that head refuses before any base is read.
     entry = decide(
         recorded=recorded(record(base=DISPATCHED.base_branch, dispatch_base=pinned)),
-        remote_loop_head=REMOTE_HEAD,
+        remote_loop_head=RECORDED_HEAD,
         open_criteria=open_criteria,
         implied_base=implied,
     )

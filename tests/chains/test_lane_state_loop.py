@@ -3547,7 +3547,7 @@ async def test_a_stall_whose_last_round_committed_nothing_re_enters_at_its_best(
         issue_key=SUBJECT,
         open_criteria=OWED_KEYS,
         repo_path="/tmp/fire",
-        resolved_base="main",
+        implied_base=trunk_base("main"),
     )
     assert isinstance(entry, ResumedLane)
     assert (entry.loop_branch, entry.head_sha) == (None, repo.shas[0])

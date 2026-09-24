@@ -1353,7 +1353,12 @@ def test_a_divergence_recovery_ref_is_recorded_with_its_own_role_and_parent():
     lane = binding()
     record = recovered_commit(prior=None, recovery_ref=RECOVERY_REF)
     assert association_chains(record) == [
-        (lane.deliverable_branch, BranchRole.DELIVERABLE, lane.base_ref, lane.run_id),
+        (
+            lane.deliverable_branch,
+            BranchRole.DELIVERABLE,
+            lane.base.base_branch,
+            lane.run_id,
+        ),
         (lane.loop_branch, BranchRole.LOOP, lane.deliverable_branch, lane.run_id),
         (RECOVERY_REF, BranchRole.RECOVERY, lane.loop_branch, lane.run_id),
     ]
@@ -1428,7 +1433,12 @@ def test_a_second_recovery_of_the_same_run_is_recorded_beside_the_first():
         recovery_ref=SECOND_RECOVERY_REF,
     )
     assert association_chains(second) == [
-        (lane.deliverable_branch, BranchRole.DELIVERABLE, lane.base_ref, lane.run_id),
+        (
+            lane.deliverable_branch,
+            BranchRole.DELIVERABLE,
+            lane.base.base_branch,
+            lane.run_id,
+        ),
         (lane.loop_branch, BranchRole.LOOP, lane.deliverable_branch, lane.run_id),
         (RECOVERY_REF, BranchRole.RECOVERY, lane.loop_branch, lane.run_id),
         (SECOND_RECOVERY_REF, BranchRole.RECOVERY, lane.loop_branch, lane.run_id),

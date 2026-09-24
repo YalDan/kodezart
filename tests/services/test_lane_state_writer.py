@@ -1126,7 +1126,12 @@ async def test_a_recovery_receipt_records_the_backup_ref_beside_the_loop_branch(
         (item.branch, item.role, item.derived_from, item.run_id)
         for item in stored.associations
     ] == [
-        (lane.deliverable_branch, BranchRole.DELIVERABLE, lane.base_ref, lane.run_id),
+        (
+            lane.deliverable_branch,
+            BranchRole.DELIVERABLE,
+            lane.base.base_branch,
+            lane.run_id,
+        ),
         (lane.loop_branch, BranchRole.LOOP, lane.deliverable_branch, lane.run_id),
         (backup, BranchRole.RECOVERY, lane.loop_branch, lane.run_id),
     ]

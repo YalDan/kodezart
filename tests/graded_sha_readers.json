@@ -186,7 +186,7 @@
     "reason": "the lane arm's one consultation of the rule: both revisions handed over, the digest map keyed by the recorded one, and the rule's answer partitioned",
     "uses": [
       "if state is GradedState.counted:\n    ...\nelse:\n    ...",
-      "state = graded_state(graded_sha=cross_off.evidence.graded_sha, head_sha=head_sha, rederivation_class=cross_off.rederivation_class, exercised_paths=cross_off.exercised_paths, changeset=changesets.get(cross_off.evidence.graded_sha))"
+      "state = graded_state(graded_sha=cross_off.evidence.graded_sha, head_sha=head_sha, rederivation_class=cross_off.rederivation_class, exercised_paths=cross_off.exercised_paths, changeset=changesets.get(cross_off.evidence.graded_sha), base_stale=base_stale)"
     ]
   },
   "services/assertion_drift.py::AssertionDriftDetector.compare": {
