@@ -53,12 +53,10 @@ MILESTONE = ScopeRef(kind=ScopeKind.MILESTONE, key="first-milestone")
 #: The ticket stage's completion marker. The criteria stage's is ``STAGED``,
 #: the label every lane's own fire read already refuses without.
 TICKET_MARKER = "body complete"
-#: The pre-approval row's marker, which no run stage of this table writes.
-GROOM_MARKER = "graph complete"
 
 
 def organize_operation():
-    """``native_operation()`` plus the three-row table the stages need.
+    """``native_operation()`` plus the two-row table the stages need.
 
     The first run-stage row is gated on approval by that exact reference and
     completes with its own marker; the second is gated on the first's marker
@@ -71,7 +69,6 @@ def organize_operation():
         "decision": "decision",
         "criterion": "criterion",
         "candidate": "candidate issue",
-        GROOM_MARKER: GROOM_MARKER,
         TICKET_MARKER: TICKET_MARKER,
         STAGED: STAGED,
     }
@@ -82,11 +79,6 @@ def organize_operation():
     }
     fields["repos"] = [{"url": ORIGIN, "trunk": "trunk"}]
     fields["organize_mandates"] = [
-        {
-            "kind": "groom",
-            "gate_label_key": "scope_labels.triage",
-            "terminal_marker_key": f"issue_labels.{GROOM_MARKER}",
-        },
         {
             "kind": "ticket",
             "gate_label_key": "scope_labels.approved",

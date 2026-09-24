@@ -63,7 +63,7 @@ async def observe_scope_tally(
 ) -> RunAlarm | None:
     """Read the actual ORGANIZE roster, then replay the marker-only signal.
 
-    The graph-to-body and body-to-criteria transitions are supported. The
+    The body-to-criteria transition is supported. The
     execution transition needs each member's native lane-dispatched event;
     absence of that reader refuses before any query. No run event is inferred
     from labels or issue workflow states. This collector returns an observation

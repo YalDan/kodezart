@@ -157,7 +157,7 @@ counts still exclude the initial attempt and use the shared retry policy.
 
 Scheduled-pass cadences have no defaults. Each scheduled pass — the dispatch
 pass (whose pair also paces the standing scopes' heartbeat), fire preparation,
-grooming, the organize tick, the audit and the supervisor tick — runs only when
+grooming, the audit and the supervisor tick — runs only when
 its interval and its timeout are both set. Unset, the pass is not scheduled, and
 boot logs `scheduled_pass_not_configured` naming the pass and the two settings
 that would schedule it; `pass_scheduler_started` lists only the passes that are
@@ -347,19 +347,18 @@ All declared references resolve while loading the operation configuration,
 before tracker startup or dispatch. Missing or empty mappings abort loading
 and report every unresolved reference.
 
-The table declares one phase that runs before scope approval and two that run
-inside an approved scope run. `groom` is the pre-approval phase: it runs on the
-organize tick's cadence and ends when approval lands. `ticket` and `criteria` are
-stages of the approved run, and each is complete only when every member of the
-scope carries its marker.
+The table declares the two stages of an approved scope run, `ticket` and
+`criteria`, each complete only when every member of the scope carries its
+marker. There is no phase before approval: what a scope needs before it is the
+grooming and fire-prep passes' work over the whole board, and a table that
+declares a `groom` row is refused at load naming it.
 
-A run-stage row may therefore gate on `scope_labels.approved` by that exact
-reference, because approval is what admits a member to it. The pre-approval row
-may not: approval ends that phase. No row may use the approval label as its
-completion marker, and no row may reach it through a key in another mapping
-that aliases the same label — approval is never machine-written. Each phase
-completes with an issue marker. The table validates phase configuration; it
-does not schedule an organize pass.
+A row may gate on `scope_labels.approved` by that exact reference, because
+approval is what admits a member to a stage; the shipped `ticket` row does. No
+row may use the approval label as its completion marker, and no row may reach
+it through a key in another mapping that aliases the same label — approval is
+never machine-written. Each stage completes with an issue marker. The table
+validates stage configuration; it schedules nothing.
 
 The same rule holds for the issue queue. Loading refuses an operation whose
 `queue_states` maps any member to the label `scope_labels.approved` names,
@@ -377,17 +376,16 @@ Every prompt set supplies a separate data file for each organize role:
 | `organize_author` | Propose specification repairs |
 | `organize_verify` | Independently verify the current issue |
 | `organize_criteria_author` | Propose criterion sub-issues |
-| `organize_groom_rubric` | The pre-approval row's accept conditions |
 | `organize_spec_rubric` | The run-stage rows' accept conditions |
 | `organize_session` | Do one phase's work on the board with the session's own tracker tools |
 
 The registry resolves each role independently. Removing any required file
 from the selected set aborts prompt boot and names the missing key. The
-roles inherit the set's existing authoring or judgment session policy. The two
-rubric roles open no session of their own: a row names one as its
+roles inherit the set's existing authoring or judgment session policy. The
+rubric role opens no session of its own: a row names it as its
 `rubric_prompt_key`, and it is rendered into the `mandate_rubric` binding of
-whichever judging role the row runs, which is how one verify role serves rows
-with different accept conditions.
+whichever judging role the row runs, which is how one verify role serves every
+row.
 The configured native Organize owner dispatches these roles and owns tracker
 mutation through the narrow declared surfaces. The shared `write_back_verify`
 role independently checks the exact reread artifact through the canonical
@@ -459,13 +457,15 @@ is30 seconds (5–120), HTTP stream-read timeout300 (30–3600), and stdio stder
 tail2000 bytes (200–20000). These transport bounds still serve actual record
 clients; they are not SDK tool timeout promises.
 
-A scheduled-pass session — grooming, fire prep, the audit's sessions — is also
-described the deployment's own tracker server: the same URL, server identity
-and `KODEZART_TRACKER__TOKEN` the tracker client dials, so its board reads and
-writes carry this deployment's key and count against its budget (KOD-846).
-Without a credential no server is described. No other session kind receives
-it; the organize session's path is the host opt-in described under
-`KODEZART_AGENT__DANGEROUSLY_ALLOW_HOST_MCP`.
+A scheduled-pass session — grooming, fire prep, the audit's sessions — and a
+scope run's organize stage session are also described the deployment's own
+tracker server: the same URL, server identity and `KODEZART_TRACKER__TOKEN`
+the tracker client dials, so their board reads and writes carry this
+deployment's key and count against its budget (KOD-846). Every session that
+touches the tracker runs on that connection and never on a login the host
+holds. Without a credential no server is described, and a deployment that
+declares `[[organize_scopes]]` refuses to boot naming the credential
+(`OrganizeTrackerCapabilityError`). No other session kind receives it.
 
 ## The knowledge-server grant
 
@@ -845,9 +845,9 @@ secrets. A file secret named `KODEZART_LOGGING` holds a JSON object with `level`
 
 `[[organize_scopes]]` is the operation's one scope table: a deployment declares
 each scope there once, and every pass that works scope by scope is composed from
-those rows — the organize tick and the `scope_heartbeat` pass over the whole row,
-the observation tick over the row's scope where a tracker is dialled, and the
-audit over the row and its report destination where audit settings are set.
+those rows — the `scope_heartbeat` pass over the whole row, the observation
+tick over the row's scope where a tracker is dialled, and the audit over the
+row and its report destination where audit settings are set.
 
 The native Organize owner requires explicit `[[organize_scopes]]` rows, each with
 `scope = { kind = "issue", key = "<native key>" }` (or another supported scope
@@ -869,9 +869,10 @@ runs them over the declared teams' boards beside the scope passes; one that
 leaves a pair unset gets `scheduled_pass_not_configured` naming that pass. Boot
 asks for exactly the gate signals and the templates of the passes it schedules.
 
-`[[organize_scopes]]` rows are the standing scopes: each one is groomed before
-approval by the organize tick on its own cadence, and submitted as a scope
-run by the `scope_heartbeat` pass once it carries `scope_labels.approved`. That
+`[[organize_scopes]]` rows are the standing scopes: before approval each one
+is the grooming and fire-prep passes' to work, over the whole board like every
+other issue, and it is submitted as a scope run by the `scope_heartbeat` pass
+once it carries `scope_labels.approved`. That
 pass is the dispatch cadence's other workflow: `KODEZART_DISPATCH_WORKFLOW=scope`
 schedules it on the dispatch pass's knobs —
 `KODEZART_DISPATCH_PASS_INTERVAL_SECONDS` and
@@ -883,33 +884,18 @@ is not submitted again; a row whose last run in this process ended with every
 lane done rests until its members move; a restarted process submits every
 approved row on its first tick, and that walk posts no status update the project
 already carries.
-Declaring no row schedules neither the organize tick nor the heartbeat.
+Declaring no row schedules no heartbeat.
 
 When those bindings are configured, set both
 `KODEZART_ORGANIZE__MAX_ADMISSION_ROUNDS` and
 `KODEZART_ORGANIZE__MAX_CONVERGENCE_ROUNDS` to positive integers. Neither bound
 has a default. The optional `KODEZART_ORGANIZE` JSON container accepts the same
-`max_admission_rounds` and `max_convergence_rounds` fields. Partial owner
-configuration refuses scheduling. Retired flat Organize bound spellings remain
-rejected. Each native tick uses the
-existing grooming run identity and resolves the configured repository trunk to
-a fresh immutable remote commit before assessment.
-
-The tick is scheduled under its own name, `organize`, on two fields of its own
-in the same group. Neither has a default, and no other pass's cadence stands in
-for them: unset, the tick is not scheduled.
-
-| Variable | Type | Default | Constraints | Description |
-| --- | --- | --- | --- | --- |
-| `KODEZART_ORGANIZE__INTERVAL_SECONDS` | `float \| None` | none | >= 60.0, <= 86400.0 | Seconds between organize ticks. Set together with its timeout. Unset: the pass is not scheduled; no other pass's cadence stands in for it. |
-| `KODEZART_ORGANIZE__TIMEOUT_SECONDS` | `float \| None` | none | >= 60.0, <= 86400.0 | Seconds one organize tick may take before it is abandoned. Set together with its interval. Unset: the pass is not scheduled. |
-
-Set both or neither; one without the other refuses at load naming both. The
-`pass_scheduler_started` event names the interval the tick was given, and
-`scheduled_pass_not_configured` names the tick when it is not scheduled. Each
-tick is recorded under its own run kind, `organize`, to the destination
-`[records.organize]` declares — never into the grooming log; undeclared, the
-recorder logs `run_record_destination_undeclared` and writes nowhere.
+`max_admission_rounds` and `max_convergence_rounds` fields, and nothing else:
+a cadence field there is refused at load, because the organize stages are no
+scheduled pass. Partial owner configuration refuses scheduling. Retired flat
+Organize bound spellings remain rejected. Each scope run resolves the
+configured repository trunk to a fresh immutable remote commit before its
+stages open a session.
 
 ## Tracker write verification
 

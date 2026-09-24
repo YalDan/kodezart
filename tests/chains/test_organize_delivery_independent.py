@@ -1,89 +1,19 @@
 """Independent 161ca93 review: real owners and adapter, external boundaries only."""
 
 import asyncio
-from dataclasses import replace
-from datetime import UTC, datetime
 
 import pytest
 
 from kodezart.domain.errors import (
-    OrganizeHaltError,
     OrganizeWriteRefusalError,
     SurfaceLeaseError,
 )
-from kodezart.services.organize_tick import OrganizeTick
 from kodezart.services.run_surface_lease import RunSurfaceLease
-from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from tests.chains.test_organize_owner import factory, run_owner
 from tests.fakes import FakeMcpIssue
 from tests.services.test_run_surface_lease import _Board
 from tests.tracker.conftest import CLAIMED_ISSUE
 from tests.tracker.test_criterion_creation import JOB, create, saves, surface
-
-
-@pytest.mark.parametrize("first_halts", [False, True])
-async def test_halted_first_binding_does_not_starve_second_binding(first_halts):
-    first, _, _ = factory(tick=True, refuse_forever=first_halts, bound=1)
-    second, board, executor = factory(tick=True)
-    key = "independent-second-scope"
-    issue = board.server.issues.pop(CLAIMED_ISSUE)
-    issue.id = key
-    board.server.issues[key] = issue
-    original = second._targets[0]
-    target = replace(
-        original,
-        binding=original.binding.model_copy(
-            update={"scope": ScopeRef(kind=ScopeKind.ISSUE, key=key)}
-        ),
-    )
-    tick = OrganizeTick(targets=(first._targets[0], target))
-    try:
-        await tick.run(datetime(2026, 9, 12, tzinfo=UTC))
-    except OrganizeHaltError:
-        pass  # A recorded first halt is allowed; starvation is the oracle.
-    assert executor.calls, "the second independent binding never reaches its owner"
-    # The scheduled pass runs the pre-approval row, whose marker this is.
-    assert "graph complete" in board.server.issues[key].labels
-
-
-@pytest.mark.parametrize("approval_arrives", [False, True])
-async def test_approval_is_current_after_last_awaited_gate_read(
-    monkeypatch, approval_arrives
-):
-    owner, board, _ = factory()
-    original = board.call_tool
-    reads_after_grant = 0
-    changed = False
-    renewed = False
-
-    async def interleaved(*, name, arguments):
-        nonlocal reads_after_grant, changed, renewed
-        response = await original(name=name, arguments=arguments)
-        # The write site's own renewal of the round's lease marker, which is
-        # an in-place edit stating the deadline it renews against.
-        if name == "save_comment" and "since:" in str(arguments.get("body", "")):
-            renewed = True
-        if renewed and name == "get_issue" and arguments.get("id") == CLAIMED_ISSUE:
-            reads_after_grant += 1
-            # execution_approved reads first; read_scope_labels reads second.
-            if reads_after_grant == 2:
-                changed = True
-                if approval_arrives:
-                    board.server.issues[CLAIMED_ISSUE].labels.append("approved scope")
-        return response
-
-    monkeypatch.setattr(board, "call_tool", interleaved)
-    try:
-        await run_owner(owner)
-    except OrganizeWriteRefusalError:
-        pass
-    assert changed, "the intended post-grant gate read was not reached"
-    descriptions = [
-        args
-        for name, args in board.calls
-        if name == "save_issue" and "description" in args
-    ]
-    assert bool(descriptions) is not approval_arrives
 
 
 @pytest.mark.parametrize("source_changes", [False, True])

@@ -16,12 +16,10 @@ import pytest
 
 from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.chains.scope_walker import read_scope_ready
-from kodezart.composition.passes import ORGANIZE_TICK_NAME
 from kodezart.composition.tracker import criteria_stage_label_key
 from kodezart.config.organize import OrganizeSettings
 from kodezart.domain.criterion_evidence import parse_criterion_evidence
 from kodezart.domain.errors import ScopeNotApprovedError, WorkspaceError
-from kodezart.domain.organize import stage_rows
 from kodezart.domain.run_alarm_record import MARKER_PURPOSE
 from kodezart.main import create_app, lifespan
 from kodezart.services.scope_approval import scope_approved
@@ -127,13 +125,12 @@ def test_the_shipped_file_names_a_rubric_role_the_registry_resolves_for_every_ro
 ):
     """Every row's accept conditions resolve, in every shipped set.
 
-    All three rows, not only the pre-approval one: a run-stage row pointed at
-    the organizational rubric would ship a stage that accepts a member without
-    the implementation test, and this is where that shows.
+    Both rows: a run-stage row pointed at some other rubric would ship a stage
+    that accepts a member without the implementation test, and this is where
+    that shows.
     """
     rows = shipped().resolve_organize_mandates()
     assert {row.spec.kind.value: row.spec.rubric_prompt_key.value for row in rows} == {
-        "groom": "organize_groom_rubric",
         "ticket": "organize_spec_rubric",
         "criteria": "organize_spec_rubric",
     }
@@ -142,7 +139,6 @@ def test_the_shipped_file_names_a_rubric_role_the_registry_resolves_for_every_ro
     assert {
         row.spec.kind.value: row.spec.admission_prompt_key.value for row in rows
     } == {
-        "groom": "organize_assess",
         "ticket": "organize_assess",
         "criteria": "organize_assess",
     }
@@ -152,27 +148,29 @@ def test_the_shipped_file_names_a_rubric_role_the_registry_resolves_for_every_ro
             assert registry.resolution_table()[row.spec.rubric_prompt_key] == set_name
 
 
-def test_the_shipped_pre_approval_row_gates_on_the_triage_member() -> None:
-    """The shipped file's own answer to what opens the pre-approval gate.
+def test_the_shipped_ticket_row_gates_on_the_approved_member() -> None:
+    """The shipped file's own answer to what opens the run's first stage.
 
-    One row runs before approval, and what admits a member to it is a scope
-    member — a property of the addressed scope and of the containers above it
-    — and not the approval member and not an issue classification. Read off
-    the file rather than restated, and read through the key's own split, so a
-    row repointed at another namespace reddens here.
+    Every row runs under approval, and what admits a member to the first is
+    the scope's approval itself — a property of the addressed scope and of the
+    containers above it, the one human act in a run — and not the triage or
+    proposed member and not an issue classification. Read off the file rather
+    than restated, and read through the key's own split, so a row repointed at
+    another namespace reddens here.
     """
     loaded = shipped()
-    rows = stage_rows(loaded.resolve_organize_mandates(), under_approval=False)
-    assert len(rows) == 1
+    rows = loaded.resolve_organize_mandates()
+    assert [row.spec.kind.value for row in rows] == ["ticket", "criteria"]
+    assert all(row.role.runs_under_approval for row in rows)
     namespace, key = split_label_key(rows[0].spec.gate_label_key)
     assert namespace is OrganizeLabelNamespace.SCOPE
-    assert key == ScopeLabel.TRIAGE.value
-    triage = loaded.scope_labels[ScopeLabel.TRIAGE.value]
-    assert triage not in {
+    assert key == ScopeLabel.APPROVED.value
+    approved = loaded.scope_labels[ScopeLabel.APPROVED.value]
+    assert approved not in {
+        loaded.scope_labels[ScopeLabel.TRIAGE.value],
         loaded.scope_labels[ScopeLabel.PROPOSED.value],
-        loaded.scope_labels[ScopeLabel.APPROVED.value],
     }
-    assert rows[0].gate_label == triage
+    assert rows[0].gate_label == approved
 
 
 def test_the_shipped_file_names_the_criteria_stage_the_adapter_is_built_with():
@@ -410,7 +408,7 @@ async def test_a_scope_deployment_boots_from_the_shipped_files_and_fires_nothing
     A deployment configured from the shipped file and the page's own environment
     block boots, reconciles its mappings into the team, schedules the passes that
     read its one scope table — the observation tick that watches each lane's run
-    shape, the organize tick and the standing scopes' heartbeat — beside the
+    shape and the standing scopes' heartbeat — beside the
     per-issue dispatch pass the same environment's dispatch pair and forge token
     schedule, holds no checkpointer, and writes no label onto any issue. Its first
     scoped run is refused by type before a member is read, because nobody has
@@ -461,13 +459,13 @@ async def test_a_scope_deployment_boots_from_the_shipped_files_and_fires_nothing
         assert set(reconciled[0]["created"]) == {
             ref.describe() for ref in owned_mappings(loaded)
         }
-        # The page's environment sets the organize, dispatch and supervisor
-        # pairs, no session-pass pair, and the scope workflow: the heartbeat
-        # runs on the dispatch pair, the per-issue dispatch pass is named as
-        # not selected, and the two session passes are named as unset.
+        # The page's environment sets the dispatch and supervisor pairs, no
+        # session-pass pair, and the scope workflow: the heartbeat runs on the
+        # dispatch pair, the per-issue dispatch pass is named as not selected,
+        # and the two session passes are named as unset. Boot knows no pass
+        # named organize: the stages run inside the run the heartbeat submits.
         assert [entry.name for entry in app.state.pass_scheduler.passes] == [
             "supervisor",
-            ORGANIZE_TICK_NAME,
             HEARTBEAT_PASS,
         ]
         assert [e["name"] for e in logged(events, "scheduled_pass_not_selected")] == [

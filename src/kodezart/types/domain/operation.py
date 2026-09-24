@@ -96,9 +96,6 @@ class RunKind(StrEnum):
     GROOMING = "grooming"
     FIRE = "fire"
     AUDIT = "audit"
-    #: The organize tick's own log (KOD-846): it never writes into the
-    #: grooming log, so the grooming session's window is its own.
-    ORGANIZE = "organize"
 
 
 class ConfigOwnership(StrEnum):
@@ -564,9 +561,9 @@ class OrganizeScopeBinding(OperationModel):
     audit is configured — the issue its verified summary is reported on.
 
     The one scope table of the operation.  Every pass that works scope by
-    scope is composed from these rows: the organize tick and the heartbeat
-    over the whole row, the observation tick over the scope alone, and the
-    audit over the row and the destination below.  ``report_issue_key`` is
+    scope is composed from these rows: the heartbeat over the whole row, the
+    observation tick over the scope alone, and the audit over the row and the
+    destination below.  ``report_issue_key`` is
     optional because a deployment that configures no audit has nowhere to
     report; a configured audit refuses by name on a row that omits it.
     """
@@ -996,10 +993,11 @@ class OperationConfig(OperationModel):
         """Resolve every declared phase during ordinary configuration validation.
 
         An absent table is a legitimate operation without an organizer table.
-        A declared table names every phase exactly once. The namespace in
-        each key selects its mapping; phase kind never guesses one. Approval
-        admits a member to a run stage and ends the pre-approval phase, and
-        it is never machine-written, so a run-stage row may gate on
+        A declared table names every stage exactly once, and a row of any
+        other kind — the retired pre-approval ``groom`` phase among them — is
+        refused at load naming it. The namespace in each key selects its
+        mapping; phase kind never guesses one. Approval admits a member to a
+        run stage and is never machine-written, so a row may gate on
         ``scope_labels.approved`` by that exact reference; no row may mark
         with it or gate through an alias of it.
 

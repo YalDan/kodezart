@@ -291,16 +291,16 @@ class OrganizeTrackerCapabilityError(Exception):
     """Raised at boot when the organize session is wired with no way to the tracker.
 
     The organize stage is one agent session per phase, and the session reads
-    and writes the board through the tracker tools the host attaches: this
-    process describes no tracker server for a session.  With the host-MCP
-    opt-in off, a session is given none, so every phase would open a session
+    and writes the board through the deployment's own tracker server, the one
+    this process describes to it from the tracker credential.  Without the
+    credential no server is described, so every stage would open a session
     that can neither read the scope nor label a member, and halt incomplete
-    once per phase per tick: an agent session spent on a report that nothing
+    once per stage per run: an agent session spent on a report that nothing
     moved.  The refusal names the setting and what stops without it.
     """
 
     def __init__(self, *, setting: str, stops: str) -> None:
-        super().__init__(f"{setting} is off; {stops}")
+        super().__init__(f"{setting} is unset; {stops}")
         self.setting: str = setting
         self.stops: str = stops
 

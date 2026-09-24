@@ -61,19 +61,27 @@ class McpSessionOptions(TypedDict):
 
 @dataclass(frozen=True)
 class TrackerSessionServer:
-    """The deployment's own tracker server, as a scheduled-pass session is given it.
+    """The deployment's own tracker server, as a board-working session is given it.
 
     Built once at the composition root from the same settings and credential
     the tracker client dials (KOD-846 clause 5), and attached to the sessions
-    the grooming and fire-prep passes open, so a pass reads and writes the
-    board under this deployment's key and budget rather than a login the host
-    happens to hold.  No other session kind receives it: a fire works a
-    repository, a query is the caller's, and the organize session reaches the
-    tracker through the host opt-in by its own decision (KOD-1239).
+    the grooming and fire-prep passes open and to the organize stage sessions
+    a scope run opens, so every session that touches the tracker reads and
+    writes the board under this deployment's key and budget rather than a
+    login the host happens to hold.  No other session kind receives it: a
+    fire works a repository and a query is the caller's.
     """
 
     server_name: str
     definition: McpServerConfig
+
+
+#: The session kinds whose work is the board itself, and which are therefore
+#: given the deployment's own tracker server: the intake passes and the stage
+#: sessions of a scope run.
+BOARD_SESSION_TYPES: frozenset[SessionType] = frozenset(
+    {SessionType.SCHEDULED_PASS, SessionType.ORGANIZE_PASS}
+)
 
 
 def _described_servers(
@@ -125,8 +133,9 @@ def map_knowledge_mcp(
     and running its working directory unguarded.  The guard is on unless
     *dangerously_allow_host_mcp* — the operator's opt-in, never a
     per-session choice — switches it off for every kind alike.  *tracker*,
-    the deployment's own tracker server, is described to the scheduled pass
-    alone, beside whatever the grant describes.
+    the deployment's own tracker server, is described to the two kinds that
+    work the board — the scheduled pass and the organize pass — beside
+    whatever the grant describes.
     """
     match session_type:
         case (
@@ -138,7 +147,7 @@ def map_knowledge_mcp(
             | SessionType.ORGANIZE_PASS
         ):
             servers = _described_servers(grant, session_type)
-            if tracker is not None and session_type is SessionType.SCHEDULED_PASS:
+            if tracker is not None and session_type in BOARD_SESSION_TYPES:
                 servers = {**servers, tracker.server_name: tracker.definition}
             return McpSessionOptions(
                 mcp_servers=servers,

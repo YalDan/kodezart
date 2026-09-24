@@ -1,14 +1,13 @@
-"""Configured scheduler ticks reach actual Organize and independent verification."""
+"""A scope deployment's boot: what it schedules, probes and refuses."""
 
 import pytest
 import structlog.testing
 
 from kodezart.composition.organize import (
-    HOST_MCP_SETTING,
+    TRACKER_CREDENTIAL_SETTING,
     verify_organize_session_tools,
 )
 from kodezart.composition.passes import (
-    ORGANIZE_TICK_NAME,
     build_dispatch_runtime,
     verify_pass_preflight,
 )
@@ -26,7 +25,6 @@ from kodezart.services.agent_service import AgentService
 from kodezart.services.run_recorder import RunRecorder
 from kodezart.types.domain.dispatch import (
     DispatchWorkflow,
-    PassRun,
     PassSignal,
     SelfWriteLedger,
 )
@@ -38,7 +36,6 @@ from tests.chains.test_organize import result as organize_result
 from tests.chains.test_organize_owner import BoardExecutor
 from tests.docs.configuration import shipped_config_variables
 from tests.fakes import (
-    FIXTURE_EPOCH,
     SUPPRESS_ALL_SKILLS,
     FakeDeliveryProbe,
     FakeGitService,
@@ -58,9 +55,7 @@ from tests.prompts.test_prompt_wiring import load_registry
 from tests.services.test_prompt_passes import (
     GROOMING_INTERVAL,
     HEARTBEAT_PASS,
-    HOST_MCP_ALLOWED,
-    ORGANIZE_INTERVAL,
-    ORGANIZE_TIMEOUT,
+    TRACKER_CREDENTIAL,
     _config,
 )
 from tests.services.test_run_surface_lease import _Board
@@ -111,14 +106,8 @@ def dependencies(tmp_path):
     operation = OperationConfig.model_validate(fields)
     config = _config(
         tmp_path,
-        organize={
-            "max_admission_rounds": 2,
-            "max_convergence_rounds": 2,
-            "interval_seconds": ORGANIZE_INTERVAL,
-            "timeout_seconds": ORGANIZE_TIMEOUT,
-        },
+        organize={"max_admission_rounds": 2, "max_convergence_rounds": 2},
         write_back={"max_verify_rounds": 2},
-        agent=HOST_MCP_ALLOWED,
         fire_prep_pass_gate_signals=[],
         grooming_pass_gate_signals=[],
         ticket_review_mode="reviewed",
@@ -140,76 +129,6 @@ def dependencies(tmp_path):
         default_set="claude-opus", bindings=operation_bindings(operation)
     )
     return config, operation, board, tracker, prompts, ledger
-
-
-async def test_scheduled_owner_prepares_native_children_and_reentry_is_idempotent(
-    tmp_path,
-):
-    config, operation, board, tracker, prompts, ledger = dependencies(tmp_path)
-    executor = BoardSession(board)
-    workspace = RecordingWorkspace()
-    queue = FakeJobQueue()
-    runtime = await build_dispatch_runtime(
-        config=config,
-        operation=operation,
-        dialled=DialledTracker(
-            tracker=tracker,
-            caller=board,
-            operation=operation,
-            ledger=ledger,
-            status=FakeScopeStatusWriter(),
-        ),
-        github_api=None,
-        queue=queue,
-        registry=queue,
-        gate=PassThroughGate(),
-        git=FakeGitService(
-            remote_branch_shas={repo.trunk: "a" * 40 for repo in operation.repos}
-        ),
-        cache=FakeRepoCache(),
-        workspace=workspace,
-        prompts=prompts,
-        runner=AgentService(
-            executor=executor,
-            workspace=workspace,
-            git_base_url="https://example.invalid",
-        ),
-        skills=SUPPRESS_ALL_SKILLS,
-        recorder=RunRecorder(records={}, sinks={}),
-        log=get_logger(__name__),
-    )
-    ticks = [
-        entry for entry in runtime.scheduler.passes if entry.name == ORGANIZE_TICK_NAME
-    ]
-    assert len(ticks) == 1
-    scheduled = ticks[0]
-    assert scheduled.interval_seconds == ORGANIZE_INTERVAL
-    assert scheduled.timeout_seconds == ORGANIZE_TIMEOUT
-    # The tick records under its own kind, so a grooming log holds grooming
-    # passes and nothing else.
-    assert scheduled.report is not None
-    assert await scheduled.run(FIXTURE_EPOCH) is PassRun.RAN
-    # The scheduled pass is given the pre-approval row and no other: its own
-    # marker lands, the two run-stage markers do not, and the criterion
-    # children belong to the criteria stage of an approved scope run.
-    labels = set(board.server.issues[CLAIMED_ISSUE].labels)
-    assert "graph complete" in labels
-    assert not {"body complete", "criteria complete", "approved scope"} & labels
-    assert not any(
-        item.parent_id == CLAIMED_ISSUE for item in board.server.issues.values()
-    )
-    writes = len([name for name, _ in board.calls if name.startswith("save_")])
-    assert await scheduled.run(FIXTURE_EPOCH) is PassRun.RAN
-    assert not any(
-        item.parent_id == CLAIMED_ISSUE for item in board.server.issues.values()
-    )
-    assert len([name for name, _ in board.calls if name.startswith("save_")]) == writes
-    # One session for the phase on the first tick, and none on the second:
-    # the board already carried the marker.
-    sessions = organize_sessions(executor)
-    assert len(sessions) == 1
-    assert "Marker to add: `graph complete`" in sessions[0]["prompt"]
-    assert all(call["session_id"] is None for call in executor.calls)
 
 
 @pytest.mark.parametrize(
@@ -236,77 +155,6 @@ async def test_partial_owner_configuration_refuses_during_preflight(tmp_path, mi
             github_api=None,
             prompts=prompts,
         )
-
-
-async def test_actual_lifespan_registers_and_runs_the_owner(tmp_path, monkeypatch):
-    from kodezart import main
-    from kodezart.composition.records import BuiltRecorder
-    from kodezart.composition.workspace import GitStack
-    from tests.fakes import (
-        FakeArtifactPersister,
-        FakeBranchMerger,
-        FakeChangePersister,
-        FakeRefPublisher,
-        ManagedFakeLinearMcpServer,
-    )
-
-    config, operation, board, tracker, prompts, ledger = dependencies(tmp_path)
-    executor = BoardSession(board)
-    workspace = RecordingWorkspace()
-    stack = GitStack(
-        git=FakeGitService(
-            remote_branch_shas={repo.trunk: "a" * 40 for repo in operation.repos}
-        ),
-        cache=FakeRepoCache(),
-        workspace=workspace,
-        persister=FakeChangePersister(),
-        merger=FakeBranchMerger(),
-        artifact_persister=FakeArtifactPersister(),
-        ref_publisher=FakeRefPublisher(),
-    )
-
-    async def tracker_boot(**_kwargs):
-        return DialledTracker(
-            tracker=tracker,
-            caller=ManagedFakeLinearMcpServer(),
-            operation=operation,
-            ledger=ledger,
-            status=FakeScopeStatusWriter(),
-        )
-
-    async def prompt_boot(**_kwargs):
-        return prompts
-
-    async def recorder_boot(**_kwargs):
-        return BuiltRecorder(RunRecorder(records={}, sinks={}), None)
-
-    async def knowledge_boot(**_kwargs):
-        return None
-
-    async def gate_boot(**_kwargs):
-        return PassThroughGate()
-
-    monkeypatch.setattr(main, "boot_tracker", tracker_boot)
-    monkeypatch.setattr(main, "boot_prompts", prompt_boot)
-    monkeypatch.setattr(main, "build_run_recorder", recorder_boot)
-    monkeypatch.setattr(main, "boot_knowledge_grant", knowledge_boot)
-    monkeypatch.setattr(main, "build_outbound_gate", gate_boot)
-    monkeypatch.setattr(main, "ClaudeClientExecutor", lambda **_kwargs: executor)
-    monkeypatch.setattr(main, "build_git_stack", lambda **_kwargs: stack)
-    app = main.create_app()
-    app.state.config = config
-    async with app.router.lifespan_context(app):
-        scheduler = app.state.pass_scheduler
-        assert scheduler.running
-        tick = next(
-            entry for entry in scheduler.passes if entry.name == ORGANIZE_TICK_NAME
-        )
-        await scheduler._tick(tick)
-        assert "graph complete" in board.server.issues[CLAIMED_ISSUE].labels
-        assert len(organize_sessions(executor)) == 1
-        assert app.state.job_queue._accepting
-    assert not scheduler.running
-    assert not app.state.job_queue._accepting
 
 
 # ---------------------------------------------------------------------------
@@ -357,7 +205,7 @@ def _logged(logs, name):
     return [entry for entry in logs if entry.get("event") == name]
 
 
-async def test_a_declared_scope_schedules_the_organize_tick_beside_the_per_issue_passes(
+async def test_a_declared_scope_schedules_the_scope_passes_beside_the_per_issue_passes(
     tmp_path,
 ):
     """A declared scope adds the scope passes and switches nothing off.
@@ -367,11 +215,13 @@ async def test_a_declared_scope_schedules_the_organize_tick_beside_the_per_issue
     Until 2026-09-24 boot read the declared scopes as a reason to withhold the
     per-issue machine. What decides whether a pass runs is its cadence pair,
     and where it works is the declared roster: this deployment gets one
-    dispatch pass per repository, the observation tick, the organize tick and
-    both session passes, with the lifecycle watcher the fires drain through,
-    and neither "not wired" line. The dispatch workflow is at its default, so
-    the dispatch cadence drives the per-issue passes and the standing scopes'
-    heartbeat is named as not selected.
+    dispatch pass per repository, the observation tick and both session
+    passes, with the lifecycle watcher the fires drain through, and neither
+    "not wired" line. No pass named organize is among them: what a scope
+    needs before approval is the grooming pass's work, on its own cadence.
+    The dispatch workflow is at its default, so the dispatch cadence drives
+    the per-issue passes and the standing scopes' heartbeat is named as not
+    selected.
     """
     config, operation, board, tracker, prompts, ledger = dependencies(tmp_path)
     runtime, logs = await _runtime_over(
@@ -380,7 +230,6 @@ async def test_a_declared_scope_schedules_the_organize_tick_beside_the_per_issue
     assert [entry.name for entry in runtime.scheduler.passes] == [
         *(f"dispatch:{repo.url}" for repo in operation.repos),
         "supervisor",
-        ORGANIZE_TICK_NAME,
         PromptKey.FIRE_PREP_PASS.value,
         PromptKey.GROOMING_PASS.value,
     ]
@@ -390,14 +239,12 @@ async def test_a_declared_scope_schedules_the_organize_tick_beside_the_per_issue
     assert [e["name"] for e in _logged(logs, "scheduled_pass_not_selected")] == [
         HEARTBEAT_PASS
     ]
-    # The one pass named as unset is the audit, which the fixture leaves off.
+    # The one pass named as unset is the audit, which the fixture leaves off:
+    # boot knows no pass named organize to name.
     assert [e["name"] for e in _logged(logs, "scheduled_pass_not_configured")] == [
         "audit"
     ]
-    # The tick and the grooming pass are two entries on two cadences, not one
-    # entry under the other's name.
     by_name = {entry.name: entry for entry in runtime.scheduler.passes}
-    assert by_name[ORGANIZE_TICK_NAME].interval_seconds == ORGANIZE_INTERVAL
     assert by_name[PromptKey.GROOMING_PASS.value].interval_seconds == GROOMING_INTERVAL
 
 
@@ -471,7 +318,6 @@ async def test_preflight_asks_exactly_the_scans_the_wired_passes_gate(tmp_path):
         tmp_path,
         organize={"max_admission_rounds": 2, "max_convergence_rounds": 2},
         write_back={"max_verify_rounds": 2},
-        agent=HOST_MCP_ALLOWED,
         fire_prep_pass_gate_signals=[PassSignal.reviews_changed],
         grooming_pass_gate_signals=[],
         dispatch_pass_gate_signals=[PassSignal.approved_changed],
@@ -580,7 +426,6 @@ async def test_a_scope_deployment_whose_credential_cannot_list_issues_is_refused
         tmp_path,
         organize={"max_admission_rounds": 2, "max_convergence_rounds": 2},
         write_back={"max_verify_rounds": 2},
-        agent=HOST_MCP_ALLOWED,
         ticket_review_mode="reviewed",
     )
     tracker = FakeTrackerPort(
@@ -610,37 +455,40 @@ async def test_a_scope_deployment_whose_credential_cannot_list_issues_is_refused
 
 
 # ---------------------------------------------------------------------------
-# The organize session reaches the tracker only through the host's own MCP
-# servers, so boot refuses a scope deployment that would leave it without them.
+# The organize session reaches the tracker through the deployment's own tracker
+# server, described to it from the tracker credential, so boot refuses a scope
+# deployment that would leave it without one.
 # ---------------------------------------------------------------------------
 
 
-def _scope_deployment(tmp_path, **agent):
-    """The scope deployment the preflight cases above boot, with *agent* set."""
+def _scope_deployment(tmp_path, **tracker):
+    """The scope deployment the preflight cases above boot, with *tracker* set."""
     _, operation, _board, _tracker, prompts, _ledger = dependencies(tmp_path)
     config = _config(
         tmp_path,
         organize={"max_admission_rounds": 2, "max_convergence_rounds": 2},
         write_back={"max_verify_rounds": 2},
-        agent=agent,
+        tracker=tracker,
         ticket_review_mode="reviewed",
     )
     return config, operation, prompts
 
 
 async def test_an_organize_table_the_session_cannot_work_refuses_at_boot(tmp_path):
-    """Flag off: every phase would open a session with no tracker tools at all.
+    """No credential: every stage would open a session with no tracker tools.
 
-    Each organize phase is one agent session that works the board with the
-    tracker tools the host attaches, and this process describes none. With the
-    host-MCP opt-in off, the session could not read the scope or label a
-    member, and each phase would halt incomplete once per tick at a session's
-    cost. Boot refuses instead, naming the setting an operator changes and
-    what stops without it, before the tracker is asked anything.
+    Each organize stage is one agent session that works the board with the
+    deployment's own tracker server, the one this process describes to it
+    from the tracker credential, as it does for the grooming and fire-prep
+    sessions; a session never runs on a login the host holds. Without the
+    credential no server is described, the session could not read the scope
+    or label a member, and each stage would halt incomplete once per run at
+    a session's cost. Boot refuses instead, naming the setting an operator
+    sets and what stops without it, before the tracker is asked anything.
     """
     config, operation, _prompts = _scope_deployment(tmp_path)
     tracker = FakeTrackerPort()
-    assert config.agent.dangerously_allow_host_mcp is False
+    assert config.tracker.token is None
     assert operation.organize_mandates
 
     with pytest.raises(OrganizeTrackerCapabilityError) as caught:
@@ -652,21 +500,21 @@ async def test_an_organize_table_the_session_cannot_work_refuses_at_boot(tmp_pat
             prompts=_RefusingPrompts(),
         )
 
-    assert caught.value.setting == HOST_MCP_SETTING
-    assert HOST_MCP_SETTING in shipped_config_variables()
+    assert caught.value.setting == TRACKER_CREDENTIAL_SETTING
+    assert TRACKER_CREDENTIAL_SETTING in shipped_config_variables()
     assert "the organize session cannot reach the tracker" in caught.value.stops
-    assert str(caught.value).startswith(f"{HOST_MCP_SETTING} is off;")
+    assert str(caught.value).startswith(f"{TRACKER_CREDENTIAL_SETTING} is unset;")
     assert tracker.capability_probes == []
 
 
-async def test_the_same_organize_table_boots_with_the_flag_on(tmp_path):
-    """Flag on: the same deployment passes the preflight and is probed.
+async def test_the_same_organize_table_boots_with_a_tracker_credential(tmp_path):
+    """Credential set: the same deployment passes the preflight and is probed.
 
     Non-vacuity for the refusal above: nothing about the operation changed,
     only the setting the refusal names, and the preflight runs on to the one
     probe every wired gate is asked in.
     """
-    config, operation, prompts = _scope_deployment(tmp_path, **HOST_MCP_ALLOWED)
+    config, operation, prompts = _scope_deployment(tmp_path, **TRACKER_CREDENTIAL)
     tracker = FakeTrackerPort()
 
     await verify_pass_preflight(
@@ -689,26 +537,27 @@ async def test_the_same_organize_table_boots_with_the_flag_on(tmp_path):
     ],
     ids=["no mandates", "mandates and no scope"],
 )
-async def test_a_deployment_that_schedules_no_organize_session_boots_with_the_flag_off(
+async def test_a_deployment_that_runs_no_organize_session_boots_without_a_credential(
     tmp_path, tables
 ):
-    """No organize scope declared: nothing organizes on a tick, nothing is asked.
+    """No organize scope declared: no stage session opens, nothing is asked.
 
-    The check is asked on the predicate the organize tick and the heartbeat are
-    wired on. An operation that declares no organize table, and one that
-    declares the phases but no scope to run them over, schedule neither, so
-    the same flag that refuses the scope deployment above is not asked here:
-    the per-issue deployment boots as it did, over the same dialled tracker.
+    The check is asked on the predicate the heartbeat is wired on. An
+    operation that declares no organize table, and one that declares the
+    stages but no scope to run them over, run neither, so the credential the
+    scope deployment above is refused without is not asked for here: the
+    per-issue deployment boots as it did, over the same dialled tracker.
     """
     _, operation, _board, _tracker, prompts, _ledger = dependencies(tmp_path)
     per_issue = OperationConfig.model_validate({**operation.model_dump(), **tables})
     config = _config(
         tmp_path,
+        tracker={},
         fire_prep_pass_gate_signals=[],
         grooming_pass_gate_signals=[],
         ticket_review_mode="reviewed",
     )
-    assert config.agent.dangerously_allow_host_mcp is False
+    assert config.tracker.token is None
     assert not per_issue.organize_scopes
 
     await verify_pass_preflight(

@@ -755,7 +755,6 @@ def test_placeholder_mapping_is_total_in_both_directions() -> None:
     native = dict(markdown_rows("## Native OperationConfig consumers"))
     assert native == {
         "organize_scopes": (
-            "composition/organize.py::build_organize_tick, "
             "composition/organize.py::build_scope_heartbeat, "
             "composition/audit.py::build_audit_pass, "
             "composition/supervisor.py::build_supervisor_pass"

@@ -180,9 +180,10 @@ class OrganizeSessionOwner:
 
         The scope is named by the kind that decides what its key is to the
         tracker: a project's, an initiative's or a milestone's id, or an
-        issue's key.
+        issue's key. Which rubric the template renders is the row's own
+        ``prompt_phase`` binding, read off the role table rather than
+        decided here on the kind.
         """
-        kind = phase.spec.kind
         return self._prompts.template_for(PromptKey.ORGANIZE_SESSION).render(
             {
                 "scope_key": scope.key,
@@ -194,9 +195,7 @@ class OrganizeSessionOwner:
                 "scope_milestone": True if scope.kind is ScopeKind.MILESTONE else None,
                 "phase_marker": phase.terminal_marker,
                 "owed_members": tuple(owed),
-                "phase_groom": True if kind is MandateKind.GROOM else None,
-                "phase_ticket": True if kind is MandateKind.TICKET else None,
-                "phase_criteria": True if kind is MandateKind.CRITERIA else None,
+                phase.role.prompt_phase: True,
             }
         )
 

@@ -546,7 +546,7 @@ live workspace belongs to the tracker adapter, not to config load.
   minimal floor grows into.
 - [`docs/operation.scope.toml`](docs/operation.scope.toml) — the smallest
   config that runs a scope: one team, one repository, one walked scope, the
-  three organize phases, and none of the per-issue machine.
+  two organize stages, and none of the per-issue machine.
 - [`docs/cutover_mapping.md`](docs/cutover_mapping.md) — which routine behavior
   maps to which kodezart component, plus the behavior-parity dimension and
   placeholder mapping tables.
@@ -839,8 +839,8 @@ not, so configuring them "to be safe" is how a first setup breaks itself.
   every session kind at once. Measured 2026-09-24: with the flag off (the
   shipped default, the guard on), a session gets only what this process
   describes for it: the knowledge server the grant names and, for a scheduled
-  pass, the deployment's own tracker server under `KODEZART_TRACKER__TOKEN`,
-  and nothing of the host's. With the flag on (the guard
+  pass and for a scope run's organize stage session, the deployment's own
+  tracker server under `KODEZART_TRACKER__TOKEN`, and nothing of the host's. With the flag on (the guard
   off), a session also gets what the guard kept out: every server your
   user-level Claude configuration declares, the tracker among them under your
   stored Claude login, so its tracker writes carry that login's user rather
@@ -927,22 +927,23 @@ wakes and reports `outcome: empty_eligible_set`, the report carries one
 exclusion per issue naming the clause that excluded it — read the clause rather
 than re-reading the config.
 
-**The prep and grooming passes are scheduled here; their sessions reach the
-tracker through the host, not through this process.** Step 8 exercises the
+**The prep and grooming passes are scheduled here, and their sessions reach
+the tracker through the deployment's own tracker server.** Step 8 exercises the
 dispatch pass, which is deterministic and dials the tracker in-process. The
 judgment passes are a different shape: on their interval
 (`KODEZART_FIRE_PREP_PASS_INTERVAL_SECONDS`,
 `KODEZART_GROOMING_PASS_INTERVAL_SECONDS`) the rendered prompt goes to an
 **agent session**, and the session does the work — so the session itself must
 be able to reach the tracker. Each pass registers when its interval and timeout
-are set, the operation config declares at least one team and one repository, and
-it declares no `organize_scopes` (an empty roster, or a declared scope, logs
-`prompt_passes_not_wired` naming which it was). What this process attaches to
-a session is the knowledge server it was granted
-(`KODEZART_KNOWLEDGE__SESSION_GRANTS`) and nothing else: it registers no tracker
-MCP server on a session, and it starts every session in strict MCP mode, so a
-machine-local registration does not reach a session either. See the known
-issue below; attaching the tracker to sessions from configuration is planned.
+are set and the operation config declares at least one team and one
+repository; a declared scope switches neither off. What this process attaches
+to a session is the knowledge server it was granted
+(`KODEZART_KNOWLEDGE__SESSION_GRANTS`) and, for a scheduled pass and for a
+scope run's organize stage session, the deployment's own tracker server under
+`KODEZART_TRACKER__TOKEN` — the same server, key and budget the process dials —
+and nothing else: it starts every session in strict MCP mode, so a
+machine-local registration does not reach a session, and no session runs on a
+login the host holds. See the known issue below for every other session kind.
 
 ## Known issues
 
@@ -951,8 +952,9 @@ describes exactly one MCP server to a session, the knowledge server it was
 granted, and starts the session with `strict_mcp_config` so nothing else loads.
 Measured on 2026-09-24 through the query endpoint: a session reports
 `mcp_servers: []` and has no tracker tools, so a query that must read or write
-the tracker cannot. The scheduled passes are the exception since KOD-846: their
-sessions are described the deployment's own tracker server under its key. Turning strict mode off is not the fix:
+the tracker cannot. The scheduled passes and a scope run's organize stage
+sessions are the exception since KOD-846: they are described the deployment's
+own tracker server under its key. Turning strict mode off is not the fix:
 in that mode headless Claude Code also loads the host's user-level servers and
 any `.mcp.json` a cloned repository plants in the working directory, which lets
 a repository start a command on the host. The tracker and the knowledge store

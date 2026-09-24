@@ -1,16 +1,18 @@
-"""KOD-846 clause 5 — the pass sessions get kodezart's own tracker server.
+"""KOD-846 clause 5 — the board-working sessions get kodezart's own tracker server.
 
 Measured 2026-09-23: a grooming or fire-prep session got 0 Linear tools
 under ``strict_mcp_config``, and the only way around it was the host opt-in,
 which hands a session the tracker under the operator's stored login.  The
 deployment's own server definition — the URL, the server identity and
-``KODEZART_TRACKER__TOKEN`` the tracker client dials — is now built once at
-the composition root and described to the scheduled pass alone, so a pass
-works the board under this deployment's key and budget.  Pinned here: the
-definition is the client's own, spelled once; the scheduled pass is the one
-kind given it; the guard and the knowledge grant are untouched by it; the
-prelude follows the knowledge server and not the map's truthiness; both
-executors hand it to the session; and the root builds it from the settings.
+``KODEZART_TRACKER__TOKEN`` the tracker client dials — is built once at the
+composition root and described to the two kinds that work the board, the
+scheduled pass and a scope run's organize stage session, so every session
+that touches the tracker works it under this deployment's key and budget and
+never under a login the host holds.  Pinned here: the definition is the
+client's own, spelled once; those two kinds are given it and no other; the
+guard and the knowledge grant are untouched by it; the prelude follows the
+knowledge server and not the map's truthiness; both executors hand it to the
+session; and the root builds it from the settings.
 """
 
 import inspect
@@ -21,6 +23,7 @@ from pydantic import SecretStr
 
 from kodezart import main
 from kodezart.adapters.mcp.mapping import (
+    BOARD_SESSION_TYPES,
     TrackerSessionServer,
     map_knowledge_mcp,
     prompt_with_knowledge_map,
@@ -74,15 +77,24 @@ def test_the_session_server_is_the_client_definition_spelled_once() -> None:
 
 
 @pytest.mark.parametrize("session_type", list(SessionType))
-def test_only_the_scheduled_pass_is_given_the_tracker_server(
+def test_the_scheduled_pass_and_the_organize_pass_are_given_the_tracker_server(
     session_type: SessionType,
 ) -> None:
-    """Every other kind's map is as it was, and the guard stays on for all."""
+    """Every other kind's map is as it was, and the guard stays on for all.
+
+    The organize stage session is the second kind: it works the board like
+    the intake passes do, so it runs on kodezart's own connection and never
+    on a login the host holds.
+    """
+    assert BOARD_SESSION_TYPES == {
+        SessionType.SCHEDULED_PASS,
+        SessionType.ORGANIZE_PASS,
+    }
     server = _server()
     mapped = map_knowledge_mcp(NO_KNOWLEDGE_GRANT, session_type, tracker=server)
     expected = (
         {server.server_name: server.definition}
-        if session_type is SessionType.SCHEDULED_PASS
+        if session_type in BOARD_SESSION_TYPES
         else {}
     )
     assert mapped["mcp_servers"] == expected
@@ -127,6 +139,17 @@ async def test_a_scheduled_pass_session_carries_the_tracker_server(module: str) 
         module, session_type=SessionType.TICKET_FIRE, tracker_server=server
     )
     assert fire.options.mcp_servers == {}
+
+
+@pytest.mark.parametrize("module", EXECUTOR_MODULES)
+async def test_an_organize_pass_session_carries_the_tracker_server(module: str) -> None:
+    """Both adapters hand the server to a scope run's stage session, guard on."""
+    server = _server()
+    organize = await recorded_session(
+        module, session_type=SessionType.ORGANIZE_PASS, tracker_server=server
+    )
+    assert organize.options.mcp_servers == {server.server_name: server.definition}
+    assert organize.options.strict_mcp_config is True
 
 
 def test_the_composition_root_builds_the_server_from_the_tracker_settings() -> None:

@@ -263,12 +263,12 @@ class AdmissionResult(_AdmissionView[BoundAdmissionDecision]):
 
 
 class MandateKind(StrEnum):
-    """The phases of one organize table.
+    """The stages of one organize table, both inside the approved scope run.
 
-    One before scope approval, two inside the approved scope run.
+    What a scope needs before approval is the grooming and fire-prep passes'
+    work over the whole board; the table names no phase for it.
     """
 
-    GROOM = "groom"
     TICKET = "ticket"
     CRITERIA = "criteria"
 
@@ -301,6 +301,23 @@ class MandateSpec(CamelCaseModel):
     admission_prompt_key: PromptKey
     terminal_marker_key: str
 
+    @field_validator("kind", mode="before")
+    @classmethod
+    def _refuse_the_retired_groom_phase(cls, value: object) -> object:
+        """A row of the retired pre-approval kind is refused by name.
+
+        The enum's own refusal hides the input, and a file still declaring the
+        phase deserves to hear which row it is and where that work went.
+        """
+        if value == "groom":
+            raise ValueError(
+                "organize_mandates declares a 'groom' row, and the pre-approval "
+                "phase is retired: what a scope needs before approval is the "
+                "grooming and fire-prep passes' work over the whole board, so the "
+                "table declares the run's ticket and criteria stages alone"
+            )
+        return value
+
     @field_validator("gate_label_key", "terminal_marker_key")
     @classmethod
     def _require_qualified_label_key(cls, value: str) -> str:
@@ -320,19 +337,22 @@ class MandatePhaseRole(CamelCaseModel):
     """One phase's differences that no operation configures.
 
     The generative role that drafts a phase's writes, what its completion
-    marker attests to the readers downstream, and which side of scope
-    approval the phase runs on belong to the lane rather than to an
-    operator's label spellings.
+    marker attests to the readers downstream, which side of scope approval
+    the phase runs on, and the binding the session prompt selects the
+    phase's rubric by belong to the lane rather than to an operator's label
+    spellings.
 
-    ``runs_under_approval`` False: approval ends the phase (the
-    pre-approval pass). True: the phase is a stage of the approved scope
+    ``runs_under_approval`` True: the phase is a stage of the approved scope
     run; approval admits every member to it and it is complete only when
-    every member carries its marker.
+    every member carries its marker. Every row of the table is one.
 
     ``write_surfaces`` is the kinds a round of the phase may write on a
-    member: the set a round leases, the bound every write is held to, and
-    the reservation of graph change to the row that runs before approval.
-    The halt's escalation is written after the round, under its own lease.
+    member: the set a round leases and the bound every write is held to.
+    No row declares graph change: the graph is the grooming pass's. The
+    halt's escalation is written after the round, under its own lease.
+
+    ``prompt_phase`` is the name the organize session's template guards
+    the phase's rubric under, bound true for this phase alone.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -342,6 +362,7 @@ class MandatePhaseRole(CamelCaseModel):
     marks_execution_stage: bool
     runs_under_approval: bool
     write_surfaces: frozenset[SurfaceKind]
+    prompt_phase: str
 
 
 #: The governed phase sequence, and the only place in the sources where a
@@ -349,24 +370,12 @@ class MandatePhaseRole(CamelCaseModel):
 #: from the resolved row, never from the kind; configuration table order
 #: carries no ordering authority, this table's does.
 MANDATE_PHASE_ROLES: Mapping[MandateKind, MandatePhaseRole] = {
-    MandateKind.GROOM: MandatePhaseRole(
-        author_prompt_key=PromptKey.ORGANIZE_AUTHOR,
-        marks_specification_body=False,
-        marks_execution_stage=False,
-        runs_under_approval=False,
-        write_surfaces=frozenset(
-            {
-                SurfaceKind.ISSUE_GRAPH,
-                SurfaceKind.ISSUE_DESCRIPTION,
-                SurfaceKind.ISSUE_LABEL_SET,
-            }
-        ),
-    ),
     MandateKind.TICKET: MandatePhaseRole(
         author_prompt_key=PromptKey.ORGANIZE_AUTHOR,
         marks_specification_body=True,
         marks_execution_stage=False,
         runs_under_approval=True,
+        prompt_phase="phase_ticket",
         write_surfaces=frozenset(
             {
                 SurfaceKind.ISSUE_DESCRIPTION,
@@ -380,6 +389,7 @@ MANDATE_PHASE_ROLES: Mapping[MandateKind, MandatePhaseRole] = {
         marks_specification_body=False,
         marks_execution_stage=True,
         runs_under_approval=True,
+        prompt_phase="phase_criteria",
         write_surfaces=frozenset(
             {SurfaceKind.CRITERION_CHILD_SET, SurfaceKind.ISSUE_LABEL_SET}
         ),

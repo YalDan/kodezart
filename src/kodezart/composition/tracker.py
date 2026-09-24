@@ -56,13 +56,14 @@ def tracker_auth_headers(*, settings: TrackerSettings, token: str) -> dict[str, 
 
 
 def tracker_session_server(*, settings: TrackerSettings) -> TrackerSessionServer | None:
-    """The tracker server a scheduled-pass session is given, or ``None`` without a key.
+    """The tracker server a board-working session is given, or ``None`` without a key.
 
     The same definition the programmatic client below dials — the URL, the
     server identity and the deployment's own credential — so the grooming
-    and fire-prep sessions work the board under this deployment's key and
-    budget (KOD-846 clause 5).  No credential, no server: the tracker is
-    unwired and the pass sessions run without it, as boot says.
+    and fire-prep sessions and a scope run's organize stage sessions work
+    the board under this deployment's key and budget (KOD-846 clause 5).  No
+    credential, no server: the tracker is unwired, the pass sessions run
+    without it, as boot says, and a scope deployment refuses to boot.
     """
     if settings.token is None:
         return None

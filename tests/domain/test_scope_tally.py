@@ -201,26 +201,15 @@ def test_scope_shaped_readings_under_a_lane_subject_refuse_within_the_same_signa
     assert caught.value.signal == AlarmSignal.TALLY_UNMOVED.value
 
 
-def test_graph_to_body_uses_the_same_signal_and_governed_source_pair():
-    from kodezart.domain.run_shape import GROOM_MARKER_SOURCE
+def test_a_reversed_pair_is_not_the_governed_transition():
+    """The one transition is ticket then criteria; its reverse reads as none.
 
+    The organize table has two stages, so the tally observes one barrier and
+    refuses a reading whose two marker sources are not that pair in that
+    order, rather than tallying a transition the table does not govern.
+    """
     values = list(inputs())
-    values[0] = reading(GROOM_MARKER_SOURCE, TextEvidence(value="issue_labels.groomed"))
-    values[1] = reading(
-        TICKET_MARKER_SOURCE, TextEvidence(value="issue_labels.body-ready")
-    )
-    values[4] = reading("one", LabelsEvidence(value=("body-ready",)))
-    alarm = observe(tuple(values))
-    assert alarm is not None
-    assert alarm.signal is AlarmSignal.TALLY_UNMOVED
-    assert observe(alarm.readings) == alarm
-
-
-def test_skipping_the_middle_phase_is_not_an_adjacent_transition():
-    from kodezart.domain.run_shape import GROOM_MARKER_SOURCE
-
-    values = list(inputs())
-    values[0] = reading(GROOM_MARKER_SOURCE, TextEvidence(value="issue_labels.groomed"))
+    values[0], values[1] = values[1], values[0]
     with pytest.raises(RunShapeReadError, match="phase marker sources"):
         observe(tuple(values))
 

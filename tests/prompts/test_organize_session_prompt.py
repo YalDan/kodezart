@@ -102,60 +102,28 @@ def test_the_ticket_phase_fills_a_body_in_its_own_shape(set_name: str) -> None:
     assert "{{" not in text
 
 
-#: How each set tells the groom phase to repair condition 4: the one criterion
-#: write outside the criteria phase, in the shape and state the criteria phase
-#: itself writes. ``{criterion}`` is the operation's criterion label.
-MISSING_CRITERION = {
-    V5_SET: (
-        "Where one is missing, creating it is the repair: a criterion sub-issue"
-        " under the member, labelled `{criterion}`, in the team's unstarted"
-        " workflow state, with a Check / Do / Evidence body (a Check that can be"
-        " shown true or false, a Do that says the work, and an Evidence row left"
-        " empty for the graded commit)."
-    ),
-    OPUS_SET: (
-        "Where one is missing, creating it is the repair: a criterion sub-issue"
-        " under the member, labelled `{criterion}`, in the team's unstarted"
-        " workflow state, with a Check / Do / Evidence body (a Check that can be"
-        " shown true or false, a Do that states the work, and an Evidence row left"
-        " empty for the graded commit)."
-    ),
-}
-
-#: What the groom phase may do to a criterion sub-issue, and what every other
-#: phase outside the criteria phase may do: one rule, one sentence each.
-GROOM_CRITERION_RULE = (
-    "Outside the criteria phase, never touch a criterion sub-issue beyond"
-    " creating a missing one as condition 4 says."
-)
+#: What every phase outside the criteria phase may do to a criterion
+#: sub-issue: one rule, one sentence, no exception.
 TICKET_CRITERION_RULE = "Outside the criteria phase, never touch a criterion sub-issue."
 
 
 @pytest.mark.parametrize("set_name", SETS)
-def test_the_groom_phase_may_create_a_missing_criterion_and_nothing_more(
+def test_the_ticket_phase_never_touches_a_criterion_sub_issue(
     set_name: str,
 ) -> None:
-    """Condition 4 and the criterion rule say one thing.
+    """The one sentence that forbids touching a criterion carries no exception.
 
-    Condition 4 asks every executed member to carry a criterion sub-issue, and
-    the rule after it used to forbid the groom phase to touch one, so a member
-    missing its criterion could be neither repaired nor groomed. The groom
-    phase is now told to create the missing one, labelled with the operation's
-    criterion label, in the team's unstarted state, with a Check / Do / Evidence
-    body, and the one sentence that forbids touching a criterion names that
-    act as its only exception. The ticket phase is given no such exception.
+    The retired groom phase was the one phase allowed to create a missing
+    criterion; that repair is the grooming pass's now, over the whole board
+    before approval. Inside the run, only the criteria phase writes a
+    criterion sub-issue, so the ticket phase is told never to touch one and
+    is given no repair to make.
     """
-    criterion = load_operation_config(SCOPE_EXAMPLE).issue_labels["criterion"]
-    groom = sentences(rendered(set_name, MandateKind.GROOM))
-
-    assert MISSING_CRITERION[set_name].format(criterion=criterion) in groom
-    forbidding = [s for s in groom if "never touch a criterion sub-issue" in s]
-    assert forbidding == [GROOM_CRITERION_RULE]
-
     ticket = sentences(rendered(set_name, MandateKind.TICKET))
     forbidding = [s for s in ticket if "never touch a criterion sub-issue" in s]
     assert forbidding == [TICKET_CRITERION_RULE]
     assert [s for s in ticket if "creating it is the repair" in s] == []
+    assert [s for s in ticket if "groom" in s.lower()] == []
 
 
 #: How each set accounts for a member the list leaves out: marked already,
@@ -242,7 +210,7 @@ def test_the_scope_is_named_by_what_its_key_is_to_the_tracker(
     its key the way the tracker does, and no other kind's way.
     """
     scope = ScopeRef(kind=kind, key="scope-key-0042")
-    opening = rendered(set_name, MandateKind.GROOM, scope=scope).splitlines()[0]
+    opening = rendered(set_name, MandateKind.TICKET, scope=scope).splitlines()[0]
 
     assert SCOPE_ADDRESS[kind].format(key=scope.key) in opening
     others = [

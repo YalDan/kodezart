@@ -12,7 +12,6 @@ from kodezart.domain.run_alarm_record import run_alarm_marker
 from kodezart.domain.run_alarm_table import alarm_raised
 from kodezart.domain.run_event_stream import LaneRunEvent
 from kodezart.domain.run_shape import (
-    GROOM_MARKER_SOURCE,
     TICKET_MARKER_SOURCE,
     tally_unmoved,
 )
@@ -26,11 +25,8 @@ from kodezart.services.supervisor_pass import (
 )
 from kodezart.types.domain.dispatch import PassRun
 from kodezart.types.domain.run_alarm import (
-    AlarmReading,
     AlarmSignal,
     CriterionSubject,
-    LabelsEvidence,
-    TextEvidence,
 )
 from kodezart.types.domain.run_event import RunEventKind
 from kodezart.types.domain.scope import ResolvedScope, ScopeKind, ScopeRef
@@ -294,55 +290,6 @@ async def test_every_scopes_barrier_is_observed_and_each_raise_is_logged():
         for entry in logs
         if entry["event"] == "supervisor_scope_alarm_raised"
     ] == [REF.key, OTHER.key]
-
-
-def groom_inputs():
-    """The groom rung's barrier open: one member has entered the body stage,
-    the other carries no groom marker."""
-    ticket = scope_inputs()
-    return (
-        AlarmReading(
-            source_ref=GROOM_MARKER_SOURCE,
-            value=TextEvidence(value="issue_labels.groomed"),
-        ),
-        AlarmReading(
-            source_ref=TICKET_MARKER_SOURCE,
-            value=TextEvidence(value="issue_labels.body-ready"),
-        ),
-        *ticket[2:4],
-        AlarmReading(
-            source_ref="one", value=LabelsEvidence(value=("body-ready", "groomed"))
-        ),
-        AlarmReading(source_ref="two", value=LabelsEvidence(value=())),
-    )
-
-
-async def test_every_open_rung_of_one_scope_is_logged():
-    """Two barriers open in one scope are two warnings, one per rung, in order."""
-    port = await board(lanes=LANES)
-    groom, ticket = (
-        tally_unmoved(
-            subject=SCOPE_STALL,
-            readings=readings,
-            raised_at_sha="supervisor",
-            raised_by=HOLDER,
-        )
-        for readings in (groom_inputs(), scope_inputs())
-    )
-    assert groom is not None
-    assert ticket is not None
-
-    with structlog.testing.capture_logs() as logs:
-        outcome = await pass_over(
-            port, readings={REF: ready_set()}, scope_arm={REF: (groom, ticket)}
-        ).run(FIXTURE_EPOCH)
-
-    assert outcome is PassRun.RAN
-    assert [
-        (entry["scope"], entry["marker"])
-        for entry in logs
-        if entry["event"] == "supervisor_scope_alarm_raised"
-    ] == [(REF.key, GROOM_MARKER_SOURCE), (REF.key, TICKET_MARKER_SOURCE)]
 
 
 async def test_a_failed_ready_read_does_not_hide_the_scopes_barrier():

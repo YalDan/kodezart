@@ -46,14 +46,13 @@ from tests.prompts.test_prompt_wiring import load_registry
 
 SCOPE = ScopeRef(kind=ScopeKind.PROJECT, key="scratch-project")
 LANES = ("A", "B")
-GROOM_MARKER = "graph complete"
 TICKET_MARKER = "body complete"
 CRITERIA_MARKER = "criteria complete"
 WORKING_DIR = "/tmp/kodezart-organize-session-fixture"
 
 
 def operation() -> OperationConfig:
-    """The three-row table over one repository, each marker its own label."""
+    """The two-row table over one repository, each marker its own label."""
     return OperationConfig.model_validate(
         {
             "operation_name": "fixture",
@@ -67,19 +66,11 @@ def operation() -> OperationConfig:
                 "criterion": "criterion",
                 "decision": "decision",
                 "tracker": "tracker",
-                "groomed": GROOM_MARKER,
                 "body": TICKET_MARKER,
                 "criteria": CRITERIA_MARKER,
             },
             "repos": [{"url": "https://example.invalid/repository", "trunk": "main"}],
             "organize_mandates": [
-                {
-                    "kind": "groom",
-                    "gate_label_key": "scope_labels.triage",
-                    "rubric_prompt_key": "organize_groom_rubric",
-                    "admission_prompt_key": "organize_assess",
-                    "terminal_marker_key": "issue_labels.groomed",
-                },
                 {
                     "kind": "ticket",
                     "gate_label_key": "scope_labels.approved",
@@ -201,15 +192,10 @@ def owner(
     port: FakeTrackerPort,
     executor: LabellingSession,
     *,
-    under_approval: bool,
     workspace: FakeWorkspaceProvider | None = None,
 ) -> OrganizeSessionOwner:
     config = operation()
-    rows = [
-        row
-        for row in config.resolve_organize_mandates()
-        if row.role.runs_under_approval is under_approval
-    ]
+    rows = list(config.resolve_organize_mandates())
     return OrganizeSessionOwner(
         members=port,
         approvals=port,
@@ -239,72 +225,49 @@ async def run(unit: OrganizeSessionOwner) -> OrganizeReport:
 
 
 async def test_a_closed_gate_opens_no_session_and_reports_nothing() -> None:
-    """No triage on the scope: the pre-approval row has nobody to act on."""
-    port = board(scope_labels=frozenset(), labels={})
+    """No approval on the scope: neither stage has anybody to act on.
+
+    Triage on the scope opens nothing here: what a triaged scope needs is
+    the intake passes' work, and the stages read the approval label alone.
+    """
+    port = board(scope_labels=frozenset({ScopeLabel.TRIAGE}), labels={})
     session = LabellingSession(port, labels=None)
 
-    report = await run(owner(port, session, under_approval=False))
+    report = await run(owner(port, session))
 
     assert report == OrganizeReport()
     assert session.calls == []
     assert port.classification_writes == []
 
 
-async def test_an_open_gate_runs_one_session_and_the_labelled_board_completes() -> None:
-    """One session for the phase, and the board read afterwards completes it."""
-    port = board(scope_labels=frozenset({ScopeLabel.TRIAGE}), labels={})
-    session = LabellingSession(port, labels=None)
-
-    report = await run(owner(port, session, under_approval=False))
-
-    assert report.halt is None
-    assert report.completed_phases == (MandateKind.GROOM,)
-    assert len(session.calls) == 1
-    assert port.classification_writes == [(key, "groomed") for key in LANES]
-    for key in LANES:
-        assert "groomed" in port.issues[key].issue_labels
-        assert "groomed" not in port.issues[f"{key}/check"].issue_labels
-
-
 async def test_a_member_the_session_left_unlabelled_halts_naming_it() -> None:
     """The board is the record: a member without the marker is named, once."""
-    port = board(scope_labels=frozenset({ScopeLabel.TRIAGE}), labels={})
+    port = board(scope_labels=frozenset({ScopeLabel.APPROVED}), labels={})
     session = LabellingSession(port, labels=("A",))
 
-    report = await run(owner(port, session, under_approval=False))
+    report = await run(owner(port, session))
 
     assert report.completed_phases == ()
     assert report.halt is not None
     assert report.halt.cause is StageHaltCause.STAGE_INCOMPLETE
-    assert report.halt.phase is MandateKind.GROOM
+    assert report.halt.phase is MandateKind.TICKET
     assert report.halt.unlabelled_issue_ids == ("B",)
     assert len(session.calls) == 1
 
 
 async def test_a_board_that_owes_nothing_completes_without_a_session() -> None:
-    """Every member already carries the marker: the phase costs no session."""
+    """Every member already carries both markers: the stages cost no session."""
     port = board(
-        scope_labels=frozenset({ScopeLabel.TRIAGE}),
-        labels=dict.fromkeys(LANES, frozenset({"groomed"})),
+        scope_labels=frozenset({ScopeLabel.APPROVED}),
+        labels=dict.fromkeys(LANES, frozenset({"body", "criteria"})),
     )
     session = LabellingSession(port, labels=None)
 
-    report = await run(owner(port, session, under_approval=False))
+    report = await run(owner(port, session))
 
-    assert report == OrganizeReport(completed_phases=(MandateKind.GROOM,))
-    assert session.calls == []
-
-
-async def test_an_approved_scope_closes_the_pre_approval_row() -> None:
-    """Approval ends the groom phase: triage still there, nobody admitted."""
-    port = board(
-        scope_labels=frozenset({ScopeLabel.TRIAGE, ScopeLabel.APPROVED}), labels={}
+    assert report == OrganizeReport(
+        completed_phases=(MandateKind.TICKET, MandateKind.CRITERIA)
     )
-    session = LabellingSession(port, labels=None)
-
-    report = await run(owner(port, session, under_approval=False))
-
-    assert report == OrganizeReport()
     assert session.calls == []
 
 
@@ -313,7 +276,7 @@ async def test_the_run_stages_run_in_order_each_gated_on_the_last() -> None:
     port = board(scope_labels=frozenset({ScopeLabel.APPROVED}), labels={})
     session = LabellingSession(port, labels=None)
 
-    report = await run(owner(port, session, under_approval=True))
+    report = await run(owner(port, session))
 
     assert report.halt is None
     assert report.completed_phases == (MandateKind.TICKET, MandateKind.CRITERIA)
@@ -329,15 +292,15 @@ async def test_the_run_stages_run_in_order_each_gated_on_the_last() -> None:
 
 async def test_the_prompt_carries_the_marker_the_scope_and_the_fire_rule() -> None:
     """What the session is told, and the one label it is never offered."""
-    port = board(scope_labels=frozenset({ScopeLabel.TRIAGE}), labels={})
-    session = LabellingSession(port, labels=None)
+    port = board(scope_labels=frozenset({ScopeLabel.APPROVED}), labels={})
+    session = LabellingSession(port, labels=("A",))
 
-    await run(owner(port, session, under_approval=False))
+    await run(owner(port, session))
 
     (call,) = session.calls
     prompt = str(call["prompt"])
-    assert f"Marker to add: `{GROOM_MARKER}`" in prompt
-    assert f"Add the marker `{GROOM_MARKER}`" in prompt
+    assert f"Marker to add: `{TICKET_MARKER}`" in prompt
+    assert f"Add the marker `{TICKET_MARKER}`" in prompt
     assert "the tracker project whose id is `scratch-project`" in prompt
     assert "- A\n- B\n" in prompt
     assert "Open question for the fire to rule on before it starts" in prompt
@@ -358,11 +321,11 @@ async def test_the_session_request_is_the_organize_pass_with_the_tracker_tools()
     None
 ):
     """Unattended, the tracker family only, the neutral directory, no repo."""
-    port = board(scope_labels=frozenset({ScopeLabel.TRIAGE}), labels={})
-    session = LabellingSession(port, labels=None)
+    port = board(scope_labels=frozenset({ScopeLabel.APPROVED}), labels={})
+    session = LabellingSession(port, labels=("A",))
     workspace = FakeWorkspaceProvider()
 
-    await run(owner(port, session, under_approval=False, workspace=workspace))
+    await run(owner(port, session, workspace=workspace))
 
     (call,) = session.calls
     assert call["session_type"] is SessionType.ORGANIZE_PASS

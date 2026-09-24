@@ -48,7 +48,6 @@ UTILITY_KEYS = (
     PromptKey.MUTATION_SURVIVAL,
     # A rubric is rendered into another role's prompt rather than opened as a
     # session, so it carries no skills reference of its own.
-    PromptKey.ORGANIZE_GROOM_RUBRIC,
     PromptKey.ORGANIZE_SPEC_RUBRIC,
 )
 

@@ -8,7 +8,6 @@ import pytest
 import structlog.testing
 
 from kodezart.chains.scope_walker import read_scope_ready
-from kodezart.composition.passes import ORGANIZE_TICK_NAME
 from kodezart.composition.supervisor import build_supervisor_pass
 from kodezart.config.app import AppConfig
 from kodezart.core.errors import PassGateCapabilityError
@@ -17,7 +16,7 @@ from kodezart.domain.lane_alarms import stored_alarm
 from kodezart.domain.lapse import lapse_escalation_key
 from kodezart.domain.run_alarm_record import MARKER_PURPOSE, run_alarm_marker
 from kodezart.domain.run_alarm_table import alarm_raised
-from kodezart.domain.run_shape import GROOM_MARKER_SOURCE, TICKET_MARKER_SOURCE
+from kodezart.domain.run_shape import TICKET_MARKER_SOURCE
 from kodezart.services.supervisor_pass import (
     SUPERVISOR_TICK_NAME,
     supervisor_holder,
@@ -121,7 +120,7 @@ def declared(*, scopes):
 
     Built on the operation that carries the mandate table, because declaring a
     scope requires the organize owner: the rows the tick observes are the rows
-    the organize stages groom, and one without the other is a partial
+    the organize stages work, and one without the other is a partial
     configuration refused before anything is scheduled.
     """
     base = declared_operation()
@@ -140,15 +139,15 @@ def declared(*, scopes):
 #: and whether a delivery probe is dialled. Two of the cases tell the copies
 #: apart, and the fact they now pin is that every arm reads the copy handed in:
 #: a roster only the reconciled copy carries registers nothing, and a roster only
-#: the raw copy carries registers the tick. That is the one copy the organize
-#: tick and the heartbeat are built from, so a tick over the other copy would be
-#: this deployment observing rows nothing else here works.
+#: the raw copy carries registers the tick. That is the one copy the heartbeat
+#: is built from, so a tick over the other copy would be this deployment
+#: observing rows nothing else here works.
 #: A declared roster without a tracker is now a partial organize configuration
 #: rather than a quiet absence, so that case refuses at preflight and names the
 #: member; it never reaches the arm at all.
 #: The dispatch case keeps its id and its probe: a declared roster adds the
-#: organize tick and the heartbeat to the schedule and takes nothing out of it,
-#: so the dispatch pass stands there beside them (2026-09-24).
+#: heartbeat to the schedule and takes nothing out of it, so the dispatch pass
+#: stands there beside it (2026-09-24).
 WIRINGS = {
     "declared_with_tracker": ((SCOPE,), (SCOPE,), None, False),
     "declared_with_tracker_and_dispatch": ((SCOPE,), (SCOPE,), None, True),
@@ -189,8 +188,8 @@ async def test_the_pass_registers_only_with_declared_scopes_and_a_dialled_tracke
     boot log, so an operator reads the reason rather than deducing it from a
     schedule with no supervisor in it.
 
-    The roster read is the copy handed in, which is the copy the organize tick
-    and the heartbeat are built from. Two of the cases below make the two copies
+    The roster read is the copy handed in, which is the copy the heartbeat is
+    built from. Two of the cases below make the two copies
     disagree, so the gate and the absent-arm log are each shown to read that one
     and not the dialled tracker's reconciled copy: a tick over rows the rest of
     this deployment never works is one factory holding two opinions.
@@ -256,14 +255,14 @@ async def test_the_pass_registers_only_with_declared_scopes_and_a_dialled_tracke
         assert unwired[0]["scopes_declared"] is scopes_declared
 
     # Every other pass is as it was: the arm adds one registration and edits no
-    # other. A declared roster adds the organize tick and the heartbeat, both
-    # registered before the observation arm runs, and switches no session pass
-    # off: each of those runs on its own cadence pair, set here. The standing
-    # scope settings select the scope workflow, so the dispatch cadence drives
-    # the heartbeat there and the per-issue dispatch pass in the other set.
+    # other. A declared roster adds the heartbeat, registered before the
+    # observation arm runs, and switches no session pass off: each of those
+    # runs on its own cadence pair, set here. The standing scope settings
+    # select the scope workflow, so the dispatch cadence drives the heartbeat
+    # there and the per-issue dispatch pass in the other set.
     session_passes = {PromptKey.FIRE_PREP_PASS.value, PromptKey.GROOMING_PASS.value}
     per_issue = session_passes | ({f"dispatch:{REPO}"} if dispatching else set())
-    scope_passes = {ORGANIZE_TICK_NAME, HEARTBEAT_PASS}
+    scope_passes = {HEARTBEAT_PASS}
     expected = (session_passes | scope_passes) if raw_scopes else per_issue
     assert {entry.name for entry in registered} - {"supervisor"} == expected
 
@@ -735,48 +734,6 @@ async def test_the_composed_tick_observes_a_scope_stalled_at_a_stage_barrier():
         assert alarm_raised(stored)
 
 
-async def test_the_composed_tick_observes_a_scope_stalled_at_the_groom_barrier():
-    """The first rung is observed too: graph complete, then body complete.
-
-    One member carries the groom marker and has entered the body stage; the
-    other carries neither. So the barrier between grooming and the body stage
-    is open, and the warning names the groom marker's address. No member has
-    entered the criteria stage, so the next barrier is quiet.
-    """
-    operation = declared(scopes=(SCOPE,))
-    port = await board(
-        lanes=LANES,
-        scope=SCOPE,
-        holder=supervisor_holder(operation_name=operation.operation_name),
-    )
-    entered, behind = LANES
-    issue = port.issues[entered]
-    port.issues[entered] = issue.model_copy(
-        update={"issue_labels": issue.issue_labels | {"groomed", "body"}}
-    )
-    assert not {"groomed", "body"} & port.issues[behind].issue_labels
-    scheduled = build_supervisor_pass(
-        config=AppConfig(
-            _env_file=None,
-            run_alarm_max_commits_without_closure=BOUND,
-            supervisor_pass_interval_seconds=INTERVAL,
-            supervisor_pass_timeout_seconds=TIMEOUT,
-        ),
-        operation=operation,
-        tracker=port,
-    )
-
-    with structlog.testing.capture_logs() as logs:
-        async with asyncio.timeout(TICK_BOUND_SECONDS):
-            assert await scheduled.run(FIXTURE_EPOCH) is PassRun.RAN
-
-    assert [
-        (entry["log_level"], entry["scope"], entry["marker"])
-        for entry in logs
-        if entry["event"] == "supervisor_scope_alarm_raised"
-    ] == [("warning", SCOPE.key, GROOM_MARKER_SOURCE)]
-
-
 def _enter_criteria_stage(port, lane, *, entered):
     """Give *lane* the criteria stage's label, or take it away."""
     issue = port.issues[lane]
@@ -793,48 +750,6 @@ def _scope_raises(logs):
         (entry["scope"], entry["marker"])
         for entry in logs
         if entry["event"] == "supervisor_scope_alarm_raised"
-    ]
-
-
-async def test_the_composed_tick_observes_both_open_rungs_of_one_scope():
-    """Two barriers open at once in one scope: each rung is observed and said.
-
-    One member carries the groom, body and criteria markers; the other carries
-    none. So the groom barrier is open (a member has entered the body stage
-    and one carries no groom marker) and so is the body barrier (a member has
-    entered the criteria stage and one carries no body marker), and the tick
-    says so for each rung, in the governed order.
-    """
-    operation = declared(scopes=(SCOPE,))
-    port = await board(
-        lanes=LANES,
-        scope=SCOPE,
-        holder=supervisor_holder(operation_name=operation.operation_name),
-    )
-    entered, behind = LANES
-    issue = port.issues[entered]
-    port.issues[entered] = issue.model_copy(
-        update={"issue_labels": issue.issue_labels | {"groomed", "body", "criteria"}}
-    )
-    assert not {"groomed", "body", "criteria"} & port.issues[behind].issue_labels
-    scheduled = build_supervisor_pass(
-        config=AppConfig(
-            _env_file=None,
-            run_alarm_max_commits_without_closure=BOUND,
-            supervisor_pass_interval_seconds=INTERVAL,
-            supervisor_pass_timeout_seconds=TIMEOUT,
-        ),
-        operation=operation,
-        tracker=port,
-    )
-
-    with structlog.testing.capture_logs() as logs:
-        async with asyncio.timeout(TICK_BOUND_SECONDS):
-            assert await scheduled.run(FIXTURE_EPOCH) is PassRun.RAN
-
-    assert _scope_raises(logs) == [
-        (SCOPE.key, GROOM_MARKER_SOURCE),
-        (SCOPE.key, TICKET_MARKER_SOURCE),
     ]
 
 

@@ -82,7 +82,6 @@ ARTIFACT_TAGS: dict[str, tuple[str, ...]] = {
     "organize_criteria_author": (*ORGANIZE_ADMISSION_TAGS, "refusal_evidence"),
     # A rubric is the standard a judging role is handed; it carries no
     # injected artifact of its own and therefore no tag.
-    "organize_groom_rubric": (),
     "organize_spec_rubric": (),
     # The session's prompt lists the marker and the member keys as plain
     # lines; the members are addresses, not injected artifacts.

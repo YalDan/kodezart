@@ -231,14 +231,13 @@ for each pass it wants:
 | dispatch, and the standing scopes' heartbeat | `KODEZART_DISPATCH_PASS_INTERVAL_SECONDS` | `KODEZART_DISPATCH_PASS_TIMEOUT_SECONDS` |
 | fire preparation | `KODEZART_FIRE_PREP_PASS_INTERVAL_SECONDS` | `KODEZART_FIRE_PREP_PASS_TIMEOUT_SECONDS` |
 | grooming | `KODEZART_GROOMING_PASS_INTERVAL_SECONDS` | `KODEZART_GROOMING_PASS_TIMEOUT_SECONDS` |
-| organize tick | `KODEZART_ORGANIZE__INTERVAL_SECONDS` | `KODEZART_ORGANIZE__TIMEOUT_SECONDS` |
 | supervisor tick | `KODEZART_SUPERVISOR_PASS_INTERVAL_SECONDS` | `KODEZART_SUPERVISOR_PASS_TIMEOUT_SECONDS` |
 | audit | `KODEZART_AUDIT_SWEEP_INTERVAL_SECONDS` | `KODEZART_AUDIT__TIMEOUT_SECONDS` |
 
-The organize tick no longer takes the grooming pass's cadence when its own is
-unset. Setting one half of a pair without the other refuses at load, naming
-both; a pass that should not run is left unset rather than parked on a long
-interval.
+There is no organize cadence: a scope run's organize stages run inside the run
+the heartbeat submits on the dispatch pair. Setting one half of a pair without
+the other refuses at load, naming both; a pass that should not run is left
+unset rather than parked on a long interval.
 
 ## 4c. A v0.2 operation file
 

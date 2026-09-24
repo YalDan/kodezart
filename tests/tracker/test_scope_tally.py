@@ -116,10 +116,7 @@ async def tally(request):
 
 @pytest.mark.parametrize(
     "phase,current,next_key",
-    [
-        (MandateKind.GROOM, "groomed", "body"),
-        (MandateKind.TICKET, "body", "criteria"),
-    ],
+    [(MandateKind.TICKET, "body", "criteria")],
 )
 async def test_actual_marker_barrier_zero_partial_and_complete_rosters(
     tally, phase, current, next_key

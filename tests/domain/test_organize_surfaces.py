@@ -40,12 +40,12 @@ CONTAINER_KINDS = frozenset(
 )
 
 
-def test_the_pre_approval_row_declares_graph_description_and_label_set():
-    """The pre-approval row's own set, kind for kind."""
-    assert MANDATE_PHASE_ROLES[MandateKind.GROOM].write_surfaces == frozenset(
+def test_the_ticket_row_declares_description_split_set_and_label_set():
+    """The first run stage's own set, kind for kind."""
+    assert MANDATE_PHASE_ROLES[MandateKind.TICKET].write_surfaces == frozenset(
         {
-            SurfaceKind.ISSUE_GRAPH,
             SurfaceKind.ISSUE_DESCRIPTION,
+            SurfaceKind.ISSUE_SPLIT_SET,
             SurfaceKind.ISSUE_LABEL_SET,
         }
     )
@@ -67,16 +67,15 @@ def test_a_row_declares_nothing_without_a_member():
         assert phase_surfaces(member_keys=(), role=role) == frozenset()
 
 
-def test_graph_change_is_declared_by_the_pre_approval_row_and_by_no_other():
-    """Graph change is the pre-approval row's; run stages write text and children.
+def test_graph_change_is_declared_by_no_row():
+    """Graph change is the grooming pass's; every run stage writes text and children.
 
-    The report-only discipline binds an approved scope and this row runs
-    before approval, which is why the two hold together.
+    The report-only discipline binds an approved scope, and every row runs
+    under approval, so no row declares the graph.
     """
     for role in MANDATE_PHASE_ROLES.values():
-        assert (SurfaceKind.ISSUE_GRAPH in role.write_surfaces) is (
-            not role.runs_under_approval
-        )
+        assert role.runs_under_approval
+        assert SurfaceKind.ISSUE_GRAPH not in role.write_surfaces
 
 
 def test_no_row_declares_a_container_surface():
@@ -94,28 +93,28 @@ OUTSIDE = (
         kind=SurfaceKind.ISSUE_GRAPH, ref=ScopeRef(kind=ScopeKind.ISSUE, key="SCOPE-9")
     ),
     WritableSurface(
-        kind=SurfaceKind.ISSUE_SPLIT_SET,
+        kind=SurfaceKind.CRITERION_CHILD_SET,
         ref=ScopeRef(kind=ScopeKind.ISSUE, key="SCOPE-1"),
     ),
 )
 
 
-GROOM_KINDS = "issue_description, issue_graph, issue_label_set"
+TICKET_KINDS = "issue_description, issue_label_set, issue_split_set"
 
 
 def said(kind, key):
-    """The evidence a groom residual carries, written out in full."""
+    """The evidence a ticket-stage residual carries, written out in full."""
     return (
-        f"The groom phase needed {kind} on {key}, which is outside the set it "
-        f"declares ({GROOM_KINDS})."
+        f"The ticket phase needed {kind} on {key}, which is outside the set it "
+        f"declares ({TICKET_KINDS})."
     )
 
 
 def findings(*outside):
     return surface_findings(
         outside=frozenset(outside),
-        phase="groom",
-        declared=MANDATE_PHASE_ROLES[MandateKind.GROOM].write_surfaces,
+        phase="ticket",
+        declared=MANDATE_PHASE_ROLES[MandateKind.TICKET].write_surfaces,
     )
 
 
@@ -127,8 +126,8 @@ def test_an_undeclared_surface_is_a_finding_on_its_own_issue():
     assert record.role is DefectRole.INSTANCE
     assert record.mandate_text is None
     assert "issue_graph" in record.evidence
-    assert "groom" in record.evidence
-    for kind in MANDATE_PHASE_ROLES[MandateKind.GROOM].write_surfaces:
+    assert "ticket" in record.evidence
+    for kind in MANDATE_PHASE_ROLES[MandateKind.TICKET].write_surfaces:
         assert kind.value in record.evidence
 
 
@@ -138,32 +137,32 @@ def test_no_outside_surface_is_no_finding():
 
 
 def test_the_evidence_names_the_phase_the_kind_the_key_and_the_declared_kinds():
-    """The whole sentence, for a kind the groom row does not declare."""
+    """The whole sentence, for a kind the ticket row does not declare."""
     (record,) = findings(OUTSIDE[1])
-    assert record.evidence == said("issue_split_set", "SCOPE-1")
+    assert record.evidence == said("criterion_child_set", "SCOPE-1")
 
 
 def test_the_same_refusal_composes_the_same_findings():
     """One order for every reader: owning key, then kind."""
     assert [(record.issue_id, record.evidence) for record in findings(*OUTSIDE)] == [
-        ("SCOPE-1", said("issue_split_set", "SCOPE-1")),
+        ("SCOPE-1", said("criterion_child_set", "SCOPE-1")),
         ("SCOPE-9", said("issue_graph", "SCOPE-9")),
     ]
 
 
 def test_two_addresses_on_one_item_are_two_findings():
     """Each address is its own record; the class they carry is one name."""
-    graph, split = (
+    children, graph = (
         WritableSurface(kind=kind, ref=ScopeRef(kind=ScopeKind.ISSUE, key="SCOPE-1"))
-        for kind in (SurfaceKind.ISSUE_GRAPH, SurfaceKind.ISSUE_SPLIT_SET)
+        for kind in (SurfaceKind.CRITERION_CHILD_SET, SurfaceKind.ISSUE_GRAPH)
     )
     assert [
-        (record.issue_id, record.evidence) for record in findings(graph, split)
+        (record.issue_id, record.evidence) for record in findings(children, graph)
     ] == [
+        ("SCOPE-1", said("criterion_child_set", "SCOPE-1")),
         ("SCOPE-1", said("issue_graph", "SCOPE-1")),
-        ("SCOPE-1", said("issue_split_set", "SCOPE-1")),
     ]
-    assert {record.defect_class for record in findings(graph, split)} == {
+    assert {record.defect_class for record in findings(children, graph)} == {
         UNDECLARED_SURFACE
     }
 
@@ -199,12 +198,12 @@ def test_many_addresses_compose_in_one_order_whatever_the_set_iterates():
         )
     )
     composed = surface_findings(
-        outside=outside, phase="groom", declared=frozenset(SurfaceKind)
+        outside=outside, phase="ticket", declared=frozenset(SurfaceKind)
     )
     assert [(record.issue_id, record.evidence) for record in composed] == [
         (
             key,
-            f"The groom phase needed {kind} on {key}, which is outside the set "
+            f"The ticket phase needed {kind} on {key}, which is outside the set "
             f"it declares ({declared}).",
         )
         for key in ("SCOPE-1", "SCOPE-2", "SCOPE-3")

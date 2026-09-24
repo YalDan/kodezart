@@ -22,11 +22,9 @@ from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.composition.passes import (
     _DISPATCH_NAME,
     MARKER_PURPOSES_BY_FAMILY,
-    ORGANIZE_TICK_NAME,
     DispatchRuntime,
     build_dispatch_runtime,
     build_prompt_passes,
-    prompt_pass_schedule,
     verify_pass_preflight,
     wired_marker_purposes,
 )
@@ -112,8 +110,6 @@ DISPATCH_INTERVAL = 293.0
 DISPATCH_TIMEOUT = 211.0
 SUPERVISOR_INTERVAL = 317.0
 SUPERVISOR_TIMEOUT = 113.0
-ORGANIZE_INTERVAL = 311.0
-ORGANIZE_TIMEOUT = 503.0
 
 #: Every cadence setting left unset, for the rows that ask what a deployment
 #: that sets none of them schedules.
@@ -165,8 +161,17 @@ def per_run(key: PromptKey) -> dict[str, object]:
     return pass_render_bindings(identity)
 
 
+#: The deployment's own tracker credential, set on every configuration this
+#: module builds: the organize stage sessions of a scope run are described the
+#: tracker server built from it, so a scope deployment's boot requires it, and
+#: a per-issue deployment reads nothing else off it. A case about its absence
+#: overrides it with an empty tracker table.
+TRACKER_CREDENTIAL: dict[str, object] = {"token": "lin_api_" + "k" * 40}
+
+
 def _config(tmp_path: Path, **overrides: object) -> AppConfig:
     settings: dict[str, object] = {
+        "tracker": TRACKER_CREDENTIAL,
         "fire_prep_pass_interval_seconds": FIRE_PREP_INTERVAL,
         "fire_prep_pass_timeout_seconds": FIRE_PREP_TIMEOUT,
         "grooming_pass_interval_seconds": GROOMING_INTERVAL,
@@ -224,7 +229,6 @@ async def _registrations(
     runner = FakeAgentRunner(events=[])
     return (
         await build_prompt_passes(
-            organize=None,
             recorder=RunRecorder(records={}, sinks={}),
             config=_config(tmp_path, **overrides),
             operation=declared,
@@ -254,7 +258,7 @@ EITHER_MODE = pytest.mark.parametrize(
 #: later pass-set assertion enumerates, so a rename must redden this too.
 HEARTBEAT_PASS = "scope_heartbeat"
 
-#: The organize owner's two bounds, with no cadence of the tick's own.
+#: The organize owner's two bounds.
 ORGANIZE_BOUNDS: dict[str, object] = {
     "max_admission_rounds": 2,
     "max_convergence_rounds": 2,
@@ -263,22 +267,14 @@ ORGANIZE_BOUNDS: dict[str, object] = {
 #: The host-MCP opt-in, switched on. It is the organize session's only way to
 #: the tracker's tools, so boot refuses a deployment that declares organize
 #: scopes over a dialled tracker without it; every such deployment here sets it.
-HOST_MCP_ALLOWED: dict[str, object] = {"dangerously_allow_host_mcp": True}
-
-#: The deployment half of a standing-scope operation: the owner bounds both
-#: passes require, the organize tick's own cadence, the organize session's way
-#: to the tracker, the dispatch cadence driving the heartbeat, and no gate on
-#: either prompt pass, so what the schedule holds is decided by the declared
-#: rows alone.
+#: The deployment half of a standing-scope operation: the owner bounds the
+#: run's stages require, the dispatch cadence driving the heartbeat, and no
+#: gate on either prompt pass, so what the schedule holds is decided by the
+#: declared rows alone.
 STANDING_SCOPE_SETTINGS: dict[str, object] = {
     "dispatch_workflow": DispatchWorkflow.SCOPE,
-    "organize": {
-        **ORGANIZE_BOUNDS,
-        "interval_seconds": ORGANIZE_INTERVAL,
-        "timeout_seconds": ORGANIZE_TIMEOUT,
-    },
+    "organize": ORGANIZE_BOUNDS,
     "write_back": {"max_verify_rounds": 2},
-    "agent": HOST_MCP_ALLOWED,
     "fire_prep_pass_gate_signals": [],
     "grooming_pass_gate_signals": [],
 }
@@ -571,14 +567,14 @@ async def test_the_boot_seam_registers_the_prompt_passes(tmp_path: Path) -> None
 async def test_declared_standing_scopes_register_the_heartbeat_on_the_dispatch_cadence(
     tmp_path: Path,
 ) -> None:
-    """The standing scopes' own pass, beside the tick that grooms them.
+    """The standing scopes' own pass, beside the grooming pass.
 
     One registration for the whole operation, on the cadence the dispatch
     scans already run on, and with no report: it opens no session, so a tick
     of it is not a run anything could record. The grooming pass is still
-    there once — the two are the two sides of scope approval, not
-    alternatives — and the cadence is read off the configuration rather than
-    spelled here.
+    there once — it works the whole board before approval, the heartbeat
+    submits what approval admits — and the cadence is read off the
+    configuration rather than spelled here.
     """
     config = _config(tmp_path, **STANDING_SCOPE_SETTINGS)
     operation = standing_scope_operation()
@@ -627,8 +623,8 @@ async def test_an_operation_with_no_standing_scope_registers_no_heartbeat(
     """Non-vacuity for the registration above: the rows are what wire it.
 
     The same deployment over the same owner bounds, with the standing rows
-    removed, schedules neither the organize tick nor the heartbeat — which
-    is why the exact pass-set assertions in this module stay as they are.
+    removed, schedules no heartbeat — which is why the exact pass-set
+    assertions in this module stay as they are.
     """
     runtime = await _runtime(
         tmp_path,
@@ -952,8 +948,8 @@ async def test_a_scope_deployment_lacking_prefixes_its_passes_ask_for_is_refused
 
     Measured 2026-09-24 on the live scope deployment: a file declaring ten
     of the template's fifteen prefixes booted four times, and the first
-    grooming tick with work refused 30 s in over ``claim`` when its surface
-    lease released. Boot now names that key, and every other one a pass it
+    stage with work refused 30 s in over ``claim`` when its surface lease
+    released. Boot now names that key, and every other one a pass it
     schedules can ask for, in the spelling the point-of-use refusal uses.
     """
     operation = without_prefixes(standing_scope_operation(), "claim", "run_alarm")
@@ -979,7 +975,7 @@ async def test_a_prefix_only_an_unwired_pass_asks_for_does_not_refuse_the_boot(
 
     A scope deployment schedules no per-issue dispatch pass, so the base
     spec and run outcome only that pass records are not its operator's
-    problem; the boot goes through and the organize tick is scheduled.
+    problem; the boot goes through and the grooming pass is scheduled.
     """
     dispatch_only = MARKER_PURPOSES_BY_FAMILY["dispatch"] - (
         MARKER_PURPOSES_BY_FAMILY["scope"] | MARKER_PURPOSES_BY_FAMILY["audit"]
@@ -993,7 +989,6 @@ async def test_a_prefix_only_an_unwired_pass_asks_for_does_not_refuse_the_boot(
         runner=FakeAgentRunner(events=[]),
         operation=operation,
         organize=STANDING_SCOPE_SETTINGS["organize"],
-        agent=HOST_MCP_ALLOWED,
         write_back=STANDING_SCOPE_SETTINGS["write_back"],
         fire_prep_pass_gate_signals=[],
         grooming_pass_gate_signals=[],
@@ -1030,15 +1025,6 @@ async def test_the_shipped_example_declares_every_prefix_the_wired_passes_ask_fo
 # ---------------------------------------------------------------------------
 
 
-def _organize_tick(runtime: DispatchRuntime) -> ScheduledPass:
-    """The one scheduled organize tick, under its own name."""
-    ticks = [
-        entry for entry in runtime.scheduler.passes if entry.name == ORGANIZE_TICK_NAME
-    ]
-    assert len(ticks) == 1
-    return ticks[0]
-
-
 def _not_configured(logs: Sequence[Mapping[str, object]]) -> dict[str, object]:
     """Each pass boot named as not configured, and the settings it named."""
     return {
@@ -1046,76 +1032,6 @@ def _not_configured(logs: Sequence[Mapping[str, object]]) -> dict[str, object]:
         for entry in logs
         if entry["event"] == "scheduled_pass_not_configured"
     }
-
-
-async def test_the_organize_tick_is_not_scheduled_without_its_own_interval(
-    tmp_path: Path,
-) -> None:
-    """No other pass's cadence stands in for the tick's: grooming's is set here.
-
-    A set grooming cadence schedules the grooming pass, and only that.
-    """
-    with structlog.testing.capture_logs() as logs:
-        runtime = await _runtime(
-            tmp_path,
-            tracker=approving_board(),
-            runner=FakeAgentRunner(events=[]),
-            operation=standing_scope_operation(),
-            organize=ORGANIZE_BOUNDS,
-            agent=HOST_MCP_ALLOWED,
-            write_back=STANDING_SCOPE_SETTINGS["write_back"],
-            fire_prep_pass_gate_signals=[],
-            grooming_pass_gate_signals=[],
-        )
-
-    assert _config(tmp_path).grooming_pass_interval_seconds == GROOMING_INTERVAL
-    names = [entry.name for entry in runtime.scheduler.passes]
-    assert ORGANIZE_TICK_NAME not in names
-    assert PromptKey.GROOMING_PASS.value in names
-    assert _not_configured(logs)["organize"] == [
-        "KODEZART_ORGANIZE__INTERVAL_SECONDS",
-        "KODEZART_ORGANIZE__TIMEOUT_SECONDS",
-    ]
-
-
-async def test_with_only_the_organize_interval_set_the_tick_alone_runs_at_it(
-    tmp_path: Path,
-) -> None:
-    """The tick takes the organize settings, and nothing else is scheduled.
-
-    Measured 2026-09-24: the operator's grooming cadence is six hours, and
-    the tick scheduled under it made a triaged scope wait that long for its
-    groom phase. The tick now runs on its own numbers only, and the grooming
-    pass, unset, is not scheduled at all.
-    """
-    runtime = await _runtime(
-        tmp_path,
-        tracker=approving_board(),
-        runner=FakeAgentRunner(events=[]),
-        operation=standing_scope_operation(),
-        organize=STANDING_SCOPE_SETTINGS["organize"],
-        agent=HOST_MCP_ALLOWED,
-        write_back=STANDING_SCOPE_SETTINGS["write_back"],
-        fire_prep_pass_gate_signals=[],
-        grooming_pass_gate_signals=[],
-        dispatch_pass_interval_seconds=None,
-        dispatch_pass_timeout_seconds=None,
-        fire_prep_pass_interval_seconds=None,
-        fire_prep_pass_timeout_seconds=None,
-        grooming_pass_interval_seconds=None,
-        grooming_pass_timeout_seconds=None,
-        supervisor_pass_interval_seconds=None,
-        supervisor_pass_timeout_seconds=None,
-    )
-
-    tick = _organize_tick(runtime)
-    assert (tick.interval_seconds, tick.timeout_seconds) == (
-        ORGANIZE_INTERVAL,
-        ORGANIZE_TIMEOUT,
-    )
-    assert [entry.name for entry in runtime.scheduler.passes] == [ORGANIZE_TICK_NAME]
-    config = _config(tmp_path, **{**STANDING_SCOPE_SETTINGS, **NO_CADENCE})
-    assert PromptKey.GROOMING_PASS not in prompt_pass_schedule(config)
 
 
 async def test_with_no_cadence_set_a_per_issue_deployment_schedules_nothing(
@@ -1177,7 +1093,6 @@ async def test_with_no_cadence_set_a_scope_deployment_schedules_nothing(
             operation=standing_scope_operation(),
             organize=ORGANIZE_BOUNDS,
             dispatch_workflow=DispatchWorkflow.SCOPE,
-            agent=HOST_MCP_ALLOWED,
             write_back=STANDING_SCOPE_SETTINGS["write_back"],
             fire_prep_pass_gate_signals=[],
             grooming_pass_gate_signals=[],
@@ -1193,7 +1108,6 @@ async def test_with_no_cadence_set_a_scope_deployment_schedules_nothing(
 
     assert runtime.scheduler.passes == ()
     assert set(_not_configured(logs)) == {
-        ORGANIZE_TICK_NAME,
         HEARTBEAT_PASS,
         "supervisor",
         "audit",
@@ -1225,7 +1139,6 @@ async def test_with_no_cadence_set_a_scope_deployment_schedules_nothing(
             "KODEZART_SUPERVISOR_PASS_INTERVAL_SECONDS",
             "KODEZART_SUPERVISOR_PASS_TIMEOUT_SECONDS",
         ),
-        ("KODEZART_ORGANIZE__INTERVAL_SECONDS", "KODEZART_ORGANIZE__TIMEOUT_SECONDS"),
         ("KODEZART_AUDIT_SWEEP_INTERVAL_SECONDS", "KODEZART_AUDIT__TIMEOUT_SECONDS"),
     ],
 )

@@ -133,25 +133,11 @@ def test_each_resolved_row_carries_what_a_phase_branch_used_to_select():
             phase.role.marks_execution_stage,
             phase.role.runs_under_approval,
             phase.role.write_surfaces,
+            phase.role.prompt_phase,
             phase.marker_source,
         )
         for phase in phases
     ] == [
-        (
-            "groom",
-            PromptKey.ORGANIZE_AUTHOR,
-            False,
-            False,
-            False,
-            frozenset(
-                {
-                    SurfaceKind.ISSUE_GRAPH,
-                    SurfaceKind.ISSUE_DESCRIPTION,
-                    SurfaceKind.ISSUE_LABEL_SET,
-                }
-            ),
-            "organize_mandates.groom.terminal_marker_key",
-        ),
         (
             "ticket",
             PromptKey.ORGANIZE_AUTHOR,
@@ -165,6 +151,7 @@ def test_each_resolved_row_carries_what_a_phase_branch_used_to_select():
                     SurfaceKind.ISSUE_LABEL_SET,
                 }
             ),
+            "phase_ticket",
             "organize_mandates.ticket.terminal_marker_key",
         ),
         (
@@ -174,6 +161,7 @@ def test_each_resolved_row_carries_what_a_phase_branch_used_to_select():
             True,
             True,
             frozenset({SurfaceKind.CRITERION_CHILD_SET, SurfaceKind.ISSUE_LABEL_SET}),
+            "phase_criteria",
             "organize_mandates.criteria.terminal_marker_key",
         ),
     ]
@@ -186,17 +174,17 @@ def test_each_resolved_row_carries_what_a_phase_branch_used_to_select():
         "ROLES = {MandateKind.CRITERIA: 'criteria_author'}\n",
         "def marker(kind):\n"
         "    match kind:\n"
-        "        case MandateKind.GROOM:\n"
-        "            return 'groomed'\n",
-        "def marker(kind):\n    return [MandateKind.GROOM, MandateKind.TICKET]\n",
-        "class Phases:\n    first = MandateKind.GROOM\n",
+        "        case MandateKind.CRITERIA:\n"
+        "            return 'criteria'\n",
+        "def marker(kind):\n    return [MandateKind.CRITERIA, MandateKind.TICKET]\n",
+        "class Phases:\n    first = MandateKind.TICKET\n",
         "def author(kind):\n    return kind == MandateKind('ticket')\n",
         "def author(kind):\n    return kind == MandateKind['TICKET']\n",
         "def outer():\n"
         "    def inner(kind):\n"
         "        return kind is MandateKind.CRITERIA\n"
         "    return inner\n",
-        "def author(kind, table={MandateKind.GROOM: 1}):\n    return table[kind]\n",
+        "def author(kind, table={MandateKind.CRITERIA: 1}):\n    return table[kind]\n",
     ],
 )
 def test_every_construction_that_singles_a_phase_out_is_reported(body):
@@ -238,7 +226,7 @@ def test_one_scope_that_branches_twice_is_one_site_and_two_scopes_are_two():
     source = (
         "from kodezart.types.domain.organize import MandateKind\n"
         "def author(kind):\n"
-        "    if kind is MandateKind.GROOM:\n"
+        "    if kind is MandateKind.TICKET:\n"
         "        return 'author'\n"
         "    return kind is MandateKind.CRITERIA\n"
         "def marker(kind):\n"
@@ -250,7 +238,7 @@ def test_one_scope_that_branches_twice_is_one_site_and_two_scopes_are_two():
 def test_a_module_level_table_and_a_module_level_branch_are_separate_sites():
     source = (
         "from kodezart.types.domain.organize import MandateKind\n"
-        "ROLES = {MandateKind.GROOM: 0, MandateKind.TICKET: 1}\n"
+        "ROLES = {MandateKind.TICKET: 0, MandateKind.CRITERIA: 1}\n"
         "FIRST = MandateKind.CRITERIA\n"
     )
     assert len(_sites(ast.parse(source))) == 2
@@ -261,9 +249,8 @@ def test_tree_guard_accepts_one_table_and_rejects_a_second_site(tmp_path, monkey
     table.write_text(
         "from kodezart.types.domain.organize import MandateKind\n"
         "ROLES = {\n"
-        "    MandateKind.GROOM: 0,\n"
-        "    MandateKind.TICKET: 1,\n"
-        "    MandateKind.CRITERIA: 2,\n"
+        "    MandateKind.TICKET: 0,\n"
+        "    MandateKind.CRITERIA: 1,\n"
         "}\n"
     )
     assert _dispatch_sites(tmp_path) == {"table.py": ["line 2"]}

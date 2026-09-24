@@ -13,7 +13,6 @@ from pathlib import Path
 from kodezart.adapters.no_forge_delivery import NoForgeDeliveryProbe
 from kodezart.composition.audit import build_audit_pass, verify_audit_configuration
 from kodezart.composition.organize import (
-    build_organize_tick,
     build_scope_heartbeat,
     verify_organize_configuration,
     verify_organize_session_tools,
@@ -55,7 +54,6 @@ from kodezart.services.dispatch_pass import GatedDispatchPass
 from kodezart.services.fire_context import FireContextAssembler
 from kodezart.services.fire_dispatcher import FireDispatcher, LaneCooldown
 from kodezart.services.lifecycle_watcher import FireReport, LifecycleWatcher
-from kodezart.services.organize_tick import OrganizeTick
 from kodezart.services.pass_gate import PassGate
 from kodezart.services.pass_scheduler import PassScheduler, ScheduledPass
 from kodezart.services.prompt_pass import pass_render_bindings, run_prompt_pass
@@ -84,9 +82,6 @@ _DISPATCH_NAME = "dispatch"
 #: are not a per-repository roster and a pass per repository would ask the
 #: same approval question once per binding that repository happens to hold.
 _HEARTBEAT_NAME = "scope_heartbeat"
-#: The organize tick's own name: it runs beside the grooming pass, never under
-#: its name (owner, 2026-09-24).
-ORGANIZE_TICK_NAME = "organize"
 
 
 @dataclass(frozen=True)
@@ -313,8 +308,8 @@ def absent_roster(operation: OperationConfig) -> tuple[str, ...]:
 def runs_scope_flow(operation: OperationConfig) -> bool:
     """Whether this operation declares scopes the scope flow works on.
 
-    A declared scope turns the scope flow ON: the organize tick, the standing
-    scopes' heartbeat, the supervisor and the audit read the same rows. It
+    A declared scope turns the scope flow ON: the standing scopes' heartbeat,
+    the supervisor and the audit read the same rows. It
     turns nothing else off. Whether any other job runs is its cadence pair
     (KOD-1238); where it works is the declared teams and repositories, a team
     narrowed by the projects it names. Until 2026-09-24 this predicate also
@@ -353,9 +348,9 @@ def scope_passes_wire(
 ) -> bool:
     """Whether the scope passes wire here: a dialled tracker and declared scopes.
 
-    Three passes stand or fall on this one answer — the organize tick, the
-    standing scopes' heartbeat and the supervisor tick — because all three
-    read the same declared rows.
+    Two passes stand or fall on this one answer — the standing scopes'
+    heartbeat and the supervisor tick — because both read the same declared
+    rows.
     """
     return tracker_present and operation is not None and runs_scope_flow(operation)
 
@@ -365,9 +360,9 @@ def scope_passes_wire(
 #: ``_prefix("...")`` and ``*_PURPOSE`` site under ``src`` and the port
 #: methods behind them; a purpose asked some other way is a hole here.
 #:
-#: ``scope`` is the organize tick, the scope runs its heartbeat submits and
-#: the supervisor tick: ``claim`` on every leased write (the surface lease
-#: the organize tick releases was the first live refusal), ``issue_identity``
+#: ``scope`` is the scope runs the heartbeat submits and the supervisor
+#: tick: ``claim`` on every leased write (the surface lease a stage releases
+#: was the first live refusal), ``issue_identity``
 #: on description edits and split creation, ``work_ref`` on a lane's base,
 #: ``run_state`` and ``run_event`` on the lane record, ``ruling``,
 #: ``escalation`` and ``decision`` on the questions a run raises and reads
@@ -506,37 +501,18 @@ async def build_prompt_passes(
     runner: AgentRunner,
     skills: SkillsSelection,
     recorder: RunRecorder,
-    organize: OrganizeTick | None,
 ) -> list[ScheduledPass]:
-    """Bind the configured Organize owner and remaining legacy prompt passes.
+    """Bind the two prompt passes: the intake over the declared boards.
 
-    Organize runs under its own name, its own cadence settings and its own
-    record kind — it never writes into the grooming log — with its own fresh
-    scope reads and explicit repository bindings, and is scheduled FIRST so a
-    deployment that keeps nothing else keeps it. Every pass here whose cadence
-    is unset is not scheduled and is named as such.
-
-    The two prompt passes scan the declared boards on their own cadence pairs
-    beside it, scope or no scope: they wire wherever the roster renders
-    (:func:`session_passes_wire`). Preflight validates exactly those active rows.
+    Each scans the declared boards on its own cadence pair, scope or no
+    scope: they wire wherever the roster renders
+    (:func:`session_passes_wire`). Every pass here whose cadence is unset is
+    not scheduled and is named as such. Preflight validates exactly those
+    active rows.
     """
     log: BoundLogger = get_logger(__name__)
     schedule = prompt_pass_schedule(config)
     scheduled: list[ScheduledPass] = []
-    if organize is not None:
-        cadence = config.pass_cadence("organize")
-        if cadence is None:
-            await _log_not_configured(log, name=ORGANIZE_TICK_NAME, cadence="organize")
-        else:
-            scheduled.append(
-                ScheduledPass(
-                    name=ORGANIZE_TICK_NAME,
-                    interval_seconds=cadence.interval_seconds,
-                    timeout_seconds=cadence.timeout_seconds,
-                    run=organize.run,
-                    report=run_report(recorder, RunKind.ORGANIZE, ORGANIZE_TICK_NAME),
-                )
-            )
     absent = absent_roster(operation)
     if absent:
         # One reason: a roster a template could not render over. An operator
@@ -861,14 +837,6 @@ def _session_running(kind: RunKind) -> SessionType:
             return SessionType.SCHEDULED_PASS
         case RunKind.FIRE:
             return SessionType.TICKET_FIRE
-        case RunKind.ORGANIZE:
-            return SessionType.ORGANIZE_PASS
-
-
-#: The kinds whose record is the runner's structural row alone: no session
-#: is told to write a prose row into it, so declaring its destination in the
-#: knowledge system asks nothing of any session's grant.
-STRUCTURAL_ONLY_KINDS: frozenset[RunKind] = frozenset({RunKind.ORGANIZE})
 
 
 def _knowledge_surfaces(operation: OperationConfig) -> list[tuple[str, SessionType]]:
@@ -894,7 +862,6 @@ def _knowledge_surfaces(operation: OperationConfig) -> list[tuple[str, SessionTy
         (f"records.{key} ({entry.name})", _session_running(RunKind(key)))
         for key, entry in operation.records.items()
         if entry.system is DocumentSystem.KNOWLEDGE
-        and RunKind(key) not in STRUCTURAL_ONLY_KINDS
     )
     surfaces.extend(
         (f"knowledge.{key} ({title})", SessionType.SCHEDULED_PASS)
@@ -1154,8 +1121,8 @@ async def build_dispatch_runtime(
     # operator to deduce it from a schedule with no supervisor in it. The
     # roster question is the one predicate that already answers "does this
     # deployment work scope by scope", read off the same copy every other arm
-    # here reads: a tick observing rows the organize tick never grooms would
-    # be this factory holding two opinions about one operation.
+    # here reads: a tick observing rows the heartbeat never submits would be
+    # this factory holding two opinions about one operation.
     if not scope_passes_wire(operation, tracker_present=dialled is not None):
         await log.ainfo(
             "supervisor_pass_not_wired",
@@ -1196,24 +1163,13 @@ async def build_dispatch_runtime(
                 runner=runner,
                 skills=skills,
                 recorder=recorder,
-                organize=build_organize_tick(
-                    config=config,
-                    operation=operation,
-                    tracker=None if dialled is None else dialled.tracker,
-                    runner=runner,
-                    workspace=workspace,
-                    git=git,
-                    prompts=prompts,
-                    skills=skills,
-                ),
             ),
         )
-        # The standing scopes' own pass, beside the tick that grooms them: a
-        # deployment that declares the rows gets the pre-approval tick, and
-        # the submission of what approval admits when the dispatch workflow
-        # setting selects it.  On the dispatch cadence, because it is that
-        # cadence's other workflow, and with no report: it opens no session,
-        # so a tick of it is not a run that could be recorded.
+        # The standing scopes' own pass: a deployment that declares the rows
+        # gets the submission of what approval admits when the dispatch
+        # workflow setting selects it.  On the dispatch cadence, because it is
+        # that cadence's other workflow, and with no report: it opens no
+        # session, so a tick of it is not a run that could be recorded.
         heartbeat = build_scope_heartbeat(
             config=config,
             operation=operation,

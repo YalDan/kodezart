@@ -23,13 +23,8 @@ def test_operation_binding_contains_resolved_phase_metadata():
     bindings = operation_bindings(declared_operation())
     assert bindings["organize_mandates"] == [
         {
-            "kind": "groom",
-            "gate_label": "candidate scope",
-            "terminal_marker": "graph complete",
-        },
-        {
             "kind": "ticket",
-            "gate_label": "graph complete",
+            "gate_label": "approved scope",
             "terminal_marker": "body complete",
         },
         {
@@ -57,8 +52,7 @@ def test_grooming_consumes_the_declared_or_absent_phase_table(prompt_set, declar
     )
     if declared:
         for line in (
-            "groom: gate `candidate scope`, completion `graph complete`.",
-            "ticket: gate `graph complete`, completion `body complete`.",
+            "ticket: gate `approved scope`, completion `body complete`.",
             "criteria: gate `body complete`, completion `criteria complete`.",
         ):
             assert line in rendered
@@ -70,7 +64,7 @@ def test_grooming_consumes_the_declared_or_absent_phase_table(prompt_set, declar
             "do not infer phase completion from labels or invent phase mappings"
             in rendered
         )
-        assert "completion `graph complete`" not in rendered
+        assert "completion `body complete`" not in rendered
         bindings = operation_bindings(operation)
         assert bindings["organize_mandates"] is None
         assert bindings["organize_mandates_absent"] is True

@@ -1,8 +1,13 @@
 # Running a scope
 
-A scope run works a whole scope: a person approves it, the organize step maps
-its workflow into lanes and criteria, and the walker runs the lanes one at a
-time, re-reading the board before every fire.
+A scope run works a whole scope. On the board a scope is a project or an
+initiative moving through three labels: `scope:triage`, which the grooming and
+fire-prep passes work like every other issue on the board; `scope:proposed`,
+which those passes set once every member is groomed and fire-ready; and
+`scope:approved`, which a person sets. Approval starts the run: the ticket
+stage, the criteria stage, the plan, the walk, and the pull requests the lanes
+open. The walker runs the lanes one at a time, re-reading the board before
+every fire.
 
 ## What a scope run is, and what it is not
 
@@ -84,10 +89,11 @@ without the member it stands over. This page prints no config block of its own,
 because a copy here is a copy that goes stale.
 
 Two things about that file are worth saying twice. Declaring
-`[[organize_scopes]]` is what makes a deployment a scope deployment: the
-per-issue dispatch pass and the two remaining prompt passes scan whole boards
-and are not scheduled at all. And declaring `[[organize_mandates]]` without an
-`[[organize_scopes]]` row is a partial organize configuration, refused at boot.
+`[[organize_scopes]]` is what makes a deployment a scope deployment, and it
+switches nothing else off: the per-issue dispatch pass and the two prompt
+passes run on their own cadence pairs over the declared boards beside it. And
+declaring `[[organize_mandates]]` without an `[[organize_scopes]]` row is a
+partial organize configuration, refused at boot.
 
 ## The environment
 
@@ -98,14 +104,11 @@ export KODEZART_OPERATION_CONFIG=/path/to/operation.scope.toml
 export KODEZART_ORGANIZE__MAX_ADMISSION_ROUNDS=2
 export KODEZART_ORGANIZE__MAX_CONVERGENCE_ROUNDS=2
 export KODEZART_WRITE_BACK__MAX_VERIFY_ROUNDS=3
-export KODEZART_ORGANIZE__INTERVAL_SECONDS=3600
-export KODEZART_ORGANIZE__TIMEOUT_SECONDS=1800
 export KODEZART_DISPATCH_PASS_INTERVAL_SECONDS=300
 export KODEZART_DISPATCH_PASS_TIMEOUT_SECONDS=240
 export KODEZART_SUPERVISOR_PASS_INTERVAL_SECONDS=300
 export KODEZART_SUPERVISOR_PASS_TIMEOUT_SECONDS=120
 export KODEZART_DISPATCH_WORKFLOW=scope
-export KODEZART_AGENT__DANGEROUSLY_ALLOW_HOST_MCP=true
 ```
 
 `KODEZART_DISPATCH_WORKFLOW=scope` points the dispatch cadence at the standing
@@ -115,36 +118,36 @@ and the same pair drives the per-issue passes over the declared team's board
 instead, with the heartbeat left out; either way boot names the one it left out
 with `scheduled_pass_not_selected`.
 
-The last line is what lets the organize stage's sessions reach the tracker:
-each phase is one agent session that works the board with the tracker tools
-the host attaches, under the host's own stored login, and with the flag off it
-has no tracker tools at all, so boot refuses with
+The tracker credential is what lets the organize stages' sessions reach the
+tracker: each stage is one agent session that works the board with the
+deployment's own tracker server, described to it from
+`KODEZART_TRACKER__TOKEN` exactly as it is to the grooming and fire-prep
+sessions, and never a login the host holds. Without the credential a session
+has no tracker tools at all, so a scope deployment refuses to boot with
 `OrganizeTrackerCapabilityError` rather than open sessions that cannot touch
-the board. Read what the flag opens in
-[`docs/configuration.md`](configuration.md) before setting it.
+the board.
 
 Leave `KODEZART_CHECKPOINT_URL` unset. Setting it builds a checkpointer, and
 what that checkpointer reaches is the authored HTTP workflow, the ticket
 generator and the job service's run-state reader — none of which a scope run
 enters. A scope deployment needs no database.
 
-Two paths reach the tracker, and the operation config describes one of them.
-kodezart's own passes — the organize tick, the scope runs its heartbeat
-submits, the observation tick and the audit pass — write through the tracker
-dialled with `KODEZART_TRACKER__TOKEN`; the marker prefixes, labels and states
-in the operation config apply to those writes, and boot checks the prefixes.
-The grooming and fire-prep sessions are given the deployment's own tracker
-server — the same URL and key — so what they write carries this deployment's
-key and counts against its budget. The organize session is the exception: it
-reaches the tracker through the host's own MCP servers (the opt-in above),
-under the host's stored login and its own rate budget; the operation config
-does not describe that path, and the boot check does not cover it.
+One credential reaches the tracker. kodezart's own passes — the scope runs
+the heartbeat submits, the observation tick and the audit pass — write through
+the tracker dialled with `KODEZART_TRACKER__TOKEN`; the marker prefixes,
+labels and states in the operation config apply to those writes, and boot
+checks the prefixes. Every session that touches the board — the grooming and
+fire-prep sessions, and a scope run's organize stage sessions — is given the
+deployment's own tracker server, the same URL and key, so what a session
+writes carries this deployment's key and counts against its budget. No
+session runs on a login the host holds.
 
 None of the values above has a default, so each one is a choice you make rather
-than a value that appears. The last six are the cadences: the organize tick's,
-the dispatch pair (the per-issue dispatch pass and the standing scopes'
-heartbeat both run on it) and the observation tick's, each an interval and a
-timeout. The fire-prep and grooming session passes have pairs of their own,
+than a value that appears. The last four are the cadences: the dispatch pair
+(the per-issue dispatch pass and the standing scopes' heartbeat both run on
+it) and the observation tick's, each an interval and a timeout. There is no
+organize cadence: the stages run inside the run the heartbeat submits. The
+fire-prep and grooming session passes have pairs of their own,
 `KODEZART_FIRE_PREP_PASS_INTERVAL_SECONDS`/`_TIMEOUT_SECONDS` and the grooming
 two; set them and both passes run over the declared team's board beside the
 scope passes. A pass whose interval is
@@ -175,13 +178,13 @@ limit well above the longest walk you expect, not above one CI wait.
   it. That pass is not scheduled.
 - `pass_scheduler_started` — the scheduler is running, naming each pass it
   carries and that pass's interval. With the environment above that is the
-  observation tick, the organize tick and the standing scopes' heartbeat — each
-  one whose cadence pair is set; the per-issue dispatch pass is named by
+  observation tick and the standing scopes' heartbeat — each one whose cadence
+  pair is set; the per-issue dispatch pass is named by
   `scheduled_pass_not_selected`, and the fire-prep and grooming passes by
-  `scheduled_pass_not_configured` until their pairs are. The organize tick's
-  interval is `KODEZART_ORGANIZE__INTERVAL_SECONDS` and nothing else. The
-  fire-prep and grooming passes, when their pairs are set, run their first
-  tick at boot; every other pass sleeps one interval before its first tick.
+  `scheduled_pass_not_configured` until their pairs are. No pass named
+  organize appears anywhere: boot knows none. The fire-prep and grooming
+  passes, when their pairs are set, run their first tick at boot; every other
+  pass sleeps one interval before its first tick.
 
 Neither "not wired" line appears here: the roster, the tracker and the forge
 token are all present, so every pass whose cadence pair is set is scheduled. A
@@ -189,8 +192,19 @@ declared scope switches no pass off; leaving its pair unset does.
 
 ## Starting a run
 
-Apply the approval label your config names to the project. That is the human
-act; nothing here performs it.
+A scope reaches the run through the board. Label the project `scope:triage`
+and the grooming and fire-prep passes work it on their cadences like every
+other issue in the declared teams: they groom its members, prepare each one as
+a fire, and set `scope:proposed` on the project once every member is groomed
+and fire-ready; while any member is not, the project keeps `scope:triage`.
+Then apply the approval label your config names to the project. That is the
+human act; nothing here performs it, and neither pass ever sets it.
+
+Approval admits the run, and the run is: the ticket stage, which gates on the
+approval itself and gives every lane a complete body; the criteria stage,
+which gives every lane its criterion sub-issues; the plan, which reads the
+blocking edges into lanes; the walk, which fires the ready lanes one at a
+time; and the pull request each lane opens. Nothing merges.
 
 Then post the scope to the workflow endpoint with the project as the scope and
 the declared repository as the origin:
@@ -262,7 +276,7 @@ names the member and what it stops.
 | `marker_prefixes.claim`, `marker_prefixes.work_ref`, `marker_prefixes.issue_identity`, `marker_prefixes.run_state`, `marker_prefixes.run_event`, `marker_prefixes.amendment`, `marker_prefixes.ruling`, `marker_prefixes.escalation`, `marker_prefixes.decision`, `marker_prefixes.run_alarm`, and with the audit pass configured `marker_prefixes.audit` and `marker_prefixes.repository` | boot, before the scheduler starts: every key a pass this deployment schedules can ask for is checked, and every missing one is named at once | `OperationMemberAbsentError` |
 | `workflow_states.done` | loading the file once the table is declared; with no table, the first cross-off, after a session and a commit | `OperationConfigError`, `TrackerProtocolError` |
 | `write_back.max_verify_rounds` | boot, before the scheduler starts, as the write_back section a configured organize owner requires | `OperationMemberAbsentError` |
-| `KODEZART_AGENT__DANGEROUSLY_ALLOW_HOST_MCP` | boot, before the scheduler starts, on a deployment that declares `[[organize_scopes]]`: off, the organize session cannot reach the tracker | `OrganizeTrackerCapabilityError` |
+| `KODEZART_TRACKER__TOKEN` | boot, before the scheduler starts, on a deployment that declares `[[organize_scopes]]`: unset, the organize stage session has no tracker server to reach the board with | `OrganizeTrackerCapabilityError` |
 | the declared repository | matching the request's origin, before the first read | `ScopeReadError` |
 | the forge token | selecting a delivery reader for the origin | `ScopedExecutionUnavailableError` |
 | the criterion's team | taking a refuted criterion back | `CriterionReadError` |
@@ -299,7 +313,7 @@ uv run python -m tests.tools.scratch_scope plant-false-done --criterion … --sh
 Every target argument is required and none has a default, so a board nobody
 typed cannot be written to.
 
-The organize tick finds nothing to do on a freshly built scratch board until its
-first phase gate is satisfied, which is the triage label on the project. Nothing
-on this page applies the approval label for you, and the builder never applies
-one either.
+A freshly built scratch board is the grooming and fire-prep passes' to work
+until the project carries the approval label; the run's stages find nothing to
+do before it. Nothing on this page applies the approval label for you, and the
+builder never applies one either.

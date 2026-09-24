@@ -127,7 +127,6 @@ EXTENDED_CASES: dict[str, tuple[PromptKey, dict[str, object]]] = {
     "organize_author": (PromptKey.ORGANIZE_AUTHOR, ORGANIZE_CASE),
     "organize_verify": (PromptKey.ORGANIZE_VERIFY, ORGANIZE_CASE),
     "organize_criteria_author": (PromptKey.ORGANIZE_CRITERIA_AUTHOR, ORGANIZE_CASE),
-    "organize_groom_rubric": (PromptKey.ORGANIZE_GROOM_RUBRIC, {}),
     "organize_spec_rubric": (PromptKey.ORGANIZE_SPEC_RUBRIC, {}),
     #: services/organize_session_owner.py ``render``: the scope, the phase's
     #: marker, the members that owe it and which phase's rubric runs.
@@ -139,11 +138,9 @@ EXTENDED_CASES: dict[str, tuple[PromptKey, dict[str, object]]] = {
             "scope_issue": None,
             "scope_initiative": None,
             "scope_milestone": None,
-            "phase_marker": "graph complete",
+            "phase_marker": "body complete",
             "owed_members": ("external/42", "external/43"),
-            "phase_groom": True,
-            "phase_ticket": None,
-            "phase_criteria": None,
+            "phase_ticket": True,
         },
     ),
     "content_audit": (

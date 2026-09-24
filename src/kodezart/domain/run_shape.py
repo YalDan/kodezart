@@ -485,7 +485,6 @@ def barren_tick_with_diff_growth(
     return None
 
 
-GROOM_MARKER_SOURCE = phase_marker_source("groom")
 TICKET_MARKER_SOURCE = phase_marker_source("ticket")
 CRITERIA_MARKER_SOURCE = phase_marker_source("criteria")
 
@@ -617,13 +616,15 @@ def _scope_tally_unmoved(
     raised_at_sha: str,
     raised_by: str,
 ) -> RunAlarm | None:
-    """Observe a configured adjacent ORGANIZE marker barrier over its roster.
+    """Observe the one adjacent ORGANIZE marker barrier over its roster.
 
-    Readings retain two qualified configuration keys, the native scope
-    address, its ORGANIZE work-target keys, then per-member semantic label
-    sets. An absent member reading or a absent label set counts as open;
-    malformed or foreign readings refuse. The execution-entry event reader
-    is not implemented by substituting other tracker facts.
+    Readings retain two qualified configuration keys — the ticket stage's
+    marker source, then the criteria stage's, the one governed transition
+    the table has — the native scope address, its ORGANIZE work-target keys,
+    then per-member semantic label sets. An absent member reading or a
+    absent label set counts as open; malformed or foreign readings refuse.
+    The execution-entry event reader is not implemented by substituting
+    other tracker facts.
     """
     signal = AlarmSignal.TALLY_UNMOVED
     try:
@@ -632,10 +633,10 @@ def _scope_tally_unmoved(
         raise unreadable_reading(
             signal, subject.scope_key, "incomplete scope tally readings"
         ) from exc
-    if (current.source_ref, following.source_ref) not in {
-        (GROOM_MARKER_SOURCE, TICKET_MARKER_SOURCE),
-        (TICKET_MARKER_SOURCE, CRITERIA_MARKER_SOURCE),
-    }:
+    if (current.source_ref, following.source_ref) != (
+        TICKET_MARKER_SOURCE,
+        CRITERIA_MARKER_SOURCE,
+    ):
         raise unreadable_reading(
             signal, subject.scope_key, "wrong phase marker sources"
         )

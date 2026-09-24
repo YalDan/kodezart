@@ -31,9 +31,7 @@ from kodezart.types.domain.ticket_review import (
 
 #: The groups of cadence settings, one per scheduled pass; the scope
 #: heartbeat runs on the dispatch group.
-CadenceName = Literal[
-    "dispatch", "fire_prep", "grooming", "organize", "audit", "supervisor"
-]
+CadenceName = Literal["dispatch", "fire_prep", "grooming", "audit", "supervisor"]
 
 #: The two settings that schedule each pass: its interval, then its timeout.
 #: Neither has a default. A pass is scheduled when both are set and not at
@@ -51,10 +49,6 @@ CADENCE_SETTINGS: Final[dict[CadenceName, tuple[str, str]]] = {
     "grooming": (
         "KODEZART_GROOMING_PASS_INTERVAL_SECONDS",
         "KODEZART_GROOMING_PASS_TIMEOUT_SECONDS",
-    ),
-    "organize": (
-        "KODEZART_ORGANIZE__INTERVAL_SECONDS",
-        "KODEZART_ORGANIZE__TIMEOUT_SECONDS",
     ),
     "audit": (
         "KODEZART_AUDIT_SWEEP_INTERVAL_SECONDS",
@@ -859,10 +853,6 @@ class AppConfig(BaseSettings):
             "grooming": (
                 self.grooming_pass_interval_seconds,
                 self.grooming_pass_timeout_seconds,
-            ),
-            "organize": (
-                None if self.organize is None else self.organize.interval_seconds,
-                None if self.organize is None else self.organize.timeout_seconds,
             ),
             "audit": (
                 self.audit_sweep_interval_seconds,

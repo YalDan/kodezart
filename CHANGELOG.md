@@ -36,19 +36,36 @@ concerns.
   standing scopes' heartbeat (`KODEZART_DISPATCH_PASS_INTERVAL_SECONDS`,
   `KODEZART_DISPATCH_PASS_TIMEOUT_SECONDS`), fire preparation
   (`KODEZART_FIRE_PREP_PASS_*`), grooming (`KODEZART_GROOMING_PASS_*`), the
-  organize tick (`KODEZART_ORGANIZE__INTERVAL_SECONDS`,
-  `KODEZART_ORGANIZE__TIMEOUT_SECONDS`), the audit
-  (`KODEZART_AUDIT_SWEEP_INTERVAL_SECONDS` with `KODEZART_AUDIT__TIMEOUT_SECONDS`)
-  and the supervisor tick (`KODEZART_SUPERVISOR_PASS_*`) each run only when
-  their interval and timeout are both set; unset, the pass is not scheduled and
-  boot logs the new `scheduled_pass_not_configured` event naming the pass and
-  the two settings. One half of a pair without the other refuses at load naming
-  both (`config/app.py`, `CADENCE_SETTINGS`). The organize tick runs under the
-  grooming pass's name on its own two settings only; it no longer falls back to
-  the grooming cadence (`organize_tick_schedule` is removed). The
-  `audit_pass_not_wired` event is replaced by `scheduled_pass_not_configured`
-  for the audit. A deployment that relied on a default cadence must now set it;
-  see `docs/migration-v0.2-to-v0.3.md`.
+  audit (`KODEZART_AUDIT_SWEEP_INTERVAL_SECONDS` with
+  `KODEZART_AUDIT__TIMEOUT_SECONDS`) and the supervisor tick
+  (`KODEZART_SUPERVISOR_PASS_*`) each run only when their interval and timeout
+  are both set; unset, the pass is not scheduled and boot logs the new
+  `scheduled_pass_not_configured` event naming the pass and the two settings.
+  One half of a pair without the other refuses at load naming both
+  (`config/app.py`, `CADENCE_SETTINGS`). The `audit_pass_not_wired` event is
+  replaced by `scheduled_pass_not_configured` for the audit. A deployment that
+  relied on a default cadence must now set it; see
+  `docs/migration-v0.2-to-v0.3.md`.
+- Organizing a scope before approval is the grooming and fire-prep passes'
+  work, over the whole board like every other issue: a project or initiative
+  in the declared boundary carrying `scope_labels.triage` whose members are
+  every one groomed and fire-ready gets `scope_labels.proposed` from those
+  passes (`prompts/sets/anthropic_v5/grooming_pass.md`, `fire_prep_pass.md`);
+  the grooming pass also flags target dates out of order with the graph.
+  `scope_labels.approved` stays the one human act, and it is what the run's
+  first stage now gates on: the shipped `ticket` row's `gate_label_key` is
+  `scope_labels.approved` (`docs/operation.scope.toml`). Every organize table
+  row runs inside the approved scope run; `MandatePhaseRole` gains
+  `prompt_phase`, the binding the organize session prompt selects the stage's
+  rubric by, so the session owner dispatches on no mandate kind.
+- A scope run's organize stage sessions (`SessionType.ORGANIZE_PASS`) are
+  described the deployment's own tracker server, as the grooming and fire-prep
+  sessions are (`adapters/mcp/mapping.py`, `BOARD_SESSION_TYPES`): every
+  session that touches the tracker runs on kodezart's own connection, never on
+  a login the host holds. `OrganizeTrackerCapabilityError` is raised at boot
+  when a deployment declaring `[[organize_scopes]]` has no
+  `KODEZART_TRACKER__TOKEN`; `KODEZART_AGENT__DANGEROUSLY_ALLOW_HOST_MCP` is
+  no longer required by anything organize-related.
 - Boot checks `[marker_prefixes]` against every purpose a pass it schedules can
   ask for and refuses naming every missing key at once
   (`composition/passes.py`, `wired_marker_purposes`). A purpose only an unwired
@@ -60,12 +77,11 @@ concerns.
   `ScopedExecutionUnavailableError` names the absence of a scoped arm or of a
   delivery reader for the origin. The README's stale paragraph about claim
   acquisition being refused is deleted; claim acquisition is implemented.
-- An operation that declares `[[organize_scopes]]` schedules the organize tick
-  and the audit pass only. The periodic dispatch pass, the fire-prep and
-  grooming prompt passes and the lifecycle watcher are withheld, and the
-  existing `scheduled_passes_not_wired` and `prompt_passes_not_wired` events
-  each carry a new `organize_scopes_declared` boolean saying so. Boot probes no
-  gate signal and renders no template for a withheld pass.
+- An operation that declares `[[organize_scopes]]` schedules the scope passes
+  — the standing scopes' heartbeat, the supervisor tick and a configured audit
+  — and switches nothing else off: the periodic dispatch pass, the fire-prep
+  and grooming prompt passes and the lifecycle watcher are scheduled on their
+  own premises, each pass's cadence pair among them, scopes or no scopes.
 - A v0.2 operation file boots as it is (KOD-903), as the one exception to the
   no-fallback rule: `[[initiatives]]` is accepted and ignored, a file with no
   `[marker_prefixes]` table gets the markers v0.2 wrote for the per-issue path,
@@ -82,6 +98,21 @@ concerns.
 
 ### Removed
 
+- The organize tick. `services/organize_tick.py`, `build_organize_tick`, the
+  `organize` cadence (`KODEZART_ORGANIZE__INTERVAL_SECONDS`,
+  `KODEZART_ORGANIZE__TIMEOUT_SECONDS`; `OrganizeSettings` keeps the owner's
+  two bounds and refuses a cadence field) and the `organize` run kind with its
+  `[records.organize]` destination are gone. Boot knows no pass named
+  organize: `scheduled_pass_not_configured` never names it and
+  `pass_scheduler_started` never lists it. What the tick did before approval
+  is the grooming and fire-prep passes' work; the ticket and criteria stages
+  run inside the scope run the heartbeat submits.
+- The pre-approval `groom` phase. `MandateKind.GROOM`, its role row, the
+  `organize_groom_rubric` prompt role and its two template files, the
+  `phase_groom` prompt binding and the shipped `issue_labels.groomed` entry
+  are gone; an operation file declaring a `groom` row is refused at load
+  naming it. The supervisor's scope tally observes the one remaining barrier,
+  ticket to criteria.
 - The criterion class. `criterionClass` is gone from every criterion on the
   wire — `workflow_criteria.criteria[]` now carries `id` and `text`, while
   `.kodezart/criteria.json` entries also retain their `feasibility` evidence.

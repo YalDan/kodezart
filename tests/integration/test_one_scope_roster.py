@@ -1,7 +1,7 @@
-"""One declared scope roster serves the organize tick, the audit and the
-observation tick, and the keys it replaced are refused at load (KOD-885).
+"""One declared scope roster serves the audit and the observation tick, and
+the keys it replaced are refused at load (KOD-885).
 
-The composition cases go through the real factory rather than the three
+The composition cases go through the real factory rather than the two
 builders, because what the criterion is about is which table a BOOT reads: a
 builder handed a roster by a test proves only that the builder can read one.
 """
@@ -10,9 +10,7 @@ import pytest
 
 from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.composition import audit as audit_composition
-from kodezart.composition import organize as organize_composition
 from kodezart.composition import supervisor as supervisor_composition
-from kodezart.composition.passes import ORGANIZE_TICK_NAME
 from kodezart.core.errors import OperationConfigError
 from kodezart.types.domain.operation import OperationConfig, OrganizeScopeBinding
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
@@ -31,7 +29,6 @@ STRAY = ScopeRef(kind=ScopeKind.PROJECT, key="stray-project")
 #: the call site rather than at the definition, because the question is what
 #: THIS composition hands over.
 COMPOSED = {
-    "organize": (organize_composition, "OrganizeTarget", ORGANIZE_TICK_NAME),
     "audit": (audit_composition, "AuditTarget", "audit"),
     "supervisor": (supervisor_composition, "SupervisorPass", "supervisor"),
 }
@@ -47,16 +44,6 @@ def two_scope_deployment():
     scope-only comparison.
     """
     config, operation, server, tracker, forge = dependencies()
-    # The audit module's deployment sets no organize cadence; the tick is one
-    # of the three passes here, so its pair is set.
-    assert config.organize is not None
-    config = config.model_copy(
-        update={
-            "organize": config.organize.model_copy(
-                update={"interval_seconds": 300.0, "timeout_seconds": 120.0}
-            )
-        }
-    )
     fields = operation.model_dump()
     fields["organize_scopes"] = [
         *fields["organize_scopes"],
@@ -71,7 +58,7 @@ def two_scope_deployment():
 
 @pytest.mark.parametrize("pass_name", list(COMPOSED))
 async def test_each_pass_is_composed_from_the_one_roster(monkeypatch, pass_name):
-    """The registered pass holds exactly the declared rows, for each of the three.
+    """The registered pass holds exactly the declared rows, for each of the two.
 
     Recorded at the constructor the composition reaches for, so what is checked
     is the handover and not a re-derivation of it: a wrapper that recorded

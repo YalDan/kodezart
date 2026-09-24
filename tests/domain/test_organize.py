@@ -468,20 +468,24 @@ def test_admission_refusal_route_uses_kind_without_reading_tone(
 
 def mandate_fields(**overrides):
     return {
-        "kind": "groom",
-        "gate_label_key": "scope_labels.triage",
+        "kind": "ticket",
+        "gate_label_key": "scope_labels.approved",
         "rubric_prompt_key": "grooming_pass",
         "admission_prompt_key": "ticket_review",
-        "terminal_marker_key": "issue_labels.groomed",
+        "terminal_marker_key": "issue_labels.body",
         **overrides,
     }
 
 
-def test_mandate_kind_names_and_values_are_the_three_organize_phases():
+def test_mandate_kind_names_and_values_are_the_two_organize_stages():
+    """Both stages run inside the approved scope run; no pre-approval phase.
+
+    What a scope needs before approval is the grooming and fire-prep passes'
+    work over the whole board, so the table names no phase for it.
+    """
     from kodezart.types.domain.organize import MandateKind
 
     assert {member.name: member.value for member in MandateKind} == {
-        "GROOM": "groom",
         "TICKET": "ticket",
         "CRITERIA": "criteria",
     }
@@ -589,17 +593,11 @@ def mandate_operation_fields():
         "issue_labels": {
             "criterion": "check",
             "triage": "candidate issue",
-            "groomed": "graph complete",
             "body": "body complete",
             "criteria": "criteria complete",
         },
         "organize_mandates": [
             mandate_fields(),
-            mandate_fields(
-                kind="ticket",
-                gate_label_key="issue_labels.groomed",
-                terminal_marker_key="issue_labels.body",
-            ),
             mandate_fields(
                 kind="criteria",
                 gate_label_key="issue_labels.body",
@@ -618,8 +616,7 @@ def test_all_phase_references_resolve_to_operation_values_at_construction():
         (phase.spec.kind.value, phase.gate_label, phase.terminal_marker)
         for phase in phases
     ] == [
-        ("groom", "candidate scope", "graph complete"),
-        ("ticket", "graph complete", "body complete"),
+        ("ticket", "approved scope", "body complete"),
         ("criteria", "body complete", "criteria complete"),
     ]
     restored = OperationConfig.model_validate_json(operation.model_dump_json())
@@ -634,7 +631,7 @@ def test_absent_mandate_table_is_legal_without_any_label_mapping():
     assert operation.resolve_organize_mandates() == ()
 
 
-@pytest.mark.parametrize("missing", ["groom", "ticket", "criteria"])
+@pytest.mark.parametrize("missing", ["ticket", "criteria"])
 def test_a_declared_table_cannot_omit_a_phase(missing):
     from pydantic import ValidationError
 
@@ -654,12 +651,36 @@ def test_duplicate_phases_are_rejected_even_with_every_phase_present():
     from kodezart.types.domain.operation import OperationConfig
 
     fields = mandate_operation_fields()
-    fields["organize_mandates"].append(fields["organize_mandates"][1])
+    fields["organize_mandates"].append(fields["organize_mandates"][0])
     with pytest.raises(ValidationError, match="repeats phase 'ticket'"):
         OperationConfig.model_validate(fields)
 
 
-@pytest.mark.parametrize("phase", [0, 1, 2])
+def test_a_groom_row_is_refused_at_load_by_name():
+    """A file still declaring the retired pre-approval phase does not load.
+
+    The refusal names the row's kind rather than accepting it silently: what
+    a scope needs before approval is the intake passes' work, and a table
+    that says otherwise is a table for a workflow this version does not run.
+    """
+    from pydantic import ValidationError
+
+    from kodezart.types.domain.operation import OperationConfig
+
+    fields = mandate_operation_fields()
+    fields["organize_mandates"].insert(
+        0,
+        mandate_fields(
+            kind="groom",
+            gate_label_key="scope_labels.triage",
+            terminal_marker_key="issue_labels.body",
+        ),
+    )
+    with pytest.raises(ValidationError, match="groom"):
+        OperationConfig.model_validate(fields)
+
+
+@pytest.mark.parametrize("phase", [0, 1])
 @pytest.mark.parametrize("field", ["gate_label_key", "terminal_marker_key"])
 def test_unmapped_keys_fail_while_constructing_the_operation(phase, field):
     from pydantic import ValidationError
@@ -681,7 +702,7 @@ def test_all_bad_references_are_reported_in_the_same_load_error():
 
     fields = mandate_operation_fields()
     fields["organize_mandates"][0]["gate_label_key"] = "scope_labels.missing_gate"
-    fields["organize_mandates"][2]["terminal_marker_key"] = "issue_labels.missing_end"
+    fields["organize_mandates"][1]["terminal_marker_key"] = "issue_labels.missing_end"
     with pytest.raises(ValidationError) as caught:
         OperationConfig.model_validate(fields)
     assert "scope_labels.missing_gate" in str(caught.value)
@@ -705,25 +726,20 @@ def test_scope_approval_cannot_be_used_through_an_issue_label_alias(field):
 
     fields = mandate_operation_fields()
     fields["issue_labels"]["approval_alias"] = fields["scope_labels"]["approved"]
-    fields["organize_mandates"][1][field] = "issue_labels.approval_alias"
+    fields["organize_mandates"][0][field] = "issue_labels.approval_alias"
     with pytest.raises(ValidationError, match="scope approval, which ends organize"):
         OperationConfig.model_validate(fields)
 
 
 def test_scope_approval_gates_only_a_run_stage_and_never_marks_one():
-    """Approval admits a member to a run stage; it ends the pre-approval one.
+    """Approval admits a member to a run stage, by that exact reference.
 
-    So the row that runs before approval still cannot gate on it, and no row
-    may use it as a completion marker: nothing machine-written is approval.
+    Every row is a run stage, so either may gate on approval; no row may use
+    it as a completion marker: nothing machine-written is approval.
     """
     from pydantic import ValidationError
 
     from kodezart.types.domain.operation import OperationConfig
-
-    fields = mandate_operation_fields()
-    fields["organize_mandates"][0]["gate_label_key"] = "scope_labels.approved"
-    with pytest.raises(ValidationError, match="scope approval, which ends organize"):
-        OperationConfig.model_validate(fields)
 
     fields = mandate_operation_fields()
     fields["organize_mandates"][1]["gate_label_key"] = "scope_labels.approved"
@@ -732,17 +748,15 @@ def test_scope_approval_gates_only_a_run_stage_and_never_marks_one():
         (row.spec.kind.value, row.gate_label, row.role.runs_under_approval)
         for row in resolved
     ] == [
-        ("groom", "candidate scope", False),
         ("ticket", "approved scope", True),
-        ("criteria", "body complete", True),
+        ("criteria", "approved scope", True),
     ]
 
     # A run-stage row may name approval as its gate and still not as its
     # marker, including by an issue-label alias of the same label.
     fields = mandate_operation_fields()
     fields["issue_labels"]["approval_alias"] = fields["scope_labels"]["approved"]
-    fields["organize_mandates"][1]["gate_label_key"] = "scope_labels.approved"
-    fields["organize_mandates"][1]["terminal_marker_key"] = (
+    fields["organize_mandates"][0]["terminal_marker_key"] = (
         "issue_labels.approval_alias"
     )
     with pytest.raises(ValidationError, match="scope approval, which ends organize"):
@@ -755,7 +769,7 @@ def test_blank_scope_label_is_not_a_resolved_gate():
     from kodezart.types.domain.operation import OperationConfig
 
     fields = mandate_operation_fields()
-    fields["scope_labels"]["triage"] = " "
+    fields["scope_labels"]["approved"] = " "
     with pytest.raises(ValidationError, match="no nonempty mapping"):
         OperationConfig.model_validate(fields)
 
@@ -786,7 +800,7 @@ def test_normal_toml_loader_resolves_the_declared_phase_table(tmp_path):
     write_mandate_operation(path, mandate_operation_fields())
     operation = load_operation_config(path)
     assert (
-        operation.resolve_organize_mandates()[2].terminal_marker == "criteria complete"
+        operation.resolve_organize_mandates()[1].terminal_marker == "criteria complete"
     )
 
 

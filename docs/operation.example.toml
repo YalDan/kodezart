@@ -21,12 +21,11 @@ operation_name = "example-operation"
 # The tracker workspace the operation acts within. A slug, not a URL.
 workspace = "example-workspace"
 
-# Optional organize phase table. A populated table declares groom, ticket and
+# Optional organize stage table. A populated table declares ticket and
 # criteria exactly once, using qualified scope_labels and issue_labels
-# references. groom runs before scope approval; ticket and criteria are stages
-# of an approved scope run and may gate on scope_labels.approved.
-# See docs/configuration.md for its five fields.
-# Empty declares no table and does not schedule an organize pass.
+# references; both are stages of an approved scope run, and the first gates
+# on scope_labels.approved. See docs/configuration.md for its five fields.
+# Empty declares no table, so a scope run has no stage to run.
 organize_mandates = []
 # The operation's one scope table: every pass that works scope by scope is
 # composed from these rows. Each row names scope = { kind = "issue", key =
@@ -35,19 +34,19 @@ organize_mandates = []
 # issue that scope's verified audit summary is reported on — omit it where the
 # deployment configures no audit, and a configured audit refuses by name on a
 # row that omits it.
-# Who reads these rows: the organize tick grooms each one before approval on
-# its own cadence (KODEZART_ORGANIZE__INTERVAL_SECONDS); the scope_heartbeat
-# pass submits it as a scope run once it carries scope_labels.approved, on the
-# dispatch cadence and lane when KODEZART_DISPATCH_WORKFLOW=scope selects it
-# over the per-issue dispatch passes, writing nothing to the tracker; the observation
-# tick reads each row's scope where a tracker is dialled; and the audit
-# collects each row where audit settings are configured. No cadence has a
-# default: a pass whose interval is unset is not scheduled, and boot names it
-# with scheduled_pass_not_configured.
+# Who reads these rows: the scope_heartbeat pass submits each one as a scope
+# run once it carries scope_labels.approved, on the dispatch cadence and lane
+# when KODEZART_DISPATCH_WORKFLOW=scope selects it over the per-issue dispatch
+# passes, writing nothing to the tracker; the observation tick reads each
+# row's scope where a tracker is dialled; and the audit collects each row
+# where audit settings are configured. No cadence has a default: a pass whose
+# interval is unset is not scheduled, and boot names it with
+# scheduled_pass_not_configured. Before approval a scope is the grooming and
+# fire-prep passes' work, over the whole board like every other issue.
 # Declaring a row switches nothing off: the dispatch pass, the fire-prep and
 # grooming session passes and the lifecycle watcher are scheduled on their own
 # premises, each pass's cadence pair among them, scopes or no scopes. Empty
-# declares no standing scope and schedules none of the four passes above.
+# declares no standing scope and schedules none of the three passes above.
 organize_scopes = []
 
 # Identities the agent posts under, in the order the pass templates address
@@ -314,15 +313,14 @@ system = "knowledge"
 name = "Example — Operating Constitution"
 id = "example-constitution-document-id"
 
-# Record keys are the RUN-KIND vocabulary — fire_prep, grooming, fire,
-# organize — one declared destination per kind (KOD-170). The runner writes
-# each run's structural row there, and the rendered pass prompt names the
-# same declaration for the session's own prose row (the organize tick's row
-# is the runner's alone: its log is its own, never the grooming log). A kind
-# left undeclared is a legal NAMED absence: the recorder logs it and writes
-# nowhere. `fire` and `organize` are deliberately undeclared in this example
-# — the fire's record trail is then tracker-side only. Any other key is
-# refused at load (`audit` is refused when declared).
+# Record keys are the RUN-KIND vocabulary — fire_prep, grooming, fire — one
+# declared destination per kind (KOD-170). The runner writes each run's
+# structural row there, and the rendered pass prompt names the same
+# declaration for the session's own prose row. A kind left undeclared is a
+# legal NAMED absence: the recorder logs it and writes nowhere. `fire` is
+# deliberately undeclared in this example — the fire's record trail is then
+# tracker-side only. Any other key is refused at load (`audit` is refused
+# when declared).
 [records.fire_prep]
 system = "knowledge"
 name = "Example Run Log"

@@ -3,9 +3,7 @@
 # Full owner through its actual factory; the executor chooses outputs from the
 # current native board and the requested wire type, not a canned verdict order.
 import dataclasses
-import inspect
 import json
-import linecache
 import re
 from collections import Counter
 from itertools import groupby
@@ -26,19 +24,15 @@ from kodezart.domain.fire_spec import criterion_field_bodies
 from kodezart.domain.organize import stage_rows
 from kodezart.services import organize_owner
 from kodezart.services.agent_service import AgentService
-from kodezart.services.organize_tick import OrganizeTarget, OrganizeTick
-from kodezart.services.scope_organizer import ScopeOrganizer
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.operation import OperationConfig, ScopeLabel
 from kodezart.types.domain.organize import (
     AdmissionVerdict,
     MandateKind,
     SpecFinding,
-    split_label_key,
 )
 from kodezart.types.domain.organize_owner import StageHaltCause
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
-from kodezart.types.domain.session import ToolPreset
 from tests.chains.test_organize import (
     RecordingExecutor,
     RecordingWorkspace,
@@ -49,10 +43,6 @@ from tests.chains.test_organize import (
     tracker,
 )
 from tests.fakes import SUPPRESS_ALL_SKILLS, FakeGitService, PassThroughGate
-from tests.integration.test_organize_authority import groomer
-from tests.integration.test_scope_entry import GROOM_MARKER
-from tests.integration.test_scope_runtime import SCOPE
-from tests.integration.test_scope_runtime import board as scope_board
 from tests.prompts.test_organize_mandate_bindings import declared_operation
 from tests.prompts.test_prompt_wiring import load_registry
 from tests.services.test_run_surface_lease import _Board
@@ -174,16 +164,14 @@ def factory(
     bound=2,
     convergence_bound=2,
     write_back_bound=2,
-    tick=False,
     settings=None,
     gate=None,
-    under_approval=False,
+    under_approval=True,
     criteria=("Check prepared bytes",),
     checks=None,
     phases=None,
     board=None,
-    groom_gate_key=None,
-    groom_rubric_key=None,
+    ticket_rubric_key=None,
 ):
     # *board* builds another owner over a board a previous owner already
     # worked: a case about a second entry into a stage needs the labels and
@@ -193,40 +181,23 @@ def factory(
     board = _Board() if seeded else board
     operation_fields = declared_operation().model_dump()
     operation_fields["issue_labels"]["decision"] = "needs decision"
-    # The live table gates the first run stage on approval by that exact
-    # reference; grooming keeps its own pre-approval gate.
-    for mandate in operation_fields["organize_mandates"]:
-        if mandate["kind"] == "ticket":
-            mandate["gate_label_key"] = "scope_labels.approved"
     operation_fields["marker_prefixes"]["escalation"] = "organize-question"
-    # *groom_gate_key* repoints the pre-approval row's gate at another
-    # configured member, so a case can tell the configured member from the
-    # one the shipped table happens to name.
-    if groom_gate_key is not None:
-        for mandate in operation_fields["organize_mandates"]:
-            if mandate["kind"] == "groom":
-                mandate["gate_label_key"] = groom_gate_key
     for mandate in operation_fields["organize_mandates"]:
         mandate["rubric_prompt_key"] = "organize_assess"
         mandate["admission_prompt_key"] = "organize_assess"
-    # *groom_rubric_key* gives the pre-approval row a rubric of its own, apart
+    # *ticket_rubric_key* gives the first run stage a rubric of its own, apart
     # from its admission role, so a case can see which one the owner renders.
-    if groom_rubric_key is not None:
+    if ticket_rubric_key is not None:
         for mandate in operation_fields["organize_mandates"]:
-            if mandate["kind"] == "groom":
-                mandate["rubric_prompt_key"] = groom_rubric_key
-    if tick:
-        operation_fields["organize_scopes"] = [
-            {
-                "scope": {"kind": "issue", "key": CLAIMED_ISSUE},
-                "repo_url": operation_fields["repos"][0]["url"],
-            }
-        ]
+            if mandate["kind"] == "ticket":
+                mandate["rubric_prompt_key"] = ticket_rubric_key
     operation = OperationConfig.model_validate(operation_fields)
     if seeded:
         parent = board.server.issues[CLAIMED_ISSUE]
         parent.description = body if body is not None else "Missing specification"
         parent.labels = ["candidate scope"]
+        # *under_approval* False builds the owner over a scope nobody approved,
+        # for a case about what the stages do with one: nothing.
         if under_approval:
             parent.labels.append(operation.scope_labels[ScopeLabel.APPROVED.value])
     tracker = tracker_over(
@@ -250,9 +221,7 @@ def factory(
     # instead of standing up a second tracker beside this one.
     board.built_tracker = tracker
     workspace = RecordingWorkspace()
-    rows = stage_rows(
-        operation.resolve_organize_mandates(), under_approval=under_approval
-    )
+    rows = stage_rows(operation.resolve_organize_mandates(), under_approval=True)
     config = settings or AppConfig(
         organize=OrganizeSettings(
             max_admission_rounds=bound, max_convergence_rounds=convergence_bound
@@ -284,23 +253,7 @@ def factory(
         # states its table rather than reaching into the built owner.
         phases=rows if phases is None else phases(rows),
     )
-    if not tick:
-        return owner, board, executor
-    # The scheduled tick over THIS owner: the composition root's tick now
-    # runs the session owner, so the tick these cases drive is assembled
-    # here from the same parts, over the pre-approval row alone.
-    repositories = {repo.url: repo for repo in operation.repos}
-    targets = [
-        OrganizeTarget(
-            binding=binding,
-            repository=repositories[binding.repo_url],
-            organizer=ScopeOrganizer(
-                owner=owner, git=git, workspace=workspace, remote=config.git.remote
-            ),
-        )
-        for binding in operation.organize_scopes
-    ]
-    return OrganizeTick(targets=targets), board, executor
+    return owner, board, executor
 
 
 def written(board):
@@ -325,37 +278,6 @@ async def run_owner(owner):
         job_id="actual-organize-job",
         visibility=RepoVisibility.PRIVATE,
     )
-
-
-async def test_the_pre_approval_owner_grooms_alone_and_reentry_writes_nothing():
-    """The scheduled pass's owner is given the pre-approval row and only that.
-
-    Grooming ends at approval, so the two run-stage markers and the
-    criterion child belong to a scope run and are absent here.
-    """
-    owner, board, executor = factory()
-    report = await run_owner(owner)
-    assert report.halt is None
-    assert [phase.value for phase in report.completed_phases] == ["groom"]
-    parent = board.server.issues[CLAIMED_ISSUE]
-    assert "graph complete" in parent.labels
-    assert not {"body complete", "criteria complete"} & set(parent.labels)
-    assert not any(
-        issue.parent_id == CLAIMED_ISSUE for issue in board.server.issues.values()
-    )
-    assert "approved scope" not in parent.labels
-    assert all(
-        call["session_id"] is None and call["allowed_tools"] is ToolPreset.EVALUATION
-        for call in executor.calls
-    )
-    assert any(
-        "Prepared body grounded in the source." in call["prompt"]
-        for call in executor.calls
-        if call["output_format"]["schema"].get("title") == "AdmissionJudgment"
-    )
-    board.calls.clear()
-    await run_owner(owner)
-    assert not [(name, args) for name, args in board.calls if name.startswith("save_")]
 
 
 async def test_the_run_stage_owner_does_ticket_then_criteria_and_replays_dry():
@@ -1015,29 +937,6 @@ async def test_author_source_changed_during_session_cannot_be_overwritten(monkey
     assert not [(name, args) for name, args in board.calls if name == "save_issue"]
 
 
-async def test_human_approval_arriving_during_authorship_ends_organize_before_write(
-    monkeypatch,
-):
-    from kodezart.domain.errors import OrganizeWriteRefusalError
-
-    owner, board, executor = factory()
-    original = executor.stream
-
-    async def approved(**kwargs):
-        async for event in original(**kwargs):
-            if kwargs["output_format"]["schema"].get("title") == "OrganizeProposal":
-                board.server.issues[CLAIMED_ISSUE].labels.append("approved scope")
-            yield event
-
-    monkeypatch.setattr(executor, "stream", approved)
-    with pytest.raises(OrganizeWriteRefusalError, match="groom is not admitted"):
-        await run_owner(owner)
-    assert not [(name, args) for name, args in board.calls if name == "save_issue"]
-    # The approval reading precedes every write, so the refusal leaves the
-    # round's declared set released and nothing held.
-    assert board.grants() == []
-
-
 async def test_cancelled_author_never_reaches_a_tracker_mutation(monkeypatch):
     import asyncio
 
@@ -1242,216 +1141,8 @@ async def test_the_owner_renders_the_rows_own_rubric_into_both_judging_prompts()
         assert PREPARED_BODY in prompt
 
 
-async def test_an_approved_scope_admits_nobody_to_grooming_and_opens_no_session():
-    """Approval ends the pre-approval phase for every member at once.
-
-    The row is not refused and does not halt: it has nobody left to act on,
-    so no session opens and no write is made. This is what stands grooming
-    down the moment approval lands, and it is the same reading a run stage
-    is admitted by.
-    """
-    owner, board, executor = factory()
-    board.server.issues[CLAIMED_ISSUE].labels.append("approved scope")
-    report = await run_owner(owner)
-    assert report.completed_phases == ()
-    assert report.halt is None
-    assert executor.calls == []
-    assert not [(name, args) for name, args in board.calls if name.startswith("save_")]
-    # The reading precedes the round's lease, so an approved scope costs the
-    # pre-approval row not even a lease record.
-    assert board.lease_creations() == []
-
-
-@pytest.mark.parametrize(
-    ("members", "grooms"),
-    [(("triage",), True), (("approved",), False), ((), False)],
-    ids=["triage-only", "approved-only", "neither"],
-)
-async def test_the_triage_member_dispatches_and_the_approved_member_alone_does_not(
-    members, grooms
-):
-    """The gate is the row's configured member and nothing else.
-
-    The approved-only arm removes the triage member instead of adding approval
-    beside it, so the case distinguishes "approval stood grooming down" from
-    "the triage member is what opened the gate in the first place".
-    """
-    labels = declared_operation().scope_labels
-    owner, board, executor = factory()
-    parent = board.server.issues[CLAIMED_ISSUE]
-    parent.labels = [labels[member] for member in members]
-    report = await run_owner(owner)
-    assert report.halt is None
-    if grooms:
-        assert [phase.value for phase in report.completed_phases] == ["groom"]
-        assert "graph complete" in parent.labels
-        assert executor.calls
-        return
-    assert report.completed_phases == ()
-    assert executor.calls == []
-    assert "graph complete" not in parent.labels
-    assert not [(name, args) for name, args in board.calls if name.startswith("save_")]
-
-
-@pytest.mark.parametrize(
-    ("members", "grooms"),
-    [(frozenset({ScopeLabel.TRIAGE}), True), (frozenset(), False)],
-    ids=["project-carries-triage", "project-carries-nothing"],
-)
-async def test_a_project_addressed_scope_carrying_triage_dispatches_groom(
-    members, grooms
-):
-    """The same gate on a project-addressed scope, through the production build.
-
-    ``build_scope_organizer`` on the pre-approval side of the table, over a
-    board whose project is the addressed scope: the project carrying the
-    triage member grooms its lane, and the same project carrying nothing
-    opens no session and writes nothing.
-    """
-    assert SCOPE.kind is ScopeKind.PROJECT
-    lanes = ("A",)
-    port = scope_board(lanes=lanes, approved=False)
-    port.scope_label_members[SCOPE] = members
-    organizer, operation, executor = groomer(port, lanes=lanes)
-
-    report = await organizer.run(
-        scope=SCOPE, repository=operation.repos[0], job_id="groom-job"
-    )
-
-    assert report.halt is None
-    if grooms:
-        assert report.completed_phases == (MandateKind.GROOM,)
-        assert port.classification_writes == [("A", GROOM_MARKER)]
-        assert sorted({key for key, _, _ in executor.admissions}) == ["A"]
-        return
-    assert report.completed_phases == ()
-    assert executor.organize_calls == []
-    assert port.classification_writes == []
-
-
 #: A pre-approval gate on a configured member other than the shipped one.
 PROPOSED_GATE = "scope_labels.proposed"
-
-
-@pytest.mark.parametrize(
-    ("members", "grooms"),
-    [(("proposed",), True), (("triage",), False)],
-    ids=["configured-member", "triage-alone"],
-)
-async def test_a_groom_row_gated_on_another_member_opens_on_that_member_alone(
-    monkeypatch, members, grooms
-):
-    """The member the gate asks for is the row's, read off its configured key.
-
-    With the pre-approval row repointed at the proposed member, a scope that
-    carries it is groomed, and a scope that carries triage alone is not: the
-    shipped member is not what opens the gate, the configured one is. Every
-    resolution asks for the member the row's key names.
-    """
-    labels = declared_operation().scope_labels
-    owner, board, executor = factory(groom_gate_key=PROPOSED_GATE)
-    parent = board.server.issues[CLAIMED_ISSUE]
-    parent.labels = [labels[member] for member in members]
-    original = organize_owner.scope_carries
-    seen = []
-
-    async def recording(*, ref, member, tracker):
-        seen.append(member)
-        return await original(ref=ref, member=member, tracker=tracker)
-
-    monkeypatch.setattr(organize_owner, "scope_carries", recording)
-    report = await run_owner(owner)
-
-    assert report.halt is None
-    assert seen
-    assert set(seen) == {ScopeLabel(split_label_key(PROPOSED_GATE)[1])}
-    if grooms:
-        assert report.completed_phases == (MandateKind.GROOM,)
-        assert "graph complete" in parent.labels
-        assert executor.calls
-        return
-    assert report.completed_phases == ()
-    assert executor.calls == []
-    assert "graph complete" not in parent.labels
-    assert not [(name, args) for name, args in board.calls if name.startswith("save_")]
-
-
-@pytest.mark.parametrize(
-    "children", [0, 1, 2], ids=["alone", "one-child", "two-children"]
-)
-async def test_the_scope_gate_is_resolved_once_per_reading_by_the_one_resolver(
-    monkeypatch, children
-):
-    """Every resolution is the addressed scope's, with the row's own member.
-
-    A member is a property of the scope and of the containers above it, so the
-    count follows the readings the pass makes and not the number of members it
-    has: a resolution per member issue would be the per-issue materialization
-    the trigger must not be. The scope is read with one, two and three
-    members, and every reading resolves exactly once on each.
-    """
-    from tests.fakes import FakeMcpIssue
-
-    owner, board, _ = factory()
-    for index in range(children):
-        board.server.issues[f"groom-child-{index}"] = FakeMcpIssue(
-            id=f"groom-child-{index}",
-            parent_id=CLAIMED_ISSUE,
-            description="Missing specification",
-        )
-    original = organize_owner.scope_carries
-    seen = []
-
-    async def recording(*, ref, member, tracker):
-        seen.append((ref, member))
-        return await original(ref=ref, member=member, tracker=tracker)
-
-    reading = organize_owner.OrganizeOwner._carried_members
-    readings = []
-
-    async def counted(self, scope, phase):
-        # The reading is named by where it is made: the owner method that
-        # asks, and the name the answer is bound to there.
-        caller = inspect.currentframe().f_back
-        line = linecache.getline(caller.f_code.co_filename, caller.f_lineno)
-        readings.append((caller.f_code.co_name, line.strip().split(" = ")[0]))
-        return await reading(self, scope, phase)
-
-    monkeypatch.setattr(organize_owner, "scope_carries", recording)
-    monkeypatch.setattr(organize_owner.OrganizeOwner, "_carried_members", counted)
-    report = await run_owner(owner)
-    assert [phase.value for phase in report.completed_phases] == ["groom"]
-    scope = ScopeRef(kind=ScopeKind.ISSUE, key=CLAIMED_ISSUE)
-    # The board is the size this arm says: the scope's own issue and each
-    # child, read through the same port the owner reads.
-    assert len(await board.built_tracker.scope_issues(ref=scope)) == children + 1
-    members = {
-        issue.id for issue in board.server.issues.values() if issue.id != CLAIMED_ISSUE
-    }
-    assert {ref for ref, _ in seen} == {scope}
-    assert {member for _, member in seen} == {ScopeLabel.TRIAGE}
-    # One resolution per reading, whatever the number of members.
-    assert readings
-    assert len(seen) == len(readings)
-    # The round's own gate reading, the marker sweep's and the barrier's are
-    # one each on every board: adding a member adds none of them. Only the
-    # pre-write re-checks scale, one per write the owner sends.
-    by_site = Counter(readings)
-    rechecks = by_site.pop(("_may_write", "gate_members"))
-    assert by_site == {
-        ("_converge", "gate_members"): 1,
-        ("_converge", "current_members"): 1,
-        ("run", "settled_members"): 1,
-    }, by_site
-    if not children:
-        # Observed, then written: seven pre-write re-checks across the author
-        # write and the marker write, each of which re-asks the gate before
-        # it touches the board, besides the three readings above.
-        assert rechecks == 7
-        assert len(seen) == 10
-    else:
-        assert rechecks > 7
-    assert not {ref.key for ref, _ in seen} & members
 
 
 def record_classification_writes(board, monkeypatch):
@@ -1876,24 +1567,6 @@ async def test_missing_criterion_edit_capability_is_not_invented_as_a_human_fork
         await run_owner(owner)
     assert not written(board)
     assert "needs decision" not in board.server.issues[CLAIMED_ISSUE].labels
-
-
-async def test_removed_phase_gate_refuses_author_write(monkeypatch):
-    from kodezart.domain.errors import OrganizeWriteRefusalError
-
-    owner, board, executor = factory()
-    original = executor.stream
-
-    async def gate_removed(**kwargs):
-        async for event in original(**kwargs):
-            if kwargs["output_format"]["schema"].get("title") == "OrganizeProposal":
-                board.server.issues[CLAIMED_ISSUE].labels.remove("candidate scope")
-            yield event
-
-    monkeypatch.setattr(executor, "stream", gate_removed)
-    with pytest.raises(OrganizeWriteRefusalError, match="groom is not admitted"):
-        await run_owner(owner)
-    assert not written(board)
 
 
 ROUND_ONE_CLASSES = ("criterion_admits_two_readings", "probe_call_site_named_nowhere")

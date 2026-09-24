@@ -28,7 +28,6 @@ ORGANIZE_ROLES = {
 #: judges the row, which is why it is resolved and required exactly as they
 #: are and renders none of their per-call evidence.
 ORGANIZE_RUBRIC_ROLES = {
-    "ORGANIZE_GROOM_RUBRIC": "organize_groom_rubric",
     "ORGANIZE_SPEC_RUBRIC": "organize_spec_rubric",
 }
 

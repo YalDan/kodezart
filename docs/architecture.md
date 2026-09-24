@@ -38,9 +38,9 @@ All cross-layer dependencies point inward through protocols defined in
 (`main.py` `lifespan()`).
 Dialling the tracker consults no run-event table; a declared one is checked when
 the operation file loads. An operation that declares `[[organize_scopes]]`
-schedules the passes that read that one table — the organize tick, the scope
-heartbeat, the observation tick where a tracker is dialled and the audit where
-one is configured — beside the per-issue machine: the dispatch pass, the two
+schedules the passes that read that one table — the scope heartbeat, the
+observation tick where a tracker is dialled and the audit where one is
+configured — beside the per-issue machine: the dispatch pass, the two
 prompt passes and the lifecycle watcher are built on their own premises, each
 pass's cadence pair among them, whether or not scopes are declared.
 The lifespan registers each acquired resource with an `AsyncExitStack`.
@@ -260,14 +260,14 @@ the first node in the chain, and a label planted on the milestone's backing data
 approves nothing. Composed as one function over the role, so the readers of that
 answer depend on no writer. For a container-addressed scope the same walk
 answers every configured scope member, asked with the member rather than fixed
-to approval, so a milestone-addressed scope is groomed on its owning project's
-triage member exactly as it is run on that project's approval, resolved once per
-reading of the gate and never once per member issue. An issue-addressed scope is
-bounded differently: its approval member is the per-issue cascade, and any other
-member is the addressed issue's own configured labels, read off that issue
-alone. A project above the issue that carries triage does not open an
-issue-addressed scope's pre-approval gate; continuing the walk above an issue
-for a non-approval member would need a read this role does not have.
+to approval, so a milestone-addressed scope reads any configured member off its
+owning project exactly as it is run on that project's approval, resolved once
+per reading of the gate and never once per member issue. An issue-addressed
+scope is bounded differently: its approval member is the per-issue cascade, and
+any other member is the addressed issue's own configured labels, read off that
+issue alone. A project above the issue that carries triage does not answer an
+issue-addressed scope's reading of that member; continuing the walk above an
+issue for a non-approval member would need a read this role does not have.
 
 `read_scope_plan` applies native stage barriers at the actual scoped engine
 entry before any execution arm is selected. Its `require_scope_plan_reads`
@@ -813,18 +813,20 @@ declared runner environment can make, is the criteria author's judgement,
 under a prompt that carries the same declared environments, and the
 verifier's under the verify prompt.
 
-One organize table declares three phases, and the role table says which side
-of scope approval each runs on. `groom` runs before approval, on the grooming
-cadence, and ends the moment approval lands: an approved scope admits nobody
-to it, so its scheduled pass opens no session and writes nothing. `ticket` and
-`criteria` are stages of an approved scope run. An owner runs exactly the rows
-it is given — the scheduled pass is given the pre-approval row, a scope run's
-entry the two run-stage rows — and no branch on mandate kind exists outside
-the role table.
+One organize table declares two stages, `ticket` and `criteria`, and the role
+table says that both run inside an approved scope run: approval admits every
+member to the first, whose shipped gate is the approval label itself, and the
+first stage's marker admits a member to the second. Nothing runs before
+approval: what a scope needs then is the grooming and fire-prep passes' work
+over the whole board, and a table declaring a `groom` row is refused at load.
+An owner runs exactly the rows it is given — a scope run's entry gives it the
+whole table — and no branch on mandate kind exists outside the role table: the
+binding the session prompt selects a stage's rubric by is the role's own
+`prompt_phase`.
 
 The wired owner is `services/organize_session_owner.py`, built by
 `composition/organize.py::build_organize_session_owner` and run through the
-organizer the scope entry and the organize tick share. It settles every row
+organizer the scope entry builds. It settles every row
 the same way. First the gate, read the cheap way: a `scope_labels` gate is one
 reading of the addressed scope and the containers above it (`scope_carries`),
 an `issue_labels` gate is read off the members' own labels in one scope read,
@@ -838,9 +840,11 @@ labels the session may never touch — and runs ONE session through the agent
 runner: session type `organize_pass`, unattended, allowed tools the tracker
 server's own family (`mcp__<server>__*`), in the scheduled passes' working
 directory and never in a cloned repository. The session does the board work
-with the tracker tools the host attaches under
-`KODEZART_AGENT__DANGEROUSLY_ALLOW_HOST_MCP`, adds the marker to each member
-it satisfies, and escalates by adding the decision label. kodezart then reads
+with the deployment's own tracker server, described to it from the tracker
+credential exactly as it is to the grooming and fire-prep sessions (never a
+login the host holds; without the credential a scope deployment refuses to
+boot), adds the marker to each member it satisfies, and escalates by adding
+the decision label. kodezart then reads
 the scope once more through the port and reports: every owed member carries
 the marker and the phase is complete, or one does not and the row halts with
 a stage-incomplete report naming it. No lease is taken, no marker is written
@@ -898,28 +902,18 @@ added member, a criterion moved out of Done or a change of approval re-arms it;
 a restarted process walks a converged row once on its first tick, and that walk
 posts no second status update.
 
-One predicate answers whether a phase may act on a member now, and every gate
+One predicate answers whether a stage may act on a member now, and every gate
 read and approval read in the owner is that predicate or its approval half: a
-run stage is admitted by approval and by its gate, a pre-approval phase by its
-gate while approval is absent, and the round's declared set leaves out a member
-whose own approval reading is on the other side. The same predicate decides
-the work roster, the marker roster and every author write, so a member that was
-never admitted is never written to and an approval withdrawn mid-session refuses
-the write it was about to make. That reading precedes the round's lease, so an
-approved scope costs the pre-approval row no lease at all, and it precedes every
-write, so approval landing during one of its sessions refuses the write that
-follows and releases the round's declared set with it. Those two readings — no
-pre-approval write after approval, no act of a run before it — are the whole of
-the boundary, and it is exact up to the rest of one round: no member is both
-under a live run and under the pre-approval row's lease, except once approval
-lands during a grooming session. The row may then run the rest of that round's
-sessions, and every write in them is refused by the approval reading it makes at
-the write. A run admitted in that window is refused at its first stage
-acquisition by the grooming round's lease and writes nothing; that lease is the
-one mark of the other side a run ever reads, and only in that window.
-Withdrawing approval during a run reopens the pre-approval row while a lane
-already admitted finishes: exclusion is the approval label, not a liveness read
-(KOD-788).
+stage is admitted by approval and by its gate, and the round's declared set
+leaves out a member whose own approval reading says otherwise. The same
+predicate decides the work roster, the marker roster and every author write,
+so a member that was never admitted is never written to and an approval
+withdrawn mid-session refuses the write it was about to make. That reading
+precedes every write, so approval withdrawn during one of a stage's sessions
+refuses the write that follows and releases the round's declared set with it.
+No act of a run before approval is the whole of the boundary. Withdrawing
+approval during a run stops the next stage write while a lane already admitted
+finishes: exclusion is the approval label, not a liveness read (KOD-788).
 
 ## Workflow Pipeline
 

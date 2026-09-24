@@ -86,11 +86,6 @@ PROMPTS = load_registry(
 #: not is testing a vocabulary no deployment has.
 RUN_STAGES = stage_rows(OPERATION.resolve_organize_mandates(), under_approval=True)
 STAGE_MARKERS = tuple(row.terminal_marker for row in RUN_STAGES)
-GROOM_MARKER = next(
-    row.terminal_marker
-    for row in OPERATION.resolve_organize_mandates()
-    if not row.role.runs_under_approval
-)
 APPROVED_LABEL = OPERATION.scope_labels[ScopeLabel.APPROVED.value]
 #: The marker keys, as a snapshot reports them: the semantic side of the
 #: mapping, which is what the roster compares.
@@ -434,8 +429,8 @@ def _board(
 ) -> FakeLinearMcpServer:
     """The fixture workspace, widened by exactly what a run stage needs.
 
-    One scope of the members *bodies* names, all groomed and all in the
-    approved project; *bodies* states each member's own body and *marked* the
+    One scope of the members *bodies* names, all in the approved project;
+    *bodies* states each member's own body and *marked* the
     members that already carry both stage markers. A member the fixture
     workspace does not hold is minted here as a child of the addressed issue,
     on the declared team and in the ordinary unstarted state, so the widened
@@ -461,7 +456,6 @@ def _board(
         native.description = bodies[key]
         native.labels = [
             *native.labels,
-            GROOM_MARKER,
             *(STAGE_MARKERS if key in marked else ()),
         ]
     return server

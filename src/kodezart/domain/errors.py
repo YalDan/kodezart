@@ -1021,7 +1021,7 @@ class OrganizeWriteRefusalError(Exception):
 
 
 class OrganizeHaltError(Exception):
-    """A completed Organize tick retains its exact addressed halt report."""
+    """A halted Organize stage retains its exact addressed halt report."""
 
     def __init__(self, *, scope: ScopeRef, report: OrganizeReport) -> None:
         if report.halt is None:

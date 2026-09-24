@@ -1,22 +1,17 @@
 """Explicit owner bounds and bindings reach their production consumer."""
 
-from datetime import UTC, datetime
-
 import pytest
 from pydantic import ValidationError
 
 from kodezart.config.app import AppConfig
 from kodezart.config.organize import OrganizeSettings
-from kodezart.types.domain.dispatch import PassRun
 from kodezart.types.domain.operation import (
     OperationConfig,
     OperationMemberAbsentError,
-    RunKind,
 )
-from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.scope import ScopeRef
 from kodezart.types.domain.scope_address import ScopeRef as LeafScopeRef
-from tests.chains.test_organize_owner import factory
+from tests.chains.test_organize_owner import factory, run_owner
 from tests.prompts.test_organize_mandate_bindings import declared_operation
 
 
@@ -41,44 +36,32 @@ def test_bounds_are_both_required_and_positive(fields):
         OrganizeSettings.model_validate(fields)
 
 
-def test_the_ticks_cadence_and_budget_default_to_unset() -> None:
-    """Unset means the grooming pass's value; the bounds alone are not a default."""
-    settings = OrganizeSettings(max_admission_rounds=1, max_convergence_rounds=1)
-    assert (settings.interval_seconds, settings.timeout_seconds) == (None, None)
+@pytest.mark.parametrize("field", ["interval_seconds", "timeout_seconds"])
+def test_the_organize_settings_carry_no_cadence(field: str) -> None:
+    """The stages are no scheduled pass: a cadence field is refused, not read.
 
-
-@pytest.mark.parametrize(
-    "fields",
-    [
-        {"interval_seconds": 59.0},
-        {"interval_seconds": 86401.0},
-        {"timeout_seconds": 59.0},
-        {"timeout_seconds": 86401.0},
-    ],
-)
-def test_the_ticks_cadence_and_budget_carry_the_grooming_bounds(
-    fields: dict[str, float],
-) -> None:
-    """Set, each field takes the grooming fields' bounds: 60 s through a day."""
-    with pytest.raises(ValidationError):
+    Until 2026-09-24 the two fields scheduled an organize tick of their own.
+    The stages run inside the scope run the heartbeat submits on the dispatch
+    cadence, so a deployment still setting a cadence here is told so at load.
+    """
+    with pytest.raises(ValidationError, match="extra"):
         OrganizeSettings.model_validate(
-            {"max_admission_rounds": 1, "max_convergence_rounds": 1, **fields}
+            {"max_admission_rounds": 1, "max_convergence_rounds": 1, field: 900.0}
         )
+    assert set(OrganizeSettings.model_fields) == {
+        "max_admission_rounds",
+        "max_convergence_rounds",
+    }
 
 
-def test_the_ticks_cadence_reaches_the_settings_from_the_environment(
+def test_a_cadence_in_the_environment_is_refused_at_load(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("KODEZART_ORGANIZE__MAX_ADMISSION_ROUNDS", "1")
     monkeypatch.setenv("KODEZART_ORGANIZE__MAX_CONVERGENCE_ROUNDS", "1")
     monkeypatch.setenv("KODEZART_ORGANIZE__INTERVAL_SECONDS", "900")
-    monkeypatch.setenv("KODEZART_ORGANIZE__TIMEOUT_SECONDS", "600")
-    config = AppConfig()
-    assert config.organize is not None
-    assert (config.organize.interval_seconds, config.organize.timeout_seconds) == (
-        900.0,
-        600.0,
-    )
+    with pytest.raises(ValidationError, match="interval_seconds"):
+        AppConfig()
 
 
 @pytest.mark.parametrize(
@@ -102,7 +85,7 @@ def test_scope_binding_has_one_declared_repository_and_no_ambiguous_authority(ch
         OperationConfig.model_validate(fields)
 
 
-async def test_environment_bounds_reach_the_tick_and_stop_after_one_author(
+async def test_environment_bounds_reach_the_owner_and_stop_after_one_author(
     monkeypatch,
 ):
     monkeypatch.setenv("KODEZART_ORGANIZE__MAX_ADMISSION_ROUNDS", "1")
@@ -111,13 +94,13 @@ async def test_environment_bounds_reach_the_tick_and_stop_after_one_author(
     config = AppConfig()
     assert config.organize.max_admission_rounds == 1
     assert config.organize.max_convergence_rounds == 7
-    tick, board, executor = factory(tick=True, settings=config, refuse_forever=True)
-    from kodezart.domain.errors import OrganizeHaltError
+    owner, _board, executor = factory(settings=config, refuse_forever=True)
 
-    instant = datetime(2026, 9, 12, tzinfo=UTC)
-    with pytest.raises(OrganizeHaltError, match="admission_exhausted") as halted:
-        await tick.run(instant)
-    assert halted.value.report.halt.bound.model_dump() == {
+    report = await run_owner(owner)
+
+    assert report.halt is not None
+    assert report.halt.cause.value == "admission_exhausted"
+    assert report.halt.bound.model_dump() == {
         "setting": "organize.max_admission_rounds",
         "value": 1,
         "rounds_used": 1,
@@ -133,33 +116,8 @@ async def test_environment_bounds_reach_the_tick_and_stop_after_one_author(
         )
         == 1
     )
-    identity = RunIdentity(
-        kind=RunKind.GROOMING, name="grooming_pass", started_at=instant
-    )
-    assert any(
-        identity.title() in str(args.get("body", ""))
-        for name, args in board.calls
-        if name == "save_comment"
-    )
-
-
-async def test_actual_tick_uses_fresh_remote_trunk_and_existing_run_identity():
-    tick, board, executor = factory(tick=True)
-    instant = datetime(2026, 9, 12, tzinfo=UTC)
-    assert await tick.run(instant) is PassRun.RAN
-    assert all(
-        f"<base_ref>{'a' * 40}</base_ref>" in call["prompt"] for call in executor.calls
-    )
-    identity = RunIdentity(
-        kind=RunKind.GROOMING, name="grooming_pass", started_at=instant
-    )
-    assert any(
-        identity.title() in str(args.get("body", ""))
-        for name, args in board.calls
-        if name == "save_comment"
-    )
 
 
 def test_declared_owner_bindings_without_bounds_refuse_construction():
     with pytest.raises(OperationMemberAbsentError, match="organize"):
-        factory(tick=True, settings=AppConfig(organize=None))
+        factory(settings=AppConfig(organize=None))

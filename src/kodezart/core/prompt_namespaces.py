@@ -96,7 +96,6 @@ PER_CALL_VARIABLE_NAMES: frozenset[str] = frozenset(
         "scope_milestone",
         "phase_marker",
         "owed_members",
-        "phase_groom",
         "phase_ticket",
         "phase_criteria",
     }

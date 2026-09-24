@@ -1,23 +1,19 @@
 """Each organize row's accept conditions are its rubric's, and nothing else's.
 
 The wrappers state how to judge; what counts as accepted is the row's own
-rubric, rendered into the per-call ``mandate_rubric`` binding. That is what
-lets the pre-approval row be accepted on an organizational predicate while the
-run-stage rows keep the implementation test, with one verify role for all of
-them.
+rubric, rendered into the per-call ``mandate_rubric`` binding, with one verify
+role for every row.
 
 Read off the shipped operation file and rendered through the registry the way
 the owner renders it, so a row repointed at another role reddens here.
 """
 
-import re
 from typing import get_args
 
 import pytest
 from pydantic import BaseModel
 
 from kodezart.adapters.toml_operation_config import load_operation_config
-from kodezart.domain.organize import stage_rows
 from kodezart.types.domain.agent import ORGANIZE_ADMISSION_SCHEMA, AdmissionJudgment
 from kodezart.types.domain.organize import MandateKind
 from kodezart.types.domain.prompts import PromptKey
@@ -28,58 +24,14 @@ from tests.prompts.test_set_completeness import shipped_sets
 
 SETS = shipped_sets()
 
-#: The four parts of the organizational predicate, each numbered item of the
-#: rubric by its whole text, whitespace-normalised. A part reworded away, a
-#: defining clause reversed or dropped while its headline stays — an edge that
-#: need not cross a container, a dependency in prose that is acceptable, a
-#: choice that is settled rather than open, a date order turned around, a
-#: criterion a member only may carry — is a different predicate.
-FOUR_PARTS = (
-    "1. Every dependency the body states exists as a blocking edge on the board,"
-    " including edges that cross a container: a dependency named in prose and"
-    " absent from the graph is a defect of this mandate.",
-    "2. Every member that records an open human choice is assigned to the person"
-    " accountable for that choice, so the choice has an owner rather than a"
-    " reader.",
-    "3. Target dates are ordered: nothing is dated earlier than something it"
-    " depends on, and an undated member that something dated depends on is a"
-    " defect.",
-    "4. Every member that will be executed already carries at least one criterion"
-    " item, so what would be graded is written down before execution is planned.",
-)
-
 
 def normalised(text: str) -> str:
     """*text* with every run of whitespace read as one space."""
     return " ".join(text.split())
 
 
-def numbered_items(text: str) -> list[str]:
-    """Every numbered item of *text*, each with its continuation lines, whole."""
-    items: list[list[str]] = []
-    for line in text.splitlines():
-        if re.match(r"\d+\. ", line):
-            items.append([line])
-        elif items and line.startswith(" ") and line.strip():
-            items[-1].append(line)
-        elif items and not line.strip():
-            items.append([])
-    return [normalised(" ".join(item)) for item in items if item]
-
-
-#: The four parts are a conjunction: every one must hold.
-CONJUNCTION = "only when all four conditions below hold"
-
-#: What the pre-approval rubric states it does not judge, and that it does
-#: not refuse on it. It claims no "only": the wrapper it is rendered in may
-#: state a refusal of its own, such as the v5 placement refusal.
-EXCLUSION = (
-    "is no part of this mandate",
-    "Do not refuse on whether the issue can be built.",
-)
-
-#: What a pre-approval accept condition may not say. Every one of these was in
-#: the two shared wrappers before the rubric roles existed.
+#: The implementation test the run-stage rubric states. Every one of these was
+#: in the two shared wrappers before the rubric roles existed.
 IMPLEMENTATION_TEST = (
     "dry implementation",
     "grading demonstration",
@@ -112,85 +64,6 @@ def rendered_around(set_name: str, wrapper: PromptKey, rubric: str) -> str:
     )
 
 
-@pytest.mark.parametrize("set_name", SETS)
-def test_the_shipped_pre_approval_rubric_states_the_four_parts(set_name: str) -> None:
-    """The pre-approval row's accept condition is the organizational predicate."""
-    rows = stage_rows(
-        load_operation_config(SCOPE_EXAMPLE).resolve_organize_mandates(),
-        under_approval=False,
-    )
-    assert len(rows) == 1
-    rubric = rendered_rubric(set_name, rows[0].spec.rubric_prompt_key)
-    assert numbered_items(rubric) == list(FOUR_PARTS)
-    assert CONJUNCTION in rubric
-    for exclusion in EXCLUSION:
-        assert exclusion in rubric, exclusion
-    assert "{{" not in rubric
-
-
-@pytest.mark.parametrize("set_name", SETS)
-def test_no_pre_approval_accept_condition_names_the_dry_implementation(
-    set_name: str,
-) -> None:
-    """Buildability is the later rows' test, and it is stated nowhere here.
-
-    Both wrappers are checked, because the verify role is fixed for every row:
-    a sentence left in either of them would be an accept condition this
-    mandate never agreed to.
-    """
-    rows = stage_rows(
-        load_operation_config(SCOPE_EXAMPLE).resolve_organize_mandates(),
-        under_approval=False,
-    )
-    assert len(rows) == 1
-    groom = rows[0]
-    rubric = rendered_rubric(set_name, groom.spec.rubric_prompt_key)
-    for wrapper in (groom.spec.admission_prompt_key, PromptKey.ORGANIZE_VERIFY):
-        rendered = rendered_around(set_name, wrapper, rubric)
-        for claim in IMPLEMENTATION_TEST:
-            assert claim not in rendered, (wrapper.value, claim)
-        # The presence side: the rubric is inside the wrapper, whole, and the
-        # wrapper is more than the rubric: it carries its own bindings.
-        assert rubric in rendered, wrapper.value
-        assert rendered != rubric, wrapper.value
-        assert "Golden source issue body" in rendered, wrapper.value
-        for part in FOUR_PARTS:
-            assert part in normalised(rendered), (wrapper.value, part)
-
-
-#: The refusal the v5 assessment wrapper states after the board hierarchy: an
-#: issue outside it is refused, whatever the rubric the wrapper is handed.
-PLACEMENT = (
-    "An issue outside that tree is not_buildable with a repairable spec_gap:"
-    " name the misplacement and the field that carries it."
-)
-
-
-def test_the_v5_groom_assessment_states_the_rubric_and_the_placement_refusal() -> None:
-    """The rubric does not contradict the wrapper it is rendered in.
-
-    The v5 assessment wrapper refuses an issue placed outside the board
-    hierarchy. The pre-approval rubric rendered into it states its four
-    parts and claims no "only" about what may be refused, so the session
-    is handed the two refusal grounds together and no sentence that rules
-    one of them out.
-    """
-    groom = row_of(MandateKind.GROOM)
-    rubric = rendered_rubric(V5_SET, groom.spec.rubric_prompt_key)
-    rendered = normalised(
-        rendered_around(V5_SET, groom.spec.admission_prompt_key, rubric)
-    )
-    for part in FOUR_PARTS:
-        assert part in rendered, part
-    assert PLACEMENT in rendered
-    sentences = re.split(r"(?<=[.:])\s+", rendered)
-    assert [
-        sentence
-        for sentence in sentences
-        if "refuse" in sentence.lower() and "only" in sentence.lower().split()
-    ] == []
-
-
 #: How the admission wrapper states what it assesses: against the rubric it is
 #: handed, and not against buildability.
 ASSESSMENT = "Assess whether the issue satisfies the supplied mandate rubric"
@@ -200,10 +73,10 @@ ASSESSMENT = "Assess whether the issue satisfies the supplied mandate rubric"
 def test_the_admission_wrapper_assesses_against_the_supplied_rubric(
     set_name: str,
 ) -> None:
-    """The pre-approval row's admission wrapper defers to the rubric by name."""
-    groom = row_of(MandateKind.GROOM)
-    rubric = rendered_rubric(set_name, groom.spec.rubric_prompt_key)
-    rendered = rendered_around(set_name, groom.spec.admission_prompt_key, rubric)
+    """The ticket row's admission wrapper defers to the rubric by name."""
+    ticket = row_of(MandateKind.TICKET)
+    rubric = rendered_rubric(set_name, ticket.spec.rubric_prompt_key)
+    rendered = rendered_around(set_name, ticket.spec.admission_prompt_key, rubric)
     assert ASSESSMENT in normalised(rendered)
     assert rendered != rubric
 
@@ -224,7 +97,7 @@ def test_the_run_stage_rubric_states_the_implementation_test(set_name: str) -> N
 
 
 #: What an admission description may not define acceptance by: buildability
-#: under any inflection, and the phrase the rubric's own exclusion uses.
+#: under any inflection.
 BUILDABILITY = ("buildab", "can be built")
 
 
@@ -286,8 +159,8 @@ def _models_in(annotation: object) -> list[type[BaseModel]]:
 def test_the_admission_schema_defines_acceptance_by_the_supplied_rubric() -> None:
     """The schema every row's session receives states no accept condition.
 
-    Acceptance arrives in the rubric: the pre-approval row's rubric excludes
-    buildability, so no description the schema carries may define it. Every
+    Acceptance arrives in the rubric, so no description the schema carries
+    may define it by buildability. Every
     description string is read, and only those: the schema's enum values
     legitimately spell ``buildable``. The descriptions the admission models
     declare are read too, including one a subclass shadows, so a base

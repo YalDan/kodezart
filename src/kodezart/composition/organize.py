@@ -25,7 +25,6 @@ from kodezart.domain.organize import stage_rows
 from kodezart.services.organize_context import OrganizeContextReader
 from kodezart.services.organize_owner import OrganizeOwner
 from kodezart.services.organize_session_owner import OrganizeSessionOwner
-from kodezart.services.organize_tick import OrganizeTarget, OrganizeTick
 from kodezart.services.scope_entry import ScopeEntry
 from kodezart.services.scope_heartbeat import ScopeHeartbeat
 from kodezart.services.scope_organizer import ScopeOrganizer
@@ -141,13 +140,14 @@ def build_scope_organizer(
     git: GitService,
     prompts: PromptSetProvider,
     skills: SkillsSelection,
-    under_approval: bool,
 ) -> ScopeOrganizer:
-    """One repository's organizer over the rows that run on one side of approval.
+    """One repository's organizer over the stages of an approved scope run.
 
-    The session owner hands its session no repository, so the organizer is
-    the same for every repository the operation declares; the organizer's
-    own head read is what still names one.
+    Every row of the table runs under approval: the run's entry is the one
+    caller, and the approval label is what admits a scope to it. The session
+    owner hands its session no repository, so the organizer is the same for
+    every repository the operation declares; the organizer's own head read is
+    what still names one.
     """
     return ScopeOrganizer(
         owner=build_organize_session_owner(
@@ -157,7 +157,7 @@ def build_scope_organizer(
             prompts=prompts,
             skills=skills,
             phases=stage_rows(
-                operation.resolve_organize_mandates(), under_approval=under_approval
+                operation.resolve_organize_mandates(), under_approval=True
             ),
         ),
         git=git,
@@ -202,7 +202,6 @@ def build_scope_entry(
             git=git,
             prompts=prompts,
             skills=skills,
-            under_approval=True,
         )
 
     return ScopeEntry(approvals=tracker, stages_for=stages_for, registry=registry)
@@ -235,9 +234,9 @@ def verify_organize_configuration(
     return True
 
 
-#: Where the host-MCP opt-in is read from, named in the refusal below because
-#: it is the one setting an operator has to change.
-HOST_MCP_SETTING: Final[str] = "KODEZART_AGENT__DANGEROUSLY_ALLOW_HOST_MCP"
+#: Where the tracker credential is read from, named in the refusal below
+#: because it is the one setting an operator has to set.
+TRACKER_CREDENTIAL_SETTING: Final[str] = "KODEZART_TRACKER__TOKEN"
 
 
 def verify_organize_session_tools(
@@ -246,34 +245,36 @@ def verify_organize_session_tools(
     operation: OperationConfig | None,
     tracker: TrackerPort | None,
 ) -> None:
-    """Refuse to boot when the scheduled organize sessions would hold no tracker tools.
+    """Refuse to boot when the organize stage sessions would hold no tracker tools.
 
-    Each organize phase is one agent session that reads and writes the board
-    through the tracker tools the host attaches, and this process describes
-    no tracker server for a session: those tools reach it only through the
-    host-MCP opt-in. With the opt-in off, every phase the tick opens, and
-    every scope run the heartbeat submits, would start a session that cannot
-    read the scope or label a member and halts stage-incomplete: once per
-    phase per tick, each at a whole session's cost.
+    Each organize stage is one agent session that reads and writes the board
+    through the deployment's own tracker server, described to it from the
+    tracker credential the way it is described to the grooming and fire-prep
+    sessions: every session that touches the tracker runs on kodezart's own
+    connection, never on a login the host holds. Without the credential no
+    server is described, so every scope run the heartbeat submits would
+    start a session that cannot read the scope or label a member and halts
+    stage-incomplete, each at a whole session's cost.
 
-    Asked on the predicate the tick and the heartbeat are wired on, the one
+    Asked on the predicate the heartbeat is wired on, the one
     :func:`verify_organize_configuration` answers. A deployment that declares
-    no organize scope schedules no organize session, and refusing its boot
-    would hold it hostage to a setting nothing it schedules reads.
+    no organize scope runs no organize session, and refusing its boot would
+    hold it hostage to a setting nothing it schedules reads.
     """
     if not verify_organize_configuration(
         config=config, operation=operation, tracker=tracker
     ):
         return
-    if config.agent.dangerously_allow_host_mcp:
+    if config.tracker.token is not None:
         return
     raise OrganizeTrackerCapabilityError(
-        setting=HOST_MCP_SETTING,
+        setting=TRACKER_CREDENTIAL_SETTING,
         stops=(
-            "the organize stage is scheduled over the declared organize_scopes, "
+            "the organize stages run over the declared organize_scopes, "
             "and the organize session cannot reach the tracker: it works the "
-            "board with the tracker tools the host attaches, and with this "
-            "setting off a session is given none"
+            "board through the deployment's own tracker server, which is "
+            "described to it from this credential, and without it a session "
+            "is given none"
         ),
     )
 
@@ -288,8 +289,8 @@ def build_scope_heartbeat(
 ) -> ScopeHeartbeat | None:
     """Absent means no standing scope is declared; partial config refuses.
 
-    The same predicate the scheduled organize tick is built on, so a
-    deployment gets both passes over the declared rows or neither. The
+    The same predicate the run's own stages are built on, so a deployment
+    gets the heartbeat and the stages over the declared rows or neither. The
     heartbeat itself needs nothing an owner needs: the three reads an
     approval question takes, one readiness reading, and the queue this
     process submits onto.
@@ -321,45 +322,3 @@ def build_scope_heartbeat(
         trunks={repo.url: repo.trunk for repo in operation.repos},
         lane=config.dispatch_lane,
     )
-
-
-def build_organize_tick(
-    *,
-    config: AppConfig,
-    operation: OperationConfig,
-    tracker: TrackerPort | None,
-    runner: AgentRunner,
-    workspace: WorkspaceProvider,
-    git: GitService,
-    prompts: PromptSetProvider,
-    skills: SkillsSelection,
-) -> OrganizeTick | None:
-    """Absent means undeclared; partial configuration refuses before scheduling."""
-    if not verify_organize_configuration(
-        config=config, operation=operation, tracker=tracker
-    ):
-        return None
-    if tracker is None:
-        raise OperationMemberAbsentError(
-            missing="tracker", stops="configured Organize scheduling"
-        )
-    repositories = {repo.url: repo for repo in operation.repos}
-    targets = [
-        OrganizeTarget(
-            binding=binding,
-            repository=repositories[binding.repo_url],
-            organizer=build_scope_organizer(
-                config=config,
-                operation=operation,
-                tracker=tracker,
-                runner=runner,
-                workspace=workspace,
-                git=git,
-                prompts=prompts,
-                skills=skills,
-                under_approval=False,
-            ),
-        )
-        for binding in operation.organize_scopes
-    ]
-    return OrganizeTick(targets=targets)
