@@ -1690,9 +1690,9 @@ class _LinearTrackerSession:
         """Move this holder's own marker forward, or report holding nothing.
 
         Renewal extends and never acquires, so it starts by reading: a
-        holder with no confirmed marker over the whole set writes nothing
-        at all, and takes down the litter this very request would have
-        left — a marker for exactly this set that is no longer a hold.
+        holder with no confirmed marker over the whole set extends nothing,
+        and takes down this holder's own marker for exactly this set where
+        the set is only half standing — a marker that is no longer a hold.
 
         The write itself can outlive the lease it was extending — that is
         the delayed renewal — so the extension states the deadline it was
