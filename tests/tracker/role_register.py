@@ -27,7 +27,7 @@ ADAPTERS = module_of(LinearMcpTracker).split("/", 1)[0]
 #: scanned: the exemption is the thing that criterion states, and it is
 #: deleted with the members when KOD-798 deletes them.
 RUN_RECORD_EXEMPTION = frozenset(
-    {"record_run_alarm", "read_run_alarm", "post_run_event", "lane_run_events"}
+    {"record_run_alarm", "read_run_alarms", "post_run_event", "lane_run_events"}
 )
 
 #: The authorship read KOD-390 names as the read its body refusal uses. It has
