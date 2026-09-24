@@ -29,9 +29,10 @@ class AuditTerminalReader:
 
     Whether the family owes anything is the one arithmetic's reading,
     consulted here rather than restated, over the direct criterion family the
-    port returns: a criterion the board closed without an established
-    supersession is owed (KOD-443).  The family below a deliverable child is
-    not read here (KOD-894).
+    port returns: a Canceled or Duplicate criterion is excluded on its state
+    alone and owes nothing, and every other criterion not Completed is owed
+    (KOD-443, KOD-794).  The family below a deliverable child is not read
+    here (KOD-894).
     """
 
     def __init__(
