@@ -21,7 +21,9 @@ class AuditCoverage:
         self._full_interval = timedelta(
             seconds=config.audit_full_sweep_interval_seconds
         )
-        self._tick_interval = timedelta(seconds=config.audit_sweep_interval_seconds)
+        self._tick_interval = timedelta(
+            seconds=config.required_cadence("audit").interval_seconds
+        )
         self._covered: dict[ScopeRef, dict[str, datetime]] = {}
         self._last_full: dict[ScopeRef, datetime] = {}
         self._last_tick: dict[ScopeRef, datetime] = {}

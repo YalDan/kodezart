@@ -18,11 +18,23 @@ concerns.
 
 ### Changed
 
-- The organize tick takes its own cadence and budget from
-  `KODEZART_ORGANIZE__INTERVAL_SECONDS` and `KODEZART_ORGANIZE__TIMEOUT_SECONDS`
-  (`config/organize.py`, `composition/passes.py`, `organize_tick_schedule`).
-  Both are optional; each one left unset keeps the grooming pass's value, as
-  before. The grooming pass's own settings are untouched.
+- No scheduled pass has a default cadence (KOD-1238). The dispatch pass and the
+  standing scopes' heartbeat (`KODEZART_DISPATCH_PASS_INTERVAL_SECONDS`,
+  `KODEZART_DISPATCH_PASS_TIMEOUT_SECONDS`), fire preparation
+  (`KODEZART_FIRE_PREP_PASS_*`), grooming (`KODEZART_GROOMING_PASS_*`), the
+  organize tick (`KODEZART_ORGANIZE__INTERVAL_SECONDS`,
+  `KODEZART_ORGANIZE__TIMEOUT_SECONDS`), the audit
+  (`KODEZART_AUDIT_SWEEP_INTERVAL_SECONDS` with `KODEZART_AUDIT__TIMEOUT_SECONDS`)
+  and the supervisor tick (`KODEZART_SUPERVISOR_PASS_*`) each run only when
+  their interval and timeout are both set; unset, the pass is not scheduled and
+  boot logs the new `scheduled_pass_not_configured` event naming the pass and
+  the two settings. One half of a pair without the other refuses at load naming
+  both (`config/app.py`, `CADENCE_SETTINGS`). The organize tick runs under the
+  grooming pass's name on its own two settings only; it no longer falls back to
+  the grooming cadence (`organize_tick_schedule` is removed). The
+  `audit_pass_not_wired` event is replaced by `scheduled_pass_not_configured`
+  for the audit. A deployment that relied on a default cadence must now set it;
+  see `docs/migration-v0.2-to-v0.3.md`.
 - Boot checks `[marker_prefixes]` against every purpose a pass it schedules can
   ask for and refuses naming every missing key at once
   (`composition/passes.py`, `wired_marker_purposes`). A purpose only an unwired

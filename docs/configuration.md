@@ -155,6 +155,15 @@ counts still exclude the initial attempt and use the shared retry policy.
 
 ## Settings Reference
 
+Scheduled-pass cadences have no defaults. Each scheduled pass — the dispatch
+pass (whose pair also paces the standing scopes' heartbeat), fire preparation,
+grooming, the organize tick, the audit and the supervisor tick — runs only when
+its interval and its timeout are both set. Unset, the pass is not scheduled, and
+boot logs `scheduled_pass_not_configured` naming the pass and the two settings
+that would schedule it; `pass_scheduler_started` lists only the passes that are
+scheduled. Setting one half of a pair without the other refuses at load, naming
+both.
+
 Escalation ageing uses recorded run progress. The implementation defaults
 allow five lane commits after a question is raised, or ten walker ticks after
 it is first observed; operators can set either count to zero to observe the
@@ -237,9 +246,9 @@ which was missing in the boot log.
 | `KODEZART_CI_NO_WORKFLOWS_GRACE_POLLS` | `int` | `3` | >= 1, <= 20 | Consecutive empty check-runs polls before concluding no CI when the repository has no active workflows. |
 | `KODEZART_CI_POLL_INTERVAL_SECONDS` | `float` | `30.0` | >= 5.0, <= 300.0 | Seconds between CI status check polls. |
 | `KODEZART_CI_POLL_MAX_ATTEMPTS` | `int` | `60` | >= 1, <= 600 | Maximum CI status check poll attempts before timeout. |
-| `KODEZART_AUDIT_SWEEP_INTERVAL_SECONDS` | `float` | `3600.0` | >= 60.0, <= 86400.0 | Seconds between audit delta ticks on the existing scheduler. |
-| `KODEZART_SUPERVISOR_PASS_INTERVAL_SECONDS` | `float` | `300.0` | >= 60.0, <= 86400.0 | Seconds between supervisor observation ticks on the existing scheduler. |
-| `KODEZART_SUPERVISOR_PASS_TIMEOUT_SECONDS` | `float` | `120.0` | > 0 | Wall-clock bound for one supervisor observation tick over every declared scope. |
+| `KODEZART_AUDIT_SWEEP_INTERVAL_SECONDS` | `float \| None` | none | >= 60.0, <= 86400.0 | Seconds between audit delta ticks on the existing scheduler. Set together with `KODEZART_AUDIT__TIMEOUT_SECONDS`. Unset: the pass is not scheduled. |
+| `KODEZART_SUPERVISOR_PASS_INTERVAL_SECONDS` | `float \| None` | none | >= 60.0, <= 86400.0 | Seconds between supervisor observation ticks on the existing scheduler. Set together with its timeout. Unset: the pass is not scheduled. |
+| `KODEZART_SUPERVISOR_PASS_TIMEOUT_SECONDS` | `float \| None` | none | > 0 | Wall-clock bound for one supervisor observation tick over every declared scope. Set together with its interval. Unset: the pass is not scheduled. |
 | `KODEZART_AUDIT_FULL_SWEEP_INTERVAL_SECONDS` | `float` | `86400.0` | >= 60.0, <= 86400.0 | Full coverage interval, no shorter than the audit tick interval. |
 | `KODEZART_DELIVERY_MAX_CONCURRENT_WATCHES` | `int` | `4` | >= 1, <= 32 | Maximum simultaneous delivery check watches across lanes. |
 | `KODEZART_DELIVERY_RED_RERUN_MAX_ATTEMPTS` | `int` | `1` | >= 0, <= 5 | Same-SHA reruns before a red check set is treated as reproduced. Zero disables flake re-observation; explicit unmet prerequisites consume no rerun. |
@@ -252,12 +261,12 @@ which was missing in the boot log.
 | `KODEZART_DISPATCH_HOLDER` | `str` | `kodezart` | min length 1 | Identity this deployment holds atomic claims under. Names the PROCESS, not the tracker account: two deployments sharing one workspace must carry different values or they cannot race. Fire claims only: no write lease is held under it or composed from it. |
 | `KODEZART_DISPATCH_LANE` | `str` | `tracker` |  | Fire-queue lane tracker-originated dispatches are enqueued on. |
 | `KODEZART_DISPATCH_RATE_LIMIT_COOLDOWN_SECONDS` | `float` | `1800.0` | >= 60.0, <= 86400.0 | Seconds the dispatch lane fires nothing after a run dies on a provider rate-limit rejection. The limit belongs to the account, not to the issue, so the next-ranked candidate would meet it unchanged: measured 2026-09-01, a run that died at 17:57 on a rejection was re-fired whole four minutes later. Lifted by the clock alone — nothing on the board clears a rate limit — and the lower bound keeps a cooldown longer than the tick that would otherwise re-fire. |
-| `KODEZART_DISPATCH_PASS_INTERVAL_SECONDS` | `float` | `300.0` | >= 10.0, <= 3600.0 | Seconds between approved-fire dispatch passes. Dispatch is single-winner-per-pass, so throughput IS the interval: the upper bound is what stops a loaded queue sitting idle for a working day. |
-| `KODEZART_DISPATCH_PASS_TIMEOUT_SECONDS` | `float` | `240.0` | >= 10.0, <= 3600.0 | Seconds one dispatch tick may take before it is abandoned. The tick is deterministic and model-free — a paged tracker scan, a claim, and the git plumbing that builds a base — so it belongs inside its own cadence, and the default leaves room for retries while still naming a hang before the next tick is due. On expiry the tick is cancelled and reported as timed out; the loop keeps its cadence and the next tick runs. The upper bound is the dispatch interval's own, so a budget can never outlast the slowest cadence that interval admits. |
-| `KODEZART_FIRE_PREP_PASS_INTERVAL_SECONDS` | `float` | `3600.0` | >= 60.0, <= 86400.0 | Seconds between fire-preparation pass sessions. The interval IS the latency a newly filed issue waits before anything prepares it, so it is the operator's answer to how stale the queue may get. |
-| `KODEZART_FIRE_PREP_PASS_TIMEOUT_SECONDS` | `float` | `1800.0` | >= 60.0, <= 86400.0 | Seconds one fire-preparation tick may take before it is abandoned. The tick is a whole unattended session over the board, so the budget is generous — half the shipped cadence, which bounds a session that stopped making progress and still leaves the next tick on time. On expiry the session is cancelled and reported as timed out; the loop continues. |
-| `KODEZART_GROOMING_PASS_INTERVAL_SECONDS` | `float` | `21600.0` | >= 60.0, <= 86400.0 | Seconds between grooming pass sessions. Grooming verifies the whole tree against the real code by building it, so one run costs far more than one preparation and buys a report rather than a queued unit of work — a slower cadence than fire preparation is the shipped default, never a shared one. |
-| `KODEZART_GROOMING_PASS_TIMEOUT_SECONDS` | `float` | `7200.0` | >= 60.0, <= 86400.0 | Seconds one grooming tick may take before it is abandoned. Grooming builds the tree it verifies, which is the most expensive session this deployment runs unattended, so its budget is larger than fire preparation's and still a fraction of its own cadence. On expiry the session is cancelled and reported as timed out; the loop continues. |
+| `KODEZART_DISPATCH_PASS_INTERVAL_SECONDS` | `float \| None` | none | >= 10.0, <= 3600.0 | Seconds between approved-fire dispatch passes, and the standing scopes' heartbeat's cadence. Dispatch is single-winner-per-pass, so throughput IS the interval: the upper bound is what stops a loaded queue sitting idle for a working day. Set together with its timeout. Unset: the pass is not scheduled, and neither is the heartbeat. |
+| `KODEZART_DISPATCH_PASS_TIMEOUT_SECONDS` | `float \| None` | none | >= 10.0, <= 3600.0 | Seconds one dispatch or heartbeat tick may take before it is abandoned. The tick is deterministic and model-free — a paged tracker scan, a claim, and the git plumbing that builds a base — so it belongs inside its own cadence. On expiry the tick is cancelled and reported as timed out; the loop keeps its cadence and the next tick runs. The upper bound is the dispatch interval's own, so a budget can never outlast the slowest cadence that interval admits. Set together with its interval. Unset: the pass is not scheduled. |
+| `KODEZART_FIRE_PREP_PASS_INTERVAL_SECONDS` | `float \| None` | none | >= 60.0, <= 86400.0 | Seconds between fire-preparation pass sessions. The interval IS the latency a newly filed issue waits before anything prepares it, so it is the operator's answer to how stale the queue may get. Set together with its timeout. Unset: the pass is not scheduled. |
+| `KODEZART_FIRE_PREP_PASS_TIMEOUT_SECONDS` | `float \| None` | none | >= 60.0, <= 86400.0 | Seconds one fire-preparation tick may take before it is abandoned. The tick is a whole unattended session over the board. On expiry the session is cancelled and reported as timed out; the loop continues. Set together with its interval. Unset: the pass is not scheduled. |
+| `KODEZART_GROOMING_PASS_INTERVAL_SECONDS` | `float \| None` | none | >= 60.0, <= 86400.0 | Seconds between grooming pass sessions. Grooming verifies the whole tree against the real code by building it, so one run costs far more than one preparation and buys a report rather than a queued unit of work. Set together with its timeout. Unset: the pass is not scheduled. |
+| `KODEZART_GROOMING_PASS_TIMEOUT_SECONDS` | `float \| None` | none | >= 60.0, <= 86400.0 | Seconds one grooming tick may take before it is abandoned. Grooming builds the tree it verifies, which is the most expensive session this deployment runs unattended. On expiry the session is cancelled and reported as timed out; the loop continues. Set together with its interval. Unset: the pass is not scheduled. |
 | `KODEZART_DISPATCH_PASS_GATE_SIGNALS` | `list[PassSignal]` | `["approved_changed"]` |  | Signals the dispatch pass is gated on. Dispatch claims and enqueues, so it has work exactly when an approved issue moved — one signal answers it completely. An empty list runs the pass every tick, which is legal and costs a claim attempt per tick. |
 | `KODEZART_FIRE_PREP_PASS_GATE_SIGNALS` | `list[PassSignal]` | `["issues_changed", "triage_backlog"]` |  | Signals the fire-preparation pass is gated on. Two of the three streams its prompt gathers: the standing triage backlog it re-sweeps whole, and issue activity since the last tick. `reviews_changed` is the third stream and stays selectable, but it is deliberately NOT shipped: the scan behind it is served by a tool that answers only to a per-user credential class, which a service key cannot hold, so a deployment selecting it refuses to boot until its credential can answer. The cost of the omission, stated rather than discovered: review activity with no issue activity beside it does not wake this pass. Dropping `triage_backlog` is the usual edit on a board that parks plan stubs at triage, since that signal is true while any exist. |
 | `KODEZART_GROOMING_PASS_GATE_SIGNALS` | `list[PassSignal]` | `[]` |  | Signals the grooming pass is gated on. Ships EMPTY — grooming verifies the tree by building it, which is work even when nothing changed, so a delta gate would skip exactly the thing the pass exists for. An operator paying per session may still gate it; the cost of doing so is the unchanged-board check. |
@@ -332,7 +341,7 @@ and report every unresolved reference.
 
 The table declares one phase that runs before scope approval and two that run
 inside an approved scope run. `groom` is the pre-approval phase: it runs on the
-grooming cadence and ends when approval lands. `ticket` and `criteria` are
+organize tick's cadence and ends when approval lands. `ticket` and `criteria` are
 stages of the approved run, and each is complete only when every member of the
 scope carries its marker.
 
@@ -845,7 +854,7 @@ nothing of those passes: no gate signal they configure is probed and no template
 they would send is rendered.
 
 `[[organize_scopes]]` rows are the standing scopes: each one is groomed before
-approval by the organize tick on the grooming cadence, and submitted as a scope
+approval by the organize tick on its own cadence, and submitted as a scope
 run by the `scope_heartbeat` pass once it carries `scope_labels.approved`. That
 pass takes the place of the withheld dispatch scan and reuses its knobs —
 `KODEZART_DISPATCH_PASS_INTERVAL_SECONDS` and
@@ -869,17 +878,18 @@ rejected. Each native tick uses the
 existing grooming run identity and resolves the configured repository trunk to
 a fresh immutable remote commit before assessment.
 
-The tick is scheduled under the grooming pass's name and, by default, on the
-grooming pass's cadence and budget. Two optional fields in the same group give
-it its own:
+The tick is scheduled under the grooming pass's name, on two fields of its own
+in the same group. Neither has a default, and no other pass's cadence stands in
+for them: unset, the tick is not scheduled.
 
 | Variable | Type | Default | Constraints | Description |
 | --- | --- | --- | --- | --- |
-| `KODEZART_ORGANIZE__INTERVAL_SECONDS` | `float \| None` | `None` | >= 60.0, <= 86400.0 | Seconds between organize ticks. Unset, the tick runs on `KODEZART_GROOMING_PASS_INTERVAL_SECONDS`, whose bounds these are. |
-| `KODEZART_ORGANIZE__TIMEOUT_SECONDS` | `float \| None` | `None` | >= 60.0, <= 86400.0 | Seconds one organize tick may take before it is abandoned. Unset, the tick runs under `KODEZART_GROOMING_PASS_TIMEOUT_SECONDS`, whose bounds these are. |
+| `KODEZART_ORGANIZE__INTERVAL_SECONDS` | `float \| None` | none | >= 60.0, <= 86400.0 | Seconds between organize ticks. Set together with its timeout. Unset: the pass is not scheduled; no other pass's cadence stands in for it. |
+| `KODEZART_ORGANIZE__TIMEOUT_SECONDS` | `float \| None` | none | >= 60.0, <= 86400.0 | Seconds one organize tick may take before it is abandoned. Set together with its interval. Unset: the pass is not scheduled. |
 
-Setting either leaves the grooming pass's own values untouched. The
-`pass_scheduler_started` event names the interval the tick was given.
+Set both or neither; one without the other refuses at load naming both. The
+`pass_scheduler_started` event names the interval the tick was given, and
+`scheduled_pass_not_configured` names the tick when it is not scheduled.
 
 ## Tracker write verification
 
@@ -909,9 +919,11 @@ repository ambiguity refuse configuration.
 
 Set required positive `KODEZART_AUDIT__TIMEOUT_SECONDS` and the shared
 `KODEZART_WRITE_BACK__MAX_VERIFY_ROUNDS` (1 through 10); neither has a default.
-`KODEZART_AUDIT` also accepts a JSON object with `timeout_seconds`. The existing
-`audit_sweep_interval_seconds` and `audit_full_sweep_interval_seconds` control the
-actual scheduled tick and periodic full coverage. The scheduler owns timing.
+`KODEZART_AUDIT` also accepts a JSON object with `timeout_seconds`.
+`KODEZART_AUDIT_SWEEP_INTERVAL_SECONDS` is the scheduled tick's interval and has
+no default: it is set together with the audit timeout, and one without the other
+refuses at load naming both. `audit_full_sweep_interval_seconds` controls
+periodic full coverage. The scheduler owns timing.
 
 Configured Audit also requires the actual tracker and forge reader, the
 `audit` and `escalation` marker prefixes, the `ruling` marker prefix (protection
@@ -919,9 +931,10 @@ records), the `decision` issue classification, and the configured `in_review`
 workflow state. The audited team must have
 exactly one unstarted workflow state, which is where a refuted criterion is
 reset to; the port refuses the reset otherwise. Partial configuration refuses
-preflight before queue startup. With the audit settings absent, the named
-`audit_pass_not_wired` event records `audit_unconfigured` — a deployment that
-declares scopes and configures no audit runs the rest of its passes.
+preflight before queue startup. With the audit settings absent, the
+`scheduled_pass_not_configured` event names `audit` and the two settings that
+would schedule it — a deployment that declares scopes and configures no audit
+runs the rest of its passes.
 
 The additive `audit` run kind uses the existing per-kind recorder interface.
 Currently `records.audit` explicitly refuses at startup: generic record sinks

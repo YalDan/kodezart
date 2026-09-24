@@ -31,7 +31,12 @@ from tests.fakes import (
 )
 from tests.prompts.test_organize_mandate_bindings import declared_operation
 from tests.prompts.test_prompt_wiring import load_registry
-from tests.services.test_prompt_passes import HEARTBEAT_PASS, _config
+from tests.services.test_prompt_passes import (
+    HEARTBEAT_PASS,
+    ORGANIZE_INTERVAL,
+    ORGANIZE_TIMEOUT,
+    _config,
+)
 from tests.services.test_run_surface_lease import _Board
 from tests.tracker.conftest import CLAIMED_ISSUE
 from tests.tracker.test_linear_mcp_tracker import tracker_over
@@ -53,7 +58,12 @@ def dependencies(tmp_path):
     operation = OperationConfig.model_validate(fields)
     config = _config(
         tmp_path,
-        organize={"max_admission_rounds": 2, "max_convergence_rounds": 2},
+        organize={
+            "max_admission_rounds": 2,
+            "max_convergence_rounds": 2,
+            "interval_seconds": ORGANIZE_INTERVAL,
+            "timeout_seconds": ORGANIZE_TIMEOUT,
+        },
         write_back={"max_verify_rounds": 2},
         fire_prep_pass_gate_signals=[],
         grooming_pass_gate_signals=[],
@@ -121,8 +131,8 @@ async def test_scheduled_owner_prepares_native_children_and_reentry_is_idempoten
     ]
     assert len(grooming) == 1
     scheduled = grooming[0]
-    assert scheduled.interval_seconds == config.grooming_pass_interval_seconds
-    assert scheduled.timeout_seconds == config.grooming_pass_timeout_seconds
+    assert scheduled.interval_seconds == ORGANIZE_INTERVAL
+    assert scheduled.timeout_seconds == ORGANIZE_TIMEOUT
     assert scheduled.report is not None
     assert await scheduled.run(FIXTURE_EPOCH) is PassRun.RAN
     # The scheduled pass is given the pre-approval row and no other: its own

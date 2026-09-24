@@ -45,7 +45,7 @@ async def test_absent_audit_configuration_has_a_named_runtime_event():
     queue = FakeJobQueue()
     with structlog.testing.capture_logs() as events:
         runtime = await build_dispatch_runtime(
-            config=AppConfig(audit_sweep_interval_seconds=3777.0),
+            config=AppConfig(_env_file=None),
             operation=None,
             dialled=None,
             github_api=None,
@@ -62,9 +62,17 @@ async def test_absent_audit_configuration_has_a_named_runtime_event():
             log=get_logger(__name__),
         )
     assert not [entry for entry in runtime.scheduler.passes if entry.name == "audit"]
-    absent = [event for event in events if event["event"] == "audit_pass_not_wired"]
+    absent = [
+        event
+        for event in events
+        if event["event"] == "scheduled_pass_not_configured"
+        and event["name"] == "audit"
+    ]
     assert len(absent) == 1
-    assert absent[0]["reason"] == "audit_unconfigured"
+    assert absent[0]["settings"] == [
+        "KODEZART_AUDIT_SWEEP_INTERVAL_SECONDS",
+        "KODEZART_AUDIT__TIMEOUT_SECONDS",
+    ]
 
 
 #: Comment identities the organize owner resolves while it is being built, so
@@ -118,6 +126,8 @@ def dependencies():
         write_back={"max_verify_rounds": 2},
         audit_sweep_interval_seconds=60,
         audit_full_sweep_interval_seconds=120,
+        supervisor_pass_interval_seconds=300.0,
+        supervisor_pass_timeout_seconds=120.0,
         fire_prep_pass_gate_signals=[],
         grooming_pass_gate_signals=[],
         organize={"max_admission_rounds": 2, "max_convergence_rounds": 2},
@@ -299,7 +309,12 @@ def test_partial_configuration_refuses_before_scheduling(missing):
         tracker = None
     elif missing == "forge":
         forge = None
-    elif missing in {"audit", "write_back"}:
+    elif missing == "audit":
+        # Unset as a pair: the interval alone would refuse at load.
+        config = AppConfig.model_validate(
+            {**config.model_dump(), "audit": None, "audit_sweep_interval_seconds": None}
+        )
+    elif missing == "write_back":
         config = AppConfig.model_validate({**config.model_dump(), missing: None})
     else:
         fields = operation.model_dump()
@@ -372,6 +387,7 @@ async def test_actual_main_lifespan_registers_and_executes_audit(
     config = _config(
         tmp_path,
         audit={"timeout_seconds": 17},
+        audit_sweep_interval_seconds=60,
         write_back=None
         if configuration == "missing_policy"
         else {"max_verify_rounds": 2},
