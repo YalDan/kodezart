@@ -184,10 +184,12 @@ class AuditEvidenceVerifier:
             raise AuditClaimReadError(
                 "the lane record changed during Evidence verification"
             )
-        latest = await read_verification_head(
-            git=self._git, repository=repository, remote=self._remote, record=record
-        )
-        if latest.sha != head:
+        latest_head = (
+            await read_verification_head(
+                git=self._git, repository=repository, remote=self._remote, record=record
+            )
+        ).sha
+        if latest_head != head:
             raise AuditClaimReadError(
                 "the remote head changed during Evidence verification"
             )
