@@ -19,7 +19,7 @@
   "tests/adapters/test_github_api.py": 131,
   "tests/adapters/test_host_skill_inventory.py": 20,
   "tests/adapters/test_hosted_mcp_session.py": 13,
-  "tests/adapters/test_http_mcp_tool_caller.py": 88,
+  "tests/adapters/test_http_mcp_tool_caller.py": 93,
   "tests/adapters/test_job_registry.py": 12,
   "tests/adapters/test_judgment_scanner.py": 62,
   "tests/adapters/test_knowledge_settings_delivery.py": 10,
@@ -542,10 +542,12 @@
   "tests/tracker/test_scope_alias_identity.py": 2,
   "tests/tracker/test_scope_ancestor_identity.py": 6,
   "tests/tracker/test_scope_approval.py": 30,
+  "tests/tracker/test_scope_container_identity.py": 12,
   "tests/tracker/test_scope_entry_approval.py": 13,
   "tests/tracker/test_scope_label_mappings.py": 48,
   "tests/tracker/test_scope_planning.py": 7,
   "tests/tracker/test_scope_reads.py": 66,
+  "tests/tracker/test_scope_root_issue_answer.py": 4,
   "tests/tracker/test_scope_status_writer.py": 21,
   "tests/tracker/test_scope_subtree_reach.py": 48,
   "tests/tracker/test_scope_tally.py": 31,
@@ -904,7 +906,10 @@
    "TestASessionThatEndedIsReopenedForTheNextCall.test_close_after_a_reopen_leaves_no_task_behind",
    "TestWorkersHitByOneDropShareOneReopen.test_two_workers_under_one_dropped_stream_both_recover",
    "TestWorkersHitByOneDropShareOneReopen.test_a_call_arriving_during_a_siblings_reopen_rides_its_session",
-   "TestWorkersHitByOneDropShareOneReopen.test_siblings_of_a_failed_reopen_each_try_their_own"
+   "TestWorkersHitByOneDropShareOneReopen.test_siblings_of_a_failed_reopen_each_try_their_own",
+   "TestARefusedCredential.test_a_refusal_answered_mid_session_does_not_latch",
+   "TestARefusedCredential.test_one_mid_session_refusal_is_reopened_and_the_call_goes_again",
+   "TestARefusedCredential.test_a_refusal_that_persists_at_the_reopen_is_the_credential_class"
   ],
   "tests/adapters/test_job_registry.py": [
    "test_live_for_scope_finds_jobs_on_every_lane_oldest_first",
@@ -7013,6 +7018,13 @@
    "test_multiple_container_parents_refuse_even_with_an_approval_label",
    "test_native_cancellation_propagates_without_answer_or_write"
   ],
+  "tests/tracker/test_scope_container_identity.py": [
+   "test_project_members_are_read_when_the_answer_carries_both_identities",
+   "test_initiative_members_are_read_through_its_listed_projects",
+   "test_container_metadata_keeps_the_uuid_as_the_canonical_reference",
+   "test_the_approval_read_matches_the_uuid_it_was_asked_for",
+   "test_an_answer_without_uuid_keeps_the_id_it_came_with"
+  ],
   "tests/tracker/test_scope_entry_approval.py": [
    "test_a_milestone_ref_reports_no_scope_label_on_every_implementation",
    "test_a_milestone_scope_is_approved_by_its_project",
@@ -7076,6 +7088,10 @@
    "test_linear_initiative_root_may_be_addressed_by_name",
    "test_linear_resolves_changed_initiative_children_on_each_call",
    "test_linear_container_metadata_refuses_a_parent_cycle"
+  ],
+  "tests/tracker/test_scope_root_issue_answer.py": [
+   "test_a_root_answer_without_the_key_reads_as_no_parent",
+   "test_a_sub_issue_answer_still_carries_its_parent"
   ],
   "tests/tracker/test_scope_status_writer.py": [
    "test_one_call_addresses_the_container_by_the_requests_own_key",
