@@ -13,6 +13,7 @@ defined meaning.  Boot asserts it rather than discovering it at render time.
 from collections.abc import Mapping, Sequence
 
 from kodezart.core.errors import PromptNamespaceCollisionError
+from kodezart.types.domain.dispatch import DispatchWorkflow
 from kodezart.types.domain.operation import (
     OperationConfig,
     PrincipalRole,
@@ -122,7 +123,11 @@ def _bind_absentable(
     bindings[f"{name}_absent"] = True if absent else None
 
 
-def operation_bindings(config: OperationConfig) -> dict[str, object]:
+def operation_bindings(
+    config: OperationConfig,
+    *,
+    dispatch_workflow: DispatchWorkflow = DispatchWorkflow.FIRE,
+) -> dict[str, object]:
     """The OperationConfig namespace as render bindings.
 
     Bare names for the two scalars, dotted namespaces for the mappings.
@@ -240,6 +245,16 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
             for entry in config.teams.values()
         ],
         absent=not config.teams,
+    )
+    # Present exactly when the dispatcher fires issues (the v0.2 workflow):
+    # the intake prompts render their fire-staging routine under this pair
+    # and, under its absence, the scope workflow's rule instead — the pass
+    # grooms and proposes nodes, and stages no fire to the queue.
+    _bind_absentable(
+        bindings,
+        "fire_dispatch",
+        True,
+        absent=dispatch_workflow is not DispatchWorkflow.FIRE,
     )
     # Present exactly when some pass must RECORD routes: an unbound team
     # beside a real repository choice.  The fire-prep template renders its
@@ -444,7 +459,11 @@ def assert_namespaces_disjoint(operation_names: Sequence[str]) -> None:
         raise PromptNamespaceCollisionError(msg, colliding=colliding)
 
 
-def bindings_for(config: OperationConfig | None) -> Mapping[str, object]:
+def bindings_for(
+    config: OperationConfig | None,
+    *,
+    dispatch_workflow: DispatchWorkflow = DispatchWorkflow.FIRE,
+) -> Mapping[str, object]:
     """Boot-time bindings for the registry: the operation namespace, checked.
 
     ``None`` means no operation config is configured; the namespace is then
@@ -453,7 +472,7 @@ def bindings_for(config: OperationConfig | None) -> Mapping[str, object]:
     if config is None:
         assert_namespaces_disjoint(())
         return {}
-    bindings = operation_bindings(config)
+    bindings = operation_bindings(config, dispatch_workflow=dispatch_workflow)
     # Check declared roots too: a new configuration field must not collide
     # even before its projection into operation_bindings is implemented.
     assert_namespaces_disjoint(sorted(set(type(config).model_fields) | set(bindings)))

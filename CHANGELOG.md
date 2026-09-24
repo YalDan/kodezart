@@ -11,6 +11,14 @@ concerns.
 
 ### Changed
 
+- The fire-prep and grooming prompts (`anthropic_v5`) render their v0.2 fire
+  staging (single frozen fires to the queue's proposed label) only under
+  `KODEZART_DISPATCH_WORKFLOW=fire`; under `scope` they groom triage into the
+  hierarchy and propose the node, and stage nothing, because no dispatcher fires
+  an issue in that workflow. Both carry a standing rule: the simplest solution,
+  verified; scopes pushed to a decision; a decision asked for in one short
+  comment with options, a lean and a table or diagram when shape is the
+  question.
 - A tracker call the vendor refuses (401, which Linear also answers for a key
   whose hourly request budget is spent) is answered with silence: the adapter
   stops asking for fifteen minutes, presents the credential once more, and

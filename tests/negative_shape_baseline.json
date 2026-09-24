@@ -307,6 +307,7 @@
   "tests/prompts/test_absence_bindings.py": 48,
   "tests/prompts/test_amendment_prompts.py": 9,
   "tests/prompts/test_criteria_generation_prompts.py": 38,
+  "tests/prompts/test_dispatch_workflow_bindings.py": 17,
   "tests/prompts/test_fire_record.py": 18,
   "tests/prompts/test_fire_time_ruling_prompt.py": 13,
   "tests/prompts/test_issue_label_bindings.py": 3,
@@ -4743,6 +4744,12 @@
    "test_the_refuter_must_measure_a_cost_claim_rather_than_argue_it",
    "test_the_refuter_never_receives_the_generator_reasoning",
    "test_neither_outcome_is_a_resting_place_for_an_inconclusive_refuter"
+  ],
+  "tests/prompts/test_dispatch_workflow_bindings.py": [
+   "test_the_pair_is_exclusive_and_defaults_to_the_fire_workflow",
+   "test_fire_prep_stages_fires_only_under_the_fire_workflow",
+   "test_grooming_reads_the_queue_only_under_the_fire_workflow",
+   "test_both_intake_prompts_carry_the_standing_rule_under_both_workflows"
   ],
   "tests/prompts/test_fire_record.py": [
    "test_granted_tracked_fire_gets_its_own_exact_record_clause",
