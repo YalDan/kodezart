@@ -32,15 +32,13 @@ V5_SET_DIR = default_sets_root() / V5_SET
 #: test that hard-codes the sequence states the ordering twice.
 LADDER: tuple[SessionEffort, ...] = tuple(SessionEffort)
 
-#: The set's own declared role → effort, as the fire-time ruling FR-2 fixed
-#: it: the harness default named, one level below it for judgment, and the
-#: floor for the roles that emit a name or a message.
-EXPECTED_EFFORT: dict[SessionRole, SessionEffort] = {
-    SessionRole.GENERATIVE: SessionEffort.XHIGH,
-    SessionRole.IMPLEMENTATION: SessionEffort.XHIGH,
-    SessionRole.EVALUATIVE: SessionEffort.HIGH,
-    SessionRole.UTILITY: SessionEffort.LOW,
-}
+#: The set's own declared role → effort. Every role runs at the maximum:
+#: the owner's ruling of 2026-09-24 ("we always want maximum thinking")
+#: replaced the fire-time ruling FR-2 that ran judgment one level below
+#: authoring and the utility roles at the floor.
+EXPECTED_EFFORT: dict[SessionRole, SessionEffort] = dict.fromkeys(
+    SessionRole, SessionEffort.MAX
+)
 
 
 def v5_metadata() -> PromptSetMetadata:
@@ -49,11 +47,6 @@ def v5_metadata() -> PromptSetMetadata:
 
     raw = (V5_SET_DIR / "set.toml").read_text(encoding="utf-8")
     return PromptSetMetadata.model_validate(tomllib.loads(raw))
-
-
-def rank(effort: SessionEffort) -> int:
-    """Where *effort* sits on the ladder."""
-    return LADDER.index(effort)
 
 
 # ---------------------------------------------------------------------------
@@ -101,14 +94,14 @@ def test_the_registry_serves_each_key_the_effort_of_its_role(key: PromptKey) -> 
     assert registry.session_policy(key).effort is metadata.session_roles[role].effort
 
 
-def test_judgment_sits_strictly_below_authoring_on_the_ladder() -> None:
-    """The substance of the policy: grading is cheaper work than authoring."""
-    assert rank(EXPECTED_EFFORT[SessionRole.EVALUATIVE]) < rank(
-        EXPECTED_EFFORT[SessionRole.GENERATIVE],
-    )
-    assert rank(EXPECTED_EFFORT[SessionRole.UTILITY]) < rank(
-        EXPECTED_EFFORT[SessionRole.EVALUATIVE],
-    )
+def test_every_role_runs_at_the_top_of_the_ladder() -> None:
+    """The substance of the policy since 2026-09-24: no role thinks less."""
+    top = LADDER[-1]
+    assert top is SessionEffort.MAX
+    declared = {
+        role: policy.effort for role, policy in v5_metadata().session_roles.items()
+    }
+    assert declared == dict.fromkeys(SessionRole, top)
 
 
 def test_a_key_no_role_claims_is_a_typed_boot_error(tmp_path: Path) -> None:

@@ -310,9 +310,20 @@ OUTSIDE_THE_STANDARD: tuple[str, ...] = (
     "schemas) belong in typed domain models, never in string literals or "
     "implicit contracts between files.",
     "Act as soon as you have enough information. Your turn is complete only "
-    "when you have produced the required structured output — if you notice "
-    "yourself ending with a plan or a promise about work not yet done, do that "
-    "work now.",
+    "when you have produced the required structured output: a message with no "
+    "tool call and no structured output ends your turn, and the work stops "
+    "there. Four ways of ending early are not wanted — a summary that closes by "
+    "announcing the next step instead of taking it; an offer to carry on unless "
+    "someone prefers otherwise, which waits for an answer nobody will give; a "
+    "list of decisions for a principal when none of them blocks the rest of the "
+    "work; and stopping to report because the turn has been long or a milestone "
+    "is done. Status notes and your recommendations on open decisions are "
+    "welcome in the same message as your next tool call; carry on with whatever "
+    "does not depend on an answer, and if you notice yourself ending with a plan "
+    "or a promise about work not yet done, do that work now. The stops that are "
+    "wanted are the ones where nothing can move without a principal, or where "
+    "the thing blocking you is deliberately protected from you; none of this "
+    "overrides confirmation for risky or destructive actions.",
 )
 
 #: The opening words of the standard's own paragraph.

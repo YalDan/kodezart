@@ -146,6 +146,9 @@ class SessionRole(StrEnum):
     UTILITY = "utility"
     #: Changes the workspace.
     IMPLEMENTATION = "implementation"
+    #: Grooms or prepares a whole board as one unattended session on a
+    #: schedule, reading and writing the tracker, the store and the forge.
+    SCHEDULED_PASS = "scheduled_pass"
 
 
 class SessionRolePolicy(BaseModel):

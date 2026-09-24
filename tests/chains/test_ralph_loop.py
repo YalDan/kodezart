@@ -1922,14 +1922,14 @@ def evaluative_sites(source: str, schema_name: str) -> list[str]:
 async def test_each_dispatch_of_one_run_carries_the_effort_its_role_declares() -> None:
     """Both tiers in a single run: implementation authors, evaluation grades.
 
-    The ralph loop dispatches both, so the relation the policy exists to
-    express — judgment strictly below authoring — is observable in one
-    run rather than inferred across two.
+    The ralph loop dispatches both, so the policy — every role at the top of
+    the ladder since the 2026-09-24 ruling — is observable in one run rather
+    than inferred across two.
     """
     from kodezart.types.domain.prompts import PromptKey, SessionRole
     from kodezart.types.domain.subagents import SessionEffort
     from tests.chains.test_dispatch_definitions import evaluator_dispatches, v5_provider
-    from tests.prompts.test_session_policy import rank, v5_metadata
+    from tests.prompts.test_session_policy import v5_metadata
 
     provider = v5_provider()
     runner = await evaluator_dispatches(provider)
@@ -1948,7 +1948,7 @@ async def test_each_dispatch_of_one_run_carries_the_effort_its_role_declares() -
     generative = efforts["stream_workflow"]
     assert isinstance(evaluative, SessionEffort)
     assert isinstance(generative, SessionEffort)
-    assert rank(evaluative) < rank(generative)
+    assert evaluative is generative is SessionEffort.MAX
 
     assert provider.session_policy(PromptKey.EVALUATION).effort is evaluative
 

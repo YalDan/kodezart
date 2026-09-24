@@ -46,6 +46,7 @@ from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.session import PermissionMode, SessionType
 from kodezart.types.domain.skills import SkillsMode, SkillsSelection
+from kodezart.types.domain.subagents import SessionEffort
 from tests.fakes import (
     FIXTURE_EPOCH,
     SUPPRESS_ALL_SKILLS,
@@ -285,7 +286,7 @@ async def test_a_pass_runs_under_the_policy_its_own_set_declares(
 
     (call,) = runner.calls
     assert call["session_policy"] == registry.session_policy(key)
-    assert call["session_policy"].effort == "xhigh"
+    assert call["session_policy"].effort is SessionEffort.MAX
     assert call["skills"] == registry.session_skills(key, ALL_SKILLS)
     assert call["skills"] != ALL_SKILLS
 
