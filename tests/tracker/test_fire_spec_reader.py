@@ -140,7 +140,7 @@ async def test_the_fire_spec_criterion_read_acquires_no_write_lease(
         nothing_written(tracker) if isinstance(tracker, FakeTrackerPort) else None
     )
     spec, _ = await TrackerCriteria(tracker=tracker).read_entry(issue_key=SUBJECT)
-    assert spec.criteria == (CRITERION, "grandchild/1")
+    assert spec.criteria == (CRITERION, "grandchild/1", "great-grandchild/1")
     assert tracker_writes() == writes
     if isinstance(tracker, FakeTrackerPort):
         assert tracker.lease_acquisitions == []
