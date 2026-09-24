@@ -205,7 +205,7 @@ async def test_the_style_and_the_fan_out_bound_share_one_settings_object() -> No
     )
 
     assert json.loads(cast(Any, session.options).settings) == {
-        "workflowSizeGuideline": 6,
+        "workflowSizeGuideline": "medium",
         "outputStyle": _DECLARED_STYLE,
     }
 

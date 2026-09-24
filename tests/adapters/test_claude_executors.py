@@ -703,7 +703,7 @@ async def test_workflow_gates_reach_the_sdk_env_and_settings(module: str) -> Non
     assert options.env == {"CLAUDE_CODE_WORKFLOWS": "1"}
     assert options.plugins == [{"type": "local", "path": ".claude"}]
     assert options.settings is not None
-    assert json.loads(options.settings) == {"workflowSizeGuideline": 6}
+    assert json.loads(options.settings) == {"workflowSizeGuideline": "medium"}
 
 
 @pytest.mark.parametrize("module", EXECUTOR_MODULES)

@@ -32,8 +32,13 @@ _WORKFLOWS_VAR: Final = "CLAUDE_CODE_WORKFLOWS"
 _WORKFLOWS_DISABLED_VAR: Final = "CLAUDE_CODE_DISABLE_WORKFLOWS"
 _SWITCH_ON: Final = "1"
 
-#: The settings key bounding how wide one workflow may fan out.
+#: The settings key bounding how wide one workflow may fan out. Its value is
+#: a named size, never a count: each size aims below its bound, the last sets
+#: none, and a value outside these makes the harness discard the whole
+#: settings object, output style included.
 _SIZE_GUIDELINE_KEY: Final = "workflowSizeGuideline"
+_SIZE_GUIDELINES: Final = (("small", 5), ("medium", 10), ("large", 50))
+_UNRESTRICTED_SIZE: Final = "unrestricted"
 
 #: The settings key naming the output style a session's system prompt runs
 #: under.  The Python SDK offers no programmatic option for it, so the
@@ -131,12 +136,20 @@ def map_settings(access: WorkflowAccess | None, output_style: str | None) -> str
     """
     settings: dict[str, object] = {}
     if access is not None and access.enabled:
-        settings[_SIZE_GUIDELINE_KEY] = access.size_guideline
+        settings[_SIZE_GUIDELINE_KEY] = _size_guideline(access.size_guideline)
     if output_style is not None:
         settings[_OUTPUT_STYLE_KEY] = output_style
     if not settings:
         return None
     return json.dumps(settings)
+
+
+def _size_guideline(cap: int) -> str:
+    """The smallest named size whose bound *cap* stays below."""
+    return next(
+        (name for name, bound in _SIZE_GUIDELINES if cap < bound),
+        _UNRESTRICTED_SIZE,
+    )
 
 
 def map_model(policy: SessionPolicy, construction_model: str | None) -> str | None:
