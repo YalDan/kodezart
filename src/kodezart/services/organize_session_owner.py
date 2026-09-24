@@ -29,6 +29,7 @@ from kodezart.core.protocols import (
     TrackerScopeApprovalReader,
 )
 from kodezart.domain.organize import is_organize_subject, stage_unlabelled
+from kodezart.domain.prompt_variables import scope_variables
 from kodezart.services.scope_approval import scope_approved, scope_carries
 from kodezart.types.domain.agent import ResultEvent
 from kodezart.types.domain.gating import RepoVisibility
@@ -46,7 +47,7 @@ from kodezart.types.domain.organize_owner import (
     StageIncompleteHalt,
 )
 from kodezart.types.domain.prompts import PromptKey
-from kodezart.types.domain.scope import ScopeKind, ScopeRef
+from kodezart.types.domain.scope import ScopeRef
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.subagents import NO_SUBAGENTS
@@ -186,13 +187,7 @@ class OrganizeSessionOwner:
         """
         return self._prompts.template_for(PromptKey.ORGANIZE_SESSION).render(
             {
-                "scope_key": scope.key,
-                "scope_project": True if scope.kind is ScopeKind.PROJECT else None,
-                "scope_issue": True if scope.kind is ScopeKind.ISSUE else None,
-                "scope_initiative": (
-                    True if scope.kind is ScopeKind.INITIATIVE else None
-                ),
-                "scope_milestone": True if scope.kind is ScopeKind.MILESTONE else None,
+                **scope_variables(scope),
                 "phase_marker": phase.terminal_marker,
                 "owed_members": tuple(owed),
                 phase.role.prompt_phase: True,

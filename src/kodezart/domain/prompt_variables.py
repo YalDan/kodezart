@@ -9,6 +9,7 @@ from kodezart.types.domain.criteria import (
     ValidatedCriterion,
 )
 from kodezart.types.domain.organize import AdmissionResult
+from kodezart.types.domain.scope import ScopeKind, ScopeRef
 
 
 def changeset_variables(changeset: ChangesetDigest) -> dict[str, object]:
@@ -76,6 +77,22 @@ def execution_criteria_variables(
         "tracker_criteria": True
         if any(not isinstance(c, ValidatedCriterion) for c in criteria)
         else None,
+    }
+
+
+def scope_variables(ref: ScopeRef) -> dict[str, object]:
+    """The parent a prompt names: its key, and which kind of node it is.
+
+    The kind decides what the key is to the tracker: a project's, an
+    initiative's or a milestone's id, or an issue's key.  Exactly one kind
+    is bound; the other three are ``None``, which ``{{#if}}`` reads as absent.
+    """
+    return {
+        "scope_key": ref.key,
+        "scope_project": True if ref.kind is ScopeKind.PROJECT else None,
+        "scope_issue": True if ref.kind is ScopeKind.ISSUE else None,
+        "scope_initiative": True if ref.kind is ScopeKind.INITIATIVE else None,
+        "scope_milestone": True if ref.kind is ScopeKind.MILESTONE else None,
     }
 
 
