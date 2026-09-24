@@ -14,21 +14,15 @@ from datetime import UTC, datetime
 import pytest
 
 from kodezart.composition import organize as organize_composition
-from kodezart.domain.errors import (
-    OrganizeWriteRefusalError,
-    ScopeNotApprovedError,
-    SurfaceLeaseError,
-)
-from kodezart.types.domain.agent import SystemEvent
+from kodezart.core.prompt_namespaces import operation_bindings
+from kodezart.domain.errors import ScopeNotApprovedError
 from kodezart.types.domain.dispatch import PassRun
 from kodezart.types.domain.operation import LifecycleStage, ScopeLabel
-from tests.chains.test_organize import result as organize_result
 from tests.fakes import (
+    DEFAULT_PROMPT_SET,
     SUPPRESS_ALL_SKILLS,
     TRACKER_WRITE_JOURNALS,
-    PassThroughGate,
     handed_over,
-    make_prompt_provider,
     tracker_state,
 )
 from tests.integration.test_scope_entry import (
@@ -37,11 +31,13 @@ from tests.integration.test_scope_entry import (
     STAGED,
     TICKET_MARKER,
     errors,
+    is_organize_session,
     staging_runtime,
     standing_board,
     standing_operation,
 )
 from tests.integration.test_scope_runtime import SCOPE, bounded_walk, ticks_of
+from tests.prompts.test_prompt_wiring import load_registry
 
 LANES = ("A", "B")
 NOW = datetime(2026, 9, 22, tzinfo=UTC)
@@ -62,9 +58,10 @@ def grooming(harness, operation):
         runner=harness.service,
         workspace=harness.workspace,
         git=harness.git,
-        prompts=make_prompt_provider(),
+        prompts=load_registry(
+            default_set=DEFAULT_PROMPT_SET, bindings=operation_bindings(operation)
+        ),
         skills=SUPPRESS_ALL_SKILLS,
-        gate=PassThroughGate(),
     )
 
 
@@ -293,101 +290,36 @@ async def test_an_unapproved_scope_is_groomed_and_admits_no_run(monkeypatch):
     assert port.leases == {}
 
 
-#: The body of the member the authorship trigger refuses once, so its
-#: author's answer would change the board if it were written.
-DRAFT = "Draft awaiting preparation."
-
-
-def refusing_first_judgement(harness, key):
-    """The first admission judgement of *key* refuses; every other is the double's."""
-    original = harness.executor.stream
-    refused = []
-
-    async def stream(**kwargs):
-        title = (kwargs.get("output_format") or {}).get("schema", {}).get("title")
-        keys = re.findall(r"<issue_key>(.*?)</issue_key>", kwargs.get("prompt", ""))
-        refusing = (
-            title == "AdmissionJudgment" and keys and keys[-1] == key and not refused
-        )
-        async for event in original(**kwargs):
-            if refusing and not isinstance(event, SystemEvent):
-                refused.append(key)
-                event = organize_result(
-                    structured_output={
-                        "issue_id": key,
-                        "verdict": "not_buildable",
-                        "evidence": "The body is a draft.",
-                        "refusal_kind": "spec_gap",
-                        "invented_decision": "Prepare the body from its source.",
-                    }
-                )
-            yield event
-
-    return stream
-
-
-@pytest.mark.parametrize("trigger", ["authorship", "marker"])
-async def test_approval_during_a_grooming_session_refuses_its_write_and_frees_the_run(
-    monkeypatch, trigger
+async def test_approval_during_the_grooming_session_keeps_its_markers_and_frees_the_run(
+    monkeypatch,
 ):
-    """Approval inside a grooming session refuses that row's next write.
+    """Approval landing inside the grooming session stops nothing the session does.
 
-    ``authorship``: the scope is approved inside the tick's first author
-    session, so the author's write is refused before it lands and no member
-    gains a marker. ``marker``: the scope is approved while the pass reads
-    back the first member's marker, so the second member keeps none. Either
-    way the pre-approval row is refused on the reading it makes before
-    every write and holds nothing; the run the same approval admits stages
-    every member and walks.
+    The session labels through its own tools and kodezart writes nothing
+    after it, so the tick ends with the pre-approval marker on every member
+    and no lease anywhere; the run the same approval admits then stages every
+    member and walks.
     """
     port = triaged(standing_board(LANES))
     operation = standing_operation()
     harness = staging_runtime(
         port, LANES, monkeypatch=monkeypatch, builds=[], operation=operation
     )
-    if trigger == "authorship":
-        port.issues["A"] = port.issues["A"].model_copy(update={"body": DRAFT})
-        monkeypatch.setattr(
-            harness.executor, "stream", refusing_first_judgement(harness, "A")
-        )
     original = harness.executor.stream
-    at_approval = {}
-
-    def approve_once():
-        if not at_approval:
-            at_approval.update(
-                {
-                    name: len(getattr(port, name))
-                    for name in ("issue_writes", "comment_writes")
-                }
-            )
-            approve(port)
+    landed = []
 
     async def approving(**kwargs):
-        title = (kwargs.get("output_format") or {}).get("schema", {}).get("title")
-        if trigger == "authorship" and title == "OrganizeProposal":
-            approve_once()
+        if is_organize_session(kwargs) and not landed:
+            approve(port)
+            landed.append(before(port))
         async for event in original(**kwargs):
-            if (
-                trigger == "marker"
-                and title == "WriteBackFinding"
-                and '"kind":"issue_label_set"' in kwargs["prompt"]
-            ):
-                approve_once()
             yield event
 
     monkeypatch.setattr(harness.executor, "stream", approving)
     tick = before(port)
-    with pytest.raises(OrganizeWriteRefusalError, match="groom is not admitted"):
-        await grooming(harness, operation).run(NOW)
-    assert at_approval
-    # Nothing of the tick's lands once approval has: no issue write, no comment.
-    for name, length in at_approval.items():
-        assert len(getattr(port, name)) == length, name
-    groomed = {key for key, carried in markers(port).items() if GROOM_MARKER in carried}
-    assert len(groomed) == (0 if trigger == "authorship" else 1)
-    assert_wrote_only(port, tick, dict.fromkeys(groomed, (GROOM_MARKER,)))
-
+    assert await grooming(harness, operation).run(NOW) is PassRun.RAN
+    assert landed, "no grooming session ran"
+    assert_wrote_only(port, tick, dict.fromkeys(LANES, (GROOM_MARKER,)))
     assert port.leases == {}
 
     run = before(port)
@@ -397,9 +329,7 @@ async def test_approval_during_a_grooming_session_refuses_its_write_and_frees_th
         port, run, dict.fromkeys(LANES, (TICKET_MARKER, STAGED)), closed=LANES
     )
     assert markers(port) == {
-        key: frozenset({TICKET_MARKER, STAGED})
-        | (frozenset({GROOM_MARKER}) if key in groomed else frozenset())
-        for key in LANES
+        key: frozenset({GROOM_MARKER, TICKET_MARKER, STAGED}) for key in LANES
     }
     # Three ticks: the first two fire A and then B, and the third observes
     # both dispatched with nothing left to offer.
@@ -440,63 +370,4 @@ async def test_an_approved_scope_runs_its_stages_and_the_grooming_tick_takes_no_
     # the journals are what show the tick took none at all.
     assert gained(port, tick, "lease_writes") == []
     assert gained(port, tick, "lease_releases") == []
-    assert port.leases == {}
-
-
-async def test_a_run_admitted_while_grooming_holds_its_set_is_refused_at_its_stage(
-    monkeypatch,
-):
-    """The one window the invariant leaves, and what a run admitted in it does.
-
-    Approval lands during a grooming session, while that round still holds
-    its declared set. A run started right then passes its approval reading,
-    and its first stage acquisition is refused naming the grooming holder,
-    so it writes nothing. Once the tick has ended, a later run stages every
-    member and walks.
-    """
-    port = triaged(standing_board(LANES))
-    operation = standing_operation()
-    harness = staging_runtime(
-        port, LANES, monkeypatch=monkeypatch, builds=[], operation=operation
-    )
-    original = harness.executor.stream
-    window = {}
-
-    async def run_inside(**kwargs):
-        title = (kwargs.get("output_format") or {}).get("schema", {}).get("title")
-        if title == "AdmissionJudgment" and not window and port.leases:
-            window["holders"] = {lease.holder for lease in port.leases.values()}
-            approve(port)
-            window["before"] = before(port)
-            with pytest.raises(SurfaceLeaseError) as refused:
-                await bounded_walk(harness, job="window-run")
-            window["refusal"] = refused.value
-            window["gained_labels"] = gained_labels(port, window["before"])
-            window["gained"] = {
-                name: gained(port, window["before"], name) for name in LOGS
-            }
-        async for event in original(**kwargs):
-            yield event
-
-    monkeypatch.setattr(harness.executor, "stream", run_inside)
-    # The grooming round reads approval before anything it would write next,
-    # so it ends having written nothing after the approval landed.
-    assert await grooming(harness, operation).run(NOW) is PassRun.RAN
-    assert window, "no grooming session ran while the round held its set"
-    (holder,) = window["holders"]
-    assert window["refusal"].current_holder == holder
-    assert holder != "window-run"
-    assert window["gained_labels"] == dict.fromkeys(LANES, frozenset())
-    assert window["gained"] == {name: [] for name in LOGS}
-    assert_wrote_only(port, window["before"], {})
-    assert gained(port, window["before"], "issue_writes") == []
-    assert port.leases == {}
-
-    monkeypatch.setattr(harness.executor, "stream", original)
-    run = before(port)
-    events = await bounded_walk(harness, job="after-the-tick")
-    assert errors(events) == []
-    assert_wrote_only(
-        port, run, dict.fromkeys(LANES, (TICKET_MARKER, STAGED)), closed=LANES
-    )
     assert port.leases == {}

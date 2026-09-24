@@ -1,6 +1,8 @@
-"""Construct the actual Organize owner and canonical independent write verifier."""
+"""Construct the Organize owners: the session owner the stages run, and the older
+cascade owner, which stays constructible and is wired nowhere."""
 
 from collections.abc import Sequence
+from pathlib import Path
 
 from kodezart.chains.organize import OrganizeAdmission
 from kodezart.chains.organize_author import OrganizeAuthor
@@ -20,6 +22,7 @@ from kodezart.core.protocols import (
 from kodezart.domain.organize import stage_rows
 from kodezart.services.organize_context import OrganizeContextReader
 from kodezart.services.organize_owner import OrganizeOwner
+from kodezart.services.organize_session_owner import OrganizeSessionOwner
 from kodezart.services.organize_tick import OrganizeTarget, OrganizeTick
 from kodezart.services.scope_entry import ScopeEntry
 from kodezart.services.scope_heartbeat import ScopeHeartbeat
@@ -96,6 +99,36 @@ def build_organize_owner(
     )
 
 
+def build_organize_session_owner(
+    *,
+    config: AppConfig,
+    tracker: TrackerPort,
+    runner: AgentRunner,
+    prompts: PromptSetProvider,
+    skills: SkillsSelection,
+    phases: Sequence[ResolvedMandateSpec],
+) -> OrganizeSessionOwner:
+    """The owner the stages run: one session per open phase, one read after.
+
+    The session runs in the scheduled passes' own working directory, which
+    is deliberately no cloned repository: with the host MCP opt-in on, a
+    session standing in a cloned tree would load that tree's own MCP
+    configuration.
+    """
+    working_dir = Path(config.scheduled_pass_working_dir).expanduser()
+    working_dir.mkdir(parents=True, exist_ok=True)
+    return OrganizeSessionOwner(
+        members=tracker,
+        approvals=tracker,
+        runner=runner,
+        prompts=prompts,
+        skills=skills,
+        phases=phases,
+        tracker_server_name=config.tracker.server_name,
+        working_dir=str(working_dir),
+    )
+
+
 def build_scope_organizer(
     *,
     config: AppConfig,
@@ -106,23 +139,21 @@ def build_scope_organizer(
     git: GitService,
     prompts: PromptSetProvider,
     skills: SkillsSelection,
-    gate: OutboundContentGate,
-    repo_url: str,
     under_approval: bool,
 ) -> ScopeOrganizer:
-    """One repository's organizer over the rows that run on one side of approval."""
+    """One repository's organizer over the rows that run on one side of approval.
+
+    The session owner hands its session no repository, so the organizer is
+    the same for every repository the operation declares; the organizer's
+    own head read is what still names one.
+    """
     return ScopeOrganizer(
-        owner=build_organize_owner(
+        owner=build_organize_session_owner(
             config=config,
-            operation=operation,
             tracker=tracker,
             runner=runner,
-            workspace=workspace,
-            git=git,
             prompts=prompts,
             skills=skills,
-            gate=gate,
-            repo_url=repo_url,
             phases=stage_rows(
                 operation.resolve_organize_mandates(), under_approval=under_approval
             ),
@@ -143,7 +174,6 @@ def build_scope_entry(
     git: GitService,
     prompts: PromptSetProvider,
     skills: SkillsSelection,
-    gate: OutboundContentGate,
     registry: JobRegistry,
 ) -> ScopeEntry:
     """What a scope run passes through before its first tick.
@@ -158,7 +188,7 @@ def build_scope_entry(
     is the one the queue writes into.
     """
 
-    def stages_for(url: str) -> ScopeOrganizer | None:
+    def stages_for(_url: str) -> ScopeOrganizer | None:
         if not operation.organize_mandates:
             return None
         return build_scope_organizer(
@@ -170,8 +200,6 @@ def build_scope_entry(
             git=git,
             prompts=prompts,
             skills=skills,
-            gate=gate,
-            repo_url=url,
             under_approval=True,
         )
 
@@ -260,7 +288,6 @@ def build_organize_tick(
     git: GitService,
     prompts: PromptSetProvider,
     skills: SkillsSelection,
-    gate: OutboundContentGate,
 ) -> OrganizeTick | None:
     """Absent means undeclared; partial configuration refuses before scheduling."""
     if not verify_organize_configuration(
@@ -285,8 +312,6 @@ def build_organize_tick(
                 git=git,
                 prompts=prompts,
                 skills=skills,
-                gate=gate,
-                repo_url=binding.repo_url,
                 under_approval=False,
             ),
         )

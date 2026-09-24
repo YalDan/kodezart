@@ -1,12 +1,12 @@
 """Organize one scope against one repository, at that repository's exact head."""
 
 import re
+from typing import Protocol
 
 from kodezart.core.logging import get_logger
 from kodezart.core.protocols import GitService, WorkspaceProvider
 from kodezart.domain.errors import OrganizeWriteRefusalError
 from kodezart.services.git_observations import read_remote_head
-from kodezart.services.organize_owner import OrganizeOwner
 from kodezart.services.owned_workspace import owned_workspace
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.operation import RepoEntry
@@ -15,6 +15,20 @@ from kodezart.types.domain.scope import ScopeRef
 
 #: A commit address the configured trunk actually resolves to on the remote.
 _EXACT_HEAD = r"(?:[0-9a-f]{40}|[0-9a-f]{64})"
+
+
+class OrganizeStageOwner(Protocol):
+    """What the organizer asks of an owner: run the rows, answer a report."""
+
+    async def run(
+        self,
+        *,
+        scope: ScopeRef,
+        repo_url: str,
+        base_ref: str,
+        job_id: str,
+        visibility: RepoVisibility,
+    ) -> OrganizeReport: ...
 
 
 class ScopeOrganizer:
@@ -28,7 +42,7 @@ class ScopeOrganizer:
     def __init__(
         self,
         *,
-        owner: OrganizeOwner,
+        owner: OrganizeStageOwner,
         git: GitService,
         workspace: WorkspaceProvider,
         remote: str,

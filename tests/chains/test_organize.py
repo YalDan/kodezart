@@ -1547,12 +1547,10 @@ GAP_COMPUTATION_MODULES = frozenset(
         "services/escalation_signals.py",
         "services/mandate_graph.py",
         "services/organize_owner.py",
-        "services/organize_tick.py",
+        "services/organize_session_owner.py",
         "services/run_alarm_recorder.py",
         "services/run_shape.py",
         "services/scope_dispatcher.py",
-        "services/scope_entry.py",
-        "services/scope_organizer.py",
         "services/scope_runtime.py",
         "services/scope_tally.py",
         "services/supervisor_pass.py",
@@ -3050,6 +3048,9 @@ CALL_SITES_NOT_RUN = {
     "of the organize service, routing through its ports.",
     ("services/organize_owner.py", "OrganizeOwner.run"): "Async; the organize "
     "service's whole pass over its tracker, agent and gate ports.",
+    ("services/organize_session_owner.py", "OrganizeSessionOwner.run"): "Async; "
+    "the session owner's whole pass: the gate and the scope through the "
+    "tracker port, one session through the agent runner per open phase.",
     ("services/audit_terminal.py", "AuditTerminalReader.observe"): "Async; a "
     "method of the audit terminal reader, reading the issue and its criterion "
     "family through the tracker port and the branch and pull request through "

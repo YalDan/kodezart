@@ -12,7 +12,7 @@ from itertools import groupby
 
 import pytest
 
-from kodezart.composition.organize import build_organize_owner, build_organize_tick
+from kodezart.composition.organize import build_organize_owner
 from kodezart.config.app import AppConfig
 from kodezart.config.organize import OrganizeSettings
 from kodezart.core.prompt_namespaces import operation_bindings
@@ -26,6 +26,8 @@ from kodezart.domain.fire_spec import criterion_field_bodies
 from kodezart.domain.organize import stage_rows
 from kodezart.services import organize_owner
 from kodezart.services.agent_service import AgentService
+from kodezart.services.organize_tick import OrganizeTarget, OrganizeTick
+from kodezart.services.scope_organizer import ScopeOrganizer
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.operation import OperationConfig, ScopeLabel
 from kodezart.types.domain.organize import (
@@ -251,15 +253,17 @@ def factory(
     rows = stage_rows(
         operation.resolve_organize_mandates(), under_approval=under_approval
     )
-    constructor = build_organize_tick if tick else build_organize_owner
-    owner = constructor(
-        config=settings
-        or AppConfig(
-            organize=OrganizeSettings(
-                max_admission_rounds=bound, max_convergence_rounds=convergence_bound
-            ),
-            write_back={"max_verify_rounds": write_back_bound},
+    config = settings or AppConfig(
+        organize=OrganizeSettings(
+            max_admission_rounds=bound, max_convergence_rounds=convergence_bound
         ),
+        write_back={"max_verify_rounds": write_back_bound},
+    )
+    git = FakeGitService(
+        remote_branch_shas={repo.trunk: "a" * 40 for repo in operation.repos}
+    )
+    owner = build_organize_owner(
+        config=config,
         operation=operation,
         tracker=tracker,
         runner=AgentService(
@@ -268,27 +272,35 @@ def factory(
             git_base_url="https://example.invalid",
         ),
         workspace=workspace,
-        git=FakeGitService(
-            remote_branch_shas={repo.trunk: "a" * 40 for repo in operation.repos}
-        ),
+        git=git,
         prompts=load_registry(
             default_set="claude-opus", bindings=operation_bindings(operation)
         ),
         skills=SUPPRESS_ALL_SKILLS,
         gate=PassThroughGate() if gate is None else gate,
-        **(
-            {}
-            if tick
-            else {
-                "repo_url": "https://example.invalid/repository",
-                # *phases* narrows the table this owner runs, through the same
-                # public constructor: a case about one row's own pre-check
-                # states its table rather than reaching into the built owner.
-                "phases": rows if phases is None else phases(rows),
-            }
-        ),
+        repo_url="https://example.invalid/repository",
+        # *phases* narrows the table this owner runs, through the same
+        # public constructor: a case about one row's own pre-check
+        # states its table rather than reaching into the built owner.
+        phases=rows if phases is None else phases(rows),
     )
-    return owner, board, executor
+    if not tick:
+        return owner, board, executor
+    # The scheduled tick over THIS owner: the composition root's tick now
+    # runs the session owner, so the tick these cases drive is assembled
+    # here from the same parts, over the pre-approval row alone.
+    repositories = {repo.url: repo for repo in operation.repos}
+    targets = [
+        OrganizeTarget(
+            binding=binding,
+            repository=repositories[binding.repo_url],
+            organizer=ScopeOrganizer(
+                owner=owner, git=git, workspace=workspace, remote=config.git.remote
+            ),
+        )
+        for binding in operation.organize_scopes
+    ]
+    return OrganizeTick(targets=targets), board, executor
 
 
 def written(board):

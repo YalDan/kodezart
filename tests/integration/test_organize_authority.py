@@ -12,17 +12,16 @@ from kodezart.config.app import AppConfig
 from kodezart.config.organize import OrganizeSettings
 from kodezart.config.write_back import WriteBackSettings
 from kodezart.core.prompt_namespaces import operation_bindings
-from kodezart.domain.errors import OrganizeWriteRefusalError
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.operation import ScopeLabel
 from kodezart.types.domain.organize import MandateKind
+from kodezart.types.domain.organize_owner import StageHaltCause
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from tests.chains.test_native_fire import TRUNK_BRANCHES, WORK_SHA, native_evaluation
 from tests.fakes import (
     SUPPRESS_ALL_SKILLS,
     FakeGitService,
     FakeWorkspaceProvider,
-    PassThroughGate,
 )
 from tests.integration.test_scope_entry import (
     GROOM_MARKER,
@@ -74,8 +73,6 @@ def groomer(port, *, lanes, executor=None):
             default_set="claude-opus", bindings=operation_bindings(operation)
         ),
         skills=SUPPRESS_ALL_SKILLS,
-        gate=PassThroughGate(),
-        repo_url=operation.repos[0].url,
         under_approval=False,
     )
     return organizer, operation, executor
@@ -95,7 +92,7 @@ async def test_a_milestone_addressed_scope_grooms_on_its_projects_triage():
     The phase marker is the only thing written: one classification per lane,
     in lane order, and nothing else — the gate is a property of the addressed
     scope and of the containers above it, and the pass reads it rather than
-    materializing it on any member.
+    materializing it on any member. One session labels both lanes.
     """
     lanes = ("A", "B")
     port = under_milestone(board(lanes=lanes, approved=False))
@@ -108,7 +105,8 @@ async def test_a_milestone_addressed_scope_grooms_on_its_projects_triage():
     for key in lanes:
         assert GROOM_MARKER in port.issues[key].issue_labels
     assert port.classification_writes == [(key, GROOM_MARKER) for key in lanes]
-    # One admission session per lane.
+    # One session for the phase, and it labelled each lane once.
+    assert len(executor.organize_calls) == 1
     assert sorted({key for key, _, _ in executor.admissions}) == list(lanes)
 
 
@@ -202,12 +200,13 @@ def swallow_marker_writes(port, executor):
     return journal
 
 
-async def test_a_port_that_swallows_the_marker_write_ends_grooming_before_the_judge():
+async def test_a_board_that_drops_the_marker_write_halts_the_phase_naming_the_member():
     """The marker the board does not report is no marker at all.
 
-    The pass's own read-back is what refuses: the write answered with the
-    marker, so a comparison over that answer would pass, and the refusal comes
-    before the write-back judge is asked about the member at all.
+    The pass's own cold read after the session is what decides: the write
+    answered with the marker, so a pass trusting that answer would complete
+    the phase, and the re-read finds the member still owing it. No second
+    session is spent finding that out.
     """
     lanes = ("A",)
     port = under_milestone(board(lanes=lanes, approved=False))
@@ -215,17 +214,20 @@ async def test_a_port_that_swallows_the_marker_write_ends_grooming_before_the_ju
     organizer, operation, executor = groomer(port, lanes=lanes)
     journal = swallow_marker_writes(port, executor)
     # The lane carries a label that is not the marker before the run, so the
-    # refusal below is about the marker's absence and not an empty label set.
+    # halt below is about the marker's absence and not an empty label set.
     assert port.issues["A"].issue_labels - {GROOM_MARKER}
 
-    with pytest.raises(OrganizeWriteRefusalError, match="did not read back"):
-        await organizer.run(
-            scope=MILESTONE, repository=operation.repos[0], job_id="groom-job"
-        )
+    report = await organizer.run(
+        scope=MILESTONE, repository=operation.repos[0], job_id="groom-job"
+    )
 
+    assert report.completed_phases == ()
+    assert report.halt is not None
+    assert report.halt.cause is StageHaltCause.STAGE_INCOMPLETE
+    assert report.halt.phase is MandateKind.GROOM
+    assert report.halt.unlabelled_issue_ids == ("A",)
     assert port.classification_writes == [("A", GROOM_MARKER)]
     assert GROOM_MARKER not in port.issues["A"].issue_labels
-    # Observed, then written: the lane's assessment and its independent
-    # verification both ran before the write; nothing was opened after it.
-    assert [key for key, _, _ in executor.admissions] == ["A", "A"]
-    assert executor.organize_calls[journal[0] :] == []
+    # One session, and the write was made inside it.
+    assert journal == [1]
+    assert len(executor.organize_calls) == 1

@@ -511,7 +511,6 @@ def build_workflow_engine(
             git=git,
             prompts=prompts,
             skills=skills,
-            gate=gate,
             registry=scope_registry,
         )
         scoped_arm = build_scope_runtime(

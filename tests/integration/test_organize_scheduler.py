@@ -22,6 +22,7 @@ from kodezart.types.domain.operation import OperationConfig, OperationMemberAbse
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run_alarm import AlarmSignal
 from tests.chains.test_organize import RecordingWorkspace
+from tests.chains.test_organize import result as organize_result
 from tests.chains.test_organize_owner import BoardExecutor
 from tests.fakes import (
     FIXTURE_EPOCH,
@@ -33,6 +34,11 @@ from tests.fakes import (
     FakeScopeStatusWriter,
     FakeTrackerPort,
     PassThroughGate,
+)
+from tests.integration.test_scope_entry import (
+    MARKER_LINE,
+    OWED_LINE,
+    is_organize_session,
 )
 from tests.prompts.test_organize_mandate_bindings import declared_operation
 from tests.prompts.test_prompt_wiring import load_registry
@@ -46,6 +52,33 @@ from tests.services.test_prompt_passes import (
 from tests.services.test_run_surface_lease import _Board
 from tests.tracker.conftest import CLAIMED_ISSUE
 from tests.tracker.test_linear_mcp_tracker import tracker_over
+
+
+class BoardSession(BoardExecutor):
+    """The board double's executor, answering the organize session too.
+
+    The organize session labels the members its prompt names through its
+    own tracker tools; here that is one label appended per named member on
+    the board the tracker reads. Every other session is the board double's.
+    """
+
+    async def stream(self, **kwargs):
+        if not is_organize_session(kwargs):
+            async for event in super().stream(**kwargs):
+                yield event
+            return
+        self.calls.append(kwargs)
+        marker = MARKER_LINE.search(kwargs["prompt"])[1]
+        for key in OWED_LINE.findall(kwargs["prompt"]):
+            labels = self.board.server.issues[key].labels
+            if marker not in labels:
+                labels.append(marker)
+        yield organize_result(structured_output=None, result="Labelled the member.")
+
+
+def organize_sessions(executor):
+    """The organize sessions among the calls an executor double took."""
+    return [call for call in executor.calls if is_organize_session(call)]
 
 
 def dependencies(tmp_path):
@@ -98,7 +131,7 @@ async def test_scheduled_owner_prepares_native_children_and_reentry_is_idempoten
     tmp_path,
 ):
     config, operation, board, tracker, prompts, ledger = dependencies(tmp_path)
-    executor = BoardExecutor(board)
+    executor = BoardSession(board)
     workspace = RecordingWorkspace()
     queue = FakeJobQueue()
     runtime = await build_dispatch_runtime(
@@ -156,9 +189,11 @@ async def test_scheduled_owner_prepares_native_children_and_reentry_is_idempoten
         item.parent_id == CLAIMED_ISSUE for item in board.server.issues.values()
     )
     assert len([name for name, _ in board.calls if name.startswith("save_")]) == writes
-    schemas = [call["output_format"]["schema"]["title"] for call in executor.calls]
-    assert "OrganizeProposal" in schemas
-    assert "WriteBackFinding" in schemas
+    # One session for the phase on the first tick, and none on the second:
+    # the board already carried the marker.
+    sessions = organize_sessions(executor)
+    assert len(sessions) == 1
+    assert "Marker to add: `graph complete`" in sessions[0]["prompt"]
     assert all(call["session_id"] is None for call in executor.calls)
 
 
@@ -201,7 +236,7 @@ async def test_actual_lifespan_registers_and_runs_the_owner(tmp_path, monkeypatc
     )
 
     config, operation, board, tracker, prompts, ledger = dependencies(tmp_path)
-    executor = BoardExecutor(board)
+    executor = BoardSession(board)
     workspace = RecordingWorkspace()
     stack = GitStack(
         git=FakeGitService(
@@ -253,10 +288,7 @@ async def test_actual_lifespan_registers_and_runs_the_owner(tmp_path, monkeypatc
         )
         await scheduler._tick(tick)
         assert "graph complete" in board.server.issues[CLAIMED_ISSUE].labels
-        assert any(
-            call["output_format"]["schema"]["title"] == "WriteBackFinding"
-            for call in executor.calls
-        )
+        assert len(organize_sessions(executor)) == 1
         assert app.state.job_queue._accepting
     assert not scheduler.running
     assert not app.state.job_queue._accepting
@@ -295,7 +327,7 @@ async def _runtime_over(config, operation, board, tracker, prompts, ledger, *, f
             workspace=workspace,
             prompts=prompts,
             runner=AgentService(
-                executor=BoardExecutor(board),
+                executor=BoardSession(board),
                 workspace=workspace,
                 git_base_url="https://example.invalid",
             ),
