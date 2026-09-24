@@ -2,6 +2,7 @@
 references, authored judgment."""
 
 import re
+from collections import OrderedDict
 from collections.abc import Sequence
 
 from kodezart.adapters.reference_content_scanner import ReferenceContentScanner
@@ -43,6 +44,10 @@ type _MemoKey = tuple[
     tuple[TrackerAggregate, ...],
 ]
 
+#: The most decisions one gate keeps. Past it the oldest is dropped, and its
+#: text is scanned again the next time it is written.
+_MEMO_BOUND = 4096
+
 
 _CREDENTIAL_PATTERNS = tuple(re.compile(shape.pattern) for shape in CREDENTIAL_SHAPES)
 
@@ -72,7 +77,7 @@ class OutboundAdmission:
         self._references = references
         self._judgment = judgment
         self._fragment_digest = fragment_digest
-        self._memo: dict[_MemoKey, GateDecision] = {}
+        self._memo: OrderedDict[_MemoKey, GateDecision] = OrderedDict()
 
     async def gate(
         self,
@@ -107,7 +112,12 @@ class OutboundAdmission:
             content_class=content_class,
             aggregates=aggregates,
         )
-        self._memo[key] = decision
+        # A scanner that did not answer (a timeout, a rate limit) said nothing
+        # about this text, so the next write of it is scanned again.
+        if decision.failure is None:
+            self._memo[key] = decision
+            if len(self._memo) > _MEMO_BOUND:
+                self._memo.popitem(last=False)
         return decision
 
     async def _decide(

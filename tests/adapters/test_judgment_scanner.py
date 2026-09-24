@@ -8,7 +8,9 @@ noticing:
   "did not answer" is never collapsed into "said it is clean".
 * **R** — routing asserted by CALL COUNT, because the affordability of the
   whole design is a claim about how often the model runs.
-* **D** — within one run a payload gets one answer and pays for one call.
+* **D** — within one run a payload gets one answer and pays for one call.  A
+  scan that did not answer gave none, so its payload is scanned again, and
+  the gate keeps a bounded number of answers, dropping the oldest first.
 * **S** — one conformance suite both adapters pass, which is what keeps the
   widened port from quietly becoming a judgment-only port.
 
@@ -27,7 +29,7 @@ import pytest
 
 from kodezart.adapters.agent_content_scanner import AgentContentScanner
 from kodezart.adapters.git.change_persister import GitChangePersister
-from kodezart.adapters.outbound_admission import OutboundAdmission
+from kodezart.adapters.outbound_admission import _MEMO_BOUND, OutboundAdmission
 from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.composition.gating import build_outbound_gate
 from kodezart.config.app import AppConfig
@@ -52,6 +54,8 @@ from kodezart.types.domain.gating import (
     RedactionCategory,
     RepoVisibility,
     ScanFailureKind,
+    ScanHit,
+    ScanResult,
     TrackerAggregate,
     WriterShape,
 )
@@ -585,6 +589,98 @@ async def test_a_declared_aggregate_is_a_different_question() -> None:
     assert undeclared.verdict is GateVerdict.CLEAN
     assert declared.verdict is GateVerdict.BLOCKED
     assert len(judgment.calls) == 1
+
+
+class FailingOnceJudgment:
+    """A judgment with no answer the first time it is asked; after that, clean."""
+
+    def __init__(self, failure: ScanFailureKind) -> None:
+        self._failure = failure
+        self.calls: list[str] = []
+
+    async def scan(
+        self, *, content: str, destination: OutboundDestination
+    ) -> ScanResult:
+        self.calls.append(content)
+        if len(self.calls) == 1:
+            return ScanResult(failure=self._failure)
+        return ScanResult()
+
+
+@pytest.mark.parametrize("kind", list(ScanFailureKind))
+async def test_a_scan_that_did_not_answer_is_scanned_again(
+    kind: ScanFailureKind,
+) -> None:
+    """D: "did not answer" is never kept as the text's answer (KOD-1250).
+
+    Were it kept, one timeout or rate limit would block the same text until
+    the process restarts.  The answer the second scan gives is kept as
+    usual, so the third call costs nothing.
+    """
+    judgment = FailingOnceJudgment(kind)
+    gate = make_admission(judgment)
+    decisions = [
+        await gate.gate(
+            content=PROSE,
+            visibility=RepoVisibility.PUBLIC,
+            shape=WriterShape.PROSE,
+            destination=OutboundDestination.PR_BODY,
+            content_class=ContentClass.AUTHORED,
+            aggregates=(),
+        )
+        for _ in range(3)
+    ]
+    assert [(decision.verdict, decision.failure) for decision in decisions] == [
+        (GateVerdict.BLOCKED, kind),
+        (GateVerdict.CLEAN, None),
+        (GateVerdict.CLEAN, None),
+    ]
+    assert judgment.calls == [PROSE, PROSE]
+
+
+async def test_a_blocking_answer_is_kept_like_any_other_answer() -> None:
+    """D: only a scan with no answer is scanned again; a block is an answer."""
+    judgment = FakeContentJudgment(
+        hits=[ScanHit(category=RedactionCategory.INFRA_ENDPOINTS, start=0, end=3)]
+    )
+    gate = make_admission(judgment)
+    decisions = [
+        await gate.gate(
+            content=PROSE,
+            visibility=RepoVisibility.PUBLIC,
+            shape=WriterShape.PROSE,
+            destination=OutboundDestination.PR_BODY,
+            content_class=ContentClass.AUTHORED,
+            aggregates=(),
+        )
+        for _ in range(2)
+    ]
+    assert decisions[0].verdict is GateVerdict.BLOCKED
+    assert decisions[0].failure is None
+    assert decisions[1] == decisions[0]
+    assert judgment.calls == [PROSE]
+
+
+async def test_past_its_bound_the_memo_drops_its_oldest_answer() -> None:
+    """D: the memo is bounded, and the answer it has held longest goes first.
+
+    One payload more than the bound drops the first payload's answer: the
+    second payload is still answered without a scan, the first is scanned
+    again.
+    """
+    judgment = FakeContentJudgment(hits=[])
+    gate = make_admission(judgment)
+    payloads = [f"payload {number}" for number in range(_MEMO_BOUND + 1)]
+    for content in [*payloads, payloads[1], payloads[0]]:
+        await gate.gate(
+            content=content,
+            visibility=RepoVisibility.PUBLIC,
+            shape=WriterShape.PROSE,
+            destination=OutboundDestination.PR_BODY,
+            content_class=ContentClass.AUTHORED,
+            aggregates=(),
+        )
+    assert judgment.calls == [*payloads, payloads[0]]
 
 
 # ---------------------------------------------------------------------------
