@@ -53,13 +53,11 @@ VERDICT_DEAD = "dead"
 VERDICT_PRESENT = "present"
 VERDICT_ABSENT = "absent"
 
-# The probes that reach for the workflow primitive have to leave the
-# evaluative session shape in exactly two respects, one field at a time.
+# The probes that reach for the workflow primitive leave the evaluative
+# session shape in its permission mode; the authoring allowlist already
+# names the Workflow tool.
 UNGATED_PERMISSION_MODE = PermissionMode.INTERACTIVE
-WORKFLOW_ALLOWED_TOOLS: list[str] = [
-    *map_allowed_tools(ToolPreset.AUTHORING),
-    WORKFLOW_TOOL_NAME,
-]
+WORKFLOW_ALLOWED_TOOLS: list[str] = map_allowed_tools(ToolPreset.AUTHORING)
 WORKFLOW_WRITE_ALLOWED_TOOLS: list[str] = [*WORKFLOW_ALLOWED_TOOLS, WRITE_TOOL_NAME]
 
 # A session that parks itself on a scheduled wakeup stops being a bounded
@@ -269,7 +267,7 @@ def test_probe_config_matches_production(tmp_path: Path) -> None:
     options = evaluator_options(cwd=tmp_path, max_turns=ENUMERATION_TURNS)
 
     assert options.permission_mode == "plan"
-    assert options.allowed_tools == ["Read", "Glob", "Grep", "Bash"]
+    assert options.allowed_tools == ["Read", "Glob", "Grep", "Bash", WORKFLOW_TOOL_NAME]
     assert options.can_use_tool is None
 
     assert EVAL_PERMISSION_MODE is PermissionMode.PLAN
@@ -281,6 +279,7 @@ def test_probe_config_matches_production(tmp_path: Path) -> None:
         "Agent",
         "WebSearch",
         "WebFetch",
+        WORKFLOW_TOOL_NAME,
     ]
     assert WORKFLOW_ALLOWED_TOOLS == [
         "Read",

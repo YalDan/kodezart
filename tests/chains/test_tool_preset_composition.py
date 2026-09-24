@@ -93,13 +93,13 @@ async def test_actual_graph_presets_reach_native_sessions(
             else options.output_format["schema"]["properties"]
         )
         if call["role"] == "implementation":
-            expected = ["Read", "Glob", "Grep", "Bash", "Edit", "Write"]
+            expected = ["Read", "Glob", "Grep", "Bash", "Edit", "Write", "Workflow"]
             seen.add("implementation")
         elif "criteria" in schema:
-            expected = ["Read", "Glob", "Grep", "Bash", "Agent"]
+            expected = ["Read", "Glob", "Grep", "Bash", "Agent", "Workflow"]
             seen.add("delegated_evaluation")
         elif call["role"] in {"validation", "evaluation", "review"} or "body" in schema:
-            expected = ["Read", "Glob", "Grep", "Bash"]
+            expected = ["Read", "Glob", "Grep", "Bash", "Workflow"]
             seen.add("evaluation")
         elif "requiredChanges" in schema or "approved" in schema:
             expected = [
@@ -110,6 +110,7 @@ async def test_actual_graph_presets_reach_native_sessions(
                 "Agent",
                 "WebSearch",
                 "WebFetch",
+                "Workflow",
             ]
             seen.add("authoring")
         else:

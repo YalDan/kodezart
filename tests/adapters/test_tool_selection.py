@@ -22,13 +22,19 @@ from tests.adapters.test_permission_boundary import sdk as sdk
 from tests.fakes import FAKE_SESSION_TYPE, SUPPRESS_ALL_SKILLS, FakeJobQueue
 
 BUNDLES = [
-    (ToolPreset.EVALUATION, ["Read", "Glob", "Grep", "Bash"]),
-    (ToolPreset.DELEGATED_EVALUATION, ["Read", "Glob", "Grep", "Bash", "Agent"]),
+    (ToolPreset.EVALUATION, ["Read", "Glob", "Grep", "Bash", "Workflow"]),
+    (
+        ToolPreset.DELEGATED_EVALUATION,
+        ["Read", "Glob", "Grep", "Bash", "Agent", "Workflow"],
+    ),
     (
         ToolPreset.AUTHORING,
-        ["Read", "Glob", "Grep", "Bash", "Agent", "WebSearch", "WebFetch"],
+        ["Read", "Glob", "Grep", "Bash", "Agent", "WebSearch", "WebFetch", "Workflow"],
     ),
-    (ToolPreset.IMPLEMENTATION, ["Read", "Glob", "Grep", "Bash", "Edit", "Write"]),
+    (
+        ToolPreset.IMPLEMENTATION,
+        ["Read", "Glob", "Grep", "Bash", "Edit", "Write", "Workflow"],
+    ),
 ]
 OPEN = [
     "evaluation",
@@ -188,7 +194,7 @@ async def test_http_remains_an_explicit_open_list_contract(sdk, endpoint, select
         else (
             ["Read", "Glob", "Grep", "Bash"]
             if endpoint == "query"
-            else ["Read", "Glob", "Grep", "Bash", "Edit", "Write"]
+            else ["Read", "Glob", "Grep", "Bash", "Edit", "Write", "Workflow"]
         )
     )
     actual = (

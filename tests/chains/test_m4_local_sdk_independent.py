@@ -56,7 +56,13 @@ async def test_real_local_source_and_sdk_policy_are_owned_fresh_and_released(
             assert branch.returncode == 1
             assert self.options.resume is None
             assert self.options.permission_mode == "plan"
-            assert self.options.allowed_tools == ["Read", "Glob", "Grep", "Bash"]
+            assert self.options.allowed_tools == [
+                "Read",
+                "Glob",
+                "Grep",
+                "Bash",
+                "Workflow",
+            ]
             assert self.options.output_format["schema"]["title"] == "WriteBackFinding"
             assert f"<base_ref>{head}</base_ref>" in prompt
             assert "criterion.txt" in prompt

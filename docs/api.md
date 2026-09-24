@@ -91,7 +91,7 @@ Ralph loop, and finalize.
 | `baseSpec`       | `BaseSpec \| null`                | No       | `null`                                       | Recorded base to scope the run against; when present `baseBranch` is not consulted |
 | `impliedBase`    | `BaseSpec \| null`                | No       | `null`                                       | The caller's view of the base; refused with `StaleBaseError` when it differs from the recorded one |
 | `permissionMode` | `"plan" \| "bypassPermissions"`   | No       | `"bypassPermissions"`                        | Agent permission level          |
-| `allowedTools`   | `string[]`                        | No       | `["Read","Glob","Grep","Bash","Edit","Write"]` | Tools the agent may use       |
+| `allowedTools`   | `string[]`                        | No       | `["Read","Glob","Grep","Bash","Edit","Write","Workflow"]` | Tools the agent may use       |
 
 \* Exactly one of `repoPath` or `repoUrl` must be provided.
 

@@ -100,6 +100,7 @@ class WorkflowRequest(RepoSourceRequest):
             "Bash",
             "Edit",
             "Write",
+            "Workflow",
         ],
     )
 
