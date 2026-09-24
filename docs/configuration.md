@@ -895,7 +895,10 @@ for them: unset, the tick is not scheduled.
 
 Set both or neither; one without the other refuses at load naming both. The
 `pass_scheduler_started` event names the interval the tick was given, and
-`scheduled_pass_not_configured` names the tick when it is not scheduled.
+`scheduled_pass_not_configured` names the tick when it is not scheduled. Each
+tick is recorded under its own run kind, `organize`, to the destination
+`[records.organize]` declares — never into the grooming log; undeclared, the
+recorder logs `run_record_destination_undeclared` and writes nowhere.
 
 ## Tracker write verification
 

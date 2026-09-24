@@ -77,8 +77,9 @@ def test_the_record_namespace_is_total_per_kind() -> None:
         entry = example[kind.value]
         assert isinstance(entry, dict) and entry["name"]
         assert example[f"{kind.value}_absent"] is None
-    assert example[RunKind.FIRE.value] is None
-    assert example[f"{RunKind.FIRE.value}_absent"] is True
+    for kind in (RunKind.FIRE, RunKind.ORGANIZE):
+        assert example[kind.value] is None
+        assert example[f"{kind.value}_absent"] is True
 
     assert "records_absent" not in operation_bindings(example_config())
     assert "records_absent" not in operation_bindings(minimal_config())

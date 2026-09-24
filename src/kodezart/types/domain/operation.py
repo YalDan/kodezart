@@ -96,6 +96,9 @@ class RunKind(StrEnum):
     GROOMING = "grooming"
     FIRE = "fire"
     AUDIT = "audit"
+    #: The organize tick's own log (KOD-846): it never writes into the
+    #: grooming log, so the grooming session's window is its own.
+    ORGANIZE = "organize"
 
 
 class ConfigOwnership(StrEnum):

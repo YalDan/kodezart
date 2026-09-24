@@ -510,9 +510,10 @@ async def build_prompt_passes(
 ) -> list[ScheduledPass]:
     """Bind the configured Organize owner and remaining legacy prompt passes.
 
-    Organize runs under its own name and its own cadence settings, with its own
-    fresh scope reads and explicit repository bindings, and is scheduled FIRST so
-    a deployment that keeps nothing else keeps it. Every pass here whose cadence
+    Organize runs under its own name, its own cadence settings and its own
+    record kind — it never writes into the grooming log — with its own fresh
+    scope reads and explicit repository bindings, and is scheduled FIRST so a
+    deployment that keeps nothing else keeps it. Every pass here whose cadence
     is unset is not scheduled and is named as such.
 
     The two prompt passes scan the declared boards on their own cadence pairs
@@ -533,7 +534,7 @@ async def build_prompt_passes(
                     interval_seconds=cadence.interval_seconds,
                     timeout_seconds=cadence.timeout_seconds,
                     run=organize.run,
-                    report=None,
+                    report=run_report(recorder, RunKind.ORGANIZE, ORGANIZE_TICK_NAME),
                 )
             )
     absent = absent_roster(operation)
@@ -857,6 +858,14 @@ def _session_running(kind: RunKind) -> SessionType:
             return SessionType.SCHEDULED_PASS
         case RunKind.FIRE:
             return SessionType.TICKET_FIRE
+        case RunKind.ORGANIZE:
+            return SessionType.ORGANIZE_PASS
+
+
+#: The kinds whose record is the runner's structural row alone: no session
+#: is told to write a prose row into it, so declaring its destination in the
+#: knowledge system asks nothing of any session's grant.
+STRUCTURAL_ONLY_KINDS: frozenset[RunKind] = frozenset({RunKind.ORGANIZE})
 
 
 def _knowledge_surfaces(operation: OperationConfig) -> list[tuple[str, SessionType]]:
@@ -882,6 +891,7 @@ def _knowledge_surfaces(operation: OperationConfig) -> list[tuple[str, SessionTy
         (f"records.{key} ({entry.name})", _session_running(RunKind(key)))
         for key, entry in operation.records.items()
         if entry.system is DocumentSystem.KNOWLEDGE
+        and RunKind(key) not in STRUCTURAL_ONLY_KINDS
     )
     surfaces.extend(
         (f"knowledge.{key} ({title})", SessionType.SCHEDULED_PASS)

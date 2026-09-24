@@ -185,9 +185,9 @@ async def test_scheduled_owner_prepares_native_children_and_reentry_is_idempoten
     scheduled = ticks[0]
     assert scheduled.interval_seconds == ORGANIZE_INTERVAL
     assert scheduled.timeout_seconds == ORGANIZE_TIMEOUT
-    # The tick's outcome is its log line and the markers it lands. It keeps no
-    # record row, so a grooming log holds grooming passes and nothing else.
-    assert scheduled.report is None
+    # The tick records under its own kind, so a grooming log holds grooming
+    # passes and nothing else.
+    assert scheduled.report is not None
     assert await scheduled.run(FIXTURE_EPOCH) is PassRun.RAN
     # The scheduled pass is given the pre-approval row and no other: its own
     # marker lands, the two run-stage markers do not, and the criterion

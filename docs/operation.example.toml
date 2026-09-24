@@ -312,13 +312,15 @@ system = "knowledge"
 name = "Example — Operating Constitution"
 id = "example-constitution-document-id"
 
-# Record keys are the RUN-KIND vocabulary — fire_prep, grooming, fire —
-# one declared destination per kind (KOD-170). The runner writes each
-# run's structural row there, and the rendered pass prompt names the same
-# declaration for the session's own prose row. A kind left undeclared is
-# a legal NAMED absence: the recorder logs it and writes nowhere. `fire`
-# is deliberately undeclared in this example — the fire's record trail is
-# then tracker-side only. Any other key is refused at load.
+# Record keys are the RUN-KIND vocabulary — fire_prep, grooming, fire,
+# organize — one declared destination per kind (KOD-170). The runner writes
+# each run's structural row there, and the rendered pass prompt names the
+# same declaration for the session's own prose row (the organize tick's row
+# is the runner's alone: its log is its own, never the grooming log). A kind
+# left undeclared is a legal NAMED absence: the recorder logs it and writes
+# nowhere. `fire` and `organize` are deliberately undeclared in this example
+# — the fire's record trail is then tracker-side only. Any other key is
+# refused at load (`audit` is refused when declared).
 [records.fire_prep]
 system = "knowledge"
 name = "Example Run Log"

@@ -69,6 +69,7 @@ def test_a_pass_row_is_titled_by_its_start_time_and_a_fire_row_names_its_issue()
         _record(RunKind.GROOMING, name="grooming_pass").title()
         == "2026-09-01T11:58:00Z"
     )
+    assert _record(RunKind.ORGANIZE, name="organize").title() == "2026-09-01T11:58:00Z"
     assert (
         _record(RunKind.FIRE, name="K-1").title() == "fire — K-1 @ 2026-09-01T11:58:00Z"
     )
