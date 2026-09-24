@@ -6,6 +6,7 @@ these cases read is the boundary a deployment has rather than a second
 wiring written here.
 """
 
+import json
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -95,7 +96,8 @@ LOGS = tuple(sorted(TRACKER_WRITE_JOURNALS))
 #: The journals a side's own work lands in: its markers, the native stamps
 #: its writes leave, its lease, and, for a run, the evidence row and the
 #: completion its lanes' evaluations write on each criterion child they
-#: close. Every other journal gains nothing on either side.
+#: close, and the run events each lane posts on its own stream. Every other
+#: journal gains nothing on either side.
 OWN = frozenset(
     {
         "classification_writes",
@@ -104,8 +106,34 @@ OWN = frozenset(
         "lease_releases",
         "issue_writes",
         "workflow_writes",
+        "comment_writes",
     }
 )
+
+#: One run event a lane posts on its own stream: the lane's marker and the
+#: event as a fenced JSON document.
+RUN_EVENT = re.compile(
+    r"\A\[native-run-event:(?P<lane>[^\]]+)\]\n```json\n(?P<event>.*)\n```\Z",
+    re.S,
+)
+
+#: The accounts a lane posts when its evaluation closes its criterion child:
+#: the grading that passed it and the cross-off.
+CLOSING_EVENTS = ("criterion_passed", "issue_crossed_off")
+
+
+def run_events(port, then):
+    """Every comment gained since *then*, read as (lane, event) run events.
+
+    A comment that is not a run event fails here, so the only comments a
+    side may write are the events its lanes post on their own streams.
+    """
+    events = []
+    for _, body in gained(port, then, "comment_writes"):
+        match = RUN_EVENT.match(body)
+        assert match is not None, body
+        events.append((match["lane"], json.loads(match["event"])))
+    return events
 
 
 def criterion(key):
@@ -189,9 +217,10 @@ def assert_wrote_only(port, then, written, closed=()):
     was written; every lease the side took it released, and it released no
     lease but its own or one standing when it began. *closed* names the
     lanes whose criterion child a run's evaluation closed: the only issue
-    writes are evidence rows on those children, and the only state moves
-    are their completions. Every other journal the board keeps gained
-    nothing at all.
+    writes are evidence rows on those children, the only state moves are
+    their completions, and the only comments are run events those lanes
+    post on their own streams, among them one grading and one cross-off of
+    each child. Every other journal the board keeps gained nothing at all.
     """
     markers = sorted(
         (key, marker) for key, carried in written.items() for marker in carried
@@ -210,6 +239,16 @@ def assert_wrote_only(port, then, written, closed=()):
     assert {key for key, _, _ in gained(port, then, "issue_writes")} <= {
         criterion(key) for key in closed
     }
+    events = run_events(port, then)
+    assert {lane for lane, _ in events} <= set(closed)
+    assert all(event["laneKey"] == lane for lane, event in events)
+    assert sorted(
+        (lane, event["kind"], event["subjectKey"])
+        for lane, event in events
+        if event["kind"] in CLOSING_EVENTS
+    ) == sorted(
+        (key, kind, criterion(key)) for key in closed for kind in CLOSING_EVENTS
+    )
     assert {name: gained(port, then, name) for name in LOGS if name not in OWN} == {
         name: [] for name in LOGS if name not in OWN
     }
@@ -265,7 +304,7 @@ def refusing_first_judgement(harness, key):
     refused = []
 
     async def stream(**kwargs):
-        title = kwargs["output_format"]["schema"].get("title")
+        title = (kwargs.get("output_format") or {}).get("schema", {}).get("title")
         keys = re.findall(r"<issue_key>(.*?)</issue_key>", kwargs.get("prompt", ""))
         refusing = (
             title == "AdmissionJudgment" and keys and keys[-1] == key and not refused
@@ -325,7 +364,7 @@ async def test_approval_during_a_grooming_session_refuses_its_write_and_frees_th
             approve(port)
 
     async def approving(**kwargs):
-        title = kwargs["output_format"]["schema"].get("title")
+        title = (kwargs.get("output_format") or {}).get("schema", {}).get("title")
         if trigger == "authorship" and title == "OrganizeProposal":
             approve_once()
         async for event in original(**kwargs):
@@ -424,7 +463,7 @@ async def test_a_run_admitted_while_grooming_holds_its_set_is_refused_at_its_sta
     window = {}
 
     async def run_inside(**kwargs):
-        title = kwargs["output_format"]["schema"].get("title")
+        title = (kwargs.get("output_format") or {}).get("schema", {}).get("title")
         if title == "AdmissionJudgment" and not window and port.leases:
             window["holders"] = {lease.holder for lease in port.leases.values()}
             approve(port)
