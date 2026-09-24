@@ -97,8 +97,15 @@ class RunIdentity(BaseModel):
     started_at: AwareDatetime
 
     def title(self) -> str:
-        """The one string that spells all three, for every reader of it."""
-        return f"{self.kind.value} — {self.name} @ {_stamp(self.started_at)}"
+        """The one string every reader spells this run by.
+
+        A pass's log holds one kind of run, so its row is titled by the start
+        time alone (owner, 2026-09-24: "it should be just the timestamp"); a
+        fire's log holds every fire, so its row names the issue it fired.
+        """
+        if self.kind is RunKind.FIRE:
+            return f"{self.kind.value} — {self.name} @ {_stamp(self.started_at)}"
+        return _stamp(self.started_at)
 
 
 class FireRecordFacts(BaseModel):
