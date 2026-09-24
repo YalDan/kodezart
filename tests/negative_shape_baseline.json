@@ -372,6 +372,7 @@
   "tests/services/test_native_commit_receipt_independent.py": 9,
   "tests/services/test_native_execution_record.py": 13,
   "tests/services/test_organize_gate_static.py": 9,
+  "tests/services/test_organize_session_owner.py": 43,
   "tests/services/test_parent_rollup_authority.py": 4,
   "tests/services/test_pass_delta_cancellation.py": 15,
   "tests/services/test_pass_gate.py": 91,
@@ -5273,6 +5274,16 @@
    "test_every_forbidden_name_has_a_control",
    "test_the_dispatch_path_names_no_scope_member_but_the_approval_cascade",
    "test_the_detector_sees_a_planted_member"
+  ],
+  "tests/services/test_organize_session_owner.py": [
+   "test_a_closed_gate_opens_no_session_and_reports_nothing",
+   "test_an_open_gate_runs_one_session_and_the_labelled_board_completes",
+   "test_a_member_the_session_left_unlabelled_halts_naming_it",
+   "test_a_board_that_owes_nothing_completes_without_a_session",
+   "test_an_approved_scope_closes_the_pre_approval_row",
+   "test_the_run_stages_run_in_order_each_gated_on_the_last",
+   "test_the_prompt_carries_the_marker_the_scope_and_the_fire_rule",
+   "test_the_session_request_is_the_organize_pass_with_the_tracker_tools"
   ],
   "tests/services/test_parent_rollup_authority.py": [
    "test_merge_reports_delivery_without_writing_parent_or_criterion_done"
