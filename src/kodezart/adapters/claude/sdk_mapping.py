@@ -62,6 +62,22 @@ INIT_SUBTYPE: Final = "init"
 #: under, beside the model id the same frame reports.
 _INIT_OUTPUT_STYLE_KEY: Final = "output_style"
 
+#: The init frame's key listing every MCP server the session was given, each
+#: as a ``{"name": ..., "status": ...}`` entry (measured on SDK 0.2.159).
+_INIT_MCP_SERVERS_KEY: Final = "mcp_servers"
+
+
+def _mcp_servers(reported: object) -> dict[str, str]:
+    """Server name to status off the init frame's list; ``{}`` for any other shape."""
+    if isinstance(reported, list) and all(
+        isinstance(entry, dict)
+        and isinstance(entry.get("name"), str)
+        and isinstance(entry.get("status"), str)
+        for entry in reported
+    ):
+        return {entry["name"]: entry["status"] for entry in reported}
+    return {}
+
 
 def _task_updated_status(message: TaskUpdatedMessage) -> str | None:
     """The status the update reports — the patch first, the field behind it.
@@ -166,12 +182,13 @@ def _conversation_reset_event(message: ConversationResetMessage) -> SystemEvent:
 
 
 def _system_event(message: SystemMessage) -> SystemEvent:
-    """A system frame, with the init frame's output style read off it.
+    """A system frame, with the init frame's output style and servers read off it.
 
     The init frame is where a session states the style it actually
     loaded, beside the model id the same frame already carries, so the
     style rides this event rather than one invented next to it.  Every
     other subtype reports no style, because no other subtype knows one.
+    The same holds for the status of each MCP server the session was given.
     """
     reported = message.data.get(_INIT_OUTPUT_STYLE_KEY)
     return SystemEvent(
@@ -181,6 +198,11 @@ def _system_event(message: SystemMessage) -> SystemEvent:
             reported
             if message.subtype == INIT_SUBTYPE and isinstance(reported, str)
             else None
+        ),
+        mcp_servers=(
+            _mcp_servers(message.data.get(_INIT_MCP_SERVERS_KEY))
+            if message.subtype == INIT_SUBTYPE
+            else {}
         ),
     )
 

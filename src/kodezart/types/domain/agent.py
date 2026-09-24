@@ -402,13 +402,16 @@ class SystemEvent(AgentEvent):
     actually loaded — the engine id among its ``data``, and beside it the
     output style its system prompt runs under.  ``output_style`` is that
     reported value, and it is ``None`` on every other subtype, which
-    knows nothing about one.
+    knows nothing about one.  ``mcp_servers`` is the same frame's MCP
+    server name to status, as the CLI reported each one, and ``{}`` on
+    every other subtype.
     """
 
     type: Literal["system"] = "system"
     subtype: str
     data: dict[str, object]
     output_style: str | None = None
+    mcp_servers: dict[str, str] = Field(default_factory=dict)
 
 
 class TaskStartedEvent(AgentEvent):
