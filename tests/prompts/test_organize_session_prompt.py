@@ -217,3 +217,37 @@ def test_every_declared_scope_label_is_named_only_to_be_forbidden(
         assert rule.startswith(SCOPE_LABEL_RULE), (kind, rule)
         for label in declared.values():
             assert f"`{label}`" in rule, (kind, label)
+
+
+#: What the scope's key is to the tracker, by the kind of scope: a container
+#: by its id, an issue by its key. ``{key}`` is the scope's own key.
+SCOPE_ADDRESS = {
+    ScopeKind.PROJECT: "the tracker project whose id is `{key}`",
+    ScopeKind.ISSUE: "the tracker issue whose key is `{key}`",
+    ScopeKind.INITIATIVE: "the tracker initiative whose id is `{key}`",
+    ScopeKind.MILESTONE: "the tracker milestone whose id is `{key}`",
+}
+
+
+@pytest.mark.parametrize("kind", list(ScopeKind), ids=str)
+@pytest.mark.parametrize("set_name", SETS)
+def test_the_scope_is_named_by_what_its_key_is_to_the_tracker(
+    set_name: str, kind: ScopeKind
+) -> None:
+    """A project scope's key is the project's id; an issue scope's is its key.
+
+    The prompt used to say "the project `<key>`", which leaves the session to
+    guess whether the key is an id, a display identifier or a name. Every kind
+    of scope an operation can address is rendered, and the opening line names
+    its key the way the tracker does, and no other kind's way.
+    """
+    scope = ScopeRef(kind=kind, key="scope-key-0042")
+    opening = rendered(set_name, MandateKind.GROOM, scope=scope).splitlines()[0]
+
+    assert SCOPE_ADDRESS[kind].format(key=scope.key) in opening
+    others = [
+        SCOPE_ADDRESS[other].format(key=scope.key)
+        for other in ScopeKind
+        if other is not kind
+    ]
+    assert [address for address in others if address in opening] == []

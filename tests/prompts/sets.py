@@ -134,8 +134,11 @@ EXTENDED_CASES: dict[str, tuple[PromptKey, dict[str, object]]] = {
     "organize_session": (
         PromptKey.ORGANIZE_SESSION,
         {
-            "scope_kind": "project",
             "scope_key": "golden-project",
+            "scope_project": True,
+            "scope_issue": None,
+            "scope_initiative": None,
+            "scope_milestone": None,
             "phase_marker": "graph complete",
             "owed_members": ("external/42", "external/43"),
             "phase_groom": True,

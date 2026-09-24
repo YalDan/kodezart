@@ -1,4 +1,4 @@
-Organize the {{scope_kind}} `{{scope_key}}` for its {{#if phase_groom}}groom{{/if}}{{#if phase_ticket}}ticket{{/if}}{{#if phase_criteria}}criteria{{/if}} phase, with the tracker tools this session carries. Read the scope and each member yourself: nothing is read for you, and what you write on the board is the whole of what happens.
+Organize {{#if scope_project}}the tracker project whose id is `{{scope_key}}`{{/if}}{{#if scope_issue}}the tracker issue whose key is `{{scope_key}}`{{/if}}{{#if scope_initiative}}the tracker initiative whose id is `{{scope_key}}`{{/if}}{{#if scope_milestone}}the tracker milestone whose id is `{{scope_key}}`{{/if}} for its {{#if phase_groom}}groom{{/if}}{{#if phase_ticket}}ticket{{/if}}{{#if phase_criteria}}criteria{{/if}} phase, with the tracker tools this session carries. Read the scope and each member yourself: nothing is read for you, and what you write on the board is the whole of what happens.
 
 Marker to add: `{{phase_marker}}`
 Members that owe it, each by its key:

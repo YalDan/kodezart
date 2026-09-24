@@ -45,7 +45,7 @@ from kodezart.types.domain.organize_owner import (
     StageIncompleteHalt,
 )
 from kodezart.types.domain.prompts import PromptKey
-from kodezart.types.domain.scope import ScopeRef
+from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.subagents import NO_SUBAGENTS
@@ -165,12 +165,22 @@ class OrganizeSessionOwner:
     def render(
         self, *, phase: ResolvedMandateSpec, scope: ScopeRef, owed: Sequence[str]
     ) -> str:
-        """The one prompt a phase's session is given."""
+        """The one prompt a phase's session is given.
+
+        The scope is named by the kind that decides what its key is to the
+        tracker: a project's, an initiative's or a milestone's id, or an
+        issue's key.
+        """
         kind = phase.spec.kind
         return self._prompts.template_for(PromptKey.ORGANIZE_SESSION).render(
             {
-                "scope_kind": scope.kind.value,
                 "scope_key": scope.key,
+                "scope_project": True if scope.kind is ScopeKind.PROJECT else None,
+                "scope_issue": True if scope.kind is ScopeKind.ISSUE else None,
+                "scope_initiative": (
+                    True if scope.kind is ScopeKind.INITIATIVE else None
+                ),
+                "scope_milestone": True if scope.kind is ScopeKind.MILESTONE else None,
                 "phase_marker": phase.terminal_marker,
                 "owed_members": tuple(owed),
                 "phase_groom": True if kind is MandateKind.GROOM else None,

@@ -338,7 +338,7 @@ async def test_the_prompt_carries_the_marker_the_scope_and_the_fire_rule() -> No
     prompt = str(call["prompt"])
     assert f"Marker to add: `{GROOM_MARKER}`" in prompt
     assert f"Add the marker `{GROOM_MARKER}`" in prompt
-    assert "project `scratch-project`" in prompt
+    assert "the tracker project whose id is `scratch-project`" in prompt
     assert "- A\n- B\n" in prompt
     assert "Open question for the fire to rule on before it starts" in prompt
     assert "never an open human choice" in prompt
