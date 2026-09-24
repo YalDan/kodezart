@@ -3961,7 +3961,7 @@ class LinearScanCapabilityReader(_LinearTrackerSession):
         return refused
 
 
-class LinearScopeFamilyReader(LinearIssueReader):
+class LinearScopeFamilyReader(_LinearTrackerSession):
     """The ``ScopeFamilyReader`` role, over the shared session."""
 
     async def scope_issues(self, *, ref: ScopeRef) -> Sequence[TrackerIssue]:
@@ -4015,6 +4015,7 @@ class LinearFireSubjectReader(
 
 class LinearOrganizeContextTracker(
     LinearScopeFamilyReader,
+    LinearIssueReader,
     LinearTrackerCommentReader,
 ):
     """The ``OrganizeContextTracker`` role, over the shared session."""

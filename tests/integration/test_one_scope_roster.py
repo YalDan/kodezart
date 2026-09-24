@@ -12,9 +12,9 @@ from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.composition import audit as audit_composition
 from kodezart.composition import organize as organize_composition
 from kodezart.composition import supervisor as supervisor_composition
+from kodezart.composition.passes import ORGANIZE_TICK_NAME
 from kodezart.core.errors import OperationConfigError
 from kodezart.types.domain.operation import OperationConfig, OrganizeScopeBinding
-from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from tests.integration.test_audit_scheduler import dependencies, schedule_over
 from tests.prompts.test_operation_config import raw_example, write_toml
@@ -31,11 +31,7 @@ STRAY = ScopeRef(kind=ScopeKind.PROJECT, key="stray-project")
 #: the call site rather than at the definition, because the question is what
 #: THIS composition hands over.
 COMPOSED = {
-    "organize": (
-        organize_composition,
-        "OrganizeTarget",
-        PromptKey.GROOMING_PASS.value,
-    ),
+    "organize": (organize_composition, "OrganizeTarget", ORGANIZE_TICK_NAME),
     "audit": (audit_composition, "AuditTarget", "audit"),
     "supervisor": (supervisor_composition, "SupervisorPass", "supervisor"),
 }
@@ -51,6 +47,16 @@ def two_scope_deployment():
     scope-only comparison.
     """
     config, operation, server, tracker, forge = dependencies()
+    # The audit module's deployment sets no organize cadence; the tick is one
+    # of the three passes here, so its pair is set.
+    assert config.organize is not None
+    config = config.model_copy(
+        update={
+            "organize": config.organize.model_copy(
+                update={"interval_seconds": 300.0, "timeout_seconds": 120.0}
+            )
+        }
+    )
     fields = operation.model_dump()
     fields["organize_scopes"] = [
         *fields["organize_scopes"],
