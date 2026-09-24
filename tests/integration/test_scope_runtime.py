@@ -5417,11 +5417,21 @@ async def test_a_killed_scope_run_re_enters_from_the_tracker_alone(monkeypatch):
             if record.get("event") == "lane_record_head_differs"
         ] == ["C"]
         # Re-entry is the ordinary path, not a recovered one: nothing in the
-        # second process reported at warning or above.
-        assert [
+        # second process reported at warning or above but the mutation
+        # reader's note that its removal took no reading, which it leaves after
+        # every grading with a pass here because this harness's removal
+        # session edits nothing. That note is about the mutant tree, not about
+        # how the lane was entered.
+        warned = [
             record
             for record in second_logs
             if record.get("log_level") in ("warning", "error", "critical")
+        ]
+        assert [
+            record
+            for record in warned
+            if (record.get("event"), record.get("site"))
+            != ("mutation_took_no_reading", "mutation_removal")
         ] == []
         # And nothing was generated to re-enter with: no session asked for the
         # ticket-draft shape or the criteria-generation shape, read off the
