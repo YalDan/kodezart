@@ -827,12 +827,15 @@ not, so configuring them "to be safe" is how a first setup breaks itself.
   cloned repository's `.mcp.json` declares, and nothing your own user-level
   Claude configuration declares, reaches it.
   `KODEZART_AGENT__DANGEROUSLY_ALLOW_HOST_MCP=true` switches that guard off for
-  every session kind at once. Measured 2026-09-24: with it off, headless Claude
-  Code started in a directory holding a `.mcp.json` that declared a server
-  tried to start that server, so a cloned repository can run a command on the
-  host through a session; with it on, sessions reached the Linear server under
-  the operator's stored Claude login rather than this deployment's key, and
-  any tracker write such a session makes carries the operator's login user.
+  every session kind at once. Measured 2026-09-24: with the flag off (the
+  shipped default, the guard on), a session gets only the knowledge server the
+  grant describes for it, and no tracker tools. With the flag on (the guard
+  off), a session also gets what the guard kept out: every server your
+  user-level Claude configuration declares, the tracker among them under your
+  stored Claude login, so its tracker writes carry that login's user rather
+  than this deployment's key; and any server a cloned repository's `.mcp.json`
+  declares, which headless Claude Code tried to start, so a repository can run
+  a command on the host through a session.
   Boot logs `host_mcp_allowed_dangerously` as a warning when it is on. Leave it
   off unless you accept exactly that trade.
 - **`private_surface` prose is required only for organization-privacy judgment.**

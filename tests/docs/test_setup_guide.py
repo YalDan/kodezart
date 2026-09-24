@@ -13,6 +13,7 @@ from fnmatch import fnmatch
 from pathlib import Path
 
 from kodezart.adapters.linear.tracker import ACCEPTED_CREDENTIAL_SHAPE
+from kodezart.config.agent import AgentSettings
 from kodezart.core import errors
 from kodezart.domain import errors as domain_errors
 from kodezart.types.domain import operation as operation_types
@@ -387,3 +388,49 @@ def test_the_guide_names_no_failure_class_that_does_not_exist() -> None:
         if not any(hasattr(module, name) for module in modules)
     ]
     assert unresolved == []
+
+
+#: The setting the guide's host-MCP paragraph is about, as an operator sets it.
+HOST_MCP_VARIABLE = "KODEZART_AGENT__DANGEROUSLY_ALLOW_HOST_MCP"
+
+
+def _host_mcp_measurement() -> list[str]:
+    """The sentences from the host-MCP switch to the warning boot logs for it."""
+    text = " ".join(_guide().split())
+    start = text.index(f"`{HOST_MCP_VARIABLE}=true`")
+    end = text.index("Boot logs `host_mcp_allowed_dangerously`", start)
+    return re.split(r"(?<=\.)\s+", text[start:end].strip())
+
+
+def test_each_half_of_the_host_mcp_measurement_names_the_state_it_measured() -> None:
+    """Flag off and flag on, each said as such, with what a session gets in it.
+
+    "With it off" once meant the guard in one half of the measurement and
+    "with it on" meant the flag in the other, so the two halves read as one
+    state described twice, and against each other. Each half now names the
+    flag's state and the guard's, and says what a session is given: the
+    knowledge server alone and no tracker tools, or the host's own servers and
+    a cloned repository's. The shipped default it claims is read off the
+    settings model.
+    """
+    assert HOST_MCP_VARIABLE in shipped_config_variables()
+    assert AgentSettings.model_fields["dangerously_allow_host_mcp"].default is False
+    sentences = _host_mcp_measurement()
+    off = [
+        sentence
+        for sentence in sentences
+        if "with the flag off (the shipped default, the guard on)" in sentence
+    ]
+    on = [
+        sentence
+        for sentence in sentences
+        if sentence.startswith("With the flag on (the guard off)")
+    ]
+    assert len(off) == 1, sentences
+    assert len(on) == 1, sentences
+    assert "only the knowledge server" in off[0]
+    assert "no tracker tools" in off[0]
+    assert "user-level Claude configuration" in on[0]
+    assert "`.mcp.json`" in on[0]
+    unnamed = [s for s in sentences if re.search(r"\bwith it (?:on|off)\b", s, re.I)]
+    assert unnamed == []

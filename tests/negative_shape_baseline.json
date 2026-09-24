@@ -157,7 +157,7 @@
   "tests/docs/test_documented_surface.py": 27,
   "tests/docs/test_parity_checklist.py": 15,
   "tests/docs/test_scope_guide.py": 25,
-  "tests/docs/test_setup_guide.py": 32,
+  "tests/docs/test_setup_guide.py": 41,
   "tests/domain/test_agent.py": 3,
   "tests/domain/test_alarm_typed_evidence.py": 4,
   "tests/domain/test_amendment.py": 20,
@@ -2766,7 +2766,8 @@
    "test_the_guide_states_the_count_invariants_the_loader_enforces",
    "test_every_config_path_the_guide_names_is_ignored",
    "test_the_ignore_rules_are_anchored_so_the_examples_stay_tracked",
-   "test_the_guide_names_no_failure_class_that_does_not_exist"
+   "test_the_guide_names_no_failure_class_that_does_not_exist",
+   "test_each_half_of_the_host_mcp_measurement_names_the_state_it_measured"
   ],
   "tests/domain/test_agent.py": [
    "test_generate_workspace_id_is_hex",
