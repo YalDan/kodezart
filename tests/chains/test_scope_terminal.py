@@ -1009,6 +1009,16 @@ UNION_NAMES = frozenset(
 ) | frozenset(member.value for member in UnionOutcome)
 
 
+def module_of(path: Path) -> str:
+    """The dotted name of *path*, the inverse of ``path_of``.
+
+    Needed wherever a source is scanned by path rather than by module name:
+    a relative import in it resolves against the module it is written in, so
+    the scan cannot be handed the text alone.
+    """
+    return ".".join(path.relative_to(SOURCE_ROOT.parent).with_suffix("").parts)
+
+
 def union_producers() -> frozenset[str]:
     """The union module and every module under the source tree importing it.
 
@@ -1103,7 +1113,7 @@ def terminal_input_modules() -> set[str]:
         found.__module__
         for found in terminal_input_classes()
         if found.__module__.startswith("kodezart.")
-    } | imported_modules(seed, ("kodezart.",))
+    } | imported_modules(seed, ("kodezart.",), module=TERMINAL_SEED)
 
 
 def test_no_module_of_the_terminal_reaches_a_union_value():
@@ -1183,7 +1193,9 @@ def test_the_union_detector_sees_each_shape_it_claims_to(source, expected):
 def test_a_module_taken_from_its_package_is_an_import_of_that_module():
     """The package-level from-import resolves to the module it takes."""
     assert "kodezart.domain.union_facts" in imported_modules(
-        ast.parse("from kodezart.domain import union_facts"), ("kodezart.",)
+        ast.parse("from kodezart.domain import union_facts"),
+        ("kodezart.",),
+        module=TERMINAL_SEED,
     )
 
 
@@ -1337,16 +1349,6 @@ def git_port_names() -> frozenset[str]:
             ),
         }
     )
-
-
-def module_of(path: Path) -> str:
-    """The dotted name of *path*, the inverse of ``path_of``.
-
-    Needed wherever a source is scanned by path rather than by module name:
-    a relative import in it resolves against the module it is written in, so
-    the scan cannot be handed the text alone.
-    """
-    return ".".join(path.relative_to(SOURCE_ROOT.parent).with_suffix("").parts)
 
 
 def adapter_imports(node: ast.ImportFrom | ast.Import, *, module: str) -> list[str]:

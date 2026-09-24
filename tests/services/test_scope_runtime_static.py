@@ -114,9 +114,12 @@ def imported_modules(
     ``from kodezart.services.x import name`` and ``import
     kodezart.services.x`` both carry the module in the dotted position, and
     ``from kodezart.services import x`` carries it as the imported name
-    beside the package.  The third is read only when the dotted part is
-    exactly a followed package and the candidate module exists on disk, so
-    ``from kodezart.services import SomeClass`` yields nothing: a name
+    beside the package.  The third is read when the dotted part is a
+    followed package or a package inside one, and the candidate module
+    exists on disk, so ``from kodezart.domain import union_facts`` under the
+    prefix ``kodezart.`` yields ``kodezart.domain.union_facts`` as well as
+    the package, and ``from kodezart.services import SomeClass`` yields no
+    module for the name: a name
     re-exported through a package's ``__init__`` is NOT followed to the
     module defining it, and the ``__init__`` itself is not scanned.  The
     terminal's walk does not use this function: it keys on the file that runs
@@ -144,7 +147,7 @@ def imported_modules(
                 continue
             if dotted.startswith(prefixes):
                 found.add(dotted)
-            elif dotted in packages:
+            if dotted.startswith(prefixes) or dotted in packages:
                 for alias in node.names:
                     candidate = f"{dotted}.{alias.name}"
                     if path_of(candidate).exists():
