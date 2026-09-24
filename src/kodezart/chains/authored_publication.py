@@ -28,9 +28,9 @@ from kodezart.domain.pr_body import (
     require_tracker_issue,
 )
 from kodezart.domain.stall_report import stall_pr_body, stall_pr_title
-from kodezart.domain.ticket import format_fire_spec
+from kodezart.domain.ticket import fire_spec_title, format_fire_spec
 from kodezart.domain.workflow_state import (
-    current_ticket,
+    current_fire_spec,
     validated_criteria,
 )
 from kodezart.types.domain.agent import (
@@ -38,7 +38,6 @@ from kodezart.types.domain.agent import (
     PRDescriptionOutput,
     WorkflowPREvent,
 )
-from kodezart.types.domain.fire_spec import AuthoredSpec
 from kodezart.types.domain.gating import (
     ContentClass,
     OutboundDestination,
@@ -101,13 +100,13 @@ class AuthoredPublication:
             raise RuntimeError("Stalled delivery requires ref_publisher")
         if trajectory is None or best_sha is None or head_sha is None:
             raise RuntimeError("Stalled delivery requires its published best head")
-        ticket = current_ticket(state)
+        spec = current_fire_spec(state)
         pr_url, pr_number = await self._pr_creator.create_pr(
             repo_url=repo_url,
             title=await gated_write(
                 gate=self._gate,
                 log=self._log,
-                content=stall_pr_title(ticket.title),
+                content=stall_pr_title(fire_spec_title(spec)),
                 visibility=state["repo_visibility"],
                 shape=WriterShape.PROSE,
                 destination=OutboundDestination.PR_TITLE,
@@ -170,7 +169,7 @@ class AuthoredPublication:
             msg = "open_pr requires repo_url but ctx.repo_url is None"
             raise RuntimeError(msg)
 
-        ticket = current_ticket(state)
+        spec = current_fire_spec(state)
 
         feature_tip_sha = state["feature_tip_sha"]
         if feature_tip_sha is None:
@@ -188,7 +187,7 @@ class AuthoredPublication:
         # Generate PR description via agent
         prompt = self._prompts.template_for(PromptKey.PR_DESCRIPTION).render(
             {
-                "task_md": format_fire_spec(AuthoredSpec(ticket=ticket)),
+                "task_md": format_fire_spec(spec),
                 "acceptance_criteria": validated_criteria(state),
                 "total_iterations": state["total_iterations"],
             },

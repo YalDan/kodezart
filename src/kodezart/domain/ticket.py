@@ -47,3 +47,14 @@ def format_fire_spec(spec: FireSpec) -> str:
             return body
         case _:
             assert_never(spec)
+
+
+def fire_spec_title(spec: FireSpec) -> str:
+    """The title either source publishes under: the ticket's, or the subject key."""
+    match spec:
+        case AuthoredSpec(ticket=ticket):
+            return ticket.title
+        case TrackerSpec(subject=subject):
+            return subject
+        case _:
+            assert_never(spec)

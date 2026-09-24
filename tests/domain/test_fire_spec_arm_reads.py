@@ -1228,12 +1228,17 @@ DIGEST_POSITIONS = {
     "domain/lane_entry.py": ("require_unamended_subject",),
 }
 
-#: The one position that reads an arm's text without handing it to the
-#: formatter or the digest: an answer is measured against the deliverables the
+#: The two positions that read an arm's text without handing it to the
+#: formatter or the digest.  An answer is measured against the deliverables the
 #: subject's own text states, so the section has to be read to be measured
-#: against (KOD-629).  It renders nothing and reaches no prompt.  A second entry
-#: here is a decision recorded in this comment, not a convenience.
-TEXT_READS = {"services/fire_time_rulings.py": ("FireTimeRulings.rule",)}
+#: against (KOD-629); it renders nothing and reaches no prompt.  And a stalled
+#: pull request is titled by the spec's own title, a ticket's title or a tracker
+#: subject's key, through the formatter module's ``fire_spec_title`` (KOD-1261).
+#: A third entry here is a decision recorded in this comment, not a convenience.
+TEXT_READS = {
+    "chains/authored_publication.py": ("AuthoredPublication.open_stalled_pr",),
+    "services/fire_time_rulings.py": ("FireTimeRulings.rule",),
+}
 
 
 def _control(source: str) -> tuple[int, int]:
