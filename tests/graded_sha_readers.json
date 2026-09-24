@@ -48,18 +48,22 @@
     ]
   },
   "chains/audit_forge.py::AuditForgeVerifier._forge": {
-    "reason": "the graded commit handed to the CI port as the ref whose checks are read; the snapshot and the red classification that come back are read for their verdict and roster, and the snapshot's own commit is checked in _checked_snapshot: never weighed against a head",
+    "reason": "the graded commit handed to the CI port as the ref whose checks are read; the snapshot and the red classification that come back are read for their verdict and roster, counted over the rostered checks with the rest named as excluded (KOD-437), and the snapshot's own commit is checked in _checked_snapshot: never weighed against a head",
     "uses": [
       "assert_never(unreachable)",
       "checks = self._checked_snapshot(red.observation, evidence)",
       "checks = self._checked_snapshot(watched, evidence)",
-      "if checks.checks_passed:\n    ...",
+      "counted = counted_checks(reported=checks.check_names, failed=checks.failed_check_names, rostered=required)",
+      "counted = counted_checks(reported=checks.check_names, failed=checks.failed_check_names, rostered=required)",
+      "excluded = counted.excluded",
+      "excluded = counted.excluded",
       "if isinstance(red.observation, AbsentChecks):\n    ...",
       "if isinstance(watched, AbsentChecks):\n    ...",
       "if isinstance(watched, IncompleteChecks):\n    ...",
+      "if not counted.failures:\n    ...",
       "match red.red_class:",
       "raise AuditClaimReadError(watched.summary)",
-      "red = await classify_red_checks(ci=self._ci, repository=repository, repo_url=repository.url, initial=checks, max_attempts=self._config.delivery_red_rerun_max_attempts)",
+      "red = await classify_red_checks(ci=self._ci, repository=repository, repo_url=repository.url, initial=checks, max_attempts=self._config.delivery_red_rerun_max_attempts, counted=required or None)",
       "self._require_roster(checks, required)",
       "self._require_roster(checks, required)",
       "watched = await self._ci.wait_for_checks(repo_url=request.repo_url, ref=evidence.graded_sha)"
@@ -68,7 +72,7 @@
   "chains/audit_forge.py::AuditForgeVerifier._forge.result": {
     "reason": "the recorded commit quoted into the forge observation's reason text",
     "uses": [
-      "return AuditForgeObservation(criterion=criterion, recorded_evidence=evidence, required_check_names=required, checks=checks, red=red, verdict=verdict, reason=f'{request.criterion_key} at {evidence.graded_sha}: {reason}')"
+      "return AuditForgeObservation(criterion=criterion, recorded_evidence=evidence, required_check_names=required, excluded_check_names=excluded, checks=checks, red=red, verdict=verdict, reason=f'{request.criterion_key} at {evidence.graded_sha}: {reason}')"
     ]
   },
   "chains/audit_overclaim.py::AuditOverclaimVerifier._adoption": {
