@@ -104,14 +104,14 @@
   "tests/chains/test_scope_gap_membership.py": 33,
   "tests/chains/test_scope_gap_selection.py": 9,
   "tests/chains/test_scope_observations.py": 14,
-  "tests/chains/test_scope_ready.py": 57,
+  "tests/chains/test_scope_ready.py": 58,
   "tests/chains/test_scope_terminal.py": 110,
   "tests/chains/test_session_policy_composition.py": 7,
   "tests/chains/test_shorthand_url_resolution.py": 17,
   "tests/chains/test_stalled_handoff.py": 7,
   "tests/chains/test_ticket_generation.py": 109,
   "tests/chains/test_tool_preset_composition.py": 4,
-  "tests/chains/test_union_exit_invariance.py": 18,
+  "tests/chains/test_union_exit_invariance.py": 65,
   "tests/chains/test_union_final_freshness.py": 5,
   "tests/chains/test_union_forge_isolation.py": 27,
   "tests/chains/test_union_participant_order.py": 16,
@@ -384,7 +384,7 @@
   "tests/services/test_scope_dispatcher.py": 149,
   "tests/services/test_scope_entry.py": 14,
   "tests/services/test_scope_heartbeat.py": 93,
-  "tests/services/test_scope_planning.py": 9,
+  "tests/services/test_scope_planning.py": 17,
   "tests/services/test_scope_resolution.py": 7,
   "tests/services/test_scope_runtime.py": 56,
   "tests/services/test_scope_runtime_static.py": 10,
@@ -2231,7 +2231,16 @@
    "test_actual_graph_presets_reach_native_sessions"
   ],
   "tests/chains/test_union_exit_invariance.py": [
+   "test_every_raise_the_step_writes_is_an_exit_some_scenario_drives",
    "test_named_union_exit_preserves_real_refs_and_removes_scratch",
+   "test_every_failure_row_plants_a_member_its_port_declares",
+   "test_a_failing_collaborator_leaves_every_ref_and_publishes_nothing",
+   "test_the_ports_the_step_is_handed_record_what_it_asks",
+   "test_a_read_by_any_spelling_is_on_the_record",
+   "test_nothing_the_recorder_hands_out_leads_back_to_the_port",
+   "test_reading_the_recorders_own_slots_is_not_recorded",
+   "test_a_read_the_port_does_not_declare_is_reported",
+   "test_a_member_no_failure_row_fails_is_reported",
    "test_every_planted_publication_kind_is_on_the_record",
    "test_a_publication_git_refuses_is_on_the_record_all_the_same"
   ],
@@ -5502,7 +5511,9 @@
    "test_a_subtree_that_offends_nothing_returns_the_filtered_family",
    "test_a_refused_scope_dispatches_nothing",
    "test_a_member_absent_from_its_ancestors_subtree_refuses",
-   "test_a_subtree_that_moves_during_planning_never_returns_a_plan"
+   "test_the_plan_is_built_from_one_read_of_the_board",
+   "test_a_relation_and_a_stamp_the_subtree_read_answers_later_do_not_refuse",
+   "test_a_blocker_outside_the_scope_is_read_once"
   ],
   "tests/services/test_scope_resolution.py": [
    "test_each_entry_kind_preserves_membership_and_structural_edges",
@@ -7052,7 +7063,7 @@
   "tests/tracker/test_scope_planning.py": [
    "test_native_stage_barriers_name_keys_at_the_planning_boundary",
    "test_closed_decisions_and_sibling_edges_return_native_plan_facts",
-   "test_unstable_native_facts_never_return_a_plan",
+   "test_a_dependency_read_answering_another_identity_never_returns_a_plan",
    "test_missing_native_label_mapping_refuses_before_any_scope_read",
    "test_plan_keeps_criterion_children_outside_milestone_filter",
    "test_every_barrier_kind_is_named_together",
