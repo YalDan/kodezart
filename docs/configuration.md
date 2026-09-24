@@ -869,6 +869,18 @@ rejected. Each native tick uses the
 existing grooming run identity and resolves the configured repository trunk to
 a fresh immutable remote commit before assessment.
 
+The tick is scheduled under the grooming pass's name and, by default, on the
+grooming pass's cadence and budget. Two optional fields in the same group give
+it its own:
+
+| Variable | Type | Default | Constraints | Description |
+| --- | --- | --- | --- | --- |
+| `KODEZART_ORGANIZE__INTERVAL_SECONDS` | `float \| None` | `None` | >= 60.0, <= 86400.0 | Seconds between organize ticks. Unset, the tick runs on `KODEZART_GROOMING_PASS_INTERVAL_SECONDS`, whose bounds these are. |
+| `KODEZART_ORGANIZE__TIMEOUT_SECONDS` | `float \| None` | `None` | >= 60.0, <= 86400.0 | Seconds one organize tick may take before it is abandoned. Unset, the tick runs under `KODEZART_GROOMING_PASS_TIMEOUT_SECONDS`, whose bounds these are. |
+
+Setting either leaves the grooming pass's own values untouched. The
+`pass_scheduler_started` event names the interval the tick was given.
+
 ## Tracker write verification
 
 Configured tracker-writing owners require `AppConfig.write_back` with

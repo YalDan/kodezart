@@ -106,7 +106,10 @@ current name; every retired spelling is refused rather than ignored.
 - `pass_scheduler_started` — the scheduler is running, naming each pass it
   carries and that pass's interval. On a scope deployment that is the organize
   tick, the standing scopes' heartbeat, the observation tick that watches each
-  lane's run shape, and the audit pass where one is configured.
+  lane's run shape, and the audit pass where one is configured. The organize
+  tick's interval is `KODEZART_ORGANIZE__INTERVAL_SECONDS` when set and
+  `KODEZART_GROOMING_PASS_INTERVAL_SECONDS` otherwise; the scheduler sleeps one
+  interval before the first tick.
 
 Both "not wired" lines are expected here, and a boot that does NOT carry them on
 a scope deployment is a boot that just scheduled the per-issue machine over your

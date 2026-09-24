@@ -18,6 +18,11 @@ concerns.
 
 ### Changed
 
+- The organize tick takes its own cadence and budget from
+  `KODEZART_ORGANIZE__INTERVAL_SECONDS` and `KODEZART_ORGANIZE__TIMEOUT_SECONDS`
+  (`config/organize.py`, `composition/passes.py`, `organize_tick_schedule`).
+  Both are optional; each one left unset keeps the grooming pass's value, as
+  before. The grooming pass's own settings are untouched.
 - Boot checks `[marker_prefixes]` against every purpose a pass it schedules can
   ask for and refuses naming every missing key at once
   (`composition/passes.py`, `wired_marker_purposes`). A purpose only an unwired

@@ -238,6 +238,37 @@ def prompt_pass_schedule(config: AppConfig) -> dict[PromptKey, _PromptPassRow]:
     }
 
 
+def organize_tick_schedule(
+    config: AppConfig, *, grooming: _PromptPassRow
+) -> _PromptPassRow:
+    """The organize tick's cadence and budget: its own settings, else *grooming*'s.
+
+    The tick is scheduled under the grooming pass's row and used to take that
+    row's numbers outright, so the operator's six-hour grooming cadence made
+    a triaged scope wait up to six hours for its groom phase (2026-09-24).
+    ``KODEZART_ORGANIZE__INTERVAL_SECONDS`` and ``__TIMEOUT_SECONDS`` are the
+    tick's own; each one left unset keeps the grooming value, so a deployment
+    that sets neither keeps the cadence it had. The gate stays the grooming
+    row's: the tick has no gate of its own.
+    """
+    own = config.organize
+    if own is None:
+        return grooming
+    return _PromptPassRow(
+        interval_seconds=(
+            grooming.interval_seconds
+            if own.interval_seconds is None
+            else own.interval_seconds
+        ),
+        timeout_seconds=(
+            grooming.timeout_seconds
+            if own.timeout_seconds is None
+            else own.timeout_seconds
+        ),
+        signals=grooming.signals,
+    )
+
+
 def absent_roster(operation: OperationConfig) -> tuple[str, ...]:
     """The roster collections a scheduled template enumerates and *operation* lacks.
 
@@ -476,7 +507,7 @@ async def build_prompt_passes(
     scheduled: list[ScheduledPass] = []
     if organize is not None:
         key = PromptKey.GROOMING_PASS
-        row = schedule.pop(key)
+        row = organize_tick_schedule(config, grooming=schedule.pop(key))
         scheduled.append(
             ScheduledPass(
                 name=key.value,

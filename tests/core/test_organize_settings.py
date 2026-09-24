@@ -41,6 +41,46 @@ def test_bounds_are_both_required_and_positive(fields):
         OrganizeSettings.model_validate(fields)
 
 
+def test_the_ticks_cadence_and_budget_default_to_unset() -> None:
+    """Unset means the grooming pass's value; the bounds alone are not a default."""
+    settings = OrganizeSettings(max_admission_rounds=1, max_convergence_rounds=1)
+    assert (settings.interval_seconds, settings.timeout_seconds) == (None, None)
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"interval_seconds": 59.0},
+        {"interval_seconds": 86401.0},
+        {"timeout_seconds": 59.0},
+        {"timeout_seconds": 86401.0},
+    ],
+)
+def test_the_ticks_cadence_and_budget_carry_the_grooming_bounds(
+    fields: dict[str, float],
+) -> None:
+    """Set, each field takes the grooming fields' bounds: 60 s through a day."""
+    with pytest.raises(ValidationError):
+        OrganizeSettings.model_validate(
+            {"max_admission_rounds": 1, "max_convergence_rounds": 1, **fields}
+        )
+
+
+def test_the_ticks_cadence_reaches_the_settings_from_the_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("KODEZART_ORGANIZE__MAX_ADMISSION_ROUNDS", "1")
+    monkeypatch.setenv("KODEZART_ORGANIZE__MAX_CONVERGENCE_ROUNDS", "1")
+    monkeypatch.setenv("KODEZART_ORGANIZE__INTERVAL_SECONDS", "900")
+    monkeypatch.setenv("KODEZART_ORGANIZE__TIMEOUT_SECONDS", "600")
+    config = AppConfig()
+    assert config.organize is not None
+    assert (config.organize.interval_seconds, config.organize.timeout_seconds) == (
+        900.0,
+        600.0,
+    )
+
+
 @pytest.mark.parametrize(
     "change", ["missing_mandates", "undeclared_repository", "duplicate_scope"]
 )

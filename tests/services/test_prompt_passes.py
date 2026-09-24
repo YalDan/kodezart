@@ -11,7 +11,7 @@ import ast
 from collections.abc import Callable
 from datetime import UTC, datetime, tzinfo
 from pathlib import Path
-from typing import Final
+from typing import Final, cast
 
 import pytest
 import structlog.testing
@@ -23,6 +23,7 @@ from kodezart.composition.passes import (
     DispatchRuntime,
     build_dispatch_runtime,
     build_prompt_passes,
+    prompt_pass_schedule,
     runs_scope_flow,
     verify_pass_preflight,
 )
@@ -959,6 +960,88 @@ async def test_the_shipped_example_declares_every_prefix_the_wired_passes_ask_fo
     assert [
         entry.name for entry in runtime.scheduler.passes if _DISPATCH_NAME in entry.name
     ] != []
+
+
+# ---------------------------------------------------------------------------
+# KOD-1238: the organize tick's own interval, defaulting to the grooming pass's
+# ---------------------------------------------------------------------------
+
+#: A cadence and a budget no other constant here shares, so the tick that
+#: carries them was read off the organize settings and nothing else.
+ORGANIZE_INTERVAL = 311.0
+ORGANIZE_TIMEOUT = 503.0
+
+
+def _organize_tick(runtime: DispatchRuntime) -> ScheduledPass:
+    """The one scheduled organize tick, under the grooming pass's name."""
+    ticks = [
+        entry
+        for entry in runtime.scheduler.passes
+        if entry.name == PromptKey.GROOMING_PASS.value
+    ]
+    assert len(ticks) == 1
+    return ticks[0]
+
+
+async def test_the_organize_tick_keeps_the_grooming_cadence_when_none_is_set(
+    tmp_path: Path,
+) -> None:
+    """Existing behaviour, pinned: with no organize interval, grooming's numbers."""
+    runtime = await _runtime(
+        tmp_path,
+        tracker=approving_board(),
+        runner=FakeAgentRunner(events=[]),
+        operation=standing_scope_operation(),
+        organize=STANDING_SCOPE_SETTINGS["organize"],
+        write_back=STANDING_SCOPE_SETTINGS["write_back"],
+        fire_prep_pass_gate_signals=[],
+        grooming_pass_gate_signals=[],
+    )
+
+    tick = _organize_tick(runtime)
+    assert (tick.interval_seconds, tick.timeout_seconds) == (
+        GROOMING_INTERVAL,
+        GROOMING_TIMEOUT,
+    )
+
+
+async def test_the_organize_tick_runs_on_its_own_interval_when_one_is_set(
+    tmp_path: Path,
+) -> None:
+    """The tick takes the organize settings; the grooming row is untouched.
+
+    Measured 2026-09-24: the operator's grooming cadence is six hours, and
+    the tick scheduled under it made a triaged scope wait that long for its
+    groom phase.
+    """
+    organize = {
+        **cast("dict[str, object]", STANDING_SCOPE_SETTINGS["organize"]),
+        "interval_seconds": ORGANIZE_INTERVAL,
+        "timeout_seconds": ORGANIZE_TIMEOUT,
+    }
+    runtime = await _runtime(
+        tmp_path,
+        tracker=approving_board(),
+        runner=FakeAgentRunner(events=[]),
+        operation=standing_scope_operation(),
+        organize=organize,
+        write_back=STANDING_SCOPE_SETTINGS["write_back"],
+        fire_prep_pass_gate_signals=[],
+        grooming_pass_gate_signals=[],
+    )
+
+    tick = _organize_tick(runtime)
+    assert (tick.interval_seconds, tick.timeout_seconds) == (
+        ORGANIZE_INTERVAL,
+        ORGANIZE_TIMEOUT,
+    )
+    grooming = prompt_pass_schedule(_config(tmp_path, organize=organize))[
+        PromptKey.GROOMING_PASS
+    ]
+    assert (grooming.interval_seconds, grooming.timeout_seconds) == (
+        GROOMING_INTERVAL,
+        GROOMING_TIMEOUT,
+    )
 
 
 # ---------------------------------------------------------------------------
