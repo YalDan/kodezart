@@ -30,6 +30,7 @@ transport, and what is HTTP's own is here: how a session is dialled, what
 its failures are called, and the credential a refusal latches.
 """
 
+import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager
 from datetime import timedelta
@@ -67,6 +68,8 @@ _PROBE_REQUEST_ID: Final[int] = 1
 #: Both bodies a streamable-HTTP endpoint may answer an ``initialize`` POST
 #: with.  Sent so a healthy server answers the probe rather than refusing
 #: its content negotiation, which would read as a broken endpoint.
+#: How long a refusal's body is waited for before its status stands alone.
+_REASON_READ_SECONDS: float = 1.0
 _PROBE_ACCEPT: Final[str] = "application/json, text/event-stream"
 
 #: The request every MCP session begins with, built from the protocol's own
@@ -217,12 +220,34 @@ class _RemoteServer(HostedSessionTransport):
         reopen policy already knows: the collapse is reopened once, the
         handshake presents the credential again, and a 401 there latches.
         """
-        if (
-            response.status_code == HTTPStatus.UNAUTHORIZED
-            and self._presenting_credential
-        ):
-            self._credential_refused = True
+        if response.status_code == HTTPStatus.UNAUTHORIZED:
+            # The server's own reason, bounded: measured 2026-09-24, a valid
+            # key was answered 401 in the middle of a run with nothing above
+            # this hook able to say why, and the status alone cannot tell a
+            # revoked key from a limit the server enforces with that status.
+            await self._log.aerror(
+                "mcp_unauthorized_answer",
+                server_name=self.server_name,
+                presenting_credential=self._presenting_credential,
+                www_authenticate=response.headers.get("www-authenticate"),
+                body=await self._reason(response),
+            )
+            if self._presenting_credential:
+                self._credential_refused = True
         self._last_error_status = response.status_code if response.is_error else None
+
+    async def _reason(self, response: httpx.Response) -> str:
+        """The answer's body, bounded in size and in time.
+
+        A body that never ends (measured: an event stream held open under
+        a refusal) is not waited for — one second, then whatever arrived.
+        """
+        try:
+            async with asyncio.timeout(_REASON_READ_SECONDS):
+                body = await response.aread()
+        except TimeoutError:
+            return "(body not read within the bound)"
+        return body[: self._error_detail_limit].decode("utf-8", "replace")
 
     @asynccontextmanager
     async def session(self) -> AsyncIterator[ClientSession]:

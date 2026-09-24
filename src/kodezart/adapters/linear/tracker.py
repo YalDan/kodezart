@@ -197,6 +197,8 @@ _TOOL_GET_DOCUMENT = "get_document"
 _TOOL_LIST_DOCUMENTS = "list_documents"
 _TOOL_SAVE_DOCUMENT = "save_document"
 _TOOL_GET_PROJECT = "get_project"
+#: How much of a retried call's failure the retry event carries.
+_RETRY_ERROR_CHARS: Final[int] = 300
 _TOOL_LIST_USERS = "list_users"
 _TOOL_GET_USER = "get_user"
 _TOOL_LIST_TEAMS = "list_teams"
@@ -2650,6 +2652,8 @@ class _LinearTrackerSession:
                     tool=tool,
                     attempt=attempt,
                     delay_seconds=delay,
+                    error_type=type(exc).__name__,
+                    error=str(exc)[:_RETRY_ERROR_CHARS],
                 )
                 await asyncio.sleep(delay)
                 attempt += 1
