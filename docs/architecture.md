@@ -43,6 +43,15 @@ observation tick where a tracker is dialled and the audit where one is
 configured — beside the per-issue machine: the dispatch pass, the two
 prompt passes and the lifecycle watcher are built on their own premises, each
 pass's cadence pair among them, whether or not scopes are declared.
+Each prompt pass (`services/prompt_pass.py`) asks a gate question before every
+tick but its first after boot: one short session of the same kind and grant
+as the pass, rendered from the `pass_gate` template with the pass's name and
+the window since its last tick that ran, answered in the `PassGateOutput`
+schema through the same runner and `session_policy` path as every other
+structured session. `run: false` skips the tick and the pass sleeps its
+interval; `run: true`, a missing answer and an unreadable answer all open the
+pass. The per-issue dispatch pass keeps its deterministic gate
+(`services/pass_gate.py`) over the process's own tracker credential.
 The lifespan registers each acquired resource with an `AsyncExitStack`.
 Shutdown stops the scheduler and queue, drains lifecycle watchers and finishes
 their records, then closes their transports; the checkpointer retains its
@@ -108,7 +117,7 @@ does not exist.
 | IssueReader | LinearMcpTracker | One issue, whole; the read the audit runtime and the native amendment arm make, and a base of the composed roles that read an issue |
 | PlanningIssueReader | LinearMcpTracker | One issue with complete relations; composed into the scope-plan read, the lane escalation writer and the artifact reader |
 | IssueRevisionReader | LinearMcpTracker | One issue and its body digest; the read the organize author round and the organize owner make |
-| IssueScanReader | LinearMcpTracker | The board scan the pass gate and the fire dispatcher select on |
+| IssueScanReader | LinearMcpTracker | The board scan the dispatch pass's gate and the fire dispatcher select on |
 | ScopeFamilyReader | LinearMcpTracker | The scope family, resolved for scope resolution and composed into every membership read |
 | StateHistoryReader | LinearMcpTracker | When an issue entered its state; the read audit candidate collection makes |
 | EscalationResolutionReader | LinearMcpTracker | Whether a decision record answers an escalation; the read the escalation signal and the run-shape reading make |
@@ -137,7 +146,7 @@ does not exist.
 | FireSubjectReader | LinearMcpTracker | The admitted subject of a fire over the family it is measured against: the criteria stage's reads |
 | OrganizeAuthorReader | LinearMcpTracker | The criterion family and body digests the organize and authoring rounds read |
 | OrganizeContextTracker | LinearMcpTracker | The issues, milestones and records the organize context reader assembles from |
-| PassGateReader | LinearMcpTracker | The board and review scans the pass gate decides on, with no write |
+| PassGateReader | LinearMcpTracker | The board and review scans the dispatch pass's gate decides on, with no write |
 | TrackerArtifactReader | LinearMcpTracker | Every read a tracker artifact is assembled from; taken by the audit pass, the sweep's verifier and the artifact reader itself |
 | FireDispatchTracker | LinearMcpTracker | The claim, base and staging facts the deterministic dispatch decides on |
 | BaseResolutionTracker | LinearMcpTracker | The issue read and the ref record base resolution works from |
@@ -2230,7 +2239,7 @@ loop's own writer contract renders the pinned answers it reads back. The
 evaluation step reads the same criteria at the lane's base under the
 `base_check` role, in the tree it owns there.
 
-The scheduled pass gate keeps its vendor timestamp window for reply and
+The dispatch pass's gate keeps its vendor timestamp window for reply and
 mention scanning. Atomic issue-write responses can identify their own
 stamp. Comment creation, edit, and deletion instead record explicit native
 mutation receipts; no post-write issue read is attributed to that write.

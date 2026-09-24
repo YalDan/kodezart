@@ -19,6 +19,19 @@ concerns.
   verified; scopes pushed to a decision; a decision asked for in one short
   comment with options, a lean and a table or diagram when shape is the
   question.
+- The fire-prep and grooming passes decide whether to run by asking an agent.
+  Before every tick but the first after boot, the pass opens one short
+  session of its own kind (`PromptKey.PASS_GATE`, template `pass_gate.md` in
+  both sets) over the window since its last tick that ran, answered in the
+  `PassGateOutput` schema (`run`, `moved`, `reason`): `run: false` skips the
+  tick (`scheduled_pass_skipped`), anything else runs it, and an answer that
+  is missing or unreadable is named (`pass_gate_unanswered`) and runs the
+  pass. `pass_gate_asked` and `pass_gate_answered` carry the window, engine,
+  effort and answer. The question's engine is the `pass_gate` key of
+  `KODEZART_AGENT__SESSION_MODELS`, meant for the cheapest engine the provider
+  offers. The passes no longer read the tracker through the process's own
+  credential before a tick (KOD-1257); the per-issue dispatch pass keeps its
+  deterministic gate.
 - A tracker call the vendor refuses (401, which Linear also answers for a key
   whose hourly request budget is spent) is answered with silence: the adapter
   stops asking for fifteen minutes, presents the credential once more, and
@@ -36,6 +49,15 @@ concerns.
 - The fire-prep and grooming passes run their first tick at boot when their
   cadence pairs are set (`ScheduledPass.tick_at_boot`); every other pass still
   sleeps one interval before its first tick.
+
+### Removed
+
+- `KODEZART_FIRE_PREP_PASS_GATE_SIGNALS` and
+  `KODEZART_GROOMING_PASS_GATE_SIGNALS`, refused at boot from every source.
+  `PassGate` and `PassGateReader` remain for the dispatch pass alone; the
+  boot capability probe no longer asks for any signal on the prompt passes'
+  behalf, and `prompt_pass_gates_absent_no_tracker` and
+  `prompt_pass_skipped_no_delta` are no longer emitted.
 
 ## [0.3.0] - 2026-09-24
 
