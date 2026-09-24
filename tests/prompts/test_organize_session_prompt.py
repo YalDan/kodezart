@@ -13,6 +13,7 @@ from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.core.prompt_namespaces import operation_bindings
 from kodezart.domain.organize import is_organize_subject, owes_stage_label
 from kodezart.services.organize_session_owner import OrganizeSessionOwner
+from kodezart.types.domain.operation import ScopeLabel
 from kodezart.types.domain.organize import MandateKind
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from tests.fakes import (
@@ -187,3 +188,32 @@ def test_a_member_left_off_the_list_may_be_an_escalated_one(set_name: str) -> No
 
     for kind in MandateKind:
         assert UNLISTED[set_name] in sentences(rendered(set_name, kind)), kind
+
+
+#: How each set's one scope-label sentence opens.
+SCOPE_LABEL_RULE = "Never add or remove any scope label"
+
+
+@pytest.mark.parametrize("set_name", SETS)
+def test_every_declared_scope_label_is_named_only_to_be_forbidden(
+    set_name: str,
+) -> None:
+    """Triage, proposed and approved alike: the session sets none of them.
+
+    The rule used to name two of the three scope labels, which left the
+    proposed one, and any other the operation declares, outside it. Every
+    label the shipped scope file declares is read off the file, and in every
+    phase the one sentence that names any of them is the rule that forbids
+    adding or removing it.
+    """
+    declared = load_operation_config(SCOPE_EXAMPLE).scope_labels
+    assert {member.value for member in ScopeLabel} <= set(declared)
+
+    for kind in MandateKind:
+        said = sentences(rendered(set_name, kind))
+        naming = [s for s in said if any(label in s for label in declared.values())]
+        assert len(naming) == 1, (kind, naming)
+        (rule,) = naming
+        assert rule.startswith(SCOPE_LABEL_RULE), (kind, rule)
+        for label in declared.values():
+            assert f"`{label}`" in rule, (kind, label)

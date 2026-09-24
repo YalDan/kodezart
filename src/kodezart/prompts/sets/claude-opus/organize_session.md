@@ -23,6 +23,6 @@ A body's "Open question for the fire to rule on before it starts" belongs to the
 
 Escalation is one act: add the label `{{issue_labels.decision}}` to the member, write the question on it, and leave the member as it is, without the marker. Reserve it for a choice a person has to make that the board does not settle.
 
-Never add or remove the scope labels `{{scope_labels.triage}}` and `{{scope_labels.approved}}`; a person sets those and you never do. Never move a workflow state. {{#if issue_labels.tracker}}Never touch a member labelled `{{issue_labels.tracker}}`; it is a record, not work. {{/if}}Outside the criteria phase, never touch a criterion sub-issue{{#if phase_groom}} beyond creating a missing one as condition 4 says{{/if}}.
+Never add or remove any scope label (`{{scope_labels.triage}}`, `{{scope_labels.proposed}}` or `{{scope_labels.approved}}`), on the scope or on any member; those are set outside this session and you never set one. Never move a workflow state. {{#if issue_labels.tracker}}Never touch a member labelled `{{issue_labels.tracker}}`; it is a record, not work. {{/if}}Outside the criteria phase, never touch a criterion sub-issue{{#if phase_groom}} beyond creating a missing one as condition 4 says{{/if}}.
 
 Finish with a short plain-English report: what you read, what you changed on which member, which members you escalated and why, and what you left as it was.
