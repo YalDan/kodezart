@@ -104,7 +104,14 @@ export KODEZART_DISPATCH_PASS_INTERVAL_SECONDS=300
 export KODEZART_DISPATCH_PASS_TIMEOUT_SECONDS=240
 export KODEZART_SUPERVISOR_PASS_INTERVAL_SECONDS=300
 export KODEZART_SUPERVISOR_PASS_TIMEOUT_SECONDS=120
+export KODEZART_AGENT__DANGEROUSLY_ALLOW_HOST_MCP=true
 ```
+
+The last line is what lets the organize stage's sessions reach the tracker:
+each phase is one agent session that works the board with the tracker tools
+the host attaches, under the host's own stored login, and with the flag off it
+has no tracker tools at all. Read what the flag opens in
+[`docs/configuration.md`](configuration.md) before setting it.
 
 Leave `KODEZART_CHECKPOINT_URL` unset. Setting it builds a checkpointer, and
 what that checkpointer reaches is the authored HTTP workflow, the ticket
@@ -236,8 +243,14 @@ names the member and what it stops.
 | a call of the tracker port's artifact-write surface (the roles the tracker is dialled as) in the installed code that no write-back verifier drives and no derived-write declaration holds out | boot, before the tracker is dialled or anything is written | `UnverifiedWritePathError` |
 
 A lane issue that carries no criteria-stage marker cannot fire. That marker is
-written by the organize step after approval, not by hand and not by the builder
-below.
+added by the organize stage after approval, not by hand and not by the builder
+below. The stage is one agent session per phase: the session is told the scope,
+the phase's rubric, the marker to add and the members that owe it, and it works
+the board with its own tracker tools; kodezart then reads the scope once and
+halts the run naming any member left without the marker. Measured 2026-09-24:
+the earlier owner, which read and wrote through kodezart's own
+port, cost about 5,900 tracker calls per settling round; one session with the
+tracker tools took 8 tool calls and 45 seconds over the same scratch scope.
 
 ## The scratch scope
 

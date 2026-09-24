@@ -148,7 +148,7 @@ does not exist.
 | AuditPublicationWriter | LinearMcpTracker | The record an audit publishes, under the lease publication holds |
 | EscalationSignalReader | LinearMcpTracker | The resolution and records an escalation's ageing is observed from; the supervisor's ageing arm holds it for the collector it hands it to |
 | RecordSignalReader | LinearMcpTracker | The criterion family and lane record a barren tick, and a lane's recorded ruling growth, are observed from |
-| OrganizeOwnerTracker | LinearMcpTracker | Everything the organize owner reads and every write it makes: the widest single consumer |
+| OrganizeOwnerTracker | LinearMcpTracker | Everything the older cascade organize owner reads and every write it makes: the widest single consumer; the wired session owner reads through ScopeFamilyReader and TrackerScopeApprovalReader alone and writes nothing |
 | FireRulingTracker | LinearMcpTracker | The criterion reads and record writes a ruling round makes |
 | AmendmentWriteTracker | LinearMcpTracker | Every read the amendment write-back is composed from and every write it makes |
 | NativeAmendmentTracker | LinearMcpTracker | The amendment writes plus the membership the native arm reads beside them, and the criterion minter its weakened-assertion marks take |
@@ -771,6 +771,12 @@ conformance checks cover body changes, unchanged replays and metadata-only
 writes. An unreadable or invalid revision refuses at the actual read; no
 consumer substitutes an empty digest or treats it as live.
 
+The paragraphs from here to the role table describe the older cascade owner,
+`services/organize_owner.py`: its admission sessions, its gap arithmetic and
+its leased write-back. That owner stays in the tree and is constructible
+through `build_organize_owner`, and it is wired nowhere; the owner the stages
+run today is described under the role table below.
+
 Admission sessions return an `AdmissionJudgment`. The caller creates the
 `AdmissionResult` by attaching the body digest from the revision supplied to
 that session; the agent never supplies that metadata. A body changed while
@@ -814,105 +820,47 @@ to it, so its scheduled pass opens no session and writes nothing. `ticket` and
 `criteria` are stages of an approved scope run. An owner runs exactly the rows
 it is given — the scheduled pass is given the pre-approval row, a scope run's
 entry the two run-stage rows — and no branch on mandate kind exists outside
-the role table. The set states the board's shape once, as one tree from
-initiative down to sub-issue placed through tracker fields, and composes it
-into the groom judge, the repair author and the two scheduled pass prompts, so
-an issue sitting outside that tree is a repairable gap rather than a matter of
-taste. Both the grooming and the fire-prep passes size work for quick wins and
-file a rare or improbable edge case as its own backlog issue rather than as
-added scope.
+the role table.
 
-Each row's accept conditions are its own rubric's, not the judging role's: the
-pre-approval row's rubric states the four-part organizational predicate — every
-stated dependency is a blocking edge on the board, every open human choice has
-the person accountable for it, target dates are ordered, and every member that
-will be executed already carries a criterion — and names no implementation
-test, while the run-stage rows' rubric states the implementation and
-demonstration test. One verify role serves all of them, because what counts as
-accepted arrives in the rubric the row names.
+The wired owner is `services/organize_session_owner.py`, built by
+`composition/organize.py::build_organize_session_owner` and run through the
+organizer the scope entry and the organize tick share. It settles every row
+the same way. First the gate, read the cheap way: a `scope_labels` gate is one
+reading of the addressed scope and the containers above it (`scope_carries`),
+an `issue_labels` gate is read off the members' own labels in one scope read,
+and the row's side of approval is one approval reading per run. A closed gate
+costs nothing more. An open gate reads the scope once and lists the members
+that owe the row's marker and lack it: every member that is neither a
+criterion sub-issue, a tracker record nor an escalated member. If any does,
+the owner renders the `organize_session` prompt — the scope, the phase's
+rubric, the marker to add, the owed member keys, the fire-time rule and the
+labels the session may never touch — and runs ONE session through the agent
+runner: session type `organize_pass`, unattended, allowed tools the tracker
+server's own family (`mcp__<server>__*`), in the scheduled passes' working
+directory and never in a cloned repository. The session does the board work
+with the tracker tools the host attaches under
+`KODEZART_AGENT__DANGEROUSLY_ALLOW_HOST_MCP`, adds the marker to each member
+it satisfies, and escalates by adding the decision label. kodezart then reads
+the scope once more through the port and reports: every owed member carries
+the marker and the phase is complete, or one does not and the row halts with
+a stage-incomplete report naming it. No lease is taken, no marker is written
+by kodezart, no proof is kept and no verifier runs: the board the session
+left is the record, and one log event per phase (`organize_phase_settled`)
+says what was read, whether a session opened and what it reported.
 
-The role table also states what each phase may write on a member, as a set of
-surface kinds. That set is the declared set: once a round has a roster with
-work, the owner leases every kind its row lists on every member of its
-snapshot in one all-or-nothing acquisition through the port's lease calls,
-renews it before each write of the round, releases it before any halt is
-written, and holds nothing at all when the acquisition is refused — a refused
-round is not retried, and the next pass reads the board again. A roster with
-no work takes no lease, so an approved scope and a replay cost the
-pre-approval row no lease marker. A member the round mints is outside the set
-that round declared and is declared by the next round, which snapshots the
-board again. A member whose own approval reading is on the other side of
-approval from the row — one approved in its own right inside a scope still in
-triage — is left out of the set, since a run may hold it and the row writes
-nothing on it.
+Measured 2026-09-24 (KOD-1239): the cascade owner cost about 5,900 tracker
+calls per settling round of the scratch scope and wrote its markers only at
+the end; one session with the tracker tools over the same scope took 8 tool
+calls and 45 seconds. That is why the stage is one session per phase and one
+read after it.
 
-The round's lease is renewed only at its writes. Each member's marker carries
-the lines of the whole set, so one renewal edits one marker per member. The
-longest stretch without a write is the dry round, which runs one verification
-session per member, and it has to fit within `tracker.surface_lease_seconds`:
-a round whose lease lapsed before its next write raises
-`SurfaceLeaseLostError` at that write and writes nothing more. A round killed
-while it holds the set leaves its markers standing until they lapse, so the
-next pass over that scope is refused until then; a grooming tick stops at the
-first target that raises, and the targets after it wait for the next tick.
-
-That same set is the bound on what the row may write. Every address a
-proposal needs — the subject's own surface and, for a graph change, the graph
-address of every affected peer — is weighed against the held set before any
-renewal or tracker write; the author's session and its tracker reads come
-first. An address inside the scope and outside the set, such
-as a peer that joined after the round's snapshot, is refused there and recorded
-as a finding on the item that owns the address, and the round works on: a next
-round that declares the member writes the same change, and once that write
-lands the finding is repaired and never written. An owner on the other side of
-approval from the row can take no record, so its finding is recorded on the
-subject instead, naming that member. A peer outside the scope is refused
-outright and recorded as nothing. The lease decides neither
-question: it is the record of what is held, and the comparison is the owner's.
-
-Graph change — dependency and related edges, parentage, priority and
-milestone — is declared by the pre-approval row and by no other, so that row
-applies structural change rather than proposing it: a groom that only
-describes a re-parent in a body leaves the judgement that asked for it
-unanswered and halts unmarked. The run stages write text and children:
-`ticket` writes the body and split children, `criteria` the criterion
-children, and a graph change either of them authors is recorded as a finding
-on each item it would touch instead of reaching the tracker. The phase marker
-and the escalation label the run stages write are those rows' own
-bookkeeping, not structure. That reservation is what lets the report-only
-discipline of a scope run (the narrowing of KOD-368) and this row's structural
-authority both hold: the discipline binds an approved scope, and this row runs
-only before approval. Cancellation belongs to the structural change reserved
-to the pre-approval row and is not built: the organize path moves no workflow
-state (KOD-806, KOD-755).
-
-A finding the row forms is held while the phase converges, not written when
-it is formed: a finding the next round repairs never reaches the tracker.
-Every finding still open when the row halts on a judgement — the last dry
-round's, less those on a subject the halting round verified clean, the
-residuals of the round that halted, those of a judgement in that round whose
-subject's write became a residual or left the scope, and those the halting
-judgement carries — is written before the halt report returns, after the round's lease is
-released, as its own record on the item it names: one escalation per item and
-question, carrying the finding's evidence and the pass's interim reading, so
-two classes on one item are two records and one class raised twice is one
-record carrying each evidence.
-A record is gated on the scope's membership and the row's side of approval,
-not on the work-subject gate label, so a finding on a criterion child is
-written to that child. A record the phase may no longer write — on an item on
-the other side of approval, one that left the scope, or one whose judgement
-went stale — is not written and is named in the unrecorded halt instead, while
-the halt's other records still land.
-Whether the judgement behind the halt is still current is read once, before
-the first record, because each record's decision label is itself a change to
-the scope that judgement was bound to. Two exits write none of the findings
-they hold. A round that starts blocked ends in a report-shaped halt that
-spends no judgement and names the members holding the stage; the findings
-are formed again by the judgement of the entry that works those members.
-Approval landing between two rounds of the
-pre-approval row ends that row with nothing admitted, and the row writes
-nothing after approval. A write refused mid-round is not a halt at all: the
-run raises, and the next entry judges again.
+The prompt says what the session is never to do: add or remove a scope
+label, move a workflow state, touch a member labelled `tracker`, or read a
+body's "Open question for the fire to rule on before it starts" as an open
+human choice — that question is the fire-time ruling's own. Escalation is the
+decision label and nothing else: an escalated member owes the marker, is not
+a work subject, and holds the stage until a person removes the label, so the
+next entry spends no session on it and halts naming it.
 
 Because approval admits a member to a run stage instead of ending it, a
 run-stage row may name `scope_labels.approved` as its gate by that exact
@@ -924,45 +872,13 @@ Each run stage ends on a barrier. Every member that owes the stage its marker
 — every member that is neither a criterion sub-issue nor a tracker record — must
 carry it before the next stage begins. A member that does not is named in a
 report-shaped halt carrying the stage, so the run ends with the halt its caller
-already knows and nothing else is spent on it. An escalated member owes the
-marker and is not a work subject, so it holds the stage before any session
-opens: counted, named, and free. Workflow state decides none of this; removing
-the escalation label is what returns a member to the roster.
-
-A write the pass cannot make because it needs a surface inside the scope and
-outside the round's declared set — a relation onto a member approved in its
-own right, whose own run may hold that surface or be bidding for it — is not an
-escape from the stage and not a pass. The round stops working that subject and
-writes nothing there; the fresh verification that follows reports the class
-again, so the stage cannot converge on it, and the bounded halt carries the
-surviving finding with its quoted mandate and escalates it on the issue that
-owns it. A member of the declared set that another run holds is the other
-case: the round's acquisition is refused whole, no session opens and nothing
-is written, and the next pass reads the board again. A lease the run itself
-lost is neither: that write fails and stops the run. A finding naming an issue
-outside the admitted scope stays a refusal: there is no issue there for the
-stage to own.
+already knows and nothing else is spent on it. Workflow state decides none of
+this; removing the escalation label is what returns a member to the roster.
 
 The label is the record. A member already carrying a stage's marker is out of
-that stage's work roster unless a finding of this run names it, so a run
-re-entered from tracker facts alone works exactly what the labels leave — and a
-stage whose every member is already labelled completes with no session and no
-write. The work set itself always comes from the one gap computation, which is
-entered on every pass through a stage, including a replay with nothing left to
-do.
-
-The marker is the stage's terminal act, and it is keyed on the member and the
-marker alone: a member already carrying it is never written again. It is
-written inside the run's own lease on the member's label surface, and the job
-that holds that lease is named as the write's holder, so the port checks the
-grant before it writes and on every retry and refuses the write for any other
-holder or for a lapsed lease. The holder is an authorization checked at write
-time, not a record: the label carries no holder, and the lease markers naming
-the job are deleted when the lease is released. Still inside that lease, the
-pass re-reads the member and requires the marker in its reported label set
-before the independent verification of the write runs, so a phase converges
-only on a marker the board reports: a write the board accepted and does not
-report is a typed write refusal, never a verification round a judge could pass.
+that stage's work roster, so a run re-entered from tracker facts alone works
+exactly what the labels leave — and a stage whose every member is already
+labelled completes with no session and no write.
 
 Setting the approval label is what starts a scope run. The `scope_heartbeat`
 pass reads each `[[organize_scopes]]` row on the dispatch cadence and submits a
