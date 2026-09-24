@@ -190,9 +190,8 @@ async def test_cancellation_during_approval_propagates_without_spec_or_write(ser
         await port.read_fire_subject(issue_key=SUBJECT)
 
 
-# ``parentId`` is not in this list: measured 2026-09-24, the connected server
-# answers a root issue's detail read with no ``parentId`` key at all, so its
-# absence is the answer "no parent" (tests/tracker/test_scope_root_issue_answer.py).
+# Only ``labels``: a dropped ``parentId`` reads as no parent, which
+# tests/tracker/test_scope_root_issue_answer.py owns.
 @pytest.mark.parametrize("omitted", ["labels"])
 async def test_native_incomplete_subject_facts_refuse_at_actual_spec_read(
     server, omitted
