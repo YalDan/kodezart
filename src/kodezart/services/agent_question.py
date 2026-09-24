@@ -22,7 +22,12 @@ from kodezart.core.error_egress import redact_credentials
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import AgentRunner, PromptSetProvider
 from kodezart.core.stream_drain import drain
-from kodezart.types.domain.agent import PASS_GATE_SCHEMA, RaiseSite
+from kodezart.types.domain.agent import (
+    PASS_GATE_SCHEMA,
+    SCOPE_DONE_SCHEMA,
+    SCOPE_SCAN_SCHEMA,
+    RaiseSite,
+)
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
@@ -31,11 +36,17 @@ from kodezart.types.domain.subagents import NO_SUBAGENTS
 _log: BoundLogger = get_logger(__name__)
 
 #: The site each question's drained stream is named by.
-_SITES: Mapping[PromptKey, RaiseSite] = {PromptKey.PASS_GATE: "pass_gate"}
+_SITES: Mapping[PromptKey, RaiseSite] = {
+    PromptKey.PASS_GATE: "pass_gate",
+    PromptKey.SCOPE_SCAN: "scope_scan",
+    PromptKey.SCOPE_DONE: "scope_done",
+}
 #: The wire schema each question's answer is demanded in, by the precomputed
 #: constant every dispatch site names.
 _OUTPUT_FORMATS: Mapping[PromptKey, dict[str, object]] = {
     PromptKey.PASS_GATE: {"type": "json_schema", "schema": PASS_GATE_SCHEMA},
+    PromptKey.SCOPE_SCAN: {"type": "json_schema", "schema": SCOPE_SCAN_SCHEMA},
+    PromptKey.SCOPE_DONE: {"type": "json_schema", "schema": SCOPE_DONE_SCHEMA},
 }
 
 

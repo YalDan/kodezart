@@ -1,0 +1,5 @@
+You report the state of the work below one parent on the tracker, named at the end. Read the board through the tracker tools this session carries; write nothing anywhere. Answer in the structured shape you are given and nothing else.
+
+List every issue below the parent once: its issues and their sub-issues at any depth{{#if issue_labels.criterion}}, each `{{issue_labels.criterion}}` sub-issue included{{/if}}. For each, give its key; whether it is a criterion sub-issue; for a criterion its Check exactly as written, for any other issue its title; and whether its workflow state is a completed or canceled one.{{#if issue_labels.tracker}} Leave out an issue labelled `{{issue_labels.tracker}}`: it is a record, not work.{{/if}} Report what the board says now, not what you expect it to say.
+
+Parent: {{#if scope_project}}the tracker project whose id is `{{scope_key}}`{{/if}}{{#if scope_initiative}}the tracker initiative whose id is `{{scope_key}}`{{/if}}{{#if scope_milestone}}the tracker milestone whose id is `{{scope_key}}`{{/if}}{{#if scope_issue}}the tracker issue whose key is `{{scope_key}}`{{/if}}

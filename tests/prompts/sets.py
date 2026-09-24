@@ -12,7 +12,10 @@ authoring rather than of test setup.
 from kodezart.adapters.in_repo_prompt_registry import InRepoPromptRegistry
 from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.core.prompt_namespaces import operation_bindings
-from kodezart.domain.prompt_variables import execution_criteria_variables
+from kodezart.domain.prompt_variables import (
+    execution_criteria_variables,
+    scope_variables,
+)
 from kodezart.domain.rulings import EMPTY_REGISTRY, pinned_registry
 from kodezart.services.prompt_pass import gate_render_bindings
 from kodezart.types.domain.agent import Ruling
@@ -173,6 +176,13 @@ EXTENDED_CASES: dict[str, tuple[PromptKey, dict[str, object]]] = {
         gate_render_bindings(
             name=PromptKey.FIRE_PREP_PASS.value, window_start=FIXTURE_EPOCH
         ),
+    ),
+    #: The cron's scan binds nothing per call: the boundary is the operation's.
+    "scope_scan": (PromptKey.SCOPE_SCAN, {}),
+    #: The run's check binds the parent it asks about.
+    "scope_done": (
+        PromptKey.SCOPE_DONE,
+        scope_variables(ScopeRef(kind=ScopeKind.PROJECT, key="golden-project")),
     ),
     "remediation_ticket": (
         PromptKey.REMEDIATION_TICKET,

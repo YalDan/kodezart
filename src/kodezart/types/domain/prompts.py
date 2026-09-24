@@ -48,6 +48,12 @@ class PromptKey(StrEnum):
     #: session with the tracker tools, answered in a structured shape; the
     #: pass runs on a yes and on any answer it cannot read.
     PASS_GATE = "pass_gate"
+    #: The cron's question: which approved nodes inside the boundary are
+    #: not finished, and the repository each one's work goes to.
+    SCOPE_SCAN = "scope_scan"
+    #: The run's question about its parent: every issue below it, and
+    #: whether each is done.
+    SCOPE_DONE = "scope_done"
     CONTENT_AUDIT = "content_audit"
     ORGANIZE_ASSESS = "organize_assess"
     ORGANIZE_AUTHOR = "organize_author"

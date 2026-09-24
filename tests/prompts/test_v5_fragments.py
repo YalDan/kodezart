@@ -43,6 +43,8 @@ UTILITY_KEYS = frozenset(
         PromptKey.MUTATION_SURVIVAL.value,
         PromptKey.ORGANIZE_SPEC_RUBRIC.value,
         PromptKey.PASS_GATE.value,
+        PromptKey.SCOPE_SCAN.value,
+        PromptKey.SCOPE_DONE.value,
     },
 )
 

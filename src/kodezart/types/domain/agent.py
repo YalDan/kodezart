@@ -52,6 +52,7 @@ from kodezart.types.domain.persist import ArtifactPersistStatus
 from kodezart.types.domain.remediation import RemediationEntry, RemediationPlan
 from kodezart.types.domain.ruling_id import RulingId as RulingId
 from kodezart.types.domain.run_event import RunEventKind
+from kodezart.types.domain.scope_address import ScopeKind
 from kodezart.types.domain.session import SessionFailureKind
 from kodezart.types.domain.ticket_review import TicketApproval, TicketReviewMode
 from kodezart.types.domain.trajectory import LoopTrajectory
@@ -108,6 +109,8 @@ RaiseSite = Literal[
     "mutation_removal",
     "mutation_evaluator",
     "pass_gate",
+    "scope_scan",
+    "scope_done",
 ]
 
 # ---------------------------------------------------------------------------
@@ -766,6 +769,71 @@ class PassGateOutput(CamelCaseModel):
     )
 
 
+class ScopeScanNode(CamelCaseModel):
+    """One approved node the scope scan found unfinished."""
+
+    kind: ScopeKind = Field(
+        description="Which kind of node it is: initiative, project, milestone, issue.",
+    )
+    key: str = Field(
+        min_length=1,
+        description="A project's, initiative's or milestone's id, or an issue's key.",
+    )
+    repository: str | None = Field(
+        description=(
+            "The url of the repository its work goes to, exactly as declared; "
+            "null when its team's line names none."
+        ),
+    )
+    why: str = Field(
+        min_length=1,
+        description="One sentence on why the node is listed.",
+    )
+
+
+class ScopeScanOutput(CamelCaseModel):
+    """The scope scan's answer: the approved work that is not finished."""
+
+    scopes: list[ScopeScanNode] = Field(
+        description=(
+            "Every approved, unfinished node inside the boundary, once each; "
+            "empty when there is none."
+        ),
+    )
+    reason: str = Field(
+        min_length=1,
+        description="One sentence on the scan, naming any node it could not read.",
+    )
+
+
+class ScopeItem(CamelCaseModel):
+    """One issue below the parent, as the board shows it now."""
+
+    key: str = Field(min_length=1, description="The issue's key.")
+    criterion: bool = Field(
+        description="True when the issue is a criterion sub-issue.",
+    )
+    text: str = Field(
+        min_length=1,
+        description="A criterion's Check exactly as written; any other issue's title.",
+    )
+    done: bool = Field(
+        description="True when its workflow state is a completed or canceled one.",
+    )
+
+
+class ScopeItemsOutput(CamelCaseModel):
+    """The scope-done answer: every issue below the parent, and whether it is done."""
+
+    items: list[ScopeItem] = Field(
+        description="Every issue below the parent, once each, at any depth.",
+    )
+    reason: str = Field(
+        min_length=1,
+        description="One sentence on the state of the work below the parent.",
+    )
+
+
 class ContentAuditFinding(CamelCaseModel):
     """One finding from the judgment scanner's audit session.
 
@@ -1328,6 +1396,9 @@ PR_DESCRIPTION_SCHEMA: dict[str, object] = PRDescriptionOutput.model_json_schema
 CONTENT_AUDIT_SCHEMA: dict[str, object] = ContentAuditOutput.model_json_schema()
 # Schema for a scheduled pass's gate question
 PASS_GATE_SCHEMA: dict[str, object] = PassGateOutput.model_json_schema()
+# Schemas for the two scope questions: the cron's scan and the run's check
+SCOPE_SCAN_SCHEMA: dict[str, object] = ScopeScanOutput.model_json_schema()
+SCOPE_DONE_SCHEMA: dict[str, object] = ScopeItemsOutput.model_json_schema()
 # Schema for the draft-critic lens's verdict on a drafted artifact
 DRAFT_CRITIQUE_SCHEMA: dict[str, object] = DraftCritiqueOutput.model_json_schema()
 
@@ -1365,6 +1436,8 @@ WIRE_SCHEMAS: dict[str, dict[str, object]] = {
     "PR_DESCRIPTION_SCHEMA": PR_DESCRIPTION_SCHEMA,
     "CONTENT_AUDIT_SCHEMA": CONTENT_AUDIT_SCHEMA,
     "PASS_GATE_SCHEMA": PASS_GATE_SCHEMA,
+    "SCOPE_SCAN_SCHEMA": SCOPE_SCAN_SCHEMA,
+    "SCOPE_DONE_SCHEMA": SCOPE_DONE_SCHEMA,
     "DRAFT_CRITIQUE_SCHEMA": DRAFT_CRITIQUE_SCHEMA,
     "ORGANIZE_ADMISSION_SCHEMA": ORGANIZE_ADMISSION_SCHEMA,
     "ORGANIZE_PROPOSAL_SCHEMA": ORGANIZE_PROPOSAL_SCHEMA,

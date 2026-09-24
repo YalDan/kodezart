@@ -34,6 +34,8 @@ from kodezart.types.domain.agent import (
     PassGateOutput,
     PRDescriptionOutput,
     RulingOutput,
+    ScopeItemsOutput,
+    ScopeScanOutput,
     TicketDraftOutput,
     TicketReviewOutput,
 )
@@ -92,6 +94,8 @@ WIRE_MODELS: dict[str, type[BaseModel]] = {
     "PR_DESCRIPTION_SCHEMA": PRDescriptionOutput,
     "CONTENT_AUDIT_SCHEMA": ContentAuditOutput,
     "PASS_GATE_SCHEMA": PassGateOutput,
+    "SCOPE_SCAN_SCHEMA": ScopeScanOutput,
+    "SCOPE_DONE_SCHEMA": ScopeItemsOutput,
     "DRAFT_CRITIQUE_SCHEMA": DraftCritiqueOutput,
     "ORGANIZE_ADMISSION_SCHEMA": AdmissionJudgment,
     "ORGANIZE_PROPOSAL_SCHEMA": OrganizeProposal,

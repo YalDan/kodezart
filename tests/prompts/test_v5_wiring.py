@@ -99,6 +99,9 @@ ARTIFACT_TAGS: dict[str, tuple[str, ...]] = {
     # The gate's two per-tick values are a name and a timestamp, rendered as
     # plain lines; neither is an injected artifact.
     "pass_gate": (),
+    # The scope questions render the boundary and the parent as plain lines.
+    "scope_scan": (),
+    "scope_done": (),
     "fix": ("ticket", "review_feedback", "ci_summary"),
     "fix__no_optional_sections": ("ticket",),
     "grooming_pass": (),
