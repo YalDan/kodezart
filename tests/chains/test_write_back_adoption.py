@@ -63,6 +63,7 @@ from kodezart.core.protocols import (
 from kodezart.domain.errors import UnverifiedWritePathError
 from kodezart.domain.source_resolution import SourceIndex
 from kodezart.domain.write_adoption import (
+    LEASE_PARAMETERS,
     MODULE_LEVEL,
     _delegations,
     _driven_functions,
@@ -74,6 +75,7 @@ from kodezart.domain.write_adoption import (
     take_census,
     write_methods,
 )
+from kodezart.domain.write_adoption import parameters as census_parameters
 from kodezart.types.domain.audit import TrackerArtifact
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.surface import SurfaceKind, WritableSurface
@@ -112,12 +114,23 @@ from tests.tracker.test_linear_tool_roster import (
     SOURCE_ROOT,
 )
 
-__all__ = ["repository"]
+__all__ = ["LEASE_PARAMETERS", "repository"]
 
 #: The roles a dialled tracker writes the backend through.
 ROLES = tracker_write_roles()
 #: The writes that leave something a later reader reads back.
 WRITES = artifact_writes(ROLES)
+
+
+def parameters(method: str, port: type | tuple[type, ...] = ROLES) -> tuple[str, ...]:
+    """What *method* takes, read by the census off one role or several.
+
+    The census reads a surface of roles; a suite that asks of one class,
+    such as the port alone, is answered by the same derivation.  Beside
+    ``LEASE_PARAMETERS``, the census's own lease terms, this is what the
+    tracker conformance suite reads a grant-moving member by (KOD-386).
+    """
+    return census_parameters(method, port if isinstance(port, tuple) else (port,))
 
 
 def tracker_dialling_classes() -> tuple[type, ...]:
