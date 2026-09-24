@@ -79,6 +79,16 @@ what that checkpointer reaches is the authored HTTP workflow, the ticket
 generator and the job service's run-state reader — none of which a scope run
 enters. A scope deployment needs no database.
 
+Two paths reach the tracker, and the operation config describes one of them.
+kodezart's own passes — the organize tick, the scope runs its heartbeat
+submits, the observation tick and the audit pass — write through the tracker
+dialled with `KODEZART_TRACKER__TOKEN`; the marker prefixes, labels and states
+in the operation config apply to those writes, and boot checks the prefixes.
+The agent sessions those passes open reach the tracker through whichever MCP
+server the Claude host attaches from the operator's own user settings, under
+that credential and its own rate budget. The operation config does not describe
+that path, and the boot check does not cover it.
+
 The three bounds above have no defaults, so each one is a choice you make rather
 than a value that appears. If your variables are still spelled the old flat way,
 the renames section of
@@ -174,9 +184,7 @@ names the member and what it stops.
 | `issue_labels.tracker` | the same first act | `OperationMemberAbsentError` |
 | `scope_labels.approved` | loading the file once the table is declared; with no table, resolving approval on the first tick | `OperationConfigError`, `OperationMemberAbsentError` |
 | `issue_labels.criteria` | loading the file: the criteria mandate row's terminal_marker_key must resolve | `OperationConfigError` |
-| `marker_prefixes.run_state` | recording where the lane stands | `OperationMemberAbsentError` |
-| `marker_prefixes.run_event` | posting the lane's own run events | `OperationMemberAbsentError` |
-| `marker_prefixes.amendment` | writing back what the fire amended | `OperationMemberAbsentError` |
+| `marker_prefixes.claim`, `marker_prefixes.work_ref`, `marker_prefixes.issue_identity`, `marker_prefixes.run_state`, `marker_prefixes.run_event`, `marker_prefixes.amendment`, `marker_prefixes.ruling`, `marker_prefixes.escalation`, `marker_prefixes.decision`, `marker_prefixes.run_alarm`, and with the audit pass configured `marker_prefixes.audit` and `marker_prefixes.repository` | boot, before the scheduler starts: every key a pass this deployment schedules can ask for is checked, and every missing one is named at once | `OperationMemberAbsentError` |
 | `workflow_states.done` | loading the file once the table is declared; with no table, the first cross-off, after a session and a commit | `OperationConfigError`, `TrackerProtocolError` |
 | `write_back.max_verify_rounds` | boot, before the scheduler starts, as the write_back section a configured organize owner requires | `OperationMemberAbsentError` |
 | the declared repository | matching the request's origin, before the first read | `ScopeReadError` |

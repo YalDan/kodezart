@@ -18,6 +18,12 @@ concerns.
 
 ### Changed
 
+- Boot checks `[marker_prefixes]` against every purpose a pass it schedules can
+  ask for and refuses naming every missing key at once
+  (`composition/passes.py`, `wired_marker_purposes`). A purpose only an unwired
+  pass asks for is not demanded. `docs/operation.scope.toml` gains the `claim`
+  and `work_ref` entries the scope passes ask for, and the `repository` entry
+  a configured audit pass can ask for.
 - Every document that said scoped execution was unimplemented now says what is
   true: a scoped request runs when a tracker is dialled, and
   `ScopedExecutionUnavailableError` names the absence of a scoped arm or of a

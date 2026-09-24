@@ -19,6 +19,7 @@ import structlog.testing
 from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.composition.passes import (
     _DISPATCH_NAME,
+    MARKER_PURPOSES_BY_FAMILY,
     DispatchRuntime,
     build_dispatch_runtime,
     build_prompt_passes,
@@ -43,6 +44,7 @@ from kodezart.types.domain.dispatch import PassRun, PassSignal
 from kodezart.types.domain.operation import (
     DocumentSystem,
     OperationConfig,
+    OperationMemberAbsentError,
     QueueState,
     RecordDestination,
     RunKind,
@@ -860,6 +862,103 @@ async def test_the_shipped_example_wires_without_a_render_refusal(
     assert len((await _registrations(tmp_path))[0]) == len(
         (PromptKey.FIRE_PREP_PASS, PromptKey.GROOMING_PASS)
     )
+
+
+# ---------------------------------------------------------------------------
+# KOD-1235: boot verifies the marker prefixes a wired pass can ask for
+# ---------------------------------------------------------------------------
+
+
+def without_prefixes(operation: OperationConfig, *purposes: str) -> OperationConfig:
+    """*operation* with the named marker purposes undeclared."""
+    return operation.model_copy(
+        update={
+            "marker_prefixes": {
+                purpose: prefix
+                for purpose, prefix in operation.marker_prefixes.items()
+                if purpose not in purposes
+            }
+        }
+    )
+
+
+async def test_a_scope_deployment_lacking_prefixes_its_passes_ask_for_is_refused(
+    tmp_path: Path,
+) -> None:
+    """Every missing key at once, before any pass is built.
+
+    Measured 2026-09-24 on the live scope deployment: a file declaring ten
+    of the template's fifteen prefixes booted four times, and the first
+    grooming tick with work refused 30 s in over ``claim`` when its surface
+    lease released. Boot now names that key, and every other one a pass it
+    schedules can ask for, in the spelling the point-of-use refusal uses.
+    """
+    operation = without_prefixes(standing_scope_operation(), "claim", "run_alarm")
+
+    with pytest.raises(OperationMemberAbsentError) as caught:
+        await verify_pass_preflight(
+            config=_config(tmp_path, **STANDING_SCOPE_SETTINGS),
+            operation=operation,
+            tracker=approving_board(),
+            github_api=None,
+            prompts=load_registry(bindings=dict(bindings_for(operation))),
+        )
+
+    assert caught.value.missing == (
+        "marker_prefixes['claim'], marker_prefixes['run_alarm']"
+    )
+
+
+async def test_a_prefix_only_an_unwired_pass_asks_for_does_not_refuse_the_boot(
+    tmp_path: Path,
+) -> None:
+    """The check reads exactly the passes that will wire.
+
+    A scope deployment schedules no per-issue dispatch pass, so the base
+    spec and run outcome only that pass records are not its operator's
+    problem; the boot goes through and the organize tick is scheduled.
+    """
+    dispatch_only = MARKER_PURPOSES_BY_FAMILY["dispatch"] - (
+        MARKER_PURPOSES_BY_FAMILY["scope"] | MARKER_PURPOSES_BY_FAMILY["audit"]
+    )
+    assert dispatch_only == {"base_spec", "run_outcome"}
+    operation = without_prefixes(standing_scope_operation(), *dispatch_only)
+
+    runtime = await _runtime(
+        tmp_path,
+        tracker=approving_board(),
+        runner=FakeAgentRunner(events=[]),
+        operation=operation,
+        organize=STANDING_SCOPE_SETTINGS["organize"],
+        write_back=STANDING_SCOPE_SETTINGS["write_back"],
+        fire_prep_pass_gate_signals=[],
+        grooming_pass_gate_signals=[],
+    )
+
+    assert PromptKey.GROOMING_PASS.value in [
+        entry.name for entry in runtime.scheduler.passes
+    ]
+
+
+async def test_the_shipped_example_declares_every_prefix_the_wired_passes_ask_for(
+    tmp_path: Path,
+) -> None:
+    """Non-vacuity for the refusal above: the per-issue example boots whole.
+
+    The example wires the dispatch passes — a tracker and a delivery probe
+    over a roster with no scopes — and its table declares everything they
+    can ask for, so the check has nothing to name.
+    """
+    runtime = await _runtime(
+        tmp_path,
+        tracker=FakeTrackerPort(),
+        runner=FakeAgentRunner(events=[]),
+        github_api=FakeDeliveryProbe(),
+    )
+
+    assert [
+        entry.name for entry in runtime.scheduler.passes if _DISPATCH_NAME in entry.name
+    ] != []
 
 
 # ---------------------------------------------------------------------------
