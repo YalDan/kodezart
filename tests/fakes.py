@@ -1403,11 +1403,14 @@ class FakeAgentRunner:
                 "method": "stream_in_workspace",
                 "prompt": prompt,
                 "workspace_path": workspace_path,
+                "permission_mode": permission_mode,
+                "allowed_tools": allowed_tools,
                 "session_id": session_id,
                 "session_type": session_type,
                 "run_identity": run_identity,
                 "skills": skills,
                 "session_policy": session_policy,
+                "output_format": output_format,
             }
         )
         for event in self._events:

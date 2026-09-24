@@ -70,6 +70,11 @@ PER_CALL_VARIABLE_NAMES: frozenset[str] = frozenset(
         # The row title a scheduled pass's own record must carry: per call
         # because it spells the instant that run began (KOD-290).
         "record_title",
+        # The gate question a scheduled pass asks before a tick: which pass
+        # it is for and where its window starts, the two values that change
+        # from tick to tick and are rendered last so the prefix caches.
+        "pass_name",
+        "window_start",
         "organize_context",
         "mandate_rubric",
         "issue_body",

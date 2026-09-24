@@ -1,10 +1,14 @@
-"""The deterministic pre-query a scheduled pass is gated on.
+"""The deterministic pre-query the per-issue dispatch tick is gated on.
 
 One scoped scan per configured signal and container, no prompt, no session,
-no model — so a tick over a quiet board costs zero tokens and cannot
-report a set smaller than the tracker's own query returned.  That is the
-whole reason the gate is not a cheap model call: a relayed answer is
-exactly the failure the determinism ruling was written against.
+no model — so a dispatch tick over a quiet board costs zero tokens and
+cannot report a set smaller than the tracker's own query returned.  The two
+prompt passes no longer consult this gate: their gate is a short agent
+session over the same tracker server the pass itself uses
+(``services/prompt_pass.py``), so the question costs this deployment's key
+nothing.  Measured 2026-09-24: this pre-read, asked per signal and
+container with a comment read per moved issue, spent the key's whole
+hourly request budget within 100 s of boot (KOD-1257).
 
 Written against ``PassGateReader`` alone.  It holds no executor, no prompt
 provider and no runner, and a test asserts that collaborator surface
@@ -12,9 +16,7 @@ rather than trusting the docstring.
 
 A gate is the DISJUNCTION over its signals: any signal reporting work runs
 the pass, and a gate configured with none is never built at all.  Which
-signals a pass gates on is configuration, so one mechanism serves the
-dispatch tick and the prompt passes alike — rather than one caller owning
-a gate hardcoded to its own question while the others go ungated.
+signals the dispatch pass gates on is configuration.
 
 Every question is asked WITHIN a container: a team key for the issue
 signals, a repository url for the review signal.  A gate is constructed

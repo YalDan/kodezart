@@ -14,7 +14,7 @@ engines = ["claude-opus-5-5", "claude-fable-5-1"]
 # key at authoring time — the knowledge map is here because it is a
 # prelude, and a prelude carrying its own depth block would put a second
 # one inside the prompt it joins.
-utility_keys = ["branch_name", "commit_message", "pr_description", "knowledge_map", "fire_record", "native_writer_contract", "mutation_survival", "organize_spec_rubric"]
+utility_keys = ["branch_name", "commit_message", "pr_description", "knowledge_map", "fire_record", "native_writer_contract", "mutation_survival", "organize_spec_rubric", "pass_gate"]
 
 # Which fan-out primitive this set's generative roles are told to use. Set
 # from the harness enumeration's measured verdict, never model-judged: the
@@ -338,8 +338,12 @@ keys = ["implementation", "fix"]
 [session_roles.utility]
 effort = "max"
 skills = []
-keys = ["branch_name", "commit_message", "pr_description", "knowledge_map", "fire_record", "native_writer_contract", "mutation_survival", "organize_spec_rubric"]
+keys = ["branch_name", "commit_message", "pr_description", "knowledge_map", "fire_record", "native_writer_contract", "mutation_survival", "organize_spec_rubric", "pass_gate"]
 # The rubric key is on this roster because a rubric opens no session:
 # its text is rendered into another role's mandate_rubric block, where a
 # reasoning-depth instruction or a skills header would be data the judging
 # role reads as its standard. The effort declared here is never served.
+# The pass gate is here because it is one short board question answered in
+# a structured shape, on whatever engine the deployment pins the key to
+# (KODEZART_AGENT__SESSION_MODELS); it loads no skills and carries no
+# depth block, so its prefix caches from tick to tick.

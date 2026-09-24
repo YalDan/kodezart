@@ -7,7 +7,6 @@ than defines.
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from functools import partial
 from pathlib import Path
 
 from kodezart.adapters.no_forge_delivery import NoForgeDeliveryProbe
@@ -56,7 +55,11 @@ from kodezart.services.fire_dispatcher import FireDispatcher, LaneCooldown
 from kodezart.services.lifecycle_watcher import FireReport, LifecycleWatcher
 from kodezart.services.pass_gate import PassGate
 from kodezart.services.pass_scheduler import PassScheduler, ScheduledPass
-from kodezart.services.prompt_pass import pass_render_bindings, run_prompt_pass
+from kodezart.services.prompt_pass import (
+    PromptPass,
+    gate_render_bindings,
+    pass_render_bindings,
+)
 from kodezart.services.run_recorder import RunRecorder
 from kodezart.services.supervisor_pass import SUPERVISOR_TICK_NAME
 from kodezart.services.tracker_lifecycle import TrackerLifecycleWriter
@@ -86,7 +89,7 @@ _HEARTBEAT_NAME = "scope_heartbeat"
 
 @dataclass(frozen=True)
 class _PromptPassRow:
-    """One prompt pass's configuration: its cadence, its budget, its gate.
+    """One prompt pass's configuration: its cadence and its budget.
 
     Named fields rather than a positional tuple: the cadence and the
     budget are both seconds and both floats, and a pair of those is one
@@ -95,7 +98,6 @@ class _PromptPassRow:
 
     interval_seconds: float
     timeout_seconds: float
-    signals: Sequence[PassSignal]
 
 
 @dataclass(frozen=True)
@@ -158,10 +160,12 @@ def build_gate(
 ) -> PassGate | None:
     """A gate over *signals*, or none when the pass declares none.
 
-    That is the ONLY way a built gate is absent.  Having no tracker at all
-    is the caller's arm — it holds a dialled tracker or it does not — and
-    it is reported there, because "the gate is absent" and "nothing moved"
-    have opposite costs and must never be confused for one another.
+    The deterministic gate serves the per-issue dispatch tick alone: the
+    two prompt passes ask an agent instead (:class:`PromptPass`).  No
+    signals is the ONLY way a built gate is absent.  Having no tracker at
+    all is the caller's arm — it holds a dialled tracker or it does not —
+    and it is reported there, because "the gate is absent" and "nothing
+    moved" have opposite costs and must never be confused for one another.
 
     Both halves are REQUIRED, and the callers take them from one value, so
     no boot can hand this half of a tracker.  The port and its write ledger
@@ -187,26 +191,23 @@ def build_gate(
     )
 
 
-def _assert_renders(*, key: PromptKey, prompts: PromptSetProvider) -> None:
-    """Render *key* and discard it, or refuse naming the pass and its holes.
+def _assert_renders(
+    *, key: PromptKey, prompts: PromptSetProvider, bindings: Mapping[str, object]
+) -> None:
+    """Render *key* over *bindings* and discard it, or refuse naming the holes.
 
     The rendered text is not kept: what is being established is that one
     exists at all.  The refusal carries the same type and the same
     ``missing`` list a tick would raise, with the pass named in the message
     because a boot wiring several of them owes an operator that.
 
-    Bound the way a TICK binds, off the identity a run beginning at this
-    instant would carry: the render a boot proves has to be the render a
-    pass will actually make, or the two namespaces differ and boot proves
-    the wrong one.
+    *bindings* are the way a TICK binds — a pass off the identity a run
+    beginning now would carry, the gate off a window starting now — so the
+    render a boot proves is the render a tick will actually make, or the
+    two namespaces differ and boot proves the wrong one.
     """
-    identity = RunIdentity(
-        kind=_record_kind_for(key),
-        name=key.value,
-        started_at=datetime.now(UTC),
-    )
     try:
-        prompts.template_for(key).render(pass_render_bindings(identity))
+        prompts.template_for(key).render(bindings)
     except PromptRenderError as error:
         msg = (
             f"scheduled pass {key.value} cannot render from this operation "
@@ -223,17 +224,13 @@ _PROMPT_PASS_CADENCE: dict[PromptKey, CadenceName] = {
 
 
 def prompt_pass_schedule(config: AppConfig) -> dict[PromptKey, _PromptPassRow]:
-    """One row per prompt pass whose cadence is set: its cadence, budget and gate.
+    """One row per prompt pass whose cadence is set: its cadence and budget.
 
-    The table, on its own, because three things read it: the wiring below,
-    the gate probe, and the preflight that boot-renders exactly what the
-    wiring will build. A pass whose interval is unset has no row, so none of
-    the three asks anything of a pass that is not scheduled.
+    The table, on its own, because two things read it: the wiring below and
+    the preflight that boot-renders exactly what the wiring will build. A
+    pass whose interval is unset has no row, so neither asks anything of a
+    pass that is not scheduled.
     """
-    signals = {
-        PromptKey.FIRE_PREP_PASS: config.fire_prep_pass_gate_signals,
-        PromptKey.GROOMING_PASS: config.grooming_pass_gate_signals,
-    }
     rows: dict[PromptKey, _PromptPassRow] = {}
     for key, name in _PROMPT_PASS_CADENCE.items():
         cadence = config.pass_cadence(name)
@@ -241,7 +238,6 @@ def prompt_pass_schedule(config: AppConfig) -> dict[PromptKey, _PromptPassRow]:
             rows[key] = _PromptPassRow(
                 interval_seconds=cadence.interval_seconds,
                 timeout_seconds=cadence.timeout_seconds,
-                signals=signals[key],
             )
     return rows
 
@@ -322,10 +318,10 @@ def runs_scope_flow(operation: OperationConfig) -> bool:
 def session_passes_wire(operation: OperationConfig) -> bool:
     """Whether the two prompt passes run as agent sessions here.
 
-    One condition, named once: a roster a template could render over. Three
-    sites ask the same question — the wiring, the gate probe and the render
-    preflight — and a second copy of it is a second opinion about which passes
-    this deployment schedules.
+    One condition, named once: a roster a template could render over. Two
+    sites ask the same question — the wiring and the render preflight — and
+    a second copy of it is a second opinion about which passes this
+    deployment schedules.
     """
     return not absent_roster(operation)
 
@@ -497,7 +493,6 @@ async def build_prompt_passes(
     config: AppConfig,
     operation: OperationConfig,
     prompts: PromptSetProvider,
-    dialled: DialledTracker | None,
     runner: AgentRunner,
     skills: SkillsSelection,
     recorder: RunRecorder,
@@ -509,6 +504,10 @@ async def build_prompt_passes(
     (:func:`session_passes_wire`). Every pass here whose cadence is unset is
     not scheduled and is named as such. Preflight validates exactly those
     active rows.
+
+    No tracker port: a pass reaches the tracker through the server its
+    session is described, and so does the gate question it asks first
+    (:class:`PromptPass`).
     """
     log: BoundLogger = get_logger(__name__)
     schedule = prompt_pass_schedule(config)
@@ -530,19 +529,12 @@ async def build_prompt_passes(
         return scheduled
     working_dir = Path(config.scheduled_pass_working_dir).expanduser()
     working_dir.mkdir(parents=True, exist_ok=True)
-    # Read only where a gate will actually be built: naming the operation's
-    # teams REFUSES when it declares none, and a deployment whose passes are
-    # all ungated has no scan for that refusal to be about.
-    gated = dialled is not None and any(row.signals for row in schedule.values())
-    team_keys = operation.team_keys() if gated else ()
-    repo_urls = [repo.url for repo in operation.repos]
     return scheduled + [
         ScheduledPass(
             name=key.value,
             interval_seconds=row.interval_seconds,
             timeout_seconds=row.timeout_seconds,
-            run=partial(
-                run_prompt_pass,
+            run=PromptPass(
                 # The record identity's other two thirds, read from the same
                 # two pure functions of the key the report below reads, so
                 # the title the session is given and the title the runner
@@ -551,16 +543,6 @@ async def build_prompt_passes(
                 key=key,
                 prompts=prompts,
                 runner=runner,
-                gate=None
-                if dialled is None
-                else build_gate(
-                    config=config,
-                    tracker=dialled.tracker,
-                    ledger=dialled.ledger,
-                    signals=row.signals,
-                    team_keys=team_keys,
-                    repo_urls=repo_urls,
-                ),
                 workspace_path=str(working_dir),
                 permission_mode=UNATTENDED_PERMISSION_MODE,
                 # No allowlist: the session reaches the tracker through the
@@ -571,7 +553,7 @@ async def build_prompt_passes(
                 allowed_tools=[],
                 skills=skills,
                 session_type=SessionType.SCHEDULED_PASS,
-            ),
+            ).run,
             report=run_report(recorder, _record_kind_for(key), key.value),
             # The intake runs when the process comes up (owner, 2026-09-24).
             tick_at_boot=True,
@@ -762,11 +744,13 @@ async def _verify_wired_gates(
     Exactly the gates about to be wired, on the same predicates the
     builders themselves use: a signal configured for a pass this deployment
     does not schedule is not a capability it needs, and refusing boot over
-    one would hold a deployment hostage to a knob nothing reads. A deployment
-    that declares ``organize_scopes`` schedules neither session pass and no
-    per-issue dispatch pass, so it needs none of their signals — but it does
-    schedule the supervisor tick, so it needs every scan the alarms that tick
-    observes declare, each named as ``supervisor/<alarm>``.
+    one would hold a deployment hostage to a knob nothing reads. Two things
+    scan through the dialled port: the per-issue dispatch pass, on its
+    configured signals, and the supervisor tick, which needs every scan the
+    alarms it observes declare, each named as ``supervisor/<alarm>``. The
+    two prompt passes scan through nothing here — their gate is a session
+    over the same tracker server the pass itself is described — so no
+    signal is probed on their behalf.
 
     Every refused signal is named at once, with the passes it gates and the
     backend's own diagnosis, because an operator fixing one scope at a time
@@ -774,11 +758,7 @@ async def _verify_wired_gates(
     """
     if tracker is None or operation is None:
         return
-    wired: dict[str, Sequence[PassSignal]] = (
-        {key.value: row.signals for key, row in prompt_pass_schedule(config).items()}
-        if session_passes_wire(operation)
-        else {}
-    )
+    wired: dict[str, Sequence[PassSignal]] = {}
     # A pass whose cadence is unset is not scheduled, so its signals are not
     # a capability this deployment needs: the same order as the wiring, the
     # predicate first and the cadence after it.
@@ -952,11 +932,10 @@ async def verify_pass_preflight(
     The order is the cost order: the configuration answers are already in
     hand, the gate probe is a round trip, and the renders are local.
 
-    The render half applies to exactly the passes that will WIRE.  An
-    operation with no roster, and one that declares ``organize_scopes``,
-    schedules none of them (see :func:`build_prompt_passes`), and rendering a
-    template it will never send would refuse a boot over a hole nothing
-    reaches.
+    The render half applies to exactly the passes that will WIRE, and to
+    the gate question they ask first.  An operation with no roster schedules
+    none of them (see :func:`build_prompt_passes`), and rendering a template
+    it will never send would refuse a boot over a hole nothing reaches.
     """
     require_alarm_table()
     # Called for its refusals, which are the point: a partial Organize
@@ -981,8 +960,21 @@ async def verify_pass_preflight(
     )
     if operation is None or not session_passes_wire(operation):
         return
-    for key in prompt_pass_schedule(config):
-        _assert_renders(key=key, prompts=prompts)
+    now = datetime.now(UTC)
+    schedule = prompt_pass_schedule(config)
+    for key in schedule:
+        identity = RunIdentity(
+            kind=_record_kind_for(key), name=key.value, started_at=now
+        )
+        _assert_renders(
+            key=key, prompts=prompts, bindings=pass_render_bindings(identity)
+        )
+        # The gate is asked once per scheduled pass, over that pass's name.
+        _assert_renders(
+            key=PromptKey.PASS_GATE,
+            prompts=prompts,
+            bindings=gate_render_bindings(name=key.value, window_start=now),
+        )
 
 
 async def build_dispatch_runtime(
@@ -1063,9 +1055,10 @@ async def build_dispatch_runtime(
             integration_workspace_dir=config.git.integration_workspace_dir,
             recorder=recorder,
         )
-    # The prompt passes need no tracker port to RUN: the session reaches
-    # the tracker itself. They need one only to be GATED. What they cannot
-    # do without is the operation config their prompts render from.
+    # The prompt passes need no tracker port: the session reaches the
+    # tracker itself, and so does the gate question asked before it. What
+    # they cannot do without is the operation config their prompts render
+    # from.
     scheduled: list[ScheduledPass] = [] if built is None else list(built.passes)
     if config.audit is not None:
         # Preflight has already required every collaborator before queue start.
@@ -1138,28 +1131,11 @@ async def build_dispatch_runtime(
             )
         )
     if operation is not None:
-        if dialled is None and (
-            config.fire_prep_pass_gate_signals or config.grooming_pass_gate_signals
-        ):
-            # Named, never inferred: a pass that declares signals and has
-            # no port to ask them runs ungated — at full session cost on
-            # a quiet board. That is a fact an operator must be able to
-            # read in the log, not deduce from a bill.
-            await log.ainfo(
-                "prompt_pass_gates_absent_no_tracker",
-                fire_prep_signals=[
-                    signal.value for signal in config.fire_prep_pass_gate_signals
-                ],
-                grooming_signals=[
-                    signal.value for signal in config.grooming_pass_gate_signals
-                ],
-            )
         scheduled.extend(
             await build_prompt_passes(
                 config=config,
                 operation=operation,
                 prompts=prompts,
-                dialled=dialled,
                 runner=runner,
                 skills=skills,
                 recorder=recorder,

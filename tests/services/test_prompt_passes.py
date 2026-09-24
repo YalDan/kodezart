@@ -40,8 +40,9 @@ from kodezart.core.logging import get_logger
 from kodezart.core.prompt_namespaces import bindings_for
 from kodezart.services import pass_scheduler as pass_scheduler_module
 from kodezart.services.pass_scheduler import PassScheduler, ScheduledPass
-from kodezart.services.prompt_pass import pass_render_bindings
+from kodezart.services.prompt_pass import gate_render_bindings, pass_render_bindings
 from kodezart.services.run_recorder import RunRecorder
+from kodezart.types.domain.agent import PASS_GATE_SCHEMA
 from kodezart.types.domain.dispatch import DispatchWorkflow, PassRun, PassSignal
 from kodezart.types.domain.operation import (
     DocumentSystem,
@@ -81,7 +82,7 @@ from tests.prompts.test_minimal_floor import minimal_fixture
 from tests.prompts.test_operation_config import raw_example, write_toml
 from tests.prompts.test_organize_mandate_bindings import declared_operation
 from tests.prompts.test_prompt_wiring import DEFAULT_SET, load_registry
-from tests.services.test_pass_scheduler import Metronome, _settle
+from tests.services.test_pass_scheduler import Metronome
 from tests.services.test_prompt_pass import example_config
 
 COMPOSITION_SOURCE = (
@@ -219,11 +220,14 @@ def dialled_over(
 async def _registrations(
     tmp_path: Path,
     *,
-    tracker: FakeTrackerPort | None = None,
     operation: OperationConfig | None = None,
     **overrides: object,
 ) -> tuple[list[ScheduledPass], FakeAgentRunner]:
-    """The passes exactly as the composition registers them."""
+    """The passes exactly as the composition registers them.
+
+    No tracker: the prompt passes take none, because the session reaches
+    the tracker itself and so does the gate question asked before it.
+    """
     declared = example_config() if operation is None else operation
     prompts = load_registry(bindings=dict(bindings_for(declared)))
     runner = FakeAgentRunner(events=[])
@@ -233,7 +237,6 @@ async def _registrations(
             config=_config(tmp_path, **overrides),
             operation=declared,
             prompts=prompts,
-            dialled=dialled_over(tracker, declared),
             runner=runner,
             skills=SUPPRESS_ALL_SKILLS,
         ),
@@ -268,15 +271,12 @@ ORGANIZE_BOUNDS: dict[str, object] = {
 #: the tracker's tools, so boot refuses a deployment that declares organize
 #: scopes over a dialled tracker without it; every such deployment here sets it.
 #: The deployment half of a standing-scope operation: the owner bounds the
-#: run's stages require, the dispatch cadence driving the heartbeat, and no
-#: gate on either prompt pass, so what the schedule holds is decided by the
-#: declared rows alone.
+#: run's stages require and the dispatch cadence driving the heartbeat, so
+#: what the schedule holds is decided by the declared rows alone.
 STANDING_SCOPE_SETTINGS: dict[str, object] = {
     "dispatch_workflow": DispatchWorkflow.SCOPE,
     "organize": ORGANIZE_BOUNDS,
     "write_back": {"max_verify_rounds": 2},
-    "fire_prep_pass_gate_signals": [],
-    "grooming_pass_gate_signals": [],
 }
 
 
@@ -470,78 +470,39 @@ def test_the_pass_composition_holds_no_numeric_literal() -> None:
     assert numbers == []
 
 
-async def test_gating_is_per_pass_configuration_and_the_defaults_differ(
+async def test_the_boot_tick_asks_no_gate_and_the_next_tick_does(
     tmp_path: Path,
 ) -> None:
-    """Fire-prep ships gated on two of its streams; grooming ships ungated.
+    """The registered pass keeps its window: unasked at boot, asked after.
 
-    Asserted through a tick rather than by reading the wiring: what
-    matters is that a quiet board skips one pass and still runs the other.
-    The tick observed is the one at boot; no sleep completes.
+    Asserted through ticks rather than by reading the wiring: the boot tick
+    opens the session over the whole board, and the tick after asks the
+    gate question over the window since it, in the schema of the gate's
+    output model, before opening anything.
     """
-    tracker = FakeTrackerPort()
-    registered, runner = await _registrations(tmp_path, tracker=tracker)
-    metronome = Metronome(limit=0)
-    scheduler = PassScheduler(passes=registered, sleep=metronome.sleep)
+    registered, runner = await _registrations(tmp_path)
+    fire_prep = next(
+        entry for entry in registered if entry.name == PromptKey.FIRE_PREP_PASS.value
+    )
 
-    await scheduler.start()
-    await _settle(metronome.parked)
-    await scheduler.stop()
+    await fire_prep.run(FIXTURE_EPOCH)
+    boot_calls = list(runner.calls)
+    await fire_prep.run(TICK)
 
     prompts = load_registry(bindings=dict(bindings_for(example_config())))
-    assert [call["prompt"] for call in runner.calls] == [
-        prompts.template_for(PromptKey.GROOMING_PASS).render(
-            per_run(PromptKey.GROOMING_PASS)
-        ),
-    ], "grooming verifies the tree, which is work even when nothing changed"
-    # Port calls and no session: fire-prep asked its questions, got
-    # nothing, and never opened one. Every one of them named a board, and
-    # none of them was a review scan — the shipped set carries neither an
-    # unscoped question nor the review signal.
-    assert tracker.scans, "fire-prep consulted its gate rather than skipping it"
-    assert tracker.review_scans == []
-    assert [query for query in tracker.scans if query.team_key is None] == []
-
-
-async def test_an_operator_can_gate_or_ungate_any_pass(tmp_path: Path) -> None:
-    """The knob is real in both directions, over the same quiet board."""
-    quiet = FakeTrackerPort()
-    gated, gated_runner = await _registrations(
-        tmp_path,
-        tracker=quiet,
-        grooming_pass_gate_signals=[PassSignal.issues_changed],
-        fire_prep_pass_gate_signals=[],
+    assert [call["output_format"] for call in boot_calls] == [None]
+    assert [call["output_format"] for call in runner.calls[1:]] == [
+        {"type": "json_schema", "schema": PASS_GATE_SCHEMA},
+        None,
+    ], "the runner fake answers nothing, and no answer runs the pass"
+    assert runner.calls[1]["prompt"] == prompts.template_for(
+        PromptKey.PASS_GATE
+    ).render(
+        gate_render_bindings(
+            name=PromptKey.FIRE_PREP_PASS.value, window_start=FIXTURE_EPOCH
+        )
     )
-    metronome = Metronome(limit=0)
-    scheduler = PassScheduler(passes=gated, sleep=metronome.sleep)
-
-    await scheduler.start()
-    await _settle(metronome.parked)
-    await scheduler.stop()
-
-    prompts = load_registry(bindings=dict(bindings_for(example_config())))
-    assert [call["prompt"] for call in gated_runner.calls] == [
-        prompts.template_for(PromptKey.FIRE_PREP_PASS).render(
-            per_run(PromptKey.FIRE_PREP_PASS)
-        ),
-    ], "the defaults are a default, not the behaviour"
-
-
-async def test_a_declared_signal_with_no_tracker_runs_the_pass_ungated(
-    tmp_path: Path,
-) -> None:
-    """Absent gate and quiet gate are different states, never conflated."""
-    registered, runner = await _registrations(tmp_path, tracker=None)
-    metronome = Metronome(limit=0)
-    scheduler = PassScheduler(passes=registered, sleep=metronome.sleep)
-
-    await scheduler.start()
-    await _settle_requests(metronome, len(registered))
-    await scheduler.stop()
-
-    assert len(runner.calls) == len(registered), (
-        "no port to ask means ungated, never silently switched off"
-    )
+    assert runner.calls[1]["session_type"] is SessionType.SCHEDULED_PASS
 
 
 async def test_the_boot_seam_registers_the_prompt_passes(tmp_path: Path) -> None:
@@ -652,8 +613,8 @@ async def test_a_signal_the_credential_cannot_scan_for_aborts_boot(
 
     A gate whose scan the credential is not scoped for answers "nothing
     moved" every tick, which is exactly what a quiet board answers. The
-    pass it guards never runs again and nothing says so — so boot asks
-    first, and dies naming the signal, the pass and the vendor's reason.
+    dispatch pass it guards never runs again and nothing says so — so boot
+    asks first, and dies naming the signal, the pass and the vendor's reason.
     """
     tracker = FakeTrackerPort(scan_refusals={PassSignal.reviews_changed: DIAGNOSIS})
     runner = FakeAgentRunner(events=[])
@@ -664,22 +625,23 @@ async def test_a_signal_the_credential_cannot_scan_for_aborts_boot(
             tracker=tracker,
             runner=runner,
             http={"debug": debug},
-            fire_prep_pass_gate_signals=[
-                PassSignal.issues_changed,
+            github_api=FakeDeliveryProbe(),
+            dispatch_pass_gate_signals=[
+                PassSignal.approved_changed,
                 PassSignal.reviews_changed,
             ],
         )
 
     named = str(caught.value)
     assert PassSignal.reviews_changed.value in named
-    assert PromptKey.FIRE_PREP_PASS.value in named
+    assert _DISPATCH_NAME in named
     assert DIAGNOSIS in named
-    assert PassSignal.issues_changed.value not in named, (
+    assert PassSignal.approved_changed.value not in named, (
         "a signal the credential can answer is not part of the refusal"
     )
     # The refusal ends the boot: one probe, and no session after it.
     assert tracker.capability_probes == [
-        (PassSignal.issues_changed, PassSignal.reviews_changed)
+        (PassSignal.approved_changed, PassSignal.reviews_changed)
     ]
     assert runner.calls == []
 
@@ -698,7 +660,7 @@ async def test_two_refused_signals_are_named_in_one_abort(
     second = "auth_insufficient_scope: nor those"
     tracker = FakeTrackerPort(
         scan_refusals={
-            PassSignal.issues_changed: DIAGNOSIS,
+            PassSignal.approved_changed: DIAGNOSIS,
             PassSignal.reviews_changed: second,
         }
     )
@@ -710,20 +672,21 @@ async def test_two_refused_signals_are_named_in_one_abort(
             tracker=tracker,
             runner=runner,
             http={"debug": debug},
-            fire_prep_pass_gate_signals=[
-                PassSignal.issues_changed,
+            github_api=FakeDeliveryProbe(),
+            dispatch_pass_gate_signals=[
+                PassSignal.approved_changed,
                 PassSignal.reviews_changed,
             ],
         )
 
     named = str(caught.value)
-    assert PassSignal.issues_changed.value in named
+    assert PassSignal.approved_changed.value in named
     assert PassSignal.reviews_changed.value in named
     assert DIAGNOSIS in named and second in named
-    assert named.count(PromptKey.FIRE_PREP_PASS.value) == 2
+    assert named.count(_DISPATCH_NAME) == 2
     # One abort carries both: the probe asked for both signals in one call.
     assert tracker.capability_probes == [
-        (PassSignal.issues_changed, PassSignal.reviews_changed)
+        (PassSignal.approved_changed, PassSignal.reviews_changed)
     ]
     assert runner.calls == []
 
@@ -740,7 +703,7 @@ async def test_two_refused_signals_sharing_one_diagnosis_are_each_named(
     """
     tracker = FakeTrackerPort(
         scan_refusals={
-            PassSignal.issues_changed: DIAGNOSIS,
+            PassSignal.approved_changed: DIAGNOSIS,
             PassSignal.triage_backlog: DIAGNOSIS,
         }
     )
@@ -752,55 +715,47 @@ async def test_two_refused_signals_sharing_one_diagnosis_are_each_named(
             tracker=tracker,
             runner=runner,
             http={"debug": debug},
-            fire_prep_pass_gate_signals=[
-                PassSignal.issues_changed,
+            github_api=FakeDeliveryProbe(),
+            dispatch_pass_gate_signals=[
+                PassSignal.approved_changed,
                 PassSignal.triage_backlog,
             ],
         )
 
     refusals = caught.value.refusals
     assert len(refusals) == 2, refusals
-    for signal in (PassSignal.issues_changed, PassSignal.triage_backlog):
+    for signal in (PassSignal.approved_changed, PassSignal.triage_backlog):
         starting = [item for item in refusals if item.startswith(f"{signal.value} ")]
         assert len(starting) == 1, (signal, refusals)
     assert all(DIAGNOSIS in item for item in refusals)
     assert tracker.capability_probes == [
-        (PassSignal.issues_changed, PassSignal.triage_backlog)
+        (PassSignal.approved_changed, PassSignal.triage_backlog)
     ]
     assert runner.calls == []
 
 
 @EITHER_MODE
-async def test_a_refused_signal_names_every_pass_that_declares_it(
+async def test_the_prompt_passes_put_no_signal_in_the_probe(
     tmp_path: Path, debug: bool
 ) -> None:
-    """One signal two passes declare is one refusal naming both passes.
+    """A credential that can scan for nothing still boots the two prompt passes.
 
-    Fire-prep and grooming are both gated on the same signal, and the
-    credential cannot scan for it. Both passes are left ungated by the one
-    refusal, so the abort names the signal once, with both passes and the
-    diagnosis, rather than whichever pass declared it first.
+    Their gate is a session over the tracker server the pass itself is
+    described, so no scan is asked through the dialled port on their
+    behalf: a deployment scheduling only them probes nothing and boots.
     """
-    tracker = FakeTrackerPort(scan_refusals={PassSignal.issues_changed: DIAGNOSIS})
+    tracker = FakeTrackerPort(scan_refusals=dict.fromkeys(PassSignal, DIAGNOSIS))
     runner = FakeAgentRunner(events=[])
 
-    with pytest.raises(PassGateCapabilityError) as caught:
-        await _runtime(
-            tmp_path,
-            tracker=tracker,
-            runner=runner,
-            http={"debug": debug},
-            fire_prep_pass_gate_signals=[PassSignal.issues_changed],
-            grooming_pass_gate_signals=[PassSignal.issues_changed],
-        )
+    runtime = await _runtime(
+        tmp_path, tracker=tracker, runner=runner, http={"debug": debug}
+    )
 
-    [refusal] = caught.value.refusals
-    assert refusal.startswith(f"{PassSignal.issues_changed.value} gates ")
-    assert PromptKey.FIRE_PREP_PASS.value in refusal
-    assert PromptKey.GROOMING_PASS.value in refusal
-    assert DIAGNOSIS in refusal
-    assert tracker.capability_probes == [(PassSignal.issues_changed,)]
-    assert runner.calls == []
+    assert tracker.capability_probes == []
+    assert {entry.name for entry in runtime.scheduler.passes} == {
+        PromptKey.FIRE_PREP_PASS.value,
+        PromptKey.GROOMING_PASS.value,
+    }
 
 
 @EITHER_MODE
@@ -829,8 +784,6 @@ async def test_a_refused_dispatch_signal_aborts_naming_the_dispatch_pass(
             http={"debug": debug},
             operation=operation,
             github_api=FakeDeliveryProbe(),
-            fire_prep_pass_gate_signals=[],
-            grooming_pass_gate_signals=[],
             dispatch_pass_gate_signals=[PassSignal.approved_changed],
         )
 
@@ -852,28 +805,16 @@ def test_the_refusal_cases_boot_in_the_mode_they_name(
 async def test_the_shipped_defaults_boot_and_then_run(tmp_path: Path) -> None:
     """The other arm, end to end: what ships boots, and the pass it wired works.
 
-    Nothing here restates the defaults. Boot probes exactly the signals the
-    shipped configuration carries, the credential answers, and the gate the
-    composition built — containers and all — wakes fire-prep on a board
-    with a standing triage backlog.
+    Nothing here restates the defaults. Boot probes nothing for the prompt
+    passes, and the pass the composition built runs its first tick over the
+    board without asking and asks the gate on the tick after.
     """
-    operation = example_config()
-    tracker = FakeTrackerPort(
-        issues=[
-            make_tracker_issue(
-                "FIX-1",
-                team_key=operation.team_keys()[0],
-                queue_states=[QueueState.TRIAGE],
-            ),
-        ],
-    )
+    tracker = FakeTrackerPort()
     runner = FakeAgentRunner(events=[])
 
     runtime = await _runtime(tmp_path, tracker=tracker, runner=runner)
 
-    assert tracker.capability_probes == [
-        tuple(AppConfig().fire_prep_pass_gate_signals),
-    ]
+    assert tracker.capability_probes == []
     fire_prep = next(
         entry
         for entry in runtime.scheduler.passes
@@ -881,7 +822,12 @@ async def test_the_shipped_defaults_boot_and_then_run(tmp_path: Path) -> None:
     )
     await fire_prep.run(FIXTURE_EPOCH)
 
-    assert len(runner.calls) == 1
+    assert [call["output_format"] for call in runner.calls] == [None]
+    await fire_prep.run(TICK)
+    assert [call["output_format"] for call in runner.calls[1:]] == [
+        {"type": "json_schema", "schema": PASS_GATE_SCHEMA},
+        None,
+    ]
 
 
 @EITHER_MODE
@@ -990,8 +936,6 @@ async def test_a_prefix_only_an_unwired_pass_asks_for_does_not_refuse_the_boot(
         operation=operation,
         organize=STANDING_SCOPE_SETTINGS["organize"],
         write_back=STANDING_SCOPE_SETTINGS["write_back"],
-        fire_prep_pass_gate_signals=[],
-        grooming_pass_gate_signals=[],
     )
 
     assert PromptKey.GROOMING_PASS.value in [
@@ -1094,8 +1038,6 @@ async def test_with_no_cadence_set_a_scope_deployment_schedules_nothing(
             organize=ORGANIZE_BOUNDS,
             dispatch_workflow=DispatchWorkflow.SCOPE,
             write_back=STANDING_SCOPE_SETTINGS["write_back"],
-            fire_prep_pass_gate_signals=[],
-            grooming_pass_gate_signals=[],
             dispatch_pass_interval_seconds=None,
             dispatch_pass_timeout_seconds=None,
             fire_prep_pass_interval_seconds=None,
@@ -1530,20 +1472,11 @@ async def test_a_deployment_with_no_store_wires_both_passes_and_records_nothing(
 async def test_adding_a_pass_is_a_table_row(tmp_path: Path) -> None:
     """The open-closed claim, executable.
 
-    A third pass needs a prompt key, an interval and a signal list — and
-    nothing structural. Standing in for the third row with a re-pointed
-    existing one proves the shape carries its own key, interval and gate
-    rather than any of the three being wired per pass.
+    A third pass needs a prompt key and a cadence pair — and nothing
+    structural. The two registered rows prove the shape carries its own key
+    and interval rather than either being wired per pass.
     """
-    tracker = FakeTrackerPort(
-        issues=[make_tracker_issue("FIX-1", team_key=example_config().team_keys()[0])],
-    )
-    registered, runner = await _registrations(
-        tmp_path,
-        tracker=tracker,
-        fire_prep_pass_gate_signals=[PassSignal.approved_changed],
-        grooming_pass_gate_signals=[PassSignal.approved_changed],
-    )
+    registered, runner = await _registrations(tmp_path)
     metronome = Metronome(limit=0)
     scheduler = PassScheduler(passes=registered, sleep=metronome.sleep)
 
@@ -1830,8 +1763,6 @@ async def test_the_intake_passes_tick_at_boot_and_the_dispatcher_does_not(
         tracker=FakeTrackerPort(),
         runner=FakeAgentRunner(events=[]),
         github_api=FakeDeliveryProbe(),
-        fire_prep_pass_gate_signals=[],
-        grooming_pass_gate_signals=[],
     )
     at_boot = {entry.name: entry.tick_at_boot for entry in runtime.scheduler.passes}
     assert at_boot[PromptKey.FIRE_PREP_PASS.value] is True

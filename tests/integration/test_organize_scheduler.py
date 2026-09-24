@@ -108,8 +108,6 @@ def dependencies(tmp_path):
         tmp_path,
         organize={"max_admission_rounds": 2, "max_convergence_rounds": 2},
         write_back={"max_verify_rounds": 2},
-        fire_prep_pass_gate_signals=[],
-        grooming_pass_gate_signals=[],
         ticket_review_mode="reviewed",
     )
     board = _Board()
@@ -264,8 +262,6 @@ async def test_the_same_operation_without_organize_scopes_keeps_the_per_issue_pa
     )
     config = _config(
         tmp_path,
-        fire_prep_pass_gate_signals=[],
-        grooming_pass_gate_signals=[],
         ticket_review_mode="reviewed",
         write_back={"max_verify_rounds": 2},
     )
@@ -307,22 +303,26 @@ async def test_preflight_asks_exactly_the_scans_the_wired_passes_gate(tmp_path):
     """Preflight probes what the wiring will build, every gate in one probe.
 
     A scope deployment with a roster, a tracker and a probe wires the two
-    session passes and the dispatcher beside the supervisor tick, so the one
-    probe carries every signal the four gate on: the fire-prep pass's, the
-    dispatch pass's and the scans the supervisor's alarms declare. The
-    fire-prep signal is one no alarm declares, and it is asked for because a
-    pass that runs here gates on it; no signal is asked for twice.
+    session passes and the dispatcher beside the supervisor tick. Two of
+    those scan through the dialled port: the dispatch pass on its signals
+    and the supervisor's alarms on the scans they declare, so the one probe
+    carries exactly those and nothing for the session passes, whose gate
+    is a session of their own; no signal is asked for twice.
     """
     _, operation, _board, _tracker, prompts, _ledger = dependencies(tmp_path)
     config = _config(
         tmp_path,
         organize={"max_admission_rounds": 2, "max_convergence_rounds": 2},
         write_back={"max_verify_rounds": 2},
-        fire_prep_pass_gate_signals=[PassSignal.reviews_changed],
-        grooming_pass_gate_signals=[],
-        dispatch_pass_gate_signals=[PassSignal.approved_changed],
+        dispatch_pass_gate_signals=[PassSignal.reviews_changed],
         ticket_review_mode="reviewed",
     )
+    supervisor_scans = {
+        scan
+        for alarm in OBSERVED_ALARMS
+        for scan in run_alarm_table.ALARM_TABLE[alarm].scans
+    }
+    assert PassSignal.reviews_changed not in supervisor_scans
     tracker = FakeTrackerPort()
     await verify_pass_preflight(
         config=config,
@@ -332,12 +332,9 @@ async def test_preflight_asks_exactly_the_scans_the_wired_passes_gate(tmp_path):
         prompts=prompts,
     )
 
-    assert len(tracker.capability_probes) == 1
-    assert set(tracker.capability_probes[0]) == {
-        PassSignal.reviews_changed,
-        PassSignal.approved_changed,
-        PassSignal.issues_changed,
-    }
+    (probe,) = tracker.capability_probes
+    assert set(probe) == {PassSignal.reviews_changed, *supervisor_scans}
+    assert len(probe) == len(set(probe))
     # Under the scope workflow the dispatch passes are not scheduled, so their
     # signal is not a capability this deployment needs.
     scoped = FakeTrackerPort()
@@ -348,13 +345,8 @@ async def test_preflight_asks_exactly_the_scans_the_wired_passes_gate(tmp_path):
         github_api=FakeDeliveryProbe(),
         prompts=prompts,
     )
-    assert PassSignal.approved_changed not in scoped.capability_probes[0]
-    # The fire-prep signal is in the probe for the fire-prep pass alone.
-    assert PassSignal.reviews_changed not in {
-        scan
-        for alarm in OBSERVED_ALARMS
-        for scan in run_alarm_table.ALARM_TABLE[alarm].scans
-    }
+    (scoped_probe,) = scoped.capability_probes
+    assert set(scoped_probe) == supervisor_scans
 
 
 @pytest.mark.parametrize("deployment", ["scope", "per-issue", "no operation"], ids=str)
@@ -442,7 +434,7 @@ async def test_a_scope_deployment_whose_credential_cannot_list_issues_is_refused
         )
 
     assert caught.value.refusals == (
-        "issues_changed gates fire_prep_pass, supervisor/lapse_undischarged, "
+        "issues_changed gates supervisor/lapse_undischarged, "
         "supervisor/tally_regressed, supervisor/tally_unmoved: "
         "listing is not granted",
     )
@@ -553,8 +545,6 @@ async def test_a_deployment_that_runs_no_organize_session_boots_without_a_creden
     config = _config(
         tmp_path,
         tracker={},
-        fire_prep_pass_gate_signals=[],
-        grooming_pass_gate_signals=[],
         ticket_review_mode="reviewed",
     )
     assert config.tracker.token is None

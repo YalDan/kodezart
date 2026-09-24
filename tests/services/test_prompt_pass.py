@@ -7,8 +7,14 @@ proves nothing about the prompt the deployment would actually send.
 
 The four render-and-send behaviours here are the ones the deleted
 per-pass session class carried, with their subject swapped for the single
-run callable.  They are unchanged in what they assert: collapsing two
+pass object.  They are unchanged in what they assert: collapsing two
 render paths into one must not quietly relax what either proved.
+
+The gate group drives one pass object over several ticks: the first tick
+runs unasked, every later tick asks the gate question over the window
+since the last tick that ran, and what the answer does to the pass — skip,
+run, or run because the answer could not be read — is asserted through
+the calls the runner recorded and the events the pass logged.
 
 The last group reads what the pass REPORTED.  A pass that closed an issue
 and a pass that came back empty-handed both end when their stream runs
@@ -17,7 +23,7 @@ counts, its error, its duration — or the log cannot tell them apart.
 """
 
 import asyncio
-from collections.abc import AsyncGenerator, Mapping
+from collections.abc import AsyncGenerator, Mapping, Sequence
 from datetime import UTC, datetime, timedelta, tzinfo
 from pathlib import Path
 from typing import Final
@@ -31,29 +37,40 @@ from kodezart.core.errors import PromptRenderError
 from kodezart.core.prompt_namespaces import bindings_for
 from kodezart.core.protocols import AgentRunner, PromptSetProvider
 from kodezart.services import pass_scheduler as pass_scheduler_module
-from kodezart.services.pass_gate import PassGate
-from kodezart.services.prompt_pass import pass_render_bindings, run_prompt_pass
+from kodezart.services.prompt_pass import (
+    PromptPass,
+    gate_render_bindings,
+    pass_render_bindings,
+)
 from kodezart.types.domain.agent import (
+    PASS_GATE_SCHEMA,
     AgentEvent,
     AssistantTextEvent,
     ErrorEvent,
     ResultEvent,
     ToolUseEvent,
 )
-from kodezart.types.domain.dispatch import PassRun, PassSignal
-from kodezart.types.domain.operation import OperationConfig, QueueState
+from kodezart.types.domain.dispatch import PassRun
+from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run_records import RunIdentity
-from kodezart.types.domain.session import PermissionMode, SessionType
+from kodezart.types.domain.session import (
+    AllowedTools,
+    PermissionMode,
+    SessionType,
+)
 from kodezart.types.domain.skills import SkillsMode, SkillsSelection
-from kodezart.types.domain.subagents import SessionEffort
+from kodezart.types.domain.subagents import (
+    NO_SUBAGENTS,
+    UNCONFIGURED_SESSION_POLICY,
+    AgentDefinition,
+    SessionEffort,
+    SessionPolicy,
+)
 from tests.fakes import (
-    FIXTURE_EPOCH,
+    FAKE_SESSION_TYPE,
     SUPPRESS_ALL_SKILLS,
     FakeAgentRunner,
-    FakeTrackerPort,
-    make_tracker_issue,
-    make_tracker_review,
 )
 from tests.prompts.test_prompt_wiring import load_registry
 
@@ -62,13 +79,19 @@ EXAMPLE = REPO_ROOT / "docs" / "operation.example.toml"
 
 WORKSPACE = "/tmp/kodezart-scheduled-pass"
 PERMISSION_MODE = PermissionMode.UNATTENDED
-PAGE_SIZE = 50
-LATER = FIXTURE_EPOCH + timedelta(hours=1)
 #: The shipped set that declares a session role covering both pass keys.
 POLICIED_SET = "anthropic_v5"
 ALL_SKILLS = SkillsSelection(mode=SkillsMode.ALL)
 MODEL = "claude-opus-5"
+#: The engine a deployment pins the gate key to, spelled so no default
+#: could produce it.
+GATE_MODEL = "cheapest-engine"
 TRACKER_TOOL = "mcp__linear__save_issue"
+#: What the gate is sent with: the wire schema of its output model.
+GATE_OUTPUT_FORMAT: dict[str, object] = {
+    "type": "json_schema",
+    "schema": PASS_GATE_SCHEMA,
+}
 #: Milliseconds, because it is a real wait: what the cancellation test
 #: proves is the scheduler's own bound reaching a session mid-stream, and
 #: that bound is enforced by the event loop's timer and nothing else.
@@ -80,6 +103,10 @@ CANCEL_TIMEOUT = 0.05
 #: title from it (KOD-290), so a case that compares a sent prompt with a
 #: rendered one renders the same instant the tick used.
 TICK: Final[datetime] = datetime(2026, 9, 1, 12, 0, tzinfo=UTC)
+#: The ticks after it, one interval apart, for the cases that drive one
+#: pass object through several.
+NEXT_TICK: Final[datetime] = TICK + timedelta(minutes=30)
+THIRD_TICK: Final[datetime] = NEXT_TICK + timedelta(minutes=30)
 
 
 class _FrozenDatetime(datetime):
@@ -174,21 +201,33 @@ def policied_registry() -> PromptSetProvider:
     )
 
 
-def pass_gate(tracker: FakeTrackerPort, *signals: PassSignal) -> PassGate:
-    """A gate scoped the way the composition scopes a prompt pass's.
+def gate_prompt(
+    registry: PromptSetProvider, *, key: PromptKey, window_start: datetime
+) -> str:
+    """The gate question *key*'s pass sends over a window starting then."""
+    return registry.template_for(PromptKey.PASS_GATE).render(
+        gate_render_bindings(name=key.value, window_start=window_start)
+    )
 
-    Every declared board and every declared repository, because a prompt
-    pass acts on the whole operation — the narrowing to one repository
-    belongs to the dispatch pass and to nothing else.
-    """
-    operation = example_config()
-    return PassGate(
-        tracker=tracker,
-        ledger=tracker.self_writes,
-        signals=list(signals),
-        team_keys=operation.team_keys(),
-        repo_urls=[repo.url for repo in operation.repos],
-        page_size=PAGE_SIZE,
+
+def prompt_pass(
+    *,
+    prompts: PromptSetProvider,
+    runner: AgentRunner,
+    key: PromptKey = PromptKey.GROOMING_PASS,
+    skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+) -> PromptPass:
+    """One pass object, wired the way the composition wires it."""
+    return PromptPass(
+        kind=RECORD_KIND_BY_PASS[key],
+        key=key,
+        prompts=prompts,
+        runner=runner,
+        workspace_path=WORKSPACE,
+        permission_mode=PERMISSION_MODE,
+        allowed_tools=["Bash"],
+        skills=skills,
+        session_type=SessionType.SCHEDULED_PASS,
     )
 
 
@@ -196,23 +235,98 @@ async def run(
     *,
     prompts: PromptSetProvider,
     runner: AgentRunner,
-    gate: PassGate | None = None,
     key: PromptKey = PromptKey.GROOMING_PASS,
     skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
 ) -> PassRun:
-    return await run_prompt_pass(
-        TICK,
-        kind=RECORD_KIND_BY_PASS[key],
-        key=key,
-        prompts=prompts,
-        runner=runner,
-        gate=gate,
-        workspace_path=WORKSPACE,
-        permission_mode=PERMISSION_MODE,
-        allowed_tools=["Bash"],
-        skills=skills,
-        session_type=SessionType.SCHEDULED_PASS,
-    )
+    """One tick of a fresh pass: the first tick, which asks no gate."""
+    return await prompt_pass(
+        prompts=prompts, runner=runner, key=key, skills=skills
+    ).run(TICK)
+
+
+class GateAnsweringRunner:
+    """A runner that answers the gate question and then plays the pass.
+
+    A call carrying an ``output_format`` is the gate: it ends in one
+    result whose structured output is the next scripted answer, ``None``
+    standing for a result that carries none.  Every other call is the
+    pass's own session and plays *events*.  Records what
+    :class:`FakeAgentRunner` records, so a case can assert on the gate
+    call and the pass call in one shape.
+    """
+
+    def __init__(
+        self,
+        *,
+        answers: Sequence[object | None],
+        events: Sequence[AgentEvent] = (),
+    ) -> None:
+        self._answers: list[object | None] = list(answers)
+        self._events: tuple[AgentEvent, ...] = tuple(events)
+        self.calls: list[dict[str, object]] = []
+
+    async def stream_in_workspace(
+        self,
+        *,
+        prompt: str,
+        workspace_path: str,
+        permission_mode: PermissionMode,
+        allowed_tools: AllowedTools,
+        skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+        session_type: SessionType = FAKE_SESSION_TYPE,
+        run_identity: RunIdentity | None = None,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
+        session_id: str | None = None,
+        output_format: dict[str, object] | None = None,
+    ) -> AsyncGenerator[AgentEvent, None]:
+        self.calls.append(
+            {
+                "method": "stream_in_workspace",
+                "prompt": prompt,
+                "workspace_path": workspace_path,
+                "permission_mode": permission_mode,
+                "allowed_tools": allowed_tools,
+                "session_id": session_id,
+                "session_type": session_type,
+                "run_identity": run_identity,
+                "skills": skills,
+                "session_policy": session_policy,
+                "output_format": output_format,
+            }
+        )
+        if output_format is None:
+            for event in self._events:
+                yield event
+            return
+        yield ResultEvent(
+            subtype="success",
+            duration_ms=1,
+            duration_api_ms=1,
+            is_error=False,
+            num_turns=1,
+            session_id="gate-session",
+            structured_output=self._answers.pop(0),
+        )
+
+    def gate_calls(self) -> list[dict[str, object]]:
+        """The calls that carried the gate's schema, in order."""
+        return [call for call in self.calls if call["output_format"] is not None]
+
+    def pass_calls(self) -> list[dict[str, object]]:
+        """The calls that opened a pass session, in order."""
+        return [call for call in self.calls if call["output_format"] is None]
+
+
+def gate_answer(
+    *, run: bool, moved: Sequence[str] = (), reason: str
+) -> dict[str, object]:
+    """One well-formed answer, as the wire carries it."""
+    return {
+        "run": run,
+        "moved": [{"key": key, "why": f"{key} moved"} for key in moved],
+        "reason": reason,
+    }
 
 
 def test_the_grooming_prompt_composes_through_the_registry() -> None:
@@ -254,11 +368,14 @@ async def test_the_session_receives_the_rendered_prompt_and_its_grant() -> None:
             "method": "stream_in_workspace",
             "prompt": rendered,
             "workspace_path": WORKSPACE,
+            "permission_mode": PERMISSION_MODE,
+            "allowed_tools": ["Bash"],
             "session_id": None,
             "session_type": SessionType.SCHEDULED_PASS,
             "run_identity": None,
             "skills": SUPPRESS_ALL_SKILLS,
             "session_policy": registry.session_policy(PromptKey.GROOMING_PASS),
+            "output_format": None,
         },
     ]
 
@@ -335,84 +452,247 @@ async def test_each_pass_sends_its_own_prompt_and_never_the_other_one() -> None:
     )
 
 
-async def test_an_ungated_pass_asks_nothing_and_always_runs() -> None:
-    """Ungated is the cheapest path, not a degraded one: zero queries."""
-    tracker = FakeTrackerPort(issues=[make_tracker_issue("FIX-1")])
-    runner = FakeAgentRunner(events=[])
+class TestTheGateQuestion:
+    """The gate: one short session before the pass, answered in a shape.
 
-    assert await run(prompts=bound_registry(), runner=runner, gate=None) is PassRun.RAN
-
-    assert len(runner.calls) == 1
-    assert tracker.scans == []
-    assert tracker.review_scans == []
-
-
-async def test_a_quiet_gate_opens_no_session_and_renders_nothing() -> None:
-    """The token claim, asserted: a quiet board pays for neither.
-
-    The pass SAYS it skipped, rather than ending indistinguishably from
-    one that ran: its driver has a record obligation that turns on the
-    difference, and answering "completed" here backfilled a phantom run
-    record row for every quiet tick of the measured boot (KOD-176).
+    Driven over one pass object through several ticks, because the window
+    the question is asked over is the pass's own state: where the last
+    tick that ran began.
     """
-    tracker = FakeTrackerPort()
-    runner = FakeAgentRunner(events=[])
-    signals = (PassSignal.issues_changed, PassSignal.triage_backlog)
-    gate = pass_gate(tracker, *signals)
 
-    # An unbound registry would raise on render. It does not, which is how
-    # this asserts the render never happened rather than merely that no
-    # session opened after one.
-    assert await run(prompts=load_registry(), runner=runner, gate=gate) is (
-        PassRun.SKIPPED
-    )
+    async def test_the_first_tick_asks_nothing_and_runs(self) -> None:
+        """No window yet, no question: the boot tick reads the whole board."""
+        registry = bound_registry()
+        runner = GateAnsweringRunner(answers=[])
+        pass_ = prompt_pass(prompts=registry, runner=runner)
 
-    assert runner.calls == []
-    # One query per signal per declared board: the questions are asked
-    # WITHIN a container, never once over the whole workspace.
-    assert len(tracker.scans) == len(signals) * len(example_config().team_keys())
+        assert pass_.window_start is None
+        assert await pass_.run(TICK) is PassRun.RAN
 
+        assert runner.gate_calls() == []
+        assert [call["prompt"] for call in runner.pass_calls()] == [
+            registry.template_for(PromptKey.GROOMING_PASS).render(
+                per_run(PromptKey.GROOMING_PASS)
+            )
+        ]
+        assert pass_.window_start == TICK
 
-async def test_one_signal_reporting_work_is_enough_to_run_the_pass() -> None:
-    """A review with no issue activity still wakes the pass.
+    async def test_the_next_tick_asks_the_gate_over_the_window_with_the_schema(
+        self,
+    ) -> None:
+        """The question carries the window, the schema and the gate key's policy.
 
-    The paired positive of the skip: a woken pass reports that it RAN, so
-    its driver keeps the record obligation the skip does not carry.
-    """
-    tracker = FakeTrackerPort()
-    repo_url = example_config().repos[0].url
-    tracker.reviews[repo_url] = [make_tracker_review("acme/repo#7", updated_at=LATER)]
-    runner = FakeAgentRunner(events=[])
-    gate = pass_gate(
-        tracker,
-        PassSignal.issues_changed,
-        PassSignal.triage_backlog,
-        PassSignal.reviews_changed,
-    )
+        The window starts where the last tick that ran began, the answer is
+        demanded in the output model's own wire schema, and the session is
+        the same kind as the pass with the ``pass_gate`` key's own policy —
+        the way every other structured session here is dispatched.
+        """
+        registry = policied_registry()
+        runner = GateAnsweringRunner(
+            answers=[gate_answer(run=True, moved=["KOD-1"], reason="one moved")]
+        )
+        pass_ = prompt_pass(prompts=registry, runner=runner, skills=ALL_SKILLS)
+        await pass_.run(TICK)
 
-    assert await run(prompts=bound_registry(), runner=runner, gate=gate) is PassRun.RAN
+        with structlog.testing.capture_logs() as logs:
+            assert await pass_.run(NEXT_TICK) is PassRun.RAN
 
-    assert len(runner.calls) == 1
+        (gate,) = runner.gate_calls()
+        assert gate["prompt"] == gate_prompt(
+            registry, key=PromptKey.GROOMING_PASS, window_start=TICK
+        )
+        assert gate["output_format"] == GATE_OUTPUT_FORMAT
+        assert gate["session_type"] is SessionType.SCHEDULED_PASS
+        assert gate["permission_mode"] is PERMISSION_MODE
+        assert gate["allowed_tools"] == ["Bash"]
+        assert gate["workspace_path"] == WORKSPACE
+        assert gate["session_policy"] == registry.session_policy(PromptKey.PASS_GATE)
+        assert gate["skills"] == registry.session_skills(
+            PromptKey.PASS_GATE, ALL_SKILLS
+        )
+        asked = terminal_event(logs, "pass_gate_asked")
+        assert asked["name"] == PromptKey.GROOMING_PASS.value
+        assert asked["window_start"] == TICK.isoformat()
+        assert asked["effort"] == SessionEffort.MAX.value
+        assert asked["model"] is None
+        # The gate is asked first, and the pass session comes after it.
+        assert [call["output_format"] for call in runner.calls[-2:]] == [
+            GATE_OUTPUT_FORMAT,
+            None,
+        ]
 
+    async def test_a_no_answer_skips_the_pass_with_the_reason_logged(self) -> None:
+        """``run: false`` opens no session and says why, and the window stays.
 
-async def test_a_standing_backlog_wakes_the_pass_on_an_otherwise_quiet_board() -> None:
-    """Nothing moved, and there is still a whole backlog to sweep."""
-    tracker = FakeTrackerPort(
-        issues=[
-            make_tracker_issue(
-                "FIX-1",
-                team_key=example_config().team_keys()[0],
-                queue_states=[QueueState.TRIAGE],
-            ),
-        ],
-    )
-    runner = FakeAgentRunner(events=[])
-    gate = pass_gate(tracker, PassSignal.triage_backlog)
+        The pass SAYS it skipped, rather than ending indistinguishably from
+        one that ran: its driver has a record obligation that turns on the
+        difference (KOD-176).  Nothing ran, so the next question is asked
+        over the same window again.
+        """
+        registry = bound_registry()
+        runner = GateAnsweringRunner(
+            answers=[
+                gate_answer(run=False, reason="nothing moved since the last pass"),
+                gate_answer(run=False, reason="still nothing"),
+            ]
+        )
+        pass_ = prompt_pass(prompts=registry, runner=runner)
+        await pass_.run(TICK)
 
-    await run(prompts=bound_registry(), runner=runner, gate=gate)
-    await run(prompts=bound_registry(), runner=runner, gate=gate)
+        with structlog.testing.capture_logs() as logs:
+            assert await pass_.run(NEXT_TICK) is PassRun.SKIPPED
 
-    assert len(runner.calls) == 2, "a backlog does not drain by being swept once"
+        assert len(runner.pass_calls()) == 1, "the skipped tick opened no session"
+        answered = terminal_event(logs, "pass_gate_answered")
+        assert answered["name"] == PromptKey.GROOMING_PASS.value
+        assert answered["run"] is False
+        assert answered["moved_count"] == 0
+        assert answered["reason"] == "nothing moved since the last pass"
+        assert [
+            record["event"]
+            for record in logs
+            if record["event"].startswith("prompt_pass")
+        ] == []
+        assert pass_.window_start == TICK
+        await pass_.run(THIRD_TICK)
+        assert runner.gate_calls()[-1]["prompt"] == gate_prompt(
+            registry, key=PromptKey.GROOMING_PASS, window_start=TICK
+        )
+
+    async def test_a_yes_answer_opens_the_pass_and_advances_the_window(self) -> None:
+        """``run: true`` opens the session as today, and the window moves on."""
+        registry = bound_registry()
+        runner = GateAnsweringRunner(
+            answers=[
+                gate_answer(run=True, moved=["KOD-1", "KOD-2"], reason="two moved"),
+                gate_answer(run=False, reason="quiet"),
+            ],
+            events=[result_event()],
+        )
+        pass_ = prompt_pass(prompts=registry, runner=runner)
+        await pass_.run(TICK)
+
+        with structlog.testing.capture_logs() as logs:
+            assert await pass_.run(NEXT_TICK) is PassRun.RAN
+
+        assert len(runner.pass_calls()) == 2
+        answered = terminal_event(logs, "pass_gate_answered")
+        assert answered["run"] is True
+        assert answered["moved_count"] == 2
+        assert answered["reason"] == "two moved"
+        assert terminal_event(logs, "prompt_pass_finished")["result_event_observed"]
+        assert pass_.window_start == NEXT_TICK
+        await pass_.run(THIRD_TICK)
+        assert runner.gate_calls()[-1]["prompt"] == gate_prompt(
+            registry, key=PromptKey.GROOMING_PASS, window_start=NEXT_TICK
+        )
+
+    async def test_a_missing_answer_runs_the_pass(self) -> None:
+        """A gate that ended with no structured answer is not a skip."""
+        registry = bound_registry()
+        runner = GateAnsweringRunner(answers=[None])
+        pass_ = prompt_pass(prompts=registry, runner=runner)
+        await pass_.run(TICK)
+
+        with structlog.testing.capture_logs() as logs:
+            assert await pass_.run(NEXT_TICK) is PassRun.RAN
+
+        assert len(runner.pass_calls()) == 2
+        unanswered = terminal_event(logs, "pass_gate_unanswered")
+        assert unanswered["log_level"] == "warning"
+        assert unanswered["name"] == PromptKey.GROOMING_PASS.value
+        assert unanswered["error"] == "the gate session ended with no structured answer"
+        assert [
+            record["event"]
+            for record in logs
+            if record["event"] == "pass_gate_answered"
+        ] == []
+
+    async def test_a_malformed_answer_runs_the_pass(self) -> None:
+        """An answer the output model refuses is named, and the pass runs."""
+        registry = bound_registry()
+        runner = GateAnsweringRunner(answers=[{"run": "maybe", "moved": "KOD-1"}])
+        pass_ = prompt_pass(prompts=registry, runner=runner)
+        await pass_.run(TICK)
+
+        with structlog.testing.capture_logs() as logs:
+            assert await pass_.run(NEXT_TICK) is PassRun.RAN
+
+        assert len(runner.pass_calls()) == 2
+        unanswered = terminal_event(logs, "pass_gate_unanswered")
+        assert unanswered["name"] == PromptKey.GROOMING_PASS.value
+        assert "run" in str(unanswered["error"])
+        assert "reason" in str(unanswered["error"])
+
+    async def test_the_gate_runs_on_the_engine_its_key_is_pinned_to(self) -> None:
+        """``session_models`` pins the gate key alone; the pass keeps its own.
+
+        The same mechanism that pins the branch-name session: the policy the
+        registry serves for the key carries the pinned engine and the
+        role's effort, and both reach the executor call and the log.
+        """
+        registry = load_registry(
+            default_set=POLICIED_SET,
+            bindings=dict(bindings_for(example_config())),
+            session_models={PromptKey.PASS_GATE.value: GATE_MODEL},
+        )
+        runner = GateAnsweringRunner(answers=[gate_answer(run=True, reason="moved")])
+        pass_ = prompt_pass(prompts=registry, runner=runner)
+        await pass_.run(TICK)
+
+        with structlog.testing.capture_logs() as logs:
+            await pass_.run(NEXT_TICK)
+
+        (gate,) = runner.gate_calls()
+        assert gate["session_policy"].model == GATE_MODEL
+        assert gate["session_policy"].effort is SessionEffort.MAX
+        assert all(call["session_policy"].model is None for call in runner.pass_calls())
+        asked = terminal_event(logs, "pass_gate_asked")
+        assert asked["model"] == GATE_MODEL
+        assert asked["effort"] == SessionEffort.MAX.value
+
+    async def test_a_gate_that_raises_propagates_and_keeps_the_window(self) -> None:
+        """A raise is not an answer: the tick fails loudly, nothing is skipped."""
+        runner = RaisingRunner(after_calls=1)
+        pass_ = prompt_pass(prompts=bound_registry(), runner=runner)
+        await pass_.run(TICK)
+
+        with pytest.raises(RuntimeError):
+            await pass_.run(NEXT_TICK)
+
+        assert runner.calls == 2, "the gate was asked and raised"
+        assert pass_.window_start == TICK
+
+    async def test_a_pass_that_raised_leaves_no_window_behind(self) -> None:
+        """A session that never ran is not a run the next window starts from."""
+        pass_ = prompt_pass(prompts=bound_registry(), runner=RaisingRunner())
+
+        with pytest.raises(RuntimeError):
+            await pass_.run(TICK)
+
+        assert pass_.window_start is None
+
+    def test_the_gate_prompt_is_stable_up_to_its_per_tick_values(self) -> None:
+        """Everything before the pass name and the window is the same text.
+
+        The stable prefix is what the engine caches across ticks, so the
+        two values that change per tick are the last lines and nothing
+        before them differs between passes or windows.
+        """
+        registry = bound_registry()
+        first = gate_prompt(registry, key=PromptKey.FIRE_PREP_PASS, window_start=TICK)
+        second = gate_prompt(
+            registry, key=PromptKey.GROOMING_PASS, window_start=NEXT_TICK
+        )
+
+        head, marker, tail = first.rpartition("\nPass: ")
+        assert marker
+        assert second.startswith(head + marker)
+        assert (
+            tail
+            == f"{PromptKey.FIRE_PREP_PASS.value}\nWindow start: {TICK.isoformat()}"
+        )
+        assert len(head) > len(tail) * 10
 
 
 async def test_an_error_arriving_mid_stream_ends_the_pass_as_a_failure() -> None:
@@ -531,12 +811,16 @@ async def test_a_pass_cancelled_mid_stream_reports_no_terminal_outcome() -> None
 class RaisingRunner:
     """A runner whose stream raises before the session says anything.
 
-    The failure a pass beneath a gate can meet after the gate has already
-    advanced its marks: the session could not be started at all, so the
-    window the gate opened was never worked.
+    The session could not be started at all — the gate's or the pass's —
+    so the tick fails where the scheduler names it, and no window is
+    advanced for work that never happened.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, after_calls: int = 0) -> None:
+        #: How many calls play out empty before the stream starts raising:
+        #: zero raises the first session, one lets a first tick run and
+        #: raises the gate the next tick asks.
+        self._after_calls: int = after_calls
         self.calls: int = 0
 
     async def stream_in_workspace(
@@ -544,146 +828,31 @@ class RaisingRunner:
         **_kwargs: object,
     ) -> AsyncGenerator[AgentEvent, None]:
         self.calls += 1
+        if self.calls <= self._after_calls:
+            return
         msg = "the session could not be started"
         raise RuntimeError(msg)
         yield  # pragma: no cover - unreachable, and what makes this a generator
 
 
-class TestAFailedPassGivesTheWakeUpBack:
-    """A window the gate opened and the session never worked is re-read.
+async def test_a_pass_cancelled_on_its_budget_advances_no_window() -> None:
+    """A timed-out pass is not a run the next window starts from.
 
-    Asking advances the mark so the next tick does not re-report the same
-    window; the SESSION is what reads it, and a pass that raised opened
-    none. Leaving the mark forward spends the wake-up on nothing (KOD-164).
+    Driven as the scheduler's own bound reaching a live session, so what
+    survives the unwind is the untouched window and not an exception type
+    this test chose.
     """
+    runner = HangingRunner()
+    pass_ = prompt_pass(prompts=bound_registry(), runner=runner)
 
-    async def test_a_session_that_raises_leaves_the_mark_where_it_was(self) -> None:
-        tracker = FakeTrackerPort(
-            issues=[
-                make_tracker_issue(
-                    "FIX-1",
-                    team_key=example_config().team_keys()[0],
-                    created_at=LATER,
-                ),
-            ],
-        )
-        gate = pass_gate(tracker, PassSignal.issues_changed)
-        runner = RaisingRunner()
+    running = asyncio.create_task(pass_.run(TICK))
+    try:
+        await asyncio.wait_for(runner.entered.wait(), timeout=5.0)
+        with pytest.raises(TimeoutError):
+            await asyncio.wait_for(running, timeout=CANCEL_TIMEOUT)
+    finally:
+        running.cancel()
+        await asyncio.gather(running, return_exceptions=True)
 
-        with pytest.raises(RuntimeError):
-            await run(prompts=bound_registry(), runner=runner, gate=gate)
-
-        assert (
-            gate.mark(
-                PassSignal.issues_changed,
-                container=example_config().team_keys()[0],
-            )
-            is None
-        )
-
-    async def test_the_next_tick_asks_the_same_question_again(self) -> None:
-        """Re-armed means re-asked, not merely un-stamped."""
-        tracker = FakeTrackerPort(
-            issues=[
-                make_tracker_issue(
-                    "FIX-1",
-                    team_key=example_config().team_keys()[0],
-                    created_at=LATER,
-                ),
-            ],
-        )
-        gate = pass_gate(tracker, PassSignal.issues_changed)
-        runner = RaisingRunner()
-
-        for _ in range(2):
-            with pytest.raises(RuntimeError):
-                await run(prompts=bound_registry(), runner=runner, gate=gate)
-
-        assert runner.calls == 2, "the second tick reached the session again"
-        assert [scan.updated_since for scan in tracker.scans] == [None] * len(
-            tracker.scans
-        )
-
-    async def test_a_session_that_ran_still_advances_its_mark(self) -> None:
-        """The paired positive: only a failure gives the window back."""
-        team_key = example_config().team_keys()[0]
-        tracker = FakeTrackerPort(
-            issues=[make_tracker_issue("FIX-1", team_key=team_key, created_at=LATER)],
-        )
-        gate = pass_gate(tracker, PassSignal.issues_changed)
-
-        await run(
-            prompts=bound_registry(),
-            runner=FakeAgentRunner(events=[]),
-            gate=gate,
-        )
-
-        assert gate.mark(PassSignal.issues_changed, container=team_key) == LATER
-
-    async def test_a_pass_cancelled_on_its_budget_keeps_its_window_too(self) -> None:
-        """A timed-out pass may not eat the wake-up either.
-
-        Driven as the scheduler's own bound reaching a live session, so
-        what survives the unwind is the re-arm and not an exception type
-        this test chose.
-        """
-        team_key = example_config().team_keys()[0]
-        tracker = FakeTrackerPort(
-            issues=[make_tracker_issue("FIX-1", team_key=team_key, created_at=LATER)],
-        )
-        gate = pass_gate(tracker, PassSignal.issues_changed)
-        runner = HangingRunner()
-
-        running = asyncio.create_task(
-            run(prompts=bound_registry(), runner=runner, gate=gate)
-        )
-        try:
-            await asyncio.wait_for(runner.entered.wait(), timeout=5.0)
-            with pytest.raises(TimeoutError):
-                await asyncio.wait_for(running, timeout=CANCEL_TIMEOUT)
-        finally:
-            running.cancel()
-            await asyncio.gather(running, return_exceptions=True)
-
-        assert runner.cancelled
-        assert gate.mark(PassSignal.issues_changed, container=team_key) is None
-
-    async def test_budget_cancellation_during_gate_logging_gives_the_window_back(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        team_key = example_config().team_keys()[0]
-        tracker = FakeTrackerPort(
-            issues=[make_tracker_issue("FIX-1", team_key=team_key, created_at=LATER)]
-        )
-        gate = pass_gate(tracker, PassSignal.issues_changed)
-        runner = FakeAgentRunner(events=[])
-        logging = asyncio.Event()
-        original = gate._log.ainfo
-
-        async def delayed(event: str, **fields: object) -> None:
-            await original(event, **fields)
-            if event == "pass_gate_delta":
-                logging.set()
-                await asyncio.Event().wait()
-
-        monkeypatch.setattr(gate._log, "ainfo", delayed)
-        running = asyncio.create_task(
-            run(prompts=bound_registry(), runner=runner, gate=gate)
-        )
-        try:
-            await asyncio.wait_for(logging.wait(), timeout=5.0)
-            assert gate.mark(PassSignal.issues_changed, container=team_key) == LATER
-            with pytest.raises(TimeoutError):
-                await asyncio.wait_for(running, timeout=CANCEL_TIMEOUT)
-        finally:
-            running.cancel()
-            await asyncio.gather(running, return_exceptions=True)
-
-        assert runner.calls == []
-        assert gate.mark(PassSignal.issues_changed, container=team_key) is None
-        monkeypatch.setattr(gate._log, "ainfo", original)
-        assert (
-            await run(prompts=bound_registry(), runner=runner, gate=gate) is PassRun.RAN
-        )
-        assert len(runner.calls) == 1
-        assert tracker.scans[-1].updated_since is None
+    assert runner.cancelled
+    assert pass_.window_start is None

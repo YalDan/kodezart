@@ -59,6 +59,14 @@ behavior; grouping them does not claim to remove six operator choices.
 
 ## Removed implementation settings
 
+The `fire_prep_pass_gate_signals` and `grooming_pass_gate_signals` settings
+(uppercase `KODEZART_` names included) are removed and refused at boot from
+every source. The fire-prep and grooming passes no longer scan the tracker
+through the process's own credential before a tick: each tick after boot asks
+a short agent session whether anything in the pass's window is work for it,
+and the engine that question runs on is the `pass_gate` key of the agent
+session-model table. The dispatch pass keeps its gate-signal setting.
+
 The former `deny_patterns` and `deny_pattern_verdicts` fields are also removed.
 Delete their uppercase environment assignments with the `KODEZART` prefix and
 separator. Constructor, process environment, dotenv and file-secret inputs now
@@ -230,7 +238,7 @@ which was missing in the boot log.
 | `KODEZART_MAX_REVIEWS`            | `int`        | `2`                      | 1-10        | Maximum ticket review rounds before accepting            |
 | `KODEZART_TICKET_REVIEW_MODE`     | `str`        | `create_only`            | `reviewed`, `create_only` | Whether the ticket loop compiles a reviewer session or one creator session whose draft the set's draft-critic lens checks; setting `KODEZART_MAX_REVIEWS` under `create_only`, or `create_only` over a set declaring no such lens, is refused at boot |
 | `KODEZART_AGENT__FALLBACK_MODEL`         | `str\|None`  | `None`                   |             | Engine a session falls back to when the primary declines a request; absent declares no fallback |
-| `KODEZART_AGENT__SESSION_MODELS`         | `dict[str,str]` | `{}`                  | keys: prompt function keys | JSON object pinning named function keys' sessions to an engine, overriding `KODEZART_AGENT__MODEL` for those keys only; an unknown key is refused at boot naming the vocabulary |
+| `KODEZART_AGENT__SESSION_MODELS`         | `dict[str,str]` | `{}`                  | keys: prompt function keys | JSON object pinning named function keys' sessions to an engine, overriding `KODEZART_AGENT__MODEL` for those keys only; an unknown key is refused at boot naming the vocabulary. The `pass_gate` key is the gate question the fire-prep and grooming passes ask before every tick after boot (did anything move in the window that this pass should act on, answered in a fixed shape); pin it to the cheapest engine the provider offers, for example `{"branch_name": "<engine>", "pass_gate": "<engine>"}`. Unset, the question runs on `KODEZART_AGENT__MODEL`; its effort is the set's own for the key |
 | `KODEZART_AGENT__OUTPUT_STYLE`    | `str\|None`  | `None`                   |             | Claude Code output style every engine session runs under, e.g. `Concise`. Absent sends no style at all and the CLI's own default stands; no style is ever picked in code. The session's own init message is read back, and a declared style it does not confirm fails that session rather than running it under some other system prompt. Requires a bundled CLI new enough for the named style |
 | `KODEZART_INVESTIGATION_CAP`      | `int`        | `5`                      | 1-10        | Read-only investigator sessions one generative dispatch may fan out to; substituted into the prompt set's investigation spec at set resolution |
 | `KODEZART_CRITERIA_MAX_REGENERATION_ROUNDS` | `int` | `1`                 | 0-5         | Regeneration rounds the criteria sweep may spend on infeasible criteria before halting the run |
@@ -279,8 +287,6 @@ which was missing in the boot log.
 | `KODEZART_GROOMING_PASS_INTERVAL_SECONDS` | `float \| None` | none | >= 60.0, <= 86400.0 | Seconds between grooming pass sessions. Grooming verifies the whole tree against the real code by building it, so one run costs far more than one preparation and buys a report rather than a queued unit of work. Set together with its timeout. Unset: the pass is not scheduled. |
 | `KODEZART_GROOMING_PASS_TIMEOUT_SECONDS` | `float \| None` | none | >= 60.0, <= 86400.0 | Seconds one grooming tick may take before it is abandoned. Grooming builds the tree it verifies, which is the most expensive session this deployment runs unattended. On expiry the session is cancelled and reported as timed out; the loop continues. Set together with its interval. Unset: the pass is not scheduled. |
 | `KODEZART_DISPATCH_PASS_GATE_SIGNALS` | `list[PassSignal]` | `["approved_changed"]` |  | Signals the dispatch pass is gated on. Dispatch claims and enqueues, so it has work exactly when an approved issue moved — one signal answers it completely. An empty list runs the pass every tick, which is legal and costs a claim attempt per tick. |
-| `KODEZART_FIRE_PREP_PASS_GATE_SIGNALS` | `list[PassSignal]` | `["issues_changed", "triage_backlog"]` |  | Signals the fire-preparation pass is gated on. Two of the three streams its prompt gathers: the standing triage backlog it re-sweeps whole, and issue activity since the last tick. `reviews_changed` is the third stream and stays selectable, but it is deliberately NOT shipped: the scan behind it is served by a tool that answers only to a per-user credential class, which a service key cannot hold, so a deployment selecting it refuses to boot until its credential can answer. The cost of the omission, stated rather than discovered: review activity with no issue activity beside it does not wake this pass. Dropping `triage_backlog` is the usual edit on a board that parks plan stubs at triage, since that signal is true while any exist. |
-| `KODEZART_GROOMING_PASS_GATE_SIGNALS` | `list[PassSignal]` | `[]` |  | Signals the grooming pass is gated on. Ships EMPTY — grooming verifies the tree by building it, which is work even when nothing changed, so a delta gate would skip exactly the thing the pass exists for. An operator paying per session may still gate it; the cost of doing so is the unchanged-board check. |
 | `KODEZART_SCHEDULED_PASS_WORKING_DIR` | `str` | `/tmp/kodezart-scheduled-pass` |  | Working directory a scheduled pass session runs in. Deliberately not a cloned repository: a pass acts on the tracker and reaches whatever repository it needs itself, so standing it in one of them would privilege that one for no reason. |
 | `KODEZART_FORGE_API_BASE_URL` | `str` | `https://api.github.com` |  | Base URL for code hosting platform REST API. |
 | `KODEZART_FORGE_API_MAX_RETRIES` | `int` | `3` | >= 0, <= 10 | Maximum retry attempts for code hosting platform API 429/5xx responses. |

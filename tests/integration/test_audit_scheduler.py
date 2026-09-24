@@ -128,8 +128,6 @@ def dependencies():
         audit_full_sweep_interval_seconds=120,
         supervisor_pass_interval_seconds=300.0,
         supervisor_pass_timeout_seconds=120.0,
-        fire_prep_pass_gate_signals=[],
-        grooming_pass_gate_signals=[],
         organize={"max_admission_rounds": 2, "max_convergence_rounds": 2},
     )
     server = ScopeMcpServer()
@@ -394,8 +392,6 @@ async def test_actual_main_lifespan_registers_and_executes_audit(
         organize={"max_admission_rounds": 2, "max_convergence_rounds": 2},
         github_token=SecretStr("fixture-audit-token").get_secret_value(),
         ticket_review_mode="reviewed",
-        fire_prep_pass_gate_signals=[],
-        grooming_pass_gate_signals=[],
     )
     workspace = RecordingWorkspace()
     executor = RecordingExecutor(
@@ -475,10 +471,13 @@ async def test_actual_main_lifespan_registers_and_executes_audit(
         assert any(
             row.body.startswith("[configured-audit-record:") for row in server.comments
         )
-        assert len(executor.calls) == 1
-        assert (
-            executor.calls[0]["output_format"]["schema"]["title"] == "WriteBackFinding"
-        )
+        # The intake passes tick at boot beside the audit, each opening its
+        # own session; the audit's is the one structured call, and one only.
+        structured = [
+            call for call in executor.calls if call["output_format"] is not None
+        ]
+        assert len(structured) == 1
+        assert structured[0]["output_format"]["schema"]["title"] == "WriteBackFinding"
         assert app.state.job_queue._accepting
     assert not scheduler.running
     assert not app.state.job_queue._accepting

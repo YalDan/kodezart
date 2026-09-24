@@ -30,6 +30,10 @@ def _from_source(source, field, value, tmp_path, monkeypatch):
         "organize_max_admission_rounds",
         "organize_max_convergence_rounds",
         "union_check_cleanup_poll_interval_seconds",
+        # The prompt passes' deterministic gate is gone: the gate is an agent
+        # question, and a signal list for it is a setting nothing reads.
+        "fire_prep_pass_gate_signals",
+        "grooming_pass_gate_signals",
     ],
 )
 @pytest.mark.parametrize("source", ["init", "env", "dotenv", "secret"])

@@ -96,6 +96,9 @@ ARTIFACT_TAGS: dict[str, tuple[str, ...]] = {
     "evaluation__empty_changeset": ("acceptance_criteria", "changeset"),
     "evaluation__no_file_paths": ("acceptance_criteria", "changeset"),
     "fire_prep_pass": (),
+    # The gate's two per-tick values are a name and a timestamp, rendered as
+    # plain lines; neither is an injected artifact.
+    "pass_gate": (),
     "fix": ("ticket", "review_feedback", "ci_summary"),
     "fix__no_optional_sections": ("ticket",),
     "grooming_pass": (),

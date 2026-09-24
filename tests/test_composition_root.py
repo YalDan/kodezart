@@ -179,7 +179,9 @@ class TestATrackerTravelsWithItsOwnWriteLedger:
 
         The two halves are one fact, so they travel as the one value boot
         produced: there is no argument left for half of a tracker to arrive
-        in.
+        in.  The prompt passes take neither half nor the whole: their
+        session reaches the tracker itself, and so does the gate question
+        asked before it.
         """
         runtime = inspect.signature(build_dispatch_runtime).parameters
         prompt = inspect.signature(build_prompt_passes).parameters
@@ -188,8 +190,8 @@ class TestATrackerTravelsWithItsOwnWriteLedger:
         assert "tracker" not in runtime
         assert "ledger" not in prompt
         assert "tracker" not in prompt
+        assert "dialled" not in prompt
         assert runtime["dialled"].annotation == DialledTracker | None
-        assert prompt["dialled"].annotation == DialledTracker | None
 
     def test_the_composition_root_hands_the_tracker_over_whole(self) -> None:
         """The boot's own call, read off the root: one value, not two halves."""

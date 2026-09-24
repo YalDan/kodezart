@@ -107,6 +107,7 @@ RaiseSite = Literal[
     "fire_time_ruling",
     "mutation_removal",
     "mutation_evaluator",
+    "pass_gate",
 ]
 
 # ---------------------------------------------------------------------------
@@ -731,6 +732,40 @@ class BranchNameOutput(CamelCaseModel):
     )
 
 
+class PassGateMovement(CamelCaseModel):
+    """One thing the gate saw move that its pass should act on."""
+
+    key: str = Field(
+        min_length=1,
+        description="The issue, review or scope key that moved.",
+    )
+    why: str = Field(
+        min_length=1,
+        description="One sentence on what moved and why the pass should act on it.",
+    )
+
+
+class PassGateOutput(CamelCaseModel):
+    """The gate session's answer: whether the pass has work in its window."""
+
+    run: bool = Field(
+        description=(
+            "True when something in the window is work for this pass; false "
+            "when the pass can sleep its interval."
+        ),
+    )
+    moved: list[PassGateMovement] = Field(
+        description=(
+            "What moved that the pass should act on, one entry per key; "
+            "empty when nothing did."
+        ),
+    )
+    reason: str = Field(
+        min_length=1,
+        description="One sentence stating why the pass runs or sleeps.",
+    )
+
+
 class ContentAuditFinding(CamelCaseModel):
     """One finding from the judgment scanner's audit session.
 
@@ -1291,6 +1326,8 @@ TICKET_REVIEW_SCHEMA: dict[str, object] = TicketReviewOutput.model_json_schema()
 PR_DESCRIPTION_SCHEMA: dict[str, object] = PRDescriptionOutput.model_json_schema()
 # Schema for the judgment scanner's structured audit verdict
 CONTENT_AUDIT_SCHEMA: dict[str, object] = ContentAuditOutput.model_json_schema()
+# Schema for a scheduled pass's gate question
+PASS_GATE_SCHEMA: dict[str, object] = PassGateOutput.model_json_schema()
 # Schema for the draft-critic lens's verdict on a drafted artifact
 DRAFT_CRITIQUE_SCHEMA: dict[str, object] = DraftCritiqueOutput.model_json_schema()
 
@@ -1327,6 +1364,7 @@ WIRE_SCHEMAS: dict[str, dict[str, object]] = {
     "TICKET_REVIEW_SCHEMA": TICKET_REVIEW_SCHEMA,
     "PR_DESCRIPTION_SCHEMA": PR_DESCRIPTION_SCHEMA,
     "CONTENT_AUDIT_SCHEMA": CONTENT_AUDIT_SCHEMA,
+    "PASS_GATE_SCHEMA": PASS_GATE_SCHEMA,
     "DRAFT_CRITIQUE_SCHEMA": DRAFT_CRITIQUE_SCHEMA,
     "ORGANIZE_ADMISSION_SCHEMA": ORGANIZE_ADMISSION_SCHEMA,
     "ORGANIZE_PROPOSAL_SCHEMA": ORGANIZE_PROPOSAL_SCHEMA,

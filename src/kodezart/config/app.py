@@ -130,6 +130,8 @@ class AppConfig(BaseSettings):
                 "organize_max_convergence_rounds",
                 "write_back_max_verify_rounds",
                 "union_check_cleanup_poll_interval_seconds",
+                "fire_prep_pass_gate_signals",
+                "grooming_pass_gate_signals",
                 "git_remote",
                 "git_base_url",
                 "clone_cache_dir",
@@ -649,36 +651,6 @@ class AppConfig(BaseSettings):
             "enqueues, so it has work exactly when an approved issue moved — "
             "one signal answers it completely. An empty list runs the pass "
             "every tick, which is legal and costs a claim attempt per tick."
-        ),
-    )
-    fire_prep_pass_gate_signals: list[PassSignal] = Field(
-        default_factory=lambda: [
-            PassSignal.issues_changed,
-            PassSignal.triage_backlog,
-        ],
-        description=(
-            "Signals the fire-preparation pass is gated on. Two of the three "
-            "streams its prompt gathers: the standing triage backlog it "
-            "re-sweeps whole, and issue activity since the last tick. "
-            "reviews_changed is the third stream and stays selectable, but it "
-            "is deliberately NOT shipped: the scan behind it is served by a "
-            "tool that answers only to a per-user credential class, which a "
-            "service key cannot hold, so a deployment selecting it refuses to "
-            "boot until its credential can answer. The cost of the omission, "
-            "stated rather than discovered: review activity with no issue "
-            "activity beside it does not wake this pass. Dropping "
-            "triage_backlog is the usual edit on a board that parks plan "
-            "stubs at triage, since that signal is true while any exist."
-        ),
-    )
-    grooming_pass_gate_signals: list[PassSignal] = Field(
-        default_factory=list,
-        description=(
-            "Signals the grooming pass is gated on. Ships EMPTY — grooming "
-            "verifies the tree by building it, which is work even when "
-            "nothing changed, so a delta gate would skip exactly the thing "
-            "the pass exists for. An operator paying per session may still "
-            "gate it; the cost of doing so is the unchanged-board check."
         ),
     )
     scheduled_pass_working_dir: str = Field(

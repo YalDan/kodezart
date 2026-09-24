@@ -14,6 +14,7 @@ from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.core.prompt_namespaces import operation_bindings
 from kodezart.domain.prompt_variables import execution_criteria_variables
 from kodezart.domain.rulings import EMPTY_REGISTRY, pinned_registry
+from kodezart.services.prompt_pass import gate_render_bindings
 from kodezart.types.domain.agent import Ruling
 from kodezart.types.domain.amendment import AmendmentClaim, AmendmentJudgment
 from kodezart.types.domain.audit import TrackerArtifact
@@ -22,7 +23,7 @@ from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.surface import SurfaceKind, WritableSurface
 from kodezart.types.domain.write_back import WriteBackFinding
 from tests.domain.test_rulings import ruling_data
-from tests.fakes import make_tracker_issue, pass_render_variables
+from tests.fakes import FIXTURE_EPOCH, make_tracker_issue, pass_render_variables
 from tests.prompts.test_prompt_wiring import (
     CRITERIA,
     DEFAULT_SET,
@@ -164,6 +165,14 @@ EXTENDED_CASES: dict[str, tuple[PromptKey, dict[str, object]]] = {
     "grooming_pass": (
         PromptKey.GROOMING_PASS,
         pass_render_variables(PromptKey.GROOMING_PASS),
+    ),
+    #: services/prompt_pass.py ``PromptPass._ask``: the pass the question is
+    #: for and where its window starts, the two per-tick values.
+    "pass_gate": (
+        PromptKey.PASS_GATE,
+        gate_render_bindings(
+            name=PromptKey.FIRE_PREP_PASS.value, window_start=FIXTURE_EPOCH
+        ),
     ),
     "remediation_ticket": (
         PromptKey.REMEDIATION_TICKET,

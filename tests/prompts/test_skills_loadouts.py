@@ -49,6 +49,8 @@ UTILITY_KEYS = (
     # A rubric is rendered into another role's prompt rather than opened as a
     # session, so it carries no skills reference of its own.
     PromptKey.ORGANIZE_SPEC_RUBRIC,
+    # One short board question, answered in a shape: nothing to load.
+    PromptKey.PASS_GATE,
 )
 
 

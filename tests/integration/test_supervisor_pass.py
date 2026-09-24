@@ -280,11 +280,10 @@ async def test_the_pass_registers_only_with_declared_scopes_and_a_dialled_tracke
     assert {entry.name for entry in as_before.scheduler.passes} == per_issue
 
 
-#: The per-issue gates with issue activity left out, so any probe of
+#: The per-issue dispatch gate with issue activity left out, so any probe of
 #: ``issues_changed`` a boot makes is the supervisor's and nobody else's.
+#: The two prompt passes put nothing in the probe: their gate is a session.
 GATES_WITHOUT_ISSUE_ACTIVITY: dict[str, object] = {
-    "fire_prep_pass_gate_signals": [PassSignal.triage_backlog],
-    "grooming_pass_gate_signals": [],
     "dispatch_pass_gate_signals": [PassSignal.approved_changed],
 }
 
@@ -381,11 +380,11 @@ async def test_the_supervisors_scans_are_probed_exactly_when_its_tick_registers(
 async def test_a_per_issue_deployment_probes_its_own_gates_and_no_supervisor_scan(
     tmp_path: Path,
 ) -> None:
-    """No roster, a delivery probe dialled: the probe is the per-issue gates alone.
+    """No roster, a delivery probe dialled: the probe is the dispatch gate alone.
 
-    Issue activity is left out of every per-issue gate, so the probe holds
-    exactly what the fire-preparation and dispatch passes are gated on and
-    nothing the supervisor's alarms declare.
+    Issue activity is left out of the dispatch gate, so the probe holds
+    exactly what the dispatch pass is gated on and nothing the supervisor's
+    alarms declare; the two prompt passes put nothing in it.
     """
     tracker = FakeTrackerPort(
         issues=[], marker_prefixes=declared(scopes=()).marker_prefixes
@@ -403,9 +402,7 @@ async def test_a_per_issue_deployment_probes_its_own_gates_and_no_supervisor_sca
     assert [
         entry for entry in runtime.scheduler.passes if entry.name == "supervisor"
     ] == []
-    assert tracker.capability_probes == [
-        (PassSignal.triage_backlog, PassSignal.approved_changed)
-    ]
+    assert tracker.capability_probes == [(PassSignal.approved_changed,)]
 
 
 async def test_the_floor_over_a_refusing_credential_boots_and_probes_nothing(

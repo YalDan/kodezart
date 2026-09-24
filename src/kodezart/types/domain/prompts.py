@@ -43,6 +43,11 @@ class PromptKey(StrEnum):
     PR_DESCRIPTION = "pr_description"
     FIRE_PREP_PASS = "fire_prep_pass"
     GROOMING_PASS = "grooming_pass"
+    #: The question a scheduled pass asks before it opens its session: did
+    #: anything move in its window that the pass should act on.  One short
+    #: session with the tracker tools, answered in a structured shape; the
+    #: pass runs on a yes and on any answer it cannot read.
+    PASS_GATE = "pass_gate"
     CONTENT_AUDIT = "content_audit"
     ORGANIZE_ASSESS = "organize_assess"
     ORGANIZE_AUTHOR = "organize_author"
