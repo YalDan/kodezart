@@ -360,7 +360,7 @@ async def test_actual_main_lifespan_registers_and_executes_audit(
         ManagedFakeLinearMcpServer,
     )
     from tests.prompts.test_organize_mandate_bindings import declared_operation
-    from tests.services.test_prompt_passes import _config
+    from tests.services.test_prompt_passes import HOST_MCP_ALLOWED, _config
 
     _, _, server, _, _ = dependencies()
     fields = declared_operation().model_dump()
@@ -392,6 +392,7 @@ async def test_actual_main_lifespan_registers_and_executes_audit(
         if configuration == "missing_policy"
         else {"max_verify_rounds": 2},
         organize={"max_admission_rounds": 2, "max_convergence_rounds": 2},
+        agent=HOST_MCP_ALLOWED,
         github_token=SecretStr("fixture-audit-token").get_secret_value(),
         ticket_review_mode="reviewed",
         fire_prep_pass_gate_signals=[],

@@ -110,7 +110,9 @@ export KODEZART_AGENT__DANGEROUSLY_ALLOW_HOST_MCP=true
 The last line is what lets the organize stage's sessions reach the tracker:
 each phase is one agent session that works the board with the tracker tools
 the host attaches, under the host's own stored login, and with the flag off it
-has no tracker tools at all. Read what the flag opens in
+has no tracker tools at all, so boot refuses with
+`OrganizeTrackerCapabilityError` rather than open sessions that cannot touch
+the board. Read what the flag opens in
 [`docs/configuration.md`](configuration.md) before setting it.
 
 Leave `KODEZART_CHECKPOINT_URL` unset. Setting it builds a checkpointer, and
@@ -237,6 +239,7 @@ names the member and what it stops.
 | `marker_prefixes.claim`, `marker_prefixes.work_ref`, `marker_prefixes.issue_identity`, `marker_prefixes.run_state`, `marker_prefixes.run_event`, `marker_prefixes.amendment`, `marker_prefixes.ruling`, `marker_prefixes.escalation`, `marker_prefixes.decision`, `marker_prefixes.run_alarm`, and with the audit pass configured `marker_prefixes.audit` and `marker_prefixes.repository` | boot, before the scheduler starts: every key a pass this deployment schedules can ask for is checked, and every missing one is named at once | `OperationMemberAbsentError` |
 | `workflow_states.done` | loading the file once the table is declared; with no table, the first cross-off, after a session and a commit | `OperationConfigError`, `TrackerProtocolError` |
 | `write_back.max_verify_rounds` | boot, before the scheduler starts, as the write_back section a configured organize owner requires | `OperationMemberAbsentError` |
+| `KODEZART_AGENT__DANGEROUSLY_ALLOW_HOST_MCP` | boot, before the scheduler starts, on a deployment that declares `[[organize_scopes]]`: off, the organize session cannot reach the tracker | `OrganizeTrackerCapabilityError` |
 | the declared repository | matching the request's origin, before the first read | `ScopeReadError` |
 | the forge token | selecting a delivery reader for the origin | `ScopedExecutionUnavailableError` |
 | the criterion's team | taking a refuted criterion back | `CriterionReadError` |

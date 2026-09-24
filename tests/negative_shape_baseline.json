@@ -277,7 +277,7 @@
   "tests/integration/test_one_scope_roster.py": 10,
   "tests/integration/test_organize_authority.py": 31,
   "tests/integration/test_organize_disjointness.py": 35,
-  "tests/integration/test_organize_scheduler.py": 38,
+  "tests/integration/test_organize_scheduler.py": 48,
   "tests/integration/test_organize_tick_halt.py": 7,
   "tests/integration/test_pr_footer_gating.py": 10,
   "tests/integration/test_private_reference_writes.py": 39,
@@ -4139,7 +4139,10 @@
    "test_the_same_operation_without_organize_scopes_keeps_the_per_issue_passes",
    "test_preflight_asks_exactly_the_scans_the_wired_passes_gate",
    "test_a_missing_fold_aborts_the_preflight_before_anything_is_probed",
-   "test_a_scope_deployment_whose_credential_cannot_list_issues_is_refused"
+   "test_a_scope_deployment_whose_credential_cannot_list_issues_is_refused",
+   "test_an_organize_table_the_session_cannot_work_refuses_at_boot",
+   "test_the_same_organize_table_boots_with_the_flag_on",
+   "test_a_deployment_that_schedules_no_organize_session_boots_with_the_flag_off"
   ],
   "tests/integration/test_organize_tick_halt.py": [
    "test_halted_first_binding_does_not_starve_second_binding"

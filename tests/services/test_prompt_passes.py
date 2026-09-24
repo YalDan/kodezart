@@ -258,10 +258,15 @@ ORGANIZE_BOUNDS: dict[str, object] = {
     "max_convergence_rounds": 2,
 }
 
+#: The host-MCP opt-in, switched on. It is the organize session's only way to
+#: the tracker's tools, so boot refuses a deployment that declares organize
+#: scopes over a dialled tracker without it; every such deployment here sets it.
+HOST_MCP_ALLOWED: dict[str, object] = {"dangerously_allow_host_mcp": True}
+
 #: The deployment half of a standing-scope operation: the owner bounds both
-#: passes require, the organize tick's own cadence, and no gate on either
-#: prompt pass, so what the schedule holds is decided by the declared rows
-#: alone.
+#: passes require, the organize tick's own cadence, the organize session's way
+#: to the tracker, and no gate on either prompt pass, so what the schedule
+#: holds is decided by the declared rows alone.
 STANDING_SCOPE_SETTINGS: dict[str, object] = {
     "organize": {
         **ORGANIZE_BOUNDS,
@@ -269,6 +274,7 @@ STANDING_SCOPE_SETTINGS: dict[str, object] = {
         "timeout_seconds": ORGANIZE_TIMEOUT,
     },
     "write_back": {"max_verify_rounds": 2},
+    "agent": HOST_MCP_ALLOWED,
     "fire_prep_pass_gate_signals": [],
     "grooming_pass_gate_signals": [],
 }
@@ -969,6 +975,7 @@ async def test_a_prefix_only_an_unwired_pass_asks_for_does_not_refuse_the_boot(
         runner=FakeAgentRunner(events=[]),
         operation=operation,
         organize=STANDING_SCOPE_SETTINGS["organize"],
+        agent=HOST_MCP_ALLOWED,
         write_back=STANDING_SCOPE_SETTINGS["write_back"],
         fire_prep_pass_gate_signals=[],
         grooming_pass_gate_signals=[],
@@ -1037,6 +1044,7 @@ async def test_the_organize_tick_is_not_scheduled_without_its_own_interval(
             runner=FakeAgentRunner(events=[]),
             operation=standing_scope_operation(),
             organize=ORGANIZE_BOUNDS,
+            agent=HOST_MCP_ALLOWED,
             write_back=STANDING_SCOPE_SETTINGS["write_back"],
             fire_prep_pass_gate_signals=[],
             grooming_pass_gate_signals=[],
@@ -1068,6 +1076,7 @@ async def test_with_only_the_organize_interval_set_the_tick_alone_runs_at_it(
         runner=FakeAgentRunner(events=[]),
         operation=standing_scope_operation(),
         organize=STANDING_SCOPE_SETTINGS["organize"],
+        agent=HOST_MCP_ALLOWED,
         write_back=STANDING_SCOPE_SETTINGS["write_back"],
         fire_prep_pass_gate_signals=[],
         grooming_pass_gate_signals=[],
@@ -1148,6 +1157,7 @@ async def test_with_no_cadence_set_a_scope_deployment_schedules_nothing(
             runner=FakeAgentRunner(events=[]),
             operation=standing_scope_operation(),
             organize=ORGANIZE_BOUNDS,
+            agent=HOST_MCP_ALLOWED,
             write_back=STANDING_SCOPE_SETTINGS["write_back"],
             fire_prep_pass_gate_signals=[],
             grooming_pass_gate_signals=[],

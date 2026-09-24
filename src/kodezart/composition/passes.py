@@ -16,6 +16,7 @@ from kodezart.composition.organize import (
     build_organize_tick,
     build_scope_heartbeat,
     verify_organize_configuration,
+    verify_organize_session_tools,
 )
 from kodezart.composition.records import RECORD_KIND_BY_PASS, run_report
 from kodezart.composition.supervisor import build_supervisor_pass
@@ -925,7 +926,7 @@ async def verify_pass_preflight(
 ) -> None:
     """Every boot refusal the scheduled passes can raise, before anything runs.
 
-    All of these refusals are decided by CONFIGURATION plus one tracker round
+    Every refusal here is decided by CONFIGURATION plus one tracker round
     trip, and none of them needs a queue, an executor or a workflow engine.
     Among them the marker prefixes: every purpose a pass that will wire can
     ask for must be declared, and a boot lacking any is refused naming all
@@ -940,8 +941,8 @@ async def verify_pass_preflight(
     one call the root makes BEFORE it builds anything is what makes a
     refusal cost nothing but the boot it refuses.
 
-    The order is the cost order: the two configuration answers are already
-    in hand, the gate probe is a round trip, and the renders are local.
+    The order is the cost order: the configuration answers are already in
+    hand, the gate probe is a round trip, and the renders are local.
 
     The render half applies to exactly the passes that will WIRE.  An
     operation with no roster, and one that declares ``organize_scopes``,
@@ -954,6 +955,7 @@ async def verify_pass_preflight(
     # configuration must not reach a scheduler. Its answer is read nowhere
     # here, because which templates render is decided by the wiring predicate.
     verify_organize_configuration(config=config, operation=operation, tracker=tracker)
+    verify_organize_session_tools(config=config, operation=operation, tracker=tracker)
     # Before the audit check, which refuses its own three prefixes one at a
     # time: here a missing audit prefix is named beside every other one.
     _verify_marker_prefixes(

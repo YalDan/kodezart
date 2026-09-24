@@ -3,13 +3,20 @@
 import pytest
 import structlog.testing
 
+from kodezart.composition.organize import (
+    HOST_MCP_SETTING,
+    verify_organize_session_tools,
+)
 from kodezart.composition.passes import (
     ORGANIZE_TICK_NAME,
     build_dispatch_runtime,
     verify_pass_preflight,
 )
 from kodezart.composition.tracker import DialledTracker
-from kodezart.core.errors import PassGateCapabilityError
+from kodezart.core.errors import (
+    OrganizeTrackerCapabilityError,
+    PassGateCapabilityError,
+)
 from kodezart.core.logging import get_logger
 from kodezart.core.prompt_namespaces import operation_bindings
 from kodezart.domain import run_alarm_table
@@ -24,6 +31,7 @@ from kodezart.types.domain.run_alarm import AlarmSignal
 from tests.chains.test_organize import RecordingWorkspace
 from tests.chains.test_organize import result as organize_result
 from tests.chains.test_organize_owner import BoardExecutor
+from tests.docs.configuration import shipped_config_variables
 from tests.fakes import (
     FIXTURE_EPOCH,
     SUPPRESS_ALL_SKILLS,
@@ -45,6 +53,7 @@ from tests.prompts.test_prompt_wiring import load_registry
 from tests.services.test_prompt_passes import (
     GROOMING_INTERVAL,
     HEARTBEAT_PASS,
+    HOST_MCP_ALLOWED,
     ORGANIZE_INTERVAL,
     ORGANIZE_TIMEOUT,
     _config,
@@ -104,6 +113,7 @@ def dependencies(tmp_path):
             "timeout_seconds": ORGANIZE_TIMEOUT,
         },
         write_back={"max_verify_rounds": 2},
+        agent=HOST_MCP_ALLOWED,
         fire_prep_pass_gate_signals=[],
         grooming_pass_gate_signals=[],
         ticket_review_mode="reviewed",
@@ -452,6 +462,7 @@ async def test_preflight_asks_exactly_the_scans_the_wired_passes_gate(tmp_path):
         tmp_path,
         organize={"max_admission_rounds": 2, "max_convergence_rounds": 2},
         write_back={"max_verify_rounds": 2},
+        agent=HOST_MCP_ALLOWED,
         fire_prep_pass_gate_signals=[PassSignal.reviews_changed],
         grooming_pass_gate_signals=[],
         dispatch_pass_gate_signals=[PassSignal.approved_changed],
@@ -549,6 +560,7 @@ async def test_a_scope_deployment_whose_credential_cannot_list_issues_is_refused
         tmp_path,
         organize={"max_admission_rounds": 2, "max_convergence_rounds": 2},
         write_back={"max_verify_rounds": 2},
+        agent=HOST_MCP_ALLOWED,
         ticket_review_mode="reviewed",
     )
     tracker = FakeTrackerPort(
@@ -572,3 +584,120 @@ async def test_a_scope_deployment_whose_credential_cannot_list_issues_is_refused
     # One probe for every wired gate; the listing is in it once.
     (probe,) = tracker.capability_probes
     assert probe.count(PassSignal.issues_changed) == 1
+    # One probe for every wired gate; the listing is in it once.
+    (probe,) = tracker.capability_probes
+    assert probe.count(PassSignal.issues_changed) == 1
+
+
+# ---------------------------------------------------------------------------
+# The organize session reaches the tracker only through the host's own MCP
+# servers, so boot refuses a scope deployment that would leave it without them.
+# ---------------------------------------------------------------------------
+
+
+def _scope_deployment(tmp_path, **agent):
+    """The scope deployment the preflight cases above boot, with *agent* set."""
+    _, operation, _board, _tracker, prompts, _ledger = dependencies(tmp_path)
+    config = _config(
+        tmp_path,
+        organize={"max_admission_rounds": 2, "max_convergence_rounds": 2},
+        write_back={"max_verify_rounds": 2},
+        agent=agent,
+        ticket_review_mode="reviewed",
+    )
+    return config, operation, prompts
+
+
+async def test_an_organize_table_the_session_cannot_work_refuses_at_boot(tmp_path):
+    """Flag off: every phase would open a session with no tracker tools at all.
+
+    Each organize phase is one agent session that works the board with the
+    tracker tools the host attaches, and this process describes none. With the
+    host-MCP opt-in off, the session could not read the scope or label a
+    member, and each phase would halt incomplete once per tick at a session's
+    cost. Boot refuses instead, naming the setting an operator changes and
+    what stops without it, before the tracker is asked anything.
+    """
+    config, operation, _prompts = _scope_deployment(tmp_path)
+    tracker = FakeTrackerPort()
+    assert config.agent.dangerously_allow_host_mcp is False
+    assert operation.organize_mandates
+
+    with pytest.raises(OrganizeTrackerCapabilityError) as caught:
+        await verify_pass_preflight(
+            config=config,
+            operation=operation,
+            tracker=tracker,
+            github_api=FakeDeliveryProbe(),
+            prompts=_RefusingPrompts(),
+        )
+
+    assert caught.value.setting == HOST_MCP_SETTING
+    assert HOST_MCP_SETTING in shipped_config_variables()
+    assert "the organize session cannot reach the tracker" in caught.value.stops
+    assert str(caught.value).startswith(f"{HOST_MCP_SETTING} is off;")
+    assert tracker.capability_probes == []
+
+
+async def test_the_same_organize_table_boots_with_the_flag_on(tmp_path):
+    """Flag on: the same deployment passes the preflight and is probed.
+
+    Non-vacuity for the refusal above: nothing about the operation changed,
+    only the setting the refusal names, and the preflight runs on to the one
+    probe every wired gate is asked in.
+    """
+    config, operation, prompts = _scope_deployment(tmp_path, **HOST_MCP_ALLOWED)
+    tracker = FakeTrackerPort()
+
+    await verify_pass_preflight(
+        config=config,
+        operation=operation,
+        tracker=tracker,
+        github_api=FakeDeliveryProbe(),
+        prompts=prompts,
+    )
+
+    (probe,) = tracker.capability_probes
+    assert probe.count(PassSignal.issues_changed) == 1
+
+
+@pytest.mark.parametrize(
+    "tables",
+    [
+        {"organize_scopes": [], "organize_mandates": []},
+        {"organize_scopes": []},
+    ],
+    ids=["no mandates", "mandates and no scope"],
+)
+async def test_a_deployment_that_schedules_no_organize_session_boots_with_the_flag_off(
+    tmp_path, tables
+):
+    """No organize scope declared: nothing organizes on a tick, nothing is asked.
+
+    The check is asked on the predicate the organize tick and the heartbeat are
+    wired on. An operation that declares no organize table, and one that
+    declares the phases but no scope to run them over, schedule neither, so
+    the same flag that refuses the scope deployment above is not asked here:
+    the per-issue deployment boots as it did, over the same dialled tracker.
+    """
+    _, operation, _board, _tracker, prompts, _ledger = dependencies(tmp_path)
+    per_issue = OperationConfig.model_validate({**operation.model_dump(), **tables})
+    config = _config(
+        tmp_path,
+        fire_prep_pass_gate_signals=[],
+        grooming_pass_gate_signals=[],
+        ticket_review_mode="reviewed",
+    )
+    assert config.agent.dangerously_allow_host_mcp is False
+    assert not per_issue.organize_scopes
+
+    await verify_pass_preflight(
+        config=config,
+        operation=per_issue,
+        tracker=FakeTrackerPort(),
+        github_api=FakeDeliveryProbe(),
+        prompts=prompts,
+    )
+    verify_organize_session_tools(
+        config=config, operation=per_issue, tracker=FakeTrackerPort()
+    )

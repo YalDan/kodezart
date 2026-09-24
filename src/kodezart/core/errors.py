@@ -287,6 +287,24 @@ class PassKnowledgeCapabilityError(Exception):
         self.destinations: tuple[str, ...] = tuple(destinations)
 
 
+class OrganizeTrackerCapabilityError(Exception):
+    """Raised at boot when the organize session is wired with no way to the tracker.
+
+    The organize stage is one agent session per phase, and the session reads
+    and writes the board through the tracker tools the host attaches: this
+    process describes no tracker server for a session.  With the host-MCP
+    opt-in off, a session is given none, so every phase would open a session
+    that can neither read the scope nor label a member, and halt incomplete
+    once per phase per tick: an agent session spent on a report that nothing
+    moved.  The refusal names the setting and what stops without it.
+    """
+
+    def __init__(self, *, setting: str, stops: str) -> None:
+        super().__init__(f"{setting} is off; {stops}")
+        self.setting: str = setting
+        self.stops: str = stops
+
+
 class TrackerEnsureConflictError(Exception):
     """Raised when instating an OWNED value would ALTER an existing definition.
 

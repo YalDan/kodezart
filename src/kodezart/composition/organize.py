@@ -3,12 +3,14 @@ cascade owner, which stays constructible and is wired nowhere."""
 
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Final
 
 from kodezart.chains.organize import OrganizeAdmission
 from kodezart.chains.organize_author import OrganizeAuthor
 from kodezart.chains.scope_walker import read_scope_ready
 from kodezart.chains.write_back_verifier import FreshWriteBackJudge
 from kodezart.config.app import AppConfig
+from kodezart.core.errors import OrganizeTrackerCapabilityError
 from kodezart.core.protocols import (
     AgentRunner,
     GitService,
@@ -231,6 +233,49 @@ def verify_organize_configuration(
                 missing=missing, stops="configured Organize scheduling"
             )
     return True
+
+
+#: Where the host-MCP opt-in is read from, named in the refusal below because
+#: it is the one setting an operator has to change.
+HOST_MCP_SETTING: Final[str] = "KODEZART_AGENT__DANGEROUSLY_ALLOW_HOST_MCP"
+
+
+def verify_organize_session_tools(
+    *,
+    config: AppConfig,
+    operation: OperationConfig | None,
+    tracker: TrackerPort | None,
+) -> None:
+    """Refuse to boot when the scheduled organize sessions would hold no tracker tools.
+
+    Each organize phase is one agent session that reads and writes the board
+    through the tracker tools the host attaches, and this process describes
+    no tracker server for a session: those tools reach it only through the
+    host-MCP opt-in. With the opt-in off, every phase the tick opens, and
+    every scope run the heartbeat submits, would start a session that cannot
+    read the scope or label a member and halts stage-incomplete: once per
+    phase per tick, each at a whole session's cost.
+
+    Asked on the predicate the tick and the heartbeat are wired on, the one
+    :func:`verify_organize_configuration` answers. A deployment that declares
+    no organize scope schedules no organize session, and refusing its boot
+    would hold it hostage to a setting nothing it schedules reads.
+    """
+    if not verify_organize_configuration(
+        config=config, operation=operation, tracker=tracker
+    ):
+        return
+    if config.agent.dangerously_allow_host_mcp:
+        return
+    raise OrganizeTrackerCapabilityError(
+        setting=HOST_MCP_SETTING,
+        stops=(
+            "the organize stage is scheduled over the declared organize_scopes, "
+            "and the organize session cannot reach the tracker: it works the "
+            "board with the tracker tools the host attaches, and with this "
+            "setting off a session is given none"
+        ),
+    )
 
 
 def build_scope_heartbeat(
