@@ -68,14 +68,42 @@ def reads_the_field(node: ast.AST) -> bool:
     )
 
 
-def reading_functions(root: Path) -> frozenset[str]:
-    """The name of every function under *root* whose body reads the field."""
-    return frozenset(
-        node.name
-        for path in sorted(root.rglob("*.py"))
-        for node in ast.walk(ast.parse(path.read_text()))
-        if isinstance(node, FUNCTIONS) and reads_the_field(node)
+def calls_one_of(node: ast.AST, names: set[str]) -> bool:
+    """Whether *node*'s body calls, by its bare name, a function in *names*."""
+    return any(
+        isinstance(item, ast.Call)
+        and isinstance(item.func, ast.Name)
+        and item.func.id in names
+        for item in ast.walk(node)
     )
+
+
+def reading_functions(root: Path) -> frozenset[str]:
+    """The name of every function under *root* that reads the field.
+
+    A function whose body reads it, and a module-level function whose body
+    calls one of those by name, followed to its end: a query that answers
+    from a helper reading the field is as much a query over the associations
+    as the helper is. The lane entry's ``recorded_branches`` asks a helper for
+    each role, and ``recorded_lane`` asks ``recorded_branches``.
+    """
+    trees = [ast.parse(path.read_text()) for path in sorted(root.rglob("*.py"))]
+    found = {
+        node.name
+        for tree in trees
+        for node in ast.walk(tree)
+        if isinstance(node, FUNCTIONS) and reads_the_field(node)
+    }
+    queries = [
+        node for tree in trees for node in tree.body if isinstance(node, FUNCTIONS)
+    ]
+    while added := {
+        node.name
+        for node in queries
+        if node.name not in found and calls_one_of(node, found)
+    }:
+        found |= added
+    return frozenset(found)
 
 
 #: The functions in the package that read the associations off a record: the
@@ -165,7 +193,8 @@ def test_the_names_the_walk_keys_on_are_productions_own():
     assert ASSOCIATION_NAMES.isdisjoint(ATTACHMENT_NAMES)
     assert (SOURCE / ADAPTER).is_file()
     # The walk finds the queries the entry and record services ask, rather
-    # than this module naming them: both read the field in their own bodies.
+    # than this module naming them: the record's reads the field in its own
+    # body, the entry's through the helper it asks for each role.
     assert {associated_branches.__name__, recorded_branches.__name__} <= (
         READING_FUNCTIONS
     )
@@ -182,7 +211,8 @@ def test_no_module_that_reads_associations_names_an_attachment_read():
     assert readers and attachments
     assert ADAPTER in attachments
     # A module that reaches the associations only through a query is a
-    # reader: the lane entry service asks for the recorded branches.
+    # reader: the lane entry service asks for the recorded lane, whose query
+    # resolves the recorded branches.
     assert LANE_ENTRY_SERVICE in readers
     assert readers.isdisjoint(attachments), sorted(readers & attachments)
 
