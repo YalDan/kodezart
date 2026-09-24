@@ -42,7 +42,7 @@ that disagreed with the shape the live tracker answers in, and a key whose
 hourly request budget an earlier boot had already spent. One live probe
 measures both, and reads only:
 
-```bash
+```sh
 LINEAR_PROBE_PROJECT=<a project's UUID> \
 LINEAR_PROBE_ROOT_ISSUE=<the key of an issue in it with no parent> \
 LINEAR_PROBE_CRITERION_ISSUE=<the key of a sub-issue of that root> \
@@ -51,16 +51,15 @@ uv run pytest -m live tests/probes/test_live_linear_wire.py
 ```
 
 The credential is the one in the repository-root `.env`, the file every live
-probe measures against (`tests/probes/deployment.py`); the subjects are the four
-variables above, and without either the probe skips and names what is not set.
-Each tool call is made in the argument shape the adapter sends, and its answer is
-held to every wire model the adapter reads that tool with. The ledger printed at
-the end carries each call's latency and each model's verdict, and its last row is
-the key's remaining hourly request budget, read from the tracker API's rate-limit
-headers. That budget is 2,500 requests an hour per key and each MCP tool call
-costs about two (measured 2026-09-24, KOD-1237); a spent key answers every
-session with `401 invalid_token` until the hour resets, so read that row before
-booting rather than after.
+probe measures against (`tests/probes/deployment.py`); without it, or without
+the four subjects above, the probe skips and names what is not set. Each tool
+call is made in the argument shape the adapter sends, and its answer is held to
+every wire model the adapter reads that tool with. The ledger printed at the end
+carries each call's latency and each model's verdict, and its last row is the
+key's remaining hourly request budget, read from the tracker API's rate-limit
+headers: 2,500 requests an hour per key, about two per MCP tool call (measured
+2026-09-24). A spent key answers every session with `401 invalid_token` until
+the hour resets, so read that row before booting rather than after.
 
 ## What the first boot writes to your team
 
