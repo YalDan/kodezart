@@ -22,6 +22,14 @@ __all__ = ["repository"]
 async def test_archive_survives_commit_message_and_actual_commit_receipt(
     repository, monkeypatch, phase, delete
 ):
+    """A verified archive withdrawn at either boundary is refused before the push.
+
+    The lane's authority, the archive included, is read at the writer's start
+    and before the push, never before the commit (KOD-1249). An archive
+    withdrawn while the commit message is written is therefore found after
+    the harness commit, as one withdrawn after the commit receipt is: the
+    commit stays local and the branch is never published.
+    """
     port = tracker()
     reached = False
     committed = []
@@ -65,16 +73,12 @@ async def test_archive_survives_commit_message_and_actual_commit_receipt(
             assert not await git(
                 repository[0], "ls-remote", "origin", "refs/heads/native-test"
             )
-            assert bool(committed) is (phase == "commit_receipt")
-            if committed:
-                assert (
-                    await git(repository[0], "rev-parse", "native-test") == committed[0]
-                )
-            else:
-                assert (
-                    await git(repository[0], "log", "native-test", "--format=%s", "-1")
-                    == "newer writer starting point"
-                )
+            assert len(committed) == 1
+            assert await git(repository[0], "rev-parse", "native-test") == committed[0]
+            assert (
+                await git(repository[0], "log", "native-test", "--format=%s", "-1")
+                == "fix: implementation"
+            )
             assert workspace._workspaces, "failed native persistence retains evidence"
         else:
             events = await drive(service, guard, repository)
