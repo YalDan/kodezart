@@ -63,7 +63,10 @@ from kodezart.services.lane_lapse_escalation import LaneLapseEscalations
 from kodezart.services.lane_state_writer import TrackerLaneStateWriter
 from kodezart.services.mutation_survival import MutationSurvivalReader
 from kodezart.services.native_amendments import NativeAmendments
-from kodezart.services.scope_membership import read_scope_members
+from kodezart.services.scope_membership import (
+    read_scope_members,
+    read_subtree_criteria,
+)
 from kodezart.types.domain.accept import AcceptVerdict
 from kodezart.types.domain.agent import (
     BRANCH_NAME_SCHEMA,
@@ -1085,7 +1088,7 @@ async def subtree_outcome(source: TrackerCriteria) -> tuple[str, ...]:
     missing exception, and a case expecting a roster names the keys in it.
     """
     try:
-        roster = await source._read_subtree(SUBJECT)
+        roster = await read_subtree_criteria(tracker=source._tracker, subject=SUBJECT)
     except ScopeReadError as refusal:
         return ("refused", str(refusal))
     return ("admitted", *sorted(roster))
