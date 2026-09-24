@@ -796,8 +796,12 @@ async def test_the_criteria_author_cannot_write_the_parent_body(monkeypatch):
 
     The session answers with the parent's body stripped of its checklist,
     the one write that would take the items away from their adoption.  The
-    stage refuses it as another write surface before any description write,
-    so the parent's body is still the one the person wrote.
+    parent's description is not in the criteria round's declared set, so the
+    bound refuses the proposal before any description write and records it
+    on the parent as an ``undeclared_surface`` finding (KOD-558, KOD-560);
+    every round asks again and is refused again, and the convergence bound
+    halts the stage with that finding.  The parent's body is still the one
+    the person wrote, and the stage is not marked complete.
     """
     owner, board, executor = checklist_owner()
     stripped = CHECKLIST_BODY.replace(CHECKLIST, "")
@@ -820,10 +824,19 @@ async def test_the_criteria_author_cannot_write_the_parent_body(monkeypatch):
 
     monkeypatch.setattr(executor, "stream", a_body_instead)
 
-    with pytest.raises(OrganizeWriteRefusalError, match="another write surface"):
-        await run_owner(owner)
+    report = await run_owner(owner)
 
-    assert authors(executor) == 1
+    halt = report.halt
+    assert halt is not None
+    assert halt.cause == "convergence_exhausted"
+    assert [
+        (finding.issue_id, finding.defect_class)
+        for finding in halt.surviving_findings
+        if finding.defect_class == "undeclared_surface"
+    ] == [(CLAIMED_ISSUE, "undeclared_surface")]
+    # One author session per round, each refused before it wrote anything.
+    assert authors(executor) == halt.bound.rounds_used >= 1
+    assert "criteria complete" not in board.server.issues[CLAIMED_ISSUE].labels
     assert board.server.issues[CLAIMED_ISSUE].description == CHECKLIST_BODY
     assert [
         arguments
