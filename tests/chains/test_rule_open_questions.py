@@ -107,7 +107,6 @@ from tests.fakes import (
     FakeGitService,
     FakeRefPublisher,
     FakeRepoCache,
-    FakeScopeStatusWriter,
     FakeTrackerPort,
     FakeWorkspaceProvider,
     PassThroughGate,
@@ -1377,7 +1376,6 @@ async def test_the_question_step_the_composition_root_builds_reaches_no_mint(
         operation=native_operation(),
         scope_tracker=port,
         scope_registry=InMemoryJobRegistry(),
-        scope_status=FakeScopeStatusWriter(),
         config=AppConfig(
             write_back=WriteBackSettings(max_verify_rounds=2),
             ticket_review_mode=TicketReviewMode.REVIEWED,

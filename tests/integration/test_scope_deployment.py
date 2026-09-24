@@ -1,10 +1,4 @@
-"""The shipped scope operation file, walked and booted as an operator has it.
-
-`tests/integration/test_scope_runtime.py` is about what a walk does; this
-module is about whether the file a person copies can be walked at all. Every
-member the walk needs and the file lacks shows up here as a lane failure, which
-is how the file's contents are settled rather than guessed.
-"""
+"""The shipped scope operation file, read and booted as an operator has it."""
 
 import ast
 import asyncio
@@ -17,29 +11,17 @@ import pytest
 from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.chains.scope_walker import read_scope_ready
 from kodezart.composition.tracker import criteria_stage_label_key
-from kodezart.config.organize import OrganizeSettings
-from kodezart.domain.criterion_evidence import parse_criterion_evidence
-from kodezart.domain.errors import ScopeNotApprovedError, WorkspaceError
+from kodezart.domain.errors import ScopeNotApprovedError
 from kodezart.domain.run_alarm_record import MARKER_PURPOSE
 from kodezart.main import create_app, lifespan
 from kodezart.services.scope_approval import scope_approved
 from kodezart.services.tracker_boot import owned_mappings
 from kodezart.types.domain.branch import trunk_base
-from kodezart.types.domain.operation import LifecycleStage, ScopeLabel
+from kodezart.types.domain.operation import ScopeLabel
 from kodezart.types.domain.organize import OrganizeLabelNamespace, split_label_key
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.scope_runtime import ScopeWalkEvent
 from kodezart.types.domain.session import PermissionMode
-from kodezart.types.domain.tracker import WorkflowStateKind
-from tests.integration.test_scope_runtime import (
-    ORIGIN,
-    WalkRepos,
-    board,
-    bounded_walk,
-    lane_failures,
-    lane_record,
-    resumable,
-)
 from tests.prompts.test_prompt_wiring import load_registry
 from tests.prompts.test_set_completeness import shipped_sets
 from tests.services.test_prompt_passes import HEARTBEAT_PASS
@@ -59,65 +41,6 @@ SCOPE_EXAMPLE = Path(__file__).resolve().parents[2] / "docs" / "operation.scope.
 
 def shipped():
     return load_operation_config(SCOPE_EXAMPLE)
-
-
-async def test_the_shipped_scope_config_walks_one_lane_to_a_crossed_off_criterion():
-    """One lane, from the shipped file's own names, all the way to Done.
-
-    The board is labelled with the criteria-stage KEY the file's own mandate
-    table names and answers under the file's own marker prefixes, and both are
-    asserted below before the walk so neither is a constant this module chose.
-    What the key MAPS to is not exercised here — the port compares the key
-    itself — and that mapping is pinned through the real adapter by
-    `tests/tools/test_scratch_scope.py::test_the_shipped_scope_config_answers_each_adapter_point_of_need`.
-    A purpose the walk resolves and the file does not declare would be contained
-    at the lane boundary and named in `failed_lanes`, which is why that
-    assertion comes first — it is how this file's marker list was settled rather
-    than guessed.
-
-    Over the forge-less origin the module's other walks use, because the shared
-    forge double answers for one hardcoded address and pointing a shipped
-    example at that address would be a worse file. Nothing this case is about
-    is decided by the origin: the labels, the markers and the states are.
-    """
-    loaded = shipped()
-    repos = WalkRepos()
-    port = board(lanes=("A",), operation=loaded)
-    # What the board actually took from the file, rather than what the helper is
-    # believed to take: a board labelled with this module's own fallback key, or
-    # a port answering under some other operation's prefixes, would walk green
-    # and say nothing about the shipped file.
-    assert criteria_stage_label_key(loaded) in port.issues["A"].issue_labels
-    assert port.marker_prefixes == loaded.marker_prefixes
-    harness = resumable(
-        repos=repos,
-        port=port,
-        operation=loaded,
-        origin=ORIGIN,
-        # The file declares run stages, so the run's entry builds their owner
-        # and the owner needs its bounds. The lane already carries every stage
-        # marker, so each stage is complete on arrival and opens no session —
-        # what this case is about starts at the walk.
-        organize=OrganizeSettings(max_admission_rounds=2, max_convergence_rounds=2),
-    )
-    events = await bounded_walk(harness, origin=ORIGIN)
-    assert lane_failures(events) == ()
-    criterion = port.issues["A/check"]
-    assert criterion.state_kind is WorkflowStateKind.COMPLETED
-    assert criterion.state_name == LifecycleStage.DONE.value
-    # The cross-off carries the sha the lane's own branch stands at, read back
-    # through the codec rather than off the prose.
-    record = await lane_record(port, "A", operation=loaded)
-    assert parse_criterion_evidence(criterion.body).graded_sha == record.head_sha
-    # The record was written under the prefix the SHIPPED file declares, which
-    # is what a second process would go looking for.
-    assert record.branch
-    assert [
-        comment.body
-        for comment in port.comments
-        if comment.issue_key == "A"
-        and comment.body.startswith(f"[{loaded.marker_prefixes['run_state']}:")
-    ]
 
 
 def test_the_shipped_file_names_a_rubric_role_the_registry_resolves_for_every_row() -> (
@@ -415,13 +338,10 @@ async def test_a_scope_deployment_boots_from_the_shipped_files_and_fires_nothing
     approved the project yet, and it leaves the board untouched.
 
     Then the approval label is applied — by this test, standing for the person
-    whose act it is — and the same run is admitted: it passes the approval
-    question and reaches for the repository its organize stages author
-    against, which the file's example remote does not answer. What the
-    admitted run would take its first tick from is read here through the
-    deployment's own dialled adapter: the two root lanes ready with the third
-    held by its live blocker. Nothing here waits for a fire, and no session is
-    opened at all.
+    whose act it is — and the approval question says yes. The ready reading is
+    read here through the deployment's own dialled adapter: the two root
+    issues ready with the third held by its live blocker. No run is started
+    after the approval, and no session is opened at all.
     """
     loaded = shipped()
     project = scratch_project(loaded)
@@ -509,14 +429,9 @@ async def test_a_scope_deployment_boots_from_the_shipped_files_and_fires_nothing
 
         # The one human act, performed here because no agent may perform it.
         project["labels"].append(loaded.scope_labels["approved"])
-        # The label is what admits the run. The entry's own question now says
-        # yes, so the next thing the run asks for is the repository its
-        # organize stages author against — which this deployment's example
-        # remote does not answer, and which is as far as a case substituting
-        # nothing but the transport can drive it.
+        # The label is what admits the run: the entry's own question now says
+        # yes.
         assert await scope_approved(ref=scope, tracker=app.state.tracker)
-        with pytest.raises(WorkspaceError):
-            _ = await first_observation(app, loaded)
 
         # The reading the admitted run takes its first tick from, read through
         # this deployment's own dialled adapter: the two root lanes ready and

@@ -32,7 +32,6 @@ from kodezart.types.domain.operation import OperationConfig, OperationMemberAbse
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run_alarm import AlarmSignal
 from tests.chains.test_organize import RecordingWorkspace
-from tests.chains.test_organize import result as organize_result
 from tests.chains.test_organize_owner import BoardExecutor
 from tests.docs.configuration import shipped_config_variables
 from tests.fakes import (
@@ -45,11 +44,6 @@ from tests.fakes import (
     FakeTrackerPort,
     PassThroughGate,
 )
-from tests.integration.test_scope_entry import (
-    MARKER_LINE,
-    OWED_LINE,
-    is_organize_session,
-)
 from tests.prompts.test_organize_mandate_bindings import declared_operation
 from tests.prompts.test_prompt_wiring import load_registry
 from tests.services.test_prompt_passes import (
@@ -61,33 +55,6 @@ from tests.services.test_prompt_passes import (
 from tests.services.test_run_surface_lease import _Board
 from tests.tracker.conftest import CLAIMED_ISSUE
 from tests.tracker.test_linear_mcp_tracker import tracker_over
-
-
-class BoardSession(BoardExecutor):
-    """The board double's executor, answering the organize session too.
-
-    The organize session labels the members its prompt names through its
-    own tracker tools; here that is one label appended per named member on
-    the board the tracker reads. Every other session is the board double's.
-    """
-
-    async def stream(self, **kwargs):
-        if not is_organize_session(kwargs):
-            async for event in super().stream(**kwargs):
-                yield event
-            return
-        self.calls.append(kwargs)
-        marker = MARKER_LINE.search(kwargs["prompt"])[1]
-        for key in OWED_LINE.findall(kwargs["prompt"]):
-            labels = self.board.server.issues[key].labels
-            if marker not in labels:
-                labels.append(marker)
-        yield organize_result(structured_output=None, result="Labelled the member.")
-
-
-def organize_sessions(executor):
-    """The organize sessions among the calls an executor double took."""
-    return [call for call in executor.calls if is_organize_session(call)]
 
 
 def dependencies(tmp_path):
@@ -188,7 +155,7 @@ async def _runtime_over(config, operation, board, tracker, prompts, ledger, *, f
             workspace=workspace,
             prompts=prompts,
             runner=AgentService(
-                executor=BoardSession(board),
+                executor=BoardExecutor(board),
                 workspace=workspace,
                 git_base_url="https://example.invalid",
             ),

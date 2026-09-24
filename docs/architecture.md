@@ -142,7 +142,6 @@ does not exist.
 | ScopeRosterReader | LinearMcpTracker | A scope's roster and each member's classification, which the scope tally reads twice to agree |
 | ScopeTallyReader | LinearMcpTracker | The roster the scope tally is counted over, behind the classification preflight: exactly what a scope's stage barrier is read from, with no event read and no write |
 | ScopeReadyReader | LinearMcpTracker | The scope plan plus the approval an entry asks for: what the scope walker and the dispatcher read |
-| ScopeWalkTracker | LinearMcpTracker | What the scope walk reads and the one write it makes, the put-back; it carries no claim, lease or in-progress mark |
 | FireSubjectReader | LinearMcpTracker | The admitted subject of a fire over the family it is measured against: the criteria stage's reads |
 | OrganizeAuthorReader | LinearMcpTracker | The criterion family and body digests the organize and authoring rounds read |
 | OrganizeContextTracker | LinearMcpTracker | The issues, milestones and records the organize context reader assembles from |

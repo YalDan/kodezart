@@ -26,7 +26,6 @@ from kodezart.types.domain.operation import (
     CheckPrerequisite,
     LifecycleStage,
     OperationConfig,
-    OperationMemberAbsentError,
     RepoEntry,
 )
 from kodezart.types.domain.session import PermissionMode, ToolPreset
@@ -39,7 +38,6 @@ from tests.fakes import (
     FakeBranchMerger,
     FakeRefPublisher,
     FakeRepoCache,
-    FakeScopeStatusWriter,
     PassThroughGate,
 )
 from tests.lane_fixture import ADDED_OWED, added_criterion, criteria_echo
@@ -62,7 +60,6 @@ async def make_runtime(
     *,
     configured=True,
     max_iterations=2,
-    no_operation=False,
     runner_environment=None,
 ):
     """The composed engine over one repository.
@@ -91,19 +88,16 @@ async def make_runtime(
     router = build_workflow_engine(
         config=AppConfig(
             # An unconfigured write-back is the deployment that composes no
-            # amendment owner. It used to be an absent operation; a scope
-            # tracker without one is now refused at construction (KOD-684),
-            # which is asserted on its own below.
+            # amendment owner.
             write_back=WriteBackSettings(max_verify_rounds=2) if configured else None,
             ticket_review_mode=TicketReviewMode.REVIEWED,
             max_iterations=max_iterations,
             retry_max_attempts=1,
             retry_initial_interval=0.1,
         ),
-        operation=None if no_operation else operation,
+        operation=operation,
         scope_tracker=port,
         scope_registry=InMemoryJobRegistry(),
-        scope_status=FakeScopeStatusWriter(),
         criteria=source,
         repositories=(
             RepoEntry(url=REPO_URL, trunk="main")
@@ -171,16 +165,6 @@ async def test_native_builder_retains_reports_and_requires_the_actual_owner(
         with pytest.raises(NativeWriteRefusalError, match="precommit amendment owner"):
             await run()
         assert executor.calls == []
-        # And a scope tracker with no operation at all composes nothing: the
-        # record every lane's entry reads has no configured marker to read it
-        # under, so the deployment is refused rather than running blind — as
-        # the typed absence refusal, naming the member and what it stops.
-        with pytest.raises(OperationMemberAbsentError) as absent:
-            await make_runtime(repository, executor, no_operation=True)
-        assert absent.value.missing == "marker prefixes for a lane run-state record"
-        assert absent.value.stops == (
-            "no lane's entry can be read and no lane can record its own state"
-        )
         return
     events = await run()
     reports = [event for event in events if isinstance(event, NativeAmendmentEvent)]

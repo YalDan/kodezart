@@ -1,8 +1,7 @@
-"""Construct the Organize owners: the session owner the stages run, and the older
-cascade owner, which stays constructible and is wired nowhere."""
+"""Construct the Organize cascade owner, which stays constructible and is wired
+nowhere, the checks on the declared organize configuration, and the heartbeat."""
 
 from collections.abc import Sequence
-from pathlib import Path
 from typing import Final
 
 from kodezart.chains.organize import OrganizeAdmission
@@ -21,13 +20,9 @@ from kodezart.core.protocols import (
     TrackerPort,
     WorkspaceProvider,
 )
-from kodezart.domain.organize import stage_rows
 from kodezart.services.organize_context import OrganizeContextReader
 from kodezart.services.organize_owner import OrganizeOwner
-from kodezart.services.organize_session_owner import OrganizeSessionOwner
-from kodezart.services.scope_entry import ScopeEntry
 from kodezart.services.scope_heartbeat import ScopeHeartbeat
-from kodezart.services.scope_organizer import ScopeOrganizer
 from kodezart.types.domain.operation import OperationConfig, OperationMemberAbsentError
 from kodezart.types.domain.organize import ResolvedMandateSpec
 from kodezart.types.domain.scope import ScopeRef
@@ -98,113 +93,6 @@ def build_organize_owner(
         write_back_max_rounds=config.write_back.max_verify_rounds,
         lease_seconds=config.tracker.surface_lease_seconds,
     )
-
-
-def build_organize_session_owner(
-    *,
-    config: AppConfig,
-    tracker: TrackerPort,
-    runner: AgentRunner,
-    prompts: PromptSetProvider,
-    skills: SkillsSelection,
-    phases: Sequence[ResolvedMandateSpec],
-) -> OrganizeSessionOwner:
-    """The owner the stages run: one session per open phase, one read after.
-
-    The session runs in the scheduled passes' own working directory, which
-    is deliberately no cloned repository: with the host MCP opt-in on, a
-    session standing in a cloned tree would load that tree's own MCP
-    configuration.
-    """
-    working_dir = Path(config.scheduled_pass_working_dir).expanduser()
-    working_dir.mkdir(parents=True, exist_ok=True)
-    return OrganizeSessionOwner(
-        members=tracker,
-        approvals=tracker,
-        runner=runner,
-        prompts=prompts,
-        skills=skills,
-        phases=phases,
-        tracker_server_name=config.tracker.server_name,
-        working_dir=str(working_dir),
-    )
-
-
-def build_scope_organizer(
-    *,
-    config: AppConfig,
-    operation: OperationConfig,
-    tracker: TrackerPort,
-    runner: AgentRunner,
-    workspace: WorkspaceProvider,
-    git: GitService,
-    prompts: PromptSetProvider,
-    skills: SkillsSelection,
-) -> ScopeOrganizer:
-    """One repository's organizer over the stages of an approved scope run.
-
-    Every row of the table runs under approval: the run's entry is the one
-    caller, and the approval label is what admits a scope to it. The session
-    owner hands its session no repository, so the organizer is the same for
-    every repository the operation declares; the organizer's own head read is
-    what still names one.
-    """
-    return ScopeOrganizer(
-        owner=build_organize_session_owner(
-            config=config,
-            tracker=tracker,
-            runner=runner,
-            prompts=prompts,
-            skills=skills,
-            phases=stage_rows(
-                operation.resolve_organize_mandates(), under_approval=True
-            ),
-        ),
-        git=git,
-        workspace=workspace,
-        remote=config.git.remote,
-    )
-
-
-def build_scope_entry(
-    *,
-    config: AppConfig,
-    operation: OperationConfig,
-    tracker: TrackerPort,
-    runner: AgentRunner,
-    workspace: WorkspaceProvider,
-    git: GitService,
-    prompts: PromptSetProvider,
-    skills: SkillsSelection,
-    registry: JobRegistry,
-) -> ScopeEntry:
-    """What a scope run passes through before its first tick.
-
-    A fresh organizer per call and no cache, so the steady-state path and
-    the path a restarted process takes are one path. An operation that
-    declares no organize table has no stage to run: the walk starts, and
-    every lane's own fire read refuses on the criteria-stage label the
-    table would have named.
-
-    *registry* is the record store this run's liveness refusal reads, which
-    is the one the queue writes into.
-    """
-
-    def stages_for(_url: str) -> ScopeOrganizer | None:
-        if not operation.organize_mandates:
-            return None
-        return build_scope_organizer(
-            config=config,
-            operation=operation,
-            tracker=tracker,
-            runner=runner,
-            workspace=workspace,
-            git=git,
-            prompts=prompts,
-            skills=skills,
-        )
-
-    return ScopeEntry(approvals=tracker, stages_for=stages_for, registry=registry)
 
 
 def verify_organize_configuration(

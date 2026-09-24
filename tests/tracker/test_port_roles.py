@@ -60,18 +60,16 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
-from typing_extensions import get_protocol_members, is_protocol
+from typing_extensions import is_protocol
 
 from kodezart.adapters.linear.tracker import LinearMcpTracker
 from kodezart.core.protocols import (
     ScopeStatusReader,
     ScopeStatusUpdates,
     ScopeStatusWriter,
-    ScopeWalkTracker,
     TrackerPort,
 )
 from kodezart.types.domain.tracker import TrackerIssue
-from tests.chains.test_write_back_adoption import ROLES, write_methods
 from tests.domain.test_criterion_cross_off import source_tree
 from tests.fakes import FakeTrackerPort
 from tests.tracker.role_register import (
@@ -809,17 +807,6 @@ def test_every_role_a_module_takes_is_called_or_handed_on():
     assert uncredited_roles(source_tree()) == {}
 
 
-def test_the_walks_role_carries_one_write_the_put_back():
-    """The scope walk claims nothing and leases nothing (KOD-788).
-
-    The one write its role carries is the put-back of a state it read, and
-    the write surface is the one the write-back adoption guard derives.
-    """
-    carried = frozenset(get_protocol_members(ScopeWalkTracker))
-
-    assert carried & write_methods(ROLES) == {"restore_workflow_state"}
-
-
 def test_no_role_dependency_outside_the_allowlist_is_defaulted():
     assert defaulted_role_parameters(source_tree()) == {}
 
@@ -846,7 +833,7 @@ def test_every_unwired_role_is_a_role_a_module_outside_the_run_takes():
     } & roles(text)
 
     assert UNWIRED_CONSUMER_ROLES <= taken
-    assert "services/scope_runtime.py" in first_party_closure(sources)
+    assert "services/scope_entry.py" in first_party_closure(sources)
 
 
 #: One planted consumer per clause, each naming a role the way a module

@@ -1527,7 +1527,6 @@ GAP_COMPUTATION_MODULES = frozenset(
         "composition/engine.py",
         "composition/organize.py",
         "composition/passes.py",
-        "composition/scope_runtime.py",
         "composition/supervisor.py",
         "domain/gap.py",
         "domain/issue_tree.py",
@@ -1545,11 +1544,9 @@ GAP_COMPUTATION_MODULES = frozenset(
         "services/escalation_signals.py",
         "services/mandate_graph.py",
         "services/organize_owner.py",
-        "services/organize_session_owner.py",
         "services/run_alarm_recorder.py",
         "services/run_shape.py",
         "services/scope_dispatcher.py",
-        "services/scope_runtime.py",
         "services/scope_tally.py",
         "services/supervisor_pass.py",
     }
@@ -3028,9 +3025,6 @@ CALL_SITES_NOT_RUN = {
     ("domain/stream_signals.py", "lapse_undischarged"): "Folds alarm "
     "readings, a workflow kind among them, and takes no tracker record, so no "
     "record's change stamp reaches it for the trap to hold.",
-    ("composition/organize.py", "build_scope_organizer"): "The composition "
-    "root: it reads stage_rows over the configured mandates while it wires the "
-    "organizer, and needs the whole application configuration and its ports.",
     ("services/mandate_graph.py", "observe_ruling_growth"): "Async; reads "
     "criteria and ruling projections through the tracker port.",
     ("services/organize_owner.py", "OrganizeOwner._author_write"): "Async; a "
@@ -3047,9 +3041,6 @@ CALL_SITES_NOT_RUN = {
     "of the organize service, routing through its ports.",
     ("services/organize_owner.py", "OrganizeOwner.run"): "Async; the organize "
     "service's whole pass over its tracker, agent and gate ports.",
-    ("services/organize_session_owner.py", "OrganizeSessionOwner.run"): "Async; "
-    "the session owner's whole pass: the gate and the scope through the "
-    "tracker port, one session through the agent runner per open phase.",
     ("services/audit_terminal.py", "AuditTerminalReader.observe"): "Async; a "
     "method of the audit terminal reader, reading the issue and its criterion "
     "family through the tracker port and the branch and pull request through "
@@ -3081,7 +3072,7 @@ def test_every_call_site_the_fixtures_can_run_is_run_under_the_trap():
     already runs is either a case of ``call_site_cases`` —
     ``SubtreeClosure._walk`` and ``SubtreeClosure.scope_gap`` — or named in
     ``CALL_SITES_NOT_RUN`` with why: the criteria reader's ``_finished``,
-    ``OrganizeAdmission.is_live``, ``build_scope_organizer``,
+    ``OrganizeAdmission.is_live``,
     ``observe_ruling_growth``, the organize service's ``_author_write`` and
     the ``apply`` nested in it, ``_converge``, ``_proof_live``, ``_roster``,
     ``_route`` and ``run``, ``read_barren_tick``, ``observe_scope_tally`` and

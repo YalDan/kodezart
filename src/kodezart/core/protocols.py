@@ -1661,16 +1661,6 @@ class ScopeReadyReader(
 
 
 @runtime_checkable
-class ScopeWalkTracker(ScopeReadyReader, StateRestorer, Protocol):
-    """What a scope walk reads, and the one write it makes: the put-back.
-
-    No claim, no lease and no in-progress mark: a walk records nothing
-    about being under way, and this role carries nothing that could
-    (KOD-788).
-    """
-
-
-@runtime_checkable
 class FireSubjectReader(ScopeMemberReader, Protocol):
     """The admitted subject of a fire, over the family it is measured against."""
 

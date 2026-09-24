@@ -14,7 +14,6 @@ AND through the in-process double, so neither implementation can answer
 "nothing left" alone.
 """
 
-import asyncio
 from collections.abc import Mapping, Sequence
 
 import pytest
@@ -26,7 +25,6 @@ from kodezart.core.backoff import RetryPolicy
 from kodezart.core.protocols import TrackerPort
 from kodezart.domain.errors import ScopeReadError
 from kodezart.domain.issue_tree import SubtreeClosure
-from kodezart.handlers.agent_handler import _queued_event_payload
 from kodezart.types.domain.dispatch import SelfWriteLedger
 from kodezart.types.domain.operation import LifecycleStage, ScopeLabel
 from kodezart.types.domain.scope import ScopeContainer, ScopeKind, ScopeRef
@@ -34,7 +32,6 @@ from kodezart.types.domain.scope_ready import (
     UnreachableCriterion,
     UnreachableReason,
 )
-from kodezart.types.domain.scope_runtime import ScopeWalkEvent
 from kodezart.types.domain.tracker import (
     IssuePriority,
     IssueRelation,
@@ -43,7 +40,6 @@ from kodezart.types.domain.tracker import (
     WorkflowStateKind,
 )
 from tests.fakes import FakeLinearMcpServer, FakeTrackerPort, make_tracker_issue
-from tests.integration import test_scope_runtime as walk
 from tests.tracker.conftest import FIXTURE_NOW
 from tests.tracker.marker_config import MARKER_PREFIXES
 from tests.tracker.test_scope_reads import ScopeMcpIssue
@@ -768,129 +764,3 @@ def test_the_unreachable_criteria_are_the_unresolved_ones_the_members_omit() -> 
             issue_key="OUT-OF-BLOCKED-CHECK", reason=UnreachableReason.NO_PROJECT
         ),
     )
-
-
-# ---------------------------------------------------------------------------
-# The wired walk carries the naming on every observation it emits (KOD-875).
-# ---------------------------------------------------------------------------
-
-
-def _deliverable_rows(port: FakeTrackerPort, *, project: str | None) -> None:
-    """A deliverable under lane A, outside the walk board's own filter or in it.
-
-    It carries the lane's own run-stage markers, so the subtree read the walk
-    takes of the lane passes the named stage barriers, and one open criterion
-    of its own, which is the obligation the lane owes and the scope cannot
-    address.
-    """
-    lane = port.issues["A"]
-    port.issues["A-deliverable"] = make_tracker_issue(
-        "A-deliverable",
-        parent_key="A",
-        project_id=project,
-        issue_labels=lane.issue_labels,
-        body="the deliverable lane A parents\n",
-    )
-    port.issues["A-deliverable/check"] = make_tracker_issue(
-        "A-deliverable/check",
-        parent_key="A-deliverable",
-        project_id=project,
-        issue_labels=frozenset({"criterion"}),
-        body="**Check:** A-deliverable/check live Check  bytes\n**Evidence:** —",
-    )
-
-
-@pytest.mark.parametrize(
-    ("placement", "project", "named", "wire"),
-    [
-        (
-            "other-project",
-            "reach-elsewhere",
-            (
-                UnreachableCriterion(
-                    issue_key="A-deliverable/check",
-                    reason=UnreachableReason.OTHER_PROJECT,
-                    container="reach-elsewhere",
-                ),
-            ),
-            [
-                {
-                    "issueKey": "A-deliverable/check",
-                    "reason": "other_project",
-                    "container": "reach-elsewhere",
-                }
-            ],
-        ),
-        (
-            "no-project",
-            None,
-            (
-                UnreachableCriterion(
-                    issue_key="A-deliverable/check",
-                    reason=UnreachableReason.NO_PROJECT,
-                ),
-            ),
-            [{"issueKey": "A-deliverable/check", "reason": "no_project"}],
-        ),
-        ("inside", "reach-elsewhere", (), []),
-    ],
-)
-async def test_the_walk_observes_the_criterion_its_filter_cannot_reach(
-    placement: str,
-    project: str | None,
-    named: tuple[UnreachableCriterion, ...],
-    wire: list[dict[str, str]],
-) -> None:
-    """The composed walk copies the read's naming onto the event it emits.
-
-    The same board three ways: the deliverable in another project, in no
-    project, and carried by the scope's own membership. The two out-of-filter
-    placements are named on the observation and reach a consumer through the
-    shipped egress under the reason the filter answered with; the in-filter one
-    names nothing and walks the child as a lane of its own.
-    """
-    port = walk.board(lanes=("A",))
-    # The lane's own criterion is graded, so what it still owes is the
-    # deliverable's criterion and nothing else.
-    port.issues["A/check"] = port.issues["A/check"].model_copy(
-        update={"state_name": "Done", "state_kind": WorkflowStateKind.COMPLETED}
-    )
-    _deliverable_rows(port, project=project)
-    if placement == "inside":
-        port.scope_memberships[walk.SCOPE] = ("A", "A-deliverable")
-
-    # An out-of-filter placement is read on to the tick after lane A's fire,
-    # so the naming is seen carried past the walk's first observation.
-    wanted = 1 if placement == "inside" else 2
-    stream = walk.drive(walk.runtime(port=port))
-    observed: list[ScopeWalkEvent] = []
-    async with asyncio.timeout(walk.WALK_BOUND_SECONDS):
-        async for emitted in stream:
-            if isinstance(emitted, ScopeWalkEvent):
-                observed.append(emitted)
-                if len(observed) == wanted:
-                    break
-    await stream.aclose()
-    assert len(observed) == wanted, "a walk that stopped early states nothing here"
-    event = observed[0]
-    observation = event.observation
-
-    assert observation.tick == 1
-    # The deliverable took the lane's approval, so the naming is the one
-    # reading that separates the placements.
-    assert observation.unapproved_lanes == ()
-    assert observation.unreachable_criteria == named
-    payload = _queued_event_payload(event)
-    assert payload["observation"]["unreachableCriteria"] == wire
-    assert ScopeWalkEvent.model_validate(payload) == event
-    if placement == "inside":
-        assert "A-deliverable" in observation.ready
-    else:
-        assert observation.ready == ("A",)
-        # The deliverable's criterion is neither a member nor on A's own
-        # evaluation set, so A's fire leaves it open and the next tick names
-        # it again.
-        after_the_fire = observed[1].observation
-        assert after_the_fire.tick == 2
-        assert after_the_fire.dispatched == ("A",)
-        assert after_the_fire.unreachable_criteria == named

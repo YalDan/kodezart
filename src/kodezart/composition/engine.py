@@ -5,6 +5,7 @@ than defines.
 """
 
 from collections.abc import AsyncIterator, Sequence
+from pathlib import Path
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
 
@@ -21,10 +22,8 @@ from kodezart.chains.fire_specification import FireSpecification
 from kodezart.chains.ralph_loop import RalphLoop
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.chains.remediation import RemediationChain
+from kodezart.chains.scope_stages import ScopeStages
 from kodezart.chains.ticket_generation import TicketGenerationLoop
-from kodezart.composition.delivery import build_native_lane_workflow
-from kodezart.composition.organize import build_scope_entry
-from kodezart.composition.scope_runtime import build_scope_runtime
 from kodezart.config.app import AppConfig
 from kodezart.config.write_back import WriteBackSettings
 from kodezart.core.errors import RateLimitedSoftFailureError
@@ -35,12 +34,10 @@ from kodezart.core.protocols import (
     FireCriteriaSource,
     GitService,
     JobRegistry,
-    NodeSessionRecorder,
     OutboundContentGate,
     PromptSetProvider,
     RefPublisher,
     RepoCache,
-    ScopeStatusUpdates,
     TrackerPort,
     WorkflowEngine,
     WorkspaceProvider,
@@ -54,11 +51,11 @@ from kodezart.services.lane_lapse_escalation import LaneLapseEscalations
 from kodezart.services.lane_state_writer import TrackerLaneStateWriter
 from kodezart.services.mutation_survival import MutationSurvivalReader
 from kodezart.services.native_amendments import NativeAmendments
+from kodezart.services.scope_entry import ScopeEntry
 from kodezart.types.domain.agent import AgentEvent
 from kodezart.types.domain.branch import BaseSpec
 from kodezart.types.domain.operation import (
     OperationConfig,
-    OperationMemberAbsentError,
     RepoEntry,
 )
 from kodezart.types.domain.run_records import RunIdentity
@@ -221,7 +218,6 @@ def build_workflow_engine(
     checkpointer: BaseCheckpointSaver[str] | None,
     criteria: FireCriteriaSource | None = None,
     scope_tracker: TrackerPort | None = None,
-    scope_status: ScopeStatusUpdates | None = None,
     scope_registry: JobRegistry | None = None,
     operation: OperationConfig | None = None,
 ) -> OriginRoutedWorkflowEngine:
@@ -312,19 +308,8 @@ def build_workflow_engine(
         skills=skills,
     )
 
-    def loop(
-        saver: BaseCheckpointSaver[str] | None,
-        *,
-        node_sessions: NodeSessionRecorder | None = None,
-    ) -> RalphLoop:
-        """The quality gate, with whatever the arm it serves persists to.
-
-        The scoped arm persists nothing: its state is the tracker, so its loop
-        is built with no saver at all rather than given one it must not write
-        to (KOD-840). It is also the arm whose lanes have a stream, so it is
-        the one handed the writer that puts a node's observed session
-        openings there.
-        """
+    def loop(saver: BaseCheckpointSaver[str] | None) -> RalphLoop:
+        """The quality gate every fire engine runs, with the saver it persists to."""
         return RalphLoop(
             source=native_source,
             lane_state=lane_state,
@@ -364,7 +349,6 @@ def build_workflow_engine(
             retry_initial_interval=config.retry_initial_interval,
             delay_floor_for=delay_floor_for,
             fan_in_max_attempts=config.fan_in_max_attempts,
-            node_sessions=node_sessions,
         )
 
     authored_loop = loop(checkpointer)
@@ -393,15 +377,18 @@ def build_workflow_engine(
         *,
         quality_gate: RalphLoop,
         saver: BaseCheckpointSaver[str] | None,
+        stages: ScopeStages | None = None,
     ) -> RalphWorkflowEngine:
         """One fire engine, with the loop and the saver its arm was chosen with.
 
         The two are one choice: an engine compiled with a saver whose loop was
-        built without one would persist half a fire.
+        built without one would persist half a fire. Given *stages*, the
+        engine's graph is the scope run.
         """
         return RalphWorkflowEngine(
             criteria=criteria,
             rulings=rulings,
+            stages=stages,
             specification=FireSpecification(
                 service=agent_service,
                 ticket_generator=ticket_generator,
@@ -446,9 +433,13 @@ def build_workflow_engine(
             delay_floor_for=delay_floor_for,
         )
 
-    def arm(forge: GitHubAPIClient | None) -> AuthoredDeliveryCoordinator:
+    def arm(
+        forge: GitHubAPIClient | None, stages: ScopeStages | None = None
+    ) -> AuthoredDeliveryCoordinator:
         return AuthoredDeliveryCoordinator(
-            fire=fire(forge, quality_gate=authored_loop, saver=checkpointer),
+            fire=fire(
+                forge, quality_gate=authored_loop, saver=checkpointer, stages=stages
+            ),
             publication=AuthoredPublication(
                 service=agent_service,
                 prompts=prompts,
@@ -472,78 +463,28 @@ def build_workflow_engine(
     forge_less_arm = arm(None)
     scoped_arm = None
     if scope_tracker is not None:
-        if criteria is None:
-            raise ValueError("Scope execution requires a native criterion source")
-        if scope_status is None:
-            # Refused rather than defaulted to a writer that posts nothing: a
-            # scope arm composed without one would walk, certify nothing and
-            # say nothing, which is the state the terminal exists to end.
-            raise ValueError("Scope execution requires a scope status writer")
         if scope_registry is None:
-            # Refused for the same shape of reason: an arm composed without a
-            # record store cannot see another job over the same scope, and
-            # would walk beside it over every lane of it.
+            # Refused rather than composed blind: an arm without a record
+            # store cannot see an older job over the same scope, and would run
+            # beside it over every issue below the parent.
             raise ValueError("Scope execution requires a job registry")
-        if operation is None:
-            # The marker every lane's record is read and written under comes
-            # from here, so this is the typed absence refusal the rest of
-            # composition makes rather than a bare ValueError.
-            raise OperationMemberAbsentError(
-                missing="marker prefixes for a lane run-state record",
-                stops=(
-                    "no lane's entry can be read and no lane can record its own state"
-                ),
-            )
-        # The scoped arm's own engines, with no saver anywhere: the lane's
-        # state is its tracker record, so nothing here writes a checkpoint
-        # and nothing reads one (KOD-840).
-        native_loop = loop(None, node_sessions=lane_state)
-        entry = build_scope_entry(
-            config=config,
-            operation=operation,
-            tracker=scope_tracker,
+        # The groom, prep and done-question sessions stand in the scheduled
+        # passes' own working directory, which is no cloned repository.
+        working_dir = Path(config.scheduled_pass_working_dir).expanduser()
+        working_dir.mkdir(parents=True, exist_ok=True)
+        stages = ScopeStages(
             runner=agent_service,
-            workspace=workspace,
-            git=git,
             prompts=prompts,
             skills=skills,
-            registry=scope_registry,
+            working_dir=str(working_dir),
         )
-        scoped_arm = build_scope_runtime(
-            tracker=scope_tracker,
-            forge_lane=build_native_lane_workflow(
-                fire=fire(github_api, quality_gate=native_loop, saver=None),
-                config=config,
-                service=agent_service,
-                git=git,
-                forge=github_api,
-                prompts=prompts,
-                skills=skills,
-                gate=gate,
-                repositories=repositories,
-                lane_state=lane_state,
-            ),
-            forge_less_lane=build_native_lane_workflow(
-                fire=fire(None, quality_gate=native_loop, saver=None),
-                config=config,
-                service=agent_service,
-                git=git,
-                forge=None,
-                prompts=prompts,
-                skills=skills,
-                gate=gate,
-                repositories=repositories,
-                lane_state=lane_state,
-            ),
-            forge_probe=github_api,
-            git=git,
-            cache=cache,
-            repositories=repositories,
-            config=config,
-            operation=operation,
-            status=scope_status,
-            gate=gate,
-            entry=entry,
+        scoped_arm = ScopeEntry(
+            approvals=scope_tracker,
+            registry=scope_registry,
+            arm_for=OriginRoutedWorkflowEngine(
+                forge_arm=arm(github_api, stages),
+                forge_less_arm=arm(None, stages),
+            ).arm_for,
         )
     return OriginRoutedWorkflowEngine(
         forge_arm=forge_arm,

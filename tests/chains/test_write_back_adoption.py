@@ -2641,7 +2641,6 @@ class Production:
 
 LIFECYCLE = "services/tracker_lifecycle.py"
 LANE_STATE = "services/lane_state_writer.py"
-WALKER = "services/scope_runtime.py"
 #: Kept for the issue-state write-site suite, which permits its state moves
 #: from it; each entry is a derived-write declaration in the lane state writer.
 #: The lane's own writes about the commit it has just made, about the best
@@ -2723,7 +2722,7 @@ LANE_STATE_WRITES = frozenset(
 )
 #: The state moves KOD-806 holds outside the write-back check while the seam
 #: it covers is undecided: the lifecycle writer's stage moves, its queue-state
-#: write and its put-back, and the walk's put-back.  Each is held out by a
+#: write and its put-back.  Each is held out by a
 #: derived-write declaration beside its writer, and the structural test below
 #: requires every one of them to be held out there by the census, so this
 #: set names what the tree declares and cannot drift from it.
@@ -2747,11 +2746,6 @@ KOD_806_STATE_MOVES = frozenset(
         CallSite(
             module=LIFECYCLE,
             function="TrackerLifecycleWriter.on_run_failed",
-            method="restore_workflow_state",
-        ),
-        CallSite(
-            module=WALKER,
-            function="ScopeWorkflowEngine._put_back",
             method="restore_workflow_state",
         ),
     }
@@ -2813,14 +2807,6 @@ STRUCTURAL_CALL_SITES = frozenset(
             module=LANE_STATE,
             function="TrackerLaneStateWriter._write_one",
             method="set_workflow_state",
-        ),
-        # The walk puts back a lane whose fire closed none of the criteria
-        # it owed, to the unstarted state a reader found on its open work
-        # (KOD-460, held with the lifecycle moves under KOD-806).
-        CallSite(
-            module=WALKER,
-            function="ScopeWorkflowEngine._put_back",
-            method="restore_workflow_state",
         ),
     }
 )

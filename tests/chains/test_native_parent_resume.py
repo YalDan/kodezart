@@ -23,7 +23,6 @@ from tests.fakes import (
     FakeBranchMerger,
     FakeRefPublisher,
     FakeRepoCache,
-    FakeScopeStatusWriter,
     PassThroughGate,
 )
 from tests.prompts.test_prompt_wiring import load_registry
@@ -75,7 +74,6 @@ async def actual_fire(repository, executor, port, saver, *, held=None, spec=None
         ),
         scope_tracker=port,
         scope_registry=InMemoryJobRegistry(),
-        scope_status=FakeScopeStatusWriter(),
         criteria=source,
         repositories=(RepoEntry(url=REPO_URL, trunk="main"),),
         agent_service=service,

@@ -9,17 +9,12 @@ handed.
 
 import ast
 import inspect
-import sys
-import textwrap
 from collections.abc import Callable
-from typing import get_type_hints
 
 import pytest
 import structlog.testing
 
-from kodezart.chains.scope_walker import read_scope_ready
 from kodezart.core.errors import LaneRosterArityError, TrackerUnavailableError
-from kodezart.core.protocols import OutboundContentGate, ScopeStatusUpdates
 from kodezart.domain.errors import (
     LaneRecordReadError,
     OutboundContentBlockedError,
@@ -35,7 +30,6 @@ from kodezart.domain.scope_terminal import (
 from kodezart.services import lane_reports
 from kodezart.services import scope_terminal as terminal_module
 from kodezart.services.lane_records import LaneRecordReader
-from kodezart.services.scope_runtime import ScopeWorkflowEngine
 from kodezart.services.scope_terminal import ScopeTerminal
 from kodezart.types.domain import scope_terminal as scope_terminal_types
 from kodezart.types.domain.branch import BranchRole
@@ -51,6 +45,7 @@ from kodezart.types.domain.gating import (
     TrackerAggregate,
     WriterShape,
 )
+from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.run_state import (
     BranchAssociation,
@@ -71,9 +66,12 @@ from tests.fakes import (
     PassThroughGate,
     make_tracker_issue,
 )
-from tests.name_resolution import parameters_of
-from tests.services.test_scope_runtime import OPERATION
 
+OPERATION = OperationConfig(
+    operation_name="fixture",
+    workspace="fixture",
+    marker_prefixes={"run_state": "fixture-record"},
+)
 PROJECT = ScopeRef(kind=ScopeKind.PROJECT, key="scoped-project")
 MILESTONE = ScopeRef(kind=ScopeKind.MILESTONE, key="milestone-one")
 PR = LanePR(url="https://forge.invalid/fixture/repo/pull/12", number=12, state="open")
@@ -922,191 +920,3 @@ def test_a_body_that_quotes_the_heading_mid_sentence_is_not_a_report() -> None:
     extra post over a container whose report had not changed.
     """
     assert latest_scope_report([f"see {SCOPE_STATUS_HEADING}..."]) is None
-
-
-def _terminal_attribute() -> str:
-    """The engine's own name for the collaborator it hands the ready read to.
-
-    Read off the engine rather than spelled: the parameter whose annotation is
-    this class, and then the attribute that parameter is stored on.
-    """
-    built = ast.parse(textwrap.dedent(inspect.getsource(ScopeWorkflowEngine.__init__)))
-    (definition,) = built.body
-    assert isinstance(definition, ast.FunctionDef)
-    parameter = next(
-        argument.arg
-        for argument in parameters_of(definition)
-        if argument.annotation is not None
-        and ast.unparse(argument.annotation) == ScopeTerminal.__name__
-    )
-    return next(
-        target.attr
-        for node in ast.walk(definition)
-        if isinstance(node, ast.Assign)
-        and isinstance(node.value, ast.Name)
-        and node.value.id == parameter
-        for target in node.targets
-        if isinstance(target, ast.Attribute)
-        and isinstance(target.value, ast.Name)
-        and target.value.id == "self"
-    )
-
-
-def test_the_terminal_is_handed_the_ready_read_and_nothing_else() -> None:
-    """Nothing the invocation remembered reaches here, asserted over the seam.
-
-    The class docstring's claim is invisible to every behavioural test: a
-    value the walk carried would normally equal the value the tick's reading
-    carries, so a terminal handed the walk's memory as a second argument would
-    report exactly what this one reports. So the seam is read instead:
-
-    - the terminal's whole public surface is the one report method, and its
-      whole method surface, private methods included, is pinned;
-    - the two signatures, annotated or not, whose every name is read off the
-      objects they belong to;
-    - every spelling of the terminal's attribute on ``self`` in the walker's
-      module: one store, in the engine's constructor, which reads the
-      terminal parameter exactly once, and one load, the callee of the one
-      report call, handing the tick's ready read by keyword and nothing else;
-    - and the value it hands, a local every binding of which is an awaited
-      ready read of the scope.
-
-    A computed ``getattr`` — the attribute's name built at run time — reaches
-    the terminal without spelling it, and is not read here. A collaborator
-    the terminal shares with the walker is not read here either; the
-    integration walk in which the board closes a halted lane before the exit
-    pins that by behaviour.
-    """
-    report_hints = get_type_hints(ScopeTerminal.report)
-    init_hints = get_type_hints(ScopeTerminal.__init__)
-    assert report_hints == {
-        "ready": ScopeReadySet,
-        "return": ScopeTerminalEvent,
-    }
-    assert init_hints == {
-        "records": LaneRecordReader,
-        "status": ScopeStatusUpdates,
-        "gate": OutboundContentGate,
-        "return": type(None),
-    }
-    # An unannotated parameter is invisible to the hints, so the parameter
-    # names are compared as well, against the same hints.
-    assert list(inspect.signature(ScopeTerminal.report).parameters) == [
-        "self",
-        *(name for name in report_hints if name != "return"),
-    ]
-    assert list(inspect.signature(ScopeTerminal.__init__).parameters) == [
-        "self",
-        *(name for name in init_hints if name != "return"),
-    ]
-    # A second public method would be a second channel into the terminal.
-    assert {name for name in vars(ScopeTerminal) if not name.startswith("_")} == {
-        ScopeTerminal.report.__name__
-    }
-    # And a private one would be the same channel under another name.
-    assert {
-        name for name, value in vars(ScopeTerminal).items() if inspect.isfunction(value)
-    } == {"__init__", "report", "_entry", "_post"}
-    receiver = f"self.{_terminal_attribute()}"
-    walker = ast.parse(inspect.getsource(sys.modules[ScopeWorkflowEngine.__module__]))
-    calls = [
-        node
-        for node in ast.walk(walker)
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Attribute)
-        and node.func.attr == ScopeTerminal.report.__name__
-        and ast.unparse(node.func.value) == receiver
-    ]
-
-    assert len(calls) == 1
-    (call,) = calls
-    assert call.args == []
-    assert [keyword.arg for keyword in call.keywords] == ["ready"]
-    # Every attribute reached through the terminal anywhere in the walker's
-    # module, read or written, is that one call's callee: no other method is
-    # called on it and nothing is set on it.
-    assert [
-        node
-        for node in ast.walk(walker)
-        if isinstance(node, ast.Attribute) and ast.unparse(node.value) == receiver
-    ] == [call.func]
-    # What is handed is the local itself, not a value built from it.
-    assert [ast.unparse(keyword.value) for keyword in call.keywords] == ["ready"]
-    (engine,) = (
-        node
-        for node in walker.body
-        if isinstance(node, ast.ClassDef) and node.name == ScopeWorkflowEngine.__name__
-    )
-    # The receiver itself, wherever the walker's module spells it: loaded
-    # once, as that call's callee, and stored once, in the engine's
-    # constructor. An alias, a helper handed the terminal, a setattr or a
-    # vars() over it would each be a second load.
-    occurrences = [
-        node
-        for node in ast.walk(walker)
-        if isinstance(node, ast.Attribute) and ast.unparse(node) == receiver
-    ]
-    assert [node for node in occurrences if isinstance(node.ctx, ast.Load)] == [
-        call.func.value
-    ]
-    stores = [node for node in occurrences if isinstance(node.ctx, ast.Store)]
-    assert len(stores) == 1
-    assert len(occurrences) == 2
-    (constructor,) = (
-        node
-        for node in engine.body
-        if isinstance(node, ast.FunctionDef)
-        and node.name == ScopeWorkflowEngine.__init__.__name__
-    )
-    assert any(node is stores[0] for node in ast.walk(constructor))
-    # The constructor reads the terminal parameter exactly once: the value of
-    # that one store, and no second attribute holding the same terminal.
-    (parameter,) = (
-        argument.arg
-        for argument in parameters_of(constructor)
-        if argument.annotation is not None
-        and ast.unparse(argument.annotation) == ScopeTerminal.__name__
-    )
-    loads = [
-        node
-        for node in ast.walk(constructor)
-        if isinstance(node, ast.Name)
-        and node.id == parameter
-        and isinstance(node.ctx, ast.Load)
-    ]
-    assert len(loads) == 1
-    (store,) = (
-        node
-        for node in ast.walk(constructor)
-        if isinstance(node, ast.Assign) and stores[0] in node.targets
-    )
-    assert store.value is loads[0]
-    (run,) = (
-        node
-        for node in engine.body
-        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
-        and node.name == ScopeWorkflowEngine.run.__name__
-    )
-    assert any(node is call for node in ast.walk(run))
-    local = ast.unparse(call.keywords[0].value)
-    assert local not in {argument.arg for argument in parameters_of(run)}
-    parents = {
-        id(child): node
-        for node in ast.walk(run)
-        for child in ast.iter_child_nodes(node)
-    }
-    bindings = [
-        parents[id(node)]
-        for node in ast.walk(run)
-        if isinstance(node, ast.Name)
-        and node.id == local
-        and isinstance(node.ctx, ast.Store)
-    ]
-    assert bindings
-    assert all(
-        isinstance(binding, ast.Assign)
-        and isinstance(binding.value, ast.Await)
-        and isinstance(binding.value.value, ast.Call)
-        and ast.unparse(binding.value.value.func) == read_scope_ready.__name__
-        for binding in bindings
-    )

@@ -34,7 +34,7 @@ is read off the frame, and the writer's module off the class.
 
 The trap observes every open, listing and subprocess the wrapped flows
 make, whatever the spelling: the flows are those of ``test_lane_entry.py``
-(lane entry, KOD-96-AC-30), ``test_scope_runtime.py``,
+(lane entry, KOD-96-AC-30),
 ``test_lane_records.py``, ``test_lane_state_writer.py`` and
 ``test_audit_sources.py`` (a run and its records, KOD-96-AC-29), each under
 an autouse fixture, and the writer's own ``persist`` driven in

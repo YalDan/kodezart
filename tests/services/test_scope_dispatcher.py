@@ -18,7 +18,7 @@ import pytest
 from kodezart.chains import native_delivery, scope_walker
 from kodezart.domain import fire_plateau, issue_tree, lane_entry, topology
 from kodezart.services import lane_entry as lane_entry_reader
-from kodezart.services import scope_dispatcher, scope_runtime
+from kodezart.services import scope_dispatcher
 from kodezart.services.base_resolver import BaseResolver
 from kodezart.services.claim_heartbeat import ClaimHeartbeat
 from kodezart.services.dispatch_pass import GatedDispatchPass
@@ -518,15 +518,8 @@ def test_no_module_the_walk_can_reach_holds_a_merge_state_call_site():
 
 
 def test_ready_set_and_walker_modules_hold_no_merge_state_call_site():
-    """No module on the walk can ask a pull request anything, statically.
-
-    ``scope_runtime`` is on the list because it is the one module of the walk
-    that holds a forge probe at all: the carve-out's open-delivery read is
-    made there (KOD-721, KOD-777), and the probe it is handed answers merge
-    state on the same object. Nothing but a type checker stood between that
-    call site and a merge-state read until this list named the module.
-    """
-    modules = [scope_walker, topology, issue_tree, scope_dispatcher, scope_runtime]
+    """No module on the walk can ask a pull request anything, statically."""
+    modules = [scope_walker, topology, issue_tree, scope_dispatcher]
     forbidden_names = {"PRStateReader", "PRState", "PRLifecycle"}
     for module in modules:
         tree = ast.parse(inspect.getsource(module))
@@ -734,15 +727,6 @@ def dispatchability_predicate_sources() -> tuple[tuple[str, str], ...]:
         ("scope_ready", inspect.getsource(scope_ready)),
         ("scope_walker", inspect.getsource(scope_walker)),
         ("run_pass", inspect.getsource(ScopeDispatcher.run_pass)),
-        (
-            WALK_DECISION_UNIT,
-            walker_decision_source(
-                unit_source=inspect.getsource(scope_runtime),
-                helper_source=inspect.getsource(
-                    getattr(scope_runtime.ScopeWorkflowEngine, REPORTING_HELPER)
-                ),
-            ),
-        ),
         ("services/lane_entry", inspect.getsource(lane_entry_reader)),
         ("domain/lane_entry", inspect.getsource(lane_entry)),
         ("fire_plateau", inspect.getsource(fire_plateau)),
@@ -964,19 +948,6 @@ def test_no_fire_outcome_is_read_anywhere_the_dispatch_decision_is_made():
     read as a lane finished, and one that ended ``shutdown_abandoned`` can
     never be read as a lane abandoned: the arithmetic has no access to either
     fact in the first place.
-
-    The live walk is held to it WHOLE, and not in the three methods somebody
-    listed: its selection asks only which lanes the ready read offers and which
-    are resting, the reading that decides whether a fired lane is offered again
-    asks only which criterion identities its subtree now carries as closed, and
-    the loop that composes the resting lanes, the boundary that appends to them
-    and the readmission that vetoes a fire are all in the scanned text too — as
-    are the helpers written beside the class that build the identities that
-    reading measures and the turn the selection returns. A fire that ended
-    ``loop_not_accepted`` and a fire that ended ``ci_passed`` reach every one of
-    them as the same fact — the gap they left — which is what lets a lane be
-    fired twice in one invocation without any state machine over its exits
-    (KOD-724, KOD-725).
     """
     scanned = dispatchability_predicate_sources()
 
@@ -986,7 +957,6 @@ def test_no_fire_outcome_is_read_anywhere_the_dispatch_decision_is_made():
         "scope_ready",
         "scope_walker",
         "run_pass",
-        WALK_DECISION_UNIT,
         "services/lane_entry",
         "domain/lane_entry",
         "fire_plateau",
@@ -994,23 +964,6 @@ def test_no_fire_outcome_is_read_anywhere_the_dispatch_decision_is_made():
     # Every source really carries source: a label whose text came back empty
     # would satisfy the assertion below without scanning anything.
     assert all(source.strip() for _, source in scanned)
-    # And the walker's scanned text really is the module less one method: every
-    # definition the walk decides in is in it — the ones inside the class and
-    # the ones beside it — and the excluded helper is not.
-    walker = next(source for label, source in scanned if label == WALK_DECISION_UNIT)
-    assert all(
-        f"def {name}(" in walker
-        for name in (
-            "run",
-            "_select",
-            "_settle",
-            "_put_back",
-            "_readmitted",
-            "_owed_identities",
-            "_ready_turn",
-        )
-    )
-    assert f"def {REPORTING_HELPER}(" not in walker
     for label, source in scanned:
         assert outcome_references(source, also=also_for(label)) == frozenset(), label
 

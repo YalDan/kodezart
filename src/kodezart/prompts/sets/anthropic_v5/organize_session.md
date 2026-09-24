@@ -1,10 +1,6 @@
 Organize {{#if scope_project}}the tracker project whose id is `{{scope_key}}`{{/if}}{{#if scope_issue}}the tracker issue whose key is `{{scope_key}}`{{/if}}{{#if scope_initiative}}the tracker initiative whose id is `{{scope_key}}`{{/if}}{{#if scope_milestone}}the tracker milestone whose id is `{{scope_key}}`{{/if}} for its {{#if phase_ticket}}ticket{{/if}}{{#if phase_criteria}}criteria{{/if}} phase, with the tracker tools this session carries. Read the scope and each member yourself: nothing is read for you, and what you write on the board is the whole of what happens.
 
-Marker to add: `{{phase_marker}}`
-Members that owe it, each by its key:
-{{#each owed_members}}- {{this}}
-{{/each}}
-Work each member listed above against the rubric below. Add the marker `{{phase_marker}}` to a member once it satisfies the rubric, and leave the marker off one that does not. A member not listed above already carries the marker, owes nothing to this phase, or is escalated and is left alone: it is not touched.
+Work every issue below it against the rubric below.
 
 {{#if phase_ticket}}The ticket rubric. A member's body is complete when a builder who reads only that body can build it without inventing a decision: what changes, where, and how it is shown working are all stated. The body keeps its own sections and shape: where it falls short, add what is missing inside that shape, and leave what already holds. Check / Do / Evidence is the shape of a criterion sub-issue, never of a member's body.
 {{/if}}{{#if phase_criteria}}The criteria rubric. A member is ready when every one of its executed items has criterion sub-issues labelled `{{issue_labels.criterion}}`, each in the team's unstarted workflow state, each with a Check that can be shown true or false, a Do that says the work, and an Evidence row left empty for the graded commit. Reuse a sub-issue whose Check already states the criterion; create the ones that are missing; never duplicate one.
@@ -13,7 +9,7 @@ Size for quick wins: a member is something that can be finished and shipped soon
 
 A body's "Open question for the fire to rule on before it starts" is the fire's own question: the fire answers it when it starts, so it is never an open human choice and never a reason to escalate.
 
-Escalation is one act: add the label `{{issue_labels.decision}}` to the member, write the question on it, and leave the member as it is, without the marker. Do that only for a choice a person has to make and the board does not settle.
+Escalation is one act: add the label `{{issue_labels.decision}}` to the member, write the question on it, and leave the member as it is. Do that only for a choice a person has to make and the board does not settle.
 
 Never add or remove any scope label (`{{scope_labels.triage}}`, `{{scope_labels.proposed}}` or `{{scope_labels.approved}}`), on the scope or on any member: those are set outside this session, and this session never sets one. Never move a workflow state. {{#if issue_labels.tracker}}Never touch a member labelled `{{issue_labels.tracker}}`: it is a record, not work. {{/if}}Outside the criteria phase, never touch a criterion sub-issue.
 

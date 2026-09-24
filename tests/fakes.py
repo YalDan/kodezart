@@ -5729,17 +5729,6 @@ class FakeScopeTallyReader(
     """The ``ScopeTallyReader`` role, composed of its role doubles."""
 
 
-class FakeScopeWalkTracker(
-    FakeTrackerCriteriaReader,
-    FakeScopeFamilyReader,
-    FakePlanningIssueReader,
-    FakeScopeReadPreflight,
-    FakeExecutionApprovalReader,
-    FakeStateRestorer,
-):
-    """The ``ScopeWalkTracker`` role, composed of its role doubles."""
-
-
 class FakeSubjectCriteriaReader(
     FakeTrackerCriteriaReader,
     FakeIssueReader,
