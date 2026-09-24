@@ -206,10 +206,16 @@ async def test_composed_dispatch_uses_remote_and_integration_directory(
         ManagedFakeLinearMcpServer,
         make_tracker_issue,
     )
-    from tests.services.test_dispatch_pass import operation_config
+    from tests.services.test_dispatch_pass import (
+        DISPATCH_INTERVAL_SECONDS,
+        DISPATCH_TIMEOUT_SECONDS,
+        operation_config,
+    )
 
     config = AppConfig(
         _env_file=None,
+        dispatch_pass_interval_seconds=DISPATCH_INTERVAL_SECONDS,
+        dispatch_pass_timeout_seconds=DISPATCH_TIMEOUT_SECONDS,
         git={
             "remote": "configured",
             "integration_workspace_dir": str(tmp_path / "integration"),

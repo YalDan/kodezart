@@ -696,7 +696,12 @@ async def decision(
     operation = operation_config()
     runtime = await build_dispatch_runtime(
         workspace=FakeWorkspaceProvider(),
-        config=AppConfig(_env_file=None, dispatch_pass_gate_signals=[]),
+        config=AppConfig(
+            _env_file=None,
+            dispatch_pass_gate_signals=[],
+            dispatch_pass_interval_seconds=300.0,
+            dispatch_pass_timeout_seconds=240.0,
+        ),
         operation=operation,
         dialled=DialledTracker(
             tracker=tracker,

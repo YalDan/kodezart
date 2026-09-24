@@ -98,6 +98,12 @@ export KODEZART_OPERATION_CONFIG=/path/to/operation.scope.toml
 export KODEZART_ORGANIZE__MAX_ADMISSION_ROUNDS=2
 export KODEZART_ORGANIZE__MAX_CONVERGENCE_ROUNDS=2
 export KODEZART_WRITE_BACK__MAX_VERIFY_ROUNDS=3
+export KODEZART_ORGANIZE__INTERVAL_SECONDS=3600
+export KODEZART_ORGANIZE__TIMEOUT_SECONDS=1800
+export KODEZART_DISPATCH_PASS_INTERVAL_SECONDS=300
+export KODEZART_DISPATCH_PASS_TIMEOUT_SECONDS=240
+export KODEZART_SUPERVISOR_PASS_INTERVAL_SECONDS=300
+export KODEZART_SUPERVISOR_PASS_TIMEOUT_SECONDS=120
 ```
 
 Leave `KODEZART_CHECKPOINT_URL` unset. Setting it builds a checkpointer, and
@@ -115,8 +121,12 @@ server the Claude host attaches from the operator's own user settings, under
 that credential and its own rate budget. The operation config does not describe
 that path, and the boot check does not cover it.
 
-The three bounds above have no defaults, so each one is a choice you make rather
-than a value that appears. If your variables are still spelled the old flat way,
+None of the values above has a default, so each one is a choice you make rather
+than a value that appears. The last six are the cadences: the organize tick's,
+the standing scopes' heartbeat's (it runs on the dispatch pair) and the
+observation tick's, each an interval and a timeout. A pass whose interval is
+unset is not scheduled, so leave a pair out to leave that pass off; set one half
+of a pair without the other and boot refuses, naming both. If your variables are still spelled the old flat way,
 the renames section of
 [`docs/migration-v0.2-to-v0.3.md`](migration-v0.2-to-v0.3.md) maps each to its
 current name; every retired spelling is refused rather than ignored.
@@ -129,13 +139,16 @@ current name; every retired spelling is refused rather than ignored.
   per-issue dispatch pass is withheld, and this field is why.
 - `prompt_passes_not_wired` with `organize_scopes_declared: true` — the fire-prep
   and grooming session passes are withheld, for the same reason.
+- `scheduled_pass_not_configured` — one per pass that would run here and whose
+  interval is unset, naming the pass and the two settings that would schedule
+  it. That pass is not scheduled.
 - `pass_scheduler_started` — the scheduler is running, naming each pass it
   carries and that pass's interval. On a scope deployment that is the organize
   tick, the standing scopes' heartbeat, the observation tick that watches each
-  lane's run shape, and the audit pass where one is configured. The organize
-  tick's interval is `KODEZART_ORGANIZE__INTERVAL_SECONDS` when set and
-  `KODEZART_GROOMING_PASS_INTERVAL_SECONDS` otherwise; the scheduler sleeps one
-  interval before the first tick.
+  lane's run shape, and the audit pass where one is configured — each one whose
+  cadence is set. The organize tick's interval is
+  `KODEZART_ORGANIZE__INTERVAL_SECONDS` and nothing else; the scheduler sleeps
+  one interval before the first tick.
 
 Both "not wired" lines are expected here, and a boot that does NOT carry them on
 a scope deployment is a boot that just scheduled the per-issue machine over your

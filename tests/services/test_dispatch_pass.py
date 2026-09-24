@@ -107,6 +107,10 @@ ASSET_MAX_COUNT = 20
 ASSET_MAX_BYTES = 262144
 ASSET_FETCH_TIMEOUT_SECONDS = 30.0
 RENEWAL_FRACTION = 0.25
+#: The dispatch cadence these passes are built on. It has no default: a
+#: dispatch pass is scheduled only when both are set.
+DISPATCH_INTERVAL_SECONDS = 300.0
+DISPATCH_TIMEOUT_SECONDS = 240.0
 SETTLE_TRIES = 500
 SETTLE_DELAY_SECONDS = 0.01
 
@@ -633,7 +637,10 @@ async def test_the_root_builds_one_gated_pass_per_declared_repository() -> None:
     queue = FakeJobQueue()
     built = await build_dispatch_passes(
         recorder=RunRecorder(records={}, sinks={}),
-        config=AppConfig(),
+        config=AppConfig(
+            dispatch_pass_interval_seconds=DISPATCH_INTERVAL_SECONDS,
+            dispatch_pass_timeout_seconds=DISPATCH_TIMEOUT_SECONDS,
+        ),
         operation=operation_config(repos=(PRIMARY_REPO, SECOND_REPO)),
         tracker=tracker,
         ledger=tracker.self_writes,
@@ -683,7 +690,10 @@ async def test_an_issue_only_fires_into_the_repository_its_team_is_bound_to() ->
     queue = FakeJobQueue()
     built = await build_dispatch_passes(
         recorder=RunRecorder(records={}, sinks={}),
-        config=AppConfig(),
+        config=AppConfig(
+            dispatch_pass_interval_seconds=DISPATCH_INTERVAL_SECONDS,
+            dispatch_pass_timeout_seconds=DISPATCH_TIMEOUT_SECONDS,
+        ),
         operation=operation_config(repos=(PRIMARY_REPO, SECOND_REPO)),
         tracker=tracker,
         ledger=tracker.self_writes,
@@ -722,7 +732,10 @@ async def test_a_repository_no_team_is_bound_to_gets_a_named_skip() -> None:
     with structlog.testing.capture_logs() as logs:
         built = await build_dispatch_passes(
             recorder=RunRecorder(records={}, sinks={}),
-            config=AppConfig(),
+            config=AppConfig(
+                dispatch_pass_interval_seconds=DISPATCH_INTERVAL_SECONDS,
+                dispatch_pass_timeout_seconds=DISPATCH_TIMEOUT_SECONDS,
+            ),
             operation=operation_config(
                 repos=(PRIMARY_REPO, SECOND_REPO),
                 teams={
@@ -755,11 +768,11 @@ async def test_a_repository_no_team_is_bound_to_gets_a_named_skip() -> None:
 async def test_the_root_gives_every_pass_the_configured_cadence() -> None:
     """AC-20: ``dispatch_pass_interval_seconds`` has a real consumer."""
     unusual = 41.0
-    config = AppConfig(dispatch_pass_interval_seconds=unusual)
-    assert (
-        config.dispatch_pass_interval_seconds
-        != AppConfig().dispatch_pass_interval_seconds
+    config = AppConfig(
+        dispatch_pass_interval_seconds=unusual,
+        dispatch_pass_timeout_seconds=DISPATCH_TIMEOUT_SECONDS,
     )
+    assert AppConfig.model_fields["dispatch_pass_interval_seconds"].default is None
 
     tracker = FakeTrackerPort()
     queue = FakeJobQueue()
@@ -786,15 +799,14 @@ async def test_the_root_gives_every_pass_the_configured_budget() -> None:
 
     Every dispatch row, not one of them: an unbounded tick anywhere in
     the schedule is a loop that can stall forever, and the value is
-    unlike the default and unlike the cadence beside it, so a row wired
-    to either would fail here.
+    unlike the cadence beside it, so a row wired to it would fail here.
     """
     unusual = 37.0
-    config = AppConfig(dispatch_pass_timeout_seconds=unusual)
-    assert (
-        config.dispatch_pass_timeout_seconds
-        != AppConfig().dispatch_pass_timeout_seconds
+    config = AppConfig(
+        dispatch_pass_interval_seconds=DISPATCH_INTERVAL_SECONDS,
+        dispatch_pass_timeout_seconds=unusual,
     )
+    assert AppConfig.model_fields["dispatch_pass_timeout_seconds"].default is None
     assert config.dispatch_pass_timeout_seconds != (
         config.dispatch_pass_interval_seconds
     )
@@ -827,7 +839,10 @@ async def test_a_pass_the_root_built_dispatches_the_repository_it_names() -> Non
     queue = FakeJobQueue()
     built = await build_dispatch_passes(
         recorder=RunRecorder(records={}, sinks={}),
-        config=AppConfig(),
+        config=AppConfig(
+            dispatch_pass_interval_seconds=DISPATCH_INTERVAL_SECONDS,
+            dispatch_pass_timeout_seconds=DISPATCH_TIMEOUT_SECONDS,
+        ),
         operation=operation_config(repos=(SECOND_REPO,)),
         tracker=tracker,
         ledger=tracker.self_writes,
@@ -875,7 +890,10 @@ async def test_a_pass_the_root_built_follows_the_run_it_enqueued() -> None:
     )
     built = await build_dispatch_passes(
         recorder=RunRecorder(records={}, sinks={}),
-        config=AppConfig(),
+        config=AppConfig(
+            dispatch_pass_interval_seconds=DISPATCH_INTERVAL_SECONDS,
+            dispatch_pass_timeout_seconds=DISPATCH_TIMEOUT_SECONDS,
+        ),
         operation=operation_config(),
         tracker=tracker,
         ledger=tracker.self_writes,
@@ -937,7 +955,11 @@ async def test_a_run_that_died_is_reported_into_the_pass_that_fired_it() -> None
     )
     built = await build_dispatch_passes(
         recorder=RunRecorder(records={}, sinks={}),
-        config=AppConfig(dispatch_pass_gate_signals=[]),
+        config=AppConfig(
+            dispatch_pass_gate_signals=[],
+            dispatch_pass_interval_seconds=DISPATCH_INTERVAL_SECONDS,
+            dispatch_pass_timeout_seconds=DISPATCH_TIMEOUT_SECONDS,
+        ),
         operation=operation_config(),
         tracker=tracker,
         ledger=tracker.self_writes,
@@ -1013,7 +1035,11 @@ async def test_a_rate_limit_in_one_repositorys_pass_stops_the_other_repositorys(
     )
     built = await build_dispatch_passes(
         recorder=RunRecorder(records={}, sinks={}),
-        config=AppConfig(dispatch_pass_gate_signals=[]),
+        config=AppConfig(
+            dispatch_pass_gate_signals=[],
+            dispatch_pass_interval_seconds=DISPATCH_INTERVAL_SECONDS,
+            dispatch_pass_timeout_seconds=DISPATCH_TIMEOUT_SECONDS,
+        ),
         operation=operation_config(repos=(PRIMARY_REPO, SECOND_REPO)),
         tracker=tracker,
         ledger=tracker.self_writes,
@@ -1066,7 +1092,11 @@ async def test_a_crashed_run_in_one_repository_leaves_the_other_firing() -> None
     )
     built = await build_dispatch_passes(
         recorder=RunRecorder(records={}, sinks={}),
-        config=AppConfig(dispatch_pass_gate_signals=[]),
+        config=AppConfig(
+            dispatch_pass_gate_signals=[],
+            dispatch_pass_interval_seconds=DISPATCH_INTERVAL_SECONDS,
+            dispatch_pass_timeout_seconds=DISPATCH_TIMEOUT_SECONDS,
+        ),
         operation=operation_config(repos=(PRIMARY_REPO, SECOND_REPO)),
         tracker=tracker,
         ledger=tracker.self_writes,
@@ -1116,7 +1146,10 @@ async def test_the_pass_threads_the_claimed_boards_posture_to_the_watch() -> Non
     gate = PassThroughGate()
     built = await build_dispatch_passes(
         recorder=RunRecorder(records={}, sinks={}),
-        config=AppConfig(),
+        config=AppConfig(
+            dispatch_pass_interval_seconds=DISPATCH_INTERVAL_SECONDS,
+            dispatch_pass_timeout_seconds=DISPATCH_TIMEOUT_SECONDS,
+        ),
         operation=operation_config(
             teams={
                 "engineering": TeamEntry(
@@ -1189,7 +1222,10 @@ async def test_a_pass_over_a_forge_less_origin_completes_its_tick() -> None:
     forge = ForgeOnlyDeliveryProbe()
     built = await build_dispatch_passes(
         recorder=RunRecorder(records={}, sinks={}),
-        config=AppConfig(),
+        config=AppConfig(
+            dispatch_pass_interval_seconds=DISPATCH_INTERVAL_SECONDS,
+            dispatch_pass_timeout_seconds=DISPATCH_TIMEOUT_SECONDS,
+        ),
         operation=operation_config(repos=(FILE_ORIGIN,)),
         tracker=tracker,
         ledger=tracker.self_writes,
@@ -1218,7 +1254,10 @@ async def test_a_pass_over_a_forge_shaped_origin_still_asks_the_forge() -> None:
     forge = ForgeOnlyDeliveryProbe()
     built = await build_dispatch_passes(
         recorder=RunRecorder(records={}, sinks={}),
-        config=AppConfig(),
+        config=AppConfig(
+            dispatch_pass_interval_seconds=DISPATCH_INTERVAL_SECONDS,
+            dispatch_pass_timeout_seconds=DISPATCH_TIMEOUT_SECONDS,
+        ),
         operation=operation_config(repos=(PRIMARY_REPO,)),
         tracker=tracker,
         ledger=tracker.self_writes,

@@ -167,6 +167,11 @@ rather than leaving the account default in place, and `KODEZART_OPERATION_CONFIG
 is a path of `""` that fails startup. Uncomment a line only when you are
 supplying a real value.
 
+The scheduled-pass cadences are among the commented-out lines because none of
+them has a default: a pass runs only when its interval and timeout are both set,
+and unset means it is not scheduled. Uncomment the pairs for the passes you want
+running; one half of a pair without the other refuses the boot, naming both.
+
 ### Prompt sets
 
 Prompts are DATA, not code. A set is a directory
@@ -849,6 +854,7 @@ it could not resolve. Nothing runs until you fix it.
 | `tracker_not_configured` with `tracker_token_present: false` | B | Set `KODEZART_TRACKER__TOKEN` (step 1). |
 | `tracker_not_configured` with `operation_config_present: false` | B | Set `KODEZART_OPERATION_CONFIG` (step 5). |
 | `prompt_passes_not_wired` | B | No operation config (`operation_config_present: false`), or one whose roster is empty — `absent` names the collections (teams, repos) every pass template enumerates. Declare at least one team and one repository and the prep and grooming passes register. With `organize_scopes_declared: true` this is not a gap at all: that deployment works scope by scope and withholds both passes on purpose. |
+| `scheduled_pass_not_configured` naming a pass and two settings | B | That pass would run here, but its cadence is unset, so it is not scheduled. Set both named settings to run it; leave them unset to keep it off. |
 | `scheduled_passes_not_wired` | B | The event carries one boolean per premise — `tracker_present`, `operation_config_present`, `delivery_probe_present`, `organize_scopes_declared`. Supply whichever of the first three reports `false`; when only the probe does, it is `KODEZART_GITHUB_TOKEN` that is missing. With `organize_scopes_declared: true` the pass is withheld on purpose. |
 | `OperationConfigError` listing several failures | C | Structural validation: a missing required key, a malformed entry, a broken internal cross-reference, or two approvers. Fix **every** listed failure — the list is exhaustive by construction. |
 | `TrackerBootValidationError` naming entries | C | A principal, team or state mapping the operation does *not* own did not resolve in the live workspace. Correct the id, or widen the credential's team restriction from step 1 to cover that team. |
@@ -871,7 +877,8 @@ So: file one small, self-contained issue on a team the config names, and then,
 
 The dispatch pass is periodic, so every wait below is bounded by one pass
 interval, which is deployment configuration —
-`KODEZART_DISPATCH_PASS_INTERVAL_SECONDS`, whose shipped default and
+`KODEZART_DISPATCH_PASS_INTERVAL_SECONDS`. It has no default: set it and
+`KODEZART_DISPATCH_PASS_TIMEOUT_SECONDS`, or no dispatch pass is scheduled. The
 bounds are in [docs/configuration.md](docs/configuration.md). Read the value
 your deployment runs with, and treat "one interval" as the unit throughout.
 
@@ -899,9 +906,9 @@ judgment passes are a different shape: on their interval
 (`KODEZART_FIRE_PREP_PASS_INTERVAL_SECONDS`,
 `KODEZART_GROOMING_PASS_INTERVAL_SECONDS`) the rendered prompt goes to an
 **agent session**, and the session does the work — so the session itself must
-be able to reach the tracker. Both passes register whenever the operation
-config declares at least one team and one repository and declares no
-`organize_scopes` (an empty roster, or a declared scope, logs
+be able to reach the tracker. Each pass registers when its interval and timeout
+are set, the operation config declares at least one team and one repository, and
+it declares no `organize_scopes` (an empty roster, or a declared scope, logs
 `prompt_passes_not_wired` naming which it was). What this process attaches to
 a session is the knowledge server it was granted
 (`KODEZART_KNOWLEDGE__SESSION_GRANTS`) and nothing else: it registers no tracker

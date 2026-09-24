@@ -50,6 +50,8 @@ from tests.fakes import (
     make_tracker_issue,
 )
 from tests.services.test_dispatch_pass import (
+    DISPATCH_INTERVAL_SECONDS,
+    DISPATCH_TIMEOUT_SECONDS,
     INTEGRATION_DIR,
     operation_config,
 )
@@ -135,7 +137,10 @@ async def _until(condition: object, *, timeout: float = SETTLE_TIMEOUT) -> None:
 
 
 async def test_an_approved_issue_walks_the_whole_chain_back_to_its_ticket() -> None:
-    config = AppConfig()
+    config = AppConfig(
+        dispatch_pass_interval_seconds=DISPATCH_INTERVAL_SECONDS,
+        dispatch_pass_timeout_seconds=DISPATCH_TIMEOUT_SECONDS,
+    )
     tracker = FakeTrackerPort(
         issues=[make_tracker_issue(ISSUE)],
     )
@@ -206,7 +211,10 @@ async def test_the_chain_never_sets_the_approved_state_itself() -> None:
     the whole chain makes is recorded, so a write of APPROVED anywhere would
     show up here.
     """
-    config = AppConfig()
+    config = AppConfig(
+        dispatch_pass_interval_seconds=DISPATCH_INTERVAL_SECONDS,
+        dispatch_pass_timeout_seconds=DISPATCH_TIMEOUT_SECONDS,
+    )
     tracker = FakeTrackerPort(
         issues=[make_tracker_issue(ISSUE, queue_states=[QueueState.PROPOSED])],
     )
@@ -273,7 +281,10 @@ async def test_a_fire_that_crashes_puts_its_issue_back_and_says_why() -> None:
     and the board asserted a run that was not running, indefinitely, with
     no record that anything had been attempted.
     """
-    config = AppConfig()
+    config = AppConfig(
+        dispatch_pass_interval_seconds=DISPATCH_INTERVAL_SECONDS,
+        dispatch_pass_timeout_seconds=DISPATCH_TIMEOUT_SECONDS,
+    )
     tracker = FakeTrackerPort(
         issues=[
             make_tracker_issue(

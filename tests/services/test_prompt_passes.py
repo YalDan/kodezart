@@ -8,13 +8,14 @@ against a literal in the code, which is the one thing this has to catch.
 """
 
 import ast
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime, tzinfo
 from pathlib import Path
-from typing import Final, cast
+from typing import Final
 
 import pytest
 import structlog.testing
+from pydantic import ValidationError
 
 from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.composition.passes import (
@@ -102,6 +103,29 @@ GROOMING_INTERVAL = 907.0
 FIRE_PREP_TIMEOUT = 401.0
 GROOMING_TIMEOUT = 809.0
 
+#: The other cadences this module's deployment sets, on the same principle.
+#: None of them has a default: a pass is scheduled only when its interval and
+#: timeout are both set, so a deployment that means a pass to run says so.
+DISPATCH_INTERVAL = 293.0
+DISPATCH_TIMEOUT = 211.0
+SUPERVISOR_INTERVAL = 317.0
+SUPERVISOR_TIMEOUT = 113.0
+ORGANIZE_INTERVAL = 311.0
+ORGANIZE_TIMEOUT = 503.0
+
+#: Every cadence setting left unset, for the rows that ask what a deployment
+#: that sets none of them schedules.
+NO_CADENCE: dict[str, object] = {
+    "dispatch_pass_interval_seconds": None,
+    "dispatch_pass_timeout_seconds": None,
+    "fire_prep_pass_interval_seconds": None,
+    "fire_prep_pass_timeout_seconds": None,
+    "grooming_pass_interval_seconds": None,
+    "grooming_pass_timeout_seconds": None,
+    "supervisor_pass_interval_seconds": None,
+    "supervisor_pass_timeout_seconds": None,
+}
+
 
 #: The shipped example declares documents and records in the knowledge
 #: system, so a deployment wiring its passes must grant them that store —
@@ -145,6 +169,10 @@ def _config(tmp_path: Path, **overrides: object) -> AppConfig:
         "fire_prep_pass_timeout_seconds": FIRE_PREP_TIMEOUT,
         "grooming_pass_interval_seconds": GROOMING_INTERVAL,
         "grooming_pass_timeout_seconds": GROOMING_TIMEOUT,
+        "dispatch_pass_interval_seconds": DISPATCH_INTERVAL,
+        "dispatch_pass_timeout_seconds": DISPATCH_TIMEOUT,
+        "supervisor_pass_interval_seconds": SUPERVISOR_INTERVAL,
+        "supervisor_pass_timeout_seconds": SUPERVISOR_TIMEOUT,
         "scheduled_pass_working_dir": str(tmp_path / "pass"),
         "knowledge": {
             "session_grants": [SessionType.SCHEDULED_PASS],
@@ -224,11 +252,22 @@ EITHER_MODE = pytest.mark.parametrize(
 #: later pass-set assertion enumerates, so a rename must redden this too.
 HEARTBEAT_PASS = "scope_heartbeat"
 
+#: The organize owner's two bounds, with no cadence of the tick's own.
+ORGANIZE_BOUNDS: dict[str, object] = {
+    "max_admission_rounds": 2,
+    "max_convergence_rounds": 2,
+}
+
 #: The deployment half of a standing-scope operation: the owner bounds both
-#: passes require, and no gate on either prompt pass, so what the schedule
-#: holds is decided by the declared rows alone.
+#: passes require, the organize tick's own cadence, and no gate on either
+#: prompt pass, so what the schedule holds is decided by the declared rows
+#: alone.
 STANDING_SCOPE_SETTINGS: dict[str, object] = {
-    "organize": {"max_admission_rounds": 2, "max_convergence_rounds": 2},
+    "organize": {
+        **ORGANIZE_BOUNDS,
+        "interval_seconds": ORGANIZE_INTERVAL,
+        "timeout_seconds": ORGANIZE_TIMEOUT,
+    },
     "write_back": {"max_verify_rounds": 2},
     "fire_prep_pass_gate_signals": [],
     "grooming_pass_gate_signals": [],
@@ -963,13 +1002,8 @@ async def test_the_shipped_example_declares_every_prefix_the_wired_passes_ask_fo
 
 
 # ---------------------------------------------------------------------------
-# KOD-1238: the organize tick's own interval, defaulting to the grooming pass's
+# KOD-1238: every cadence is set explicitly; unset, the pass is not scheduled
 # ---------------------------------------------------------------------------
-
-#: A cadence and a budget no other constant here shares, so the tick that
-#: carries them was read off the organize settings and nothing else.
-ORGANIZE_INTERVAL = 311.0
-ORGANIZE_TIMEOUT = 503.0
 
 
 def _organize_tick(runtime: DispatchRuntime) -> ScheduledPass:
@@ -983,10 +1017,51 @@ def _organize_tick(runtime: DispatchRuntime) -> ScheduledPass:
     return ticks[0]
 
 
-async def test_the_organize_tick_keeps_the_grooming_cadence_when_none_is_set(
+def _not_configured(logs: Sequence[Mapping[str, object]]) -> dict[str, object]:
+    """Each pass boot named as not configured, and the settings it named."""
+    return {
+        str(entry["name"]): entry["settings"]
+        for entry in logs
+        if entry["event"] == "scheduled_pass_not_configured"
+    }
+
+
+async def test_the_organize_tick_is_not_scheduled_without_its_own_interval(
     tmp_path: Path,
 ) -> None:
-    """Existing behaviour, pinned: with no organize interval, grooming's numbers."""
+    """No other pass's cadence stands in for the tick's: grooming's is set here."""
+    with structlog.testing.capture_logs() as logs:
+        runtime = await _runtime(
+            tmp_path,
+            tracker=approving_board(),
+            runner=FakeAgentRunner(events=[]),
+            operation=standing_scope_operation(),
+            organize=ORGANIZE_BOUNDS,
+            write_back=STANDING_SCOPE_SETTINGS["write_back"],
+            fire_prep_pass_gate_signals=[],
+            grooming_pass_gate_signals=[],
+        )
+
+    assert _config(tmp_path).grooming_pass_interval_seconds == GROOMING_INTERVAL
+    assert PromptKey.GROOMING_PASS.value not in [
+        entry.name for entry in runtime.scheduler.passes
+    ]
+    assert _not_configured(logs)["organize"] == [
+        "KODEZART_ORGANIZE__INTERVAL_SECONDS",
+        "KODEZART_ORGANIZE__TIMEOUT_SECONDS",
+    ]
+
+
+async def test_with_only_the_organize_interval_set_the_tick_alone_runs_at_it(
+    tmp_path: Path,
+) -> None:
+    """The tick takes the organize settings, and nothing else is scheduled.
+
+    Measured 2026-09-24: the operator's grooming cadence is six hours, and
+    the tick scheduled under it made a triaged scope wait that long for its
+    groom phase. The tick now runs on its own numbers only, and the grooming
+    pass, unset, is not scheduled at all.
+    """
     runtime = await _runtime(
         tmp_path,
         tracker=approving_board(),
@@ -996,38 +1071,14 @@ async def test_the_organize_tick_keeps_the_grooming_cadence_when_none_is_set(
         write_back=STANDING_SCOPE_SETTINGS["write_back"],
         fire_prep_pass_gate_signals=[],
         grooming_pass_gate_signals=[],
-    )
-
-    tick = _organize_tick(runtime)
-    assert (tick.interval_seconds, tick.timeout_seconds) == (
-        GROOMING_INTERVAL,
-        GROOMING_TIMEOUT,
-    )
-
-
-async def test_the_organize_tick_runs_on_its_own_interval_when_one_is_set(
-    tmp_path: Path,
-) -> None:
-    """The tick takes the organize settings; the grooming row is untouched.
-
-    Measured 2026-09-24: the operator's grooming cadence is six hours, and
-    the tick scheduled under it made a triaged scope wait that long for its
-    groom phase.
-    """
-    organize = {
-        **cast("dict[str, object]", STANDING_SCOPE_SETTINGS["organize"]),
-        "interval_seconds": ORGANIZE_INTERVAL,
-        "timeout_seconds": ORGANIZE_TIMEOUT,
-    }
-    runtime = await _runtime(
-        tmp_path,
-        tracker=approving_board(),
-        runner=FakeAgentRunner(events=[]),
-        operation=standing_scope_operation(),
-        organize=organize,
-        write_back=STANDING_SCOPE_SETTINGS["write_back"],
-        fire_prep_pass_gate_signals=[],
-        grooming_pass_gate_signals=[],
+        dispatch_pass_interval_seconds=None,
+        dispatch_pass_timeout_seconds=None,
+        fire_prep_pass_interval_seconds=None,
+        fire_prep_pass_timeout_seconds=None,
+        grooming_pass_interval_seconds=None,
+        grooming_pass_timeout_seconds=None,
+        supervisor_pass_interval_seconds=None,
+        supervisor_pass_timeout_seconds=None,
     )
 
     tick = _organize_tick(runtime)
@@ -1035,13 +1086,126 @@ async def test_the_organize_tick_runs_on_its_own_interval_when_one_is_set(
         ORGANIZE_INTERVAL,
         ORGANIZE_TIMEOUT,
     )
-    grooming = prompt_pass_schedule(_config(tmp_path, organize=organize))[
-        PromptKey.GROOMING_PASS
+    assert [entry.name for entry in runtime.scheduler.passes] == [
+        PromptKey.GROOMING_PASS.value
     ]
-    assert (grooming.interval_seconds, grooming.timeout_seconds) == (
-        GROOMING_INTERVAL,
-        GROOMING_TIMEOUT,
-    )
+    config = _config(tmp_path, **{**STANDING_SCOPE_SETTINGS, **NO_CADENCE})
+    assert PromptKey.GROOMING_PASS not in prompt_pass_schedule(config)
+
+
+async def test_with_no_cadence_set_a_per_issue_deployment_schedules_nothing(
+    tmp_path: Path,
+) -> None:
+    """Every pass that would wire is named, with the two settings to set."""
+    with structlog.testing.capture_logs() as logs:
+        runtime = await _runtime(
+            tmp_path,
+            tracker=FakeTrackerPort(),
+            runner=FakeAgentRunner(events=[]),
+            github_api=FakeDeliveryProbe(),
+            dispatch_pass_interval_seconds=None,
+            dispatch_pass_timeout_seconds=None,
+            fire_prep_pass_interval_seconds=None,
+            fire_prep_pass_timeout_seconds=None,
+            grooming_pass_interval_seconds=None,
+            grooming_pass_timeout_seconds=None,
+            supervisor_pass_interval_seconds=None,
+            supervisor_pass_timeout_seconds=None,
+        )
+
+    assert runtime.scheduler.passes == ()
+    assert runtime.lifecycle is None
+    assert _not_configured(logs) == {
+        "dispatch": [
+            "KODEZART_DISPATCH_PASS_INTERVAL_SECONDS",
+            "KODEZART_DISPATCH_PASS_TIMEOUT_SECONDS",
+        ],
+        "audit": [
+            "KODEZART_AUDIT_SWEEP_INTERVAL_SECONDS",
+            "KODEZART_AUDIT__TIMEOUT_SECONDS",
+        ],
+        PromptKey.FIRE_PREP_PASS.value: [
+            "KODEZART_FIRE_PREP_PASS_INTERVAL_SECONDS",
+            "KODEZART_FIRE_PREP_PASS_TIMEOUT_SECONDS",
+        ],
+        PromptKey.GROOMING_PASS.value: [
+            "KODEZART_GROOMING_PASS_INTERVAL_SECONDS",
+            "KODEZART_GROOMING_PASS_TIMEOUT_SECONDS",
+        ],
+    }
+
+
+async def test_with_no_cadence_set_a_scope_deployment_schedules_nothing(
+    tmp_path: Path,
+) -> None:
+    """The scope passes are named the same way: organize, heartbeat, supervisor."""
+    with structlog.testing.capture_logs() as logs:
+        runtime = await _runtime(
+            tmp_path,
+            tracker=approving_board(),
+            runner=FakeAgentRunner(events=[]),
+            operation=standing_scope_operation(),
+            organize=ORGANIZE_BOUNDS,
+            write_back=STANDING_SCOPE_SETTINGS["write_back"],
+            fire_prep_pass_gate_signals=[],
+            grooming_pass_gate_signals=[],
+            dispatch_pass_interval_seconds=None,
+            dispatch_pass_timeout_seconds=None,
+            fire_prep_pass_interval_seconds=None,
+            fire_prep_pass_timeout_seconds=None,
+            grooming_pass_interval_seconds=None,
+            grooming_pass_timeout_seconds=None,
+            supervisor_pass_interval_seconds=None,
+            supervisor_pass_timeout_seconds=None,
+        )
+
+    assert runtime.scheduler.passes == ()
+    assert set(_not_configured(logs)) == {
+        "organize",
+        HEARTBEAT_PASS,
+        "supervisor",
+        "audit",
+    }
+    assert _not_configured(logs)[HEARTBEAT_PASS] == [
+        "KODEZART_DISPATCH_PASS_INTERVAL_SECONDS",
+        "KODEZART_DISPATCH_PASS_TIMEOUT_SECONDS",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("interval", "timeout"),
+    [
+        (
+            "KODEZART_DISPATCH_PASS_INTERVAL_SECONDS",
+            "KODEZART_DISPATCH_PASS_TIMEOUT_SECONDS",
+        ),
+        (
+            "KODEZART_FIRE_PREP_PASS_INTERVAL_SECONDS",
+            "KODEZART_FIRE_PREP_PASS_TIMEOUT_SECONDS",
+        ),
+        (
+            "KODEZART_GROOMING_PASS_INTERVAL_SECONDS",
+            "KODEZART_GROOMING_PASS_TIMEOUT_SECONDS",
+        ),
+        (
+            "KODEZART_SUPERVISOR_PASS_INTERVAL_SECONDS",
+            "KODEZART_SUPERVISOR_PASS_TIMEOUT_SECONDS",
+        ),
+        ("KODEZART_ORGANIZE__INTERVAL_SECONDS", "KODEZART_ORGANIZE__TIMEOUT_SECONDS"),
+        ("KODEZART_AUDIT_SWEEP_INTERVAL_SECONDS", "KODEZART_AUDIT__TIMEOUT_SECONDS"),
+    ],
+)
+@pytest.mark.parametrize("half", ["interval", "timeout"])
+def test_one_half_of_a_cadence_refuses_at_load_naming_both(
+    monkeypatch: pytest.MonkeyPatch, interval: str, timeout: str, half: str
+) -> None:
+    """An interval with no timeout, or a timeout with no interval, never boots."""
+    monkeypatch.setenv("KODEZART_ORGANIZE__MAX_ADMISSION_ROUNDS", "1")
+    monkeypatch.setenv("KODEZART_ORGANIZE__MAX_CONVERGENCE_ROUNDS", "1")
+    monkeypatch.setenv(interval if half == "interval" else timeout, "600")
+    with pytest.raises(ValidationError) as refused:
+        AppConfig(_env_file=None)
+    assert f"{interval} and {timeout}" in str(refused.value)
 
 
 # ---------------------------------------------------------------------------

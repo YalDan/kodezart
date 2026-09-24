@@ -1,6 +1,7 @@
 """Application configuration via Pydantic Settings."""
 
-from typing import Self
+from dataclasses import dataclass
+from typing import Final, Literal, Self
 
 from pydantic import Field, model_validator
 from pydantic_settings import (
@@ -27,6 +28,56 @@ from kodezart.types.domain.ticket_review import (
     DEFAULT_MAX_REVIEWS,
     TicketReviewMode,
 )
+
+#: The groups of cadence settings, one per scheduled pass; the scope
+#: heartbeat runs on the dispatch group.
+CadenceName = Literal[
+    "dispatch", "fire_prep", "grooming", "organize", "audit", "supervisor"
+]
+
+#: The two settings that schedule each pass: its interval, then its timeout.
+#: Neither has a default. A pass is scheduled when both are set and not at
+#: all when neither is, because every pass costs something to run and a
+#: deployment that does not want one leaves it unset (2026-09-24).
+CADENCE_SETTINGS: Final[dict[CadenceName, tuple[str, str]]] = {
+    "dispatch": (
+        "KODEZART_DISPATCH_PASS_INTERVAL_SECONDS",
+        "KODEZART_DISPATCH_PASS_TIMEOUT_SECONDS",
+    ),
+    "fire_prep": (
+        "KODEZART_FIRE_PREP_PASS_INTERVAL_SECONDS",
+        "KODEZART_FIRE_PREP_PASS_TIMEOUT_SECONDS",
+    ),
+    "grooming": (
+        "KODEZART_GROOMING_PASS_INTERVAL_SECONDS",
+        "KODEZART_GROOMING_PASS_TIMEOUT_SECONDS",
+    ),
+    "organize": (
+        "KODEZART_ORGANIZE__INTERVAL_SECONDS",
+        "KODEZART_ORGANIZE__TIMEOUT_SECONDS",
+    ),
+    "audit": (
+        "KODEZART_AUDIT_SWEEP_INTERVAL_SECONDS",
+        "KODEZART_AUDIT__TIMEOUT_SECONDS",
+    ),
+    "supervisor": (
+        "KODEZART_SUPERVISOR_PASS_INTERVAL_SECONDS",
+        "KODEZART_SUPERVISOR_PASS_TIMEOUT_SECONDS",
+    ),
+}
+
+
+@dataclass(frozen=True)
+class PassCadence:
+    """A scheduled pass's interval and timeout, both set.
+
+    Named fields rather than a pair: both are seconds and both are floats,
+    and a pair of those is one transposition away from a pass that ticks on
+    its own timeout.
+    """
+
+    interval_seconds: float
+    timeout_seconds: float
 
 
 class AppConfig(BaseSettings):
@@ -358,27 +409,32 @@ class AppConfig(BaseSettings):
         le=300.0,
         description="Seconds between CI status check polls.",
     )
-    audit_sweep_interval_seconds: float = Field(
-        default=3600.0,
-        ge=60.0,
-        le=86400.0,
-        description="Seconds between audit delta ticks on the existing scheduler.",
-    )
-    supervisor_pass_interval_seconds: float = Field(
-        default=300.0,
+    audit_sweep_interval_seconds: float | None = Field(
+        default=None,
         ge=60.0,
         le=86400.0,
         description=(
-            "Seconds between supervisor observation ticks on the existing scheduler."
+            "Seconds between audit delta ticks on the existing scheduler. Set "
+            "together with KODEZART_AUDIT__TIMEOUT_SECONDS; unset, the audit is "
+            "not scheduled."
         ),
     )
-    supervisor_pass_timeout_seconds: float = Field(
-        default=120.0,
+    supervisor_pass_interval_seconds: float | None = Field(
+        default=None,
+        ge=60.0,
+        le=86400.0,
+        description=(
+            "Seconds between supervisor observation ticks on the existing "
+            "scheduler. Unset, the supervisor tick is not scheduled."
+        ),
+    )
+    supervisor_pass_timeout_seconds: float | None = Field(
+        default=None,
         gt=0,
         allow_inf_nan=False,
         description=(
             "Wall-clock bound for one supervisor observation tick over every "
-            "declared scope."
+            "declared scope. Set together with the interval."
         ),
     )
     audit_full_sweep_interval_seconds: float = Field(
@@ -520,78 +576,76 @@ class AppConfig(BaseSettings):
         le=250,
         description="Issues requested per tracker scan page.",
     )
-    dispatch_pass_interval_seconds: float = Field(
-        default=300.0,
+    dispatch_pass_interval_seconds: float | None = Field(
+        default=None,
         ge=10.0,
         le=3600.0,
         description=(
-            "Seconds between approved-fire dispatch passes. Dispatch is "
-            "single-winner-per-pass, so throughput IS the interval: the upper "
-            "bound is what stops a loaded queue sitting idle for a working day."
+            "Seconds between approved-fire dispatch passes, and the standing "
+            "scopes' heartbeat's cadence. Dispatch is single-winner-per-pass, "
+            "so throughput IS the interval: the upper bound is what stops a "
+            "loaded queue sitting idle for a working day. Unset, neither the "
+            "dispatch passes nor the heartbeat are scheduled."
         ),
     )
-    dispatch_pass_timeout_seconds: float = Field(
-        default=240.0,
+    dispatch_pass_timeout_seconds: float | None = Field(
+        default=None,
         ge=10.0,
         le=3600.0,
         description=(
-            "Seconds one dispatch tick may take before it is abandoned. The "
-            "tick is deterministic and model-free — a paged tracker scan, a "
-            "claim, and the git plumbing that builds a base — so it belongs "
-            "inside its own cadence, and the default leaves room for retries "
-            "while still naming a hang before the next tick is due. On expiry "
-            "the tick is cancelled and reported as timed out; the loop keeps "
-            "its cadence and the next tick runs. The upper bound is the "
-            "dispatch interval's own, so a budget can never outlast the "
-            "slowest cadence that interval admits."
+            "Seconds one dispatch or heartbeat tick may take before it is "
+            "abandoned. The tick is deterministic and model-free — a paged "
+            "tracker scan, a claim, and the git plumbing that builds a base — "
+            "so it belongs inside its own cadence. On expiry the tick is "
+            "cancelled and reported as timed out; the loop keeps its cadence "
+            "and the next tick runs. The upper bound is the dispatch "
+            "interval's own, so a budget can never outlast the slowest "
+            "cadence that interval admits. Set together with the interval."
         ),
     )
-    fire_prep_pass_interval_seconds: float = Field(
-        default=3600.0,
+    fire_prep_pass_interval_seconds: float | None = Field(
+        default=None,
         ge=60.0,
         le=86400.0,
         description=(
             "Seconds between fire-preparation pass sessions. The interval IS "
             "the latency a newly filed issue waits before anything prepares "
-            "it, so it is the operator's answer to how stale the queue may get."
+            "it, so it is the operator's answer to how stale the queue may "
+            "get. Unset, the pass is not scheduled."
         ),
     )
-    fire_prep_pass_timeout_seconds: float = Field(
-        default=1800.0,
+    fire_prep_pass_timeout_seconds: float | None = Field(
+        default=None,
         ge=60.0,
         le=86400.0,
         description=(
             "Seconds one fire-preparation tick may take before it is "
             "abandoned. The tick is a whole unattended session over the "
-            "board, so the budget is generous — half the shipped cadence, "
-            "which bounds a session that stopped making progress and still "
-            "leaves the next tick on time. On expiry the session is "
-            "cancelled and reported as timed out; the loop continues."
+            "board. On expiry the session is cancelled and reported as timed "
+            "out; the loop continues. Set together with the interval."
         ),
     )
-    grooming_pass_interval_seconds: float = Field(
-        default=21600.0,
+    grooming_pass_interval_seconds: float | None = Field(
+        default=None,
         ge=60.0,
         le=86400.0,
         description=(
             "Seconds between grooming pass sessions. Grooming verifies the "
             "whole tree against the real code by building it, so one run costs "
             "far more than one preparation and buys a report rather than a "
-            "queued unit of work — a slower cadence than fire preparation is "
-            "the shipped default, never a shared one."
+            "queued unit of work. Unset, the pass is not scheduled."
         ),
     )
-    grooming_pass_timeout_seconds: float = Field(
-        default=7200.0,
+    grooming_pass_timeout_seconds: float | None = Field(
+        default=None,
         ge=60.0,
         le=86400.0,
         description=(
             "Seconds one grooming tick may take before it is abandoned. "
             "Grooming builds the tree it verifies, which is the most "
-            "expensive session this deployment runs unattended, so its "
-            "budget is larger than fire preparation's and still a fraction "
-            "of its own cadence. On expiry the session is cancelled and "
-            "reported as timed out; the loop continues."
+            "expensive session this deployment runs unattended. On expiry the "
+            "session is cancelled and reported as timed out; the loop "
+            "continues. Set together with the interval."
         ),
     )
     dispatch_pass_gate_signals: list[PassSignal] = Field(
@@ -768,12 +822,80 @@ class AppConfig(BaseSettings):
     @model_validator(mode="after")
     def _audit_full_interval_includes_tick(self) -> Self:
         """A full-coverage interval cannot be shorter than its scheduler tick."""
-        if self.audit_full_sweep_interval_seconds < self.audit_sweep_interval_seconds:
+        tick = self.audit_sweep_interval_seconds
+        if tick is not None and self.audit_full_sweep_interval_seconds < tick:
             raise ValueError(
                 "audit_full_sweep_interval_seconds must not be shorter than "
                 "audit_sweep_interval_seconds"
             )
         return self
+
+    def _cadence_values(self) -> dict[CadenceName, tuple[float | None, float | None]]:
+        """Each scheduled pass's interval and timeout, as loaded."""
+        return {
+            "dispatch": (
+                self.dispatch_pass_interval_seconds,
+                self.dispatch_pass_timeout_seconds,
+            ),
+            "fire_prep": (
+                self.fire_prep_pass_interval_seconds,
+                self.fire_prep_pass_timeout_seconds,
+            ),
+            "grooming": (
+                self.grooming_pass_interval_seconds,
+                self.grooming_pass_timeout_seconds,
+            ),
+            "organize": (
+                None if self.organize is None else self.organize.interval_seconds,
+                None if self.organize is None else self.organize.timeout_seconds,
+            ),
+            "audit": (
+                self.audit_sweep_interval_seconds,
+                None if self.audit is None else self.audit.timeout_seconds,
+            ),
+            "supervisor": (
+                self.supervisor_pass_interval_seconds,
+                self.supervisor_pass_timeout_seconds,
+            ),
+        }
+
+    @model_validator(mode="after")
+    def _cadences_are_set_in_pairs(self) -> Self:
+        """A pass's interval and timeout are set together or not at all.
+
+        Neither has a default: an unset interval means the pass is not
+        scheduled, so a timeout alone budgets nothing, and an interval alone
+        would schedule a tick with no budget. Every half-set pair is named at
+        once, both of its settings.
+        """
+        unpaired = [
+            " and ".join(CADENCE_SETTINGS[name])
+            for name, (interval, timeout) in self._cadence_values().items()
+            if (interval is None) != (timeout is None)
+        ]
+        if unpaired:
+            raise ValueError(
+                "a scheduled pass's interval and timeout are set together or "
+                "not at all; set both or neither of: " + "; ".join(unpaired)
+            )
+        return self
+
+    def pass_cadence(self, name: CadenceName) -> PassCadence | None:
+        """*name*'s cadence, or ``None``: not set, so the pass is not scheduled."""
+        interval, timeout = self._cadence_values()[name]
+        if interval is None or timeout is None:
+            return None
+        return PassCadence(interval_seconds=interval, timeout_seconds=timeout)
+
+    def required_cadence(self, name: CadenceName) -> PassCadence:
+        """*name*'s cadence, for a builder that is only reached when it is set."""
+        cadence = self.pass_cadence(name)
+        if cadence is None:
+            raise ValueError(
+                f"the {name} pass is scheduled only when "
+                f"{' and '.join(CADENCE_SETTINGS[name])} are set"
+            )
+        return cadence
 
     def explicit_max_reviews(self) -> int | None:
         """``max_reviews`` when the deployment configured one, else ``None``.
