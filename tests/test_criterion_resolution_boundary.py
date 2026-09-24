@@ -7,6 +7,10 @@ exactly one function that resolves an identity to a row, and no module naming
 the narrow role also names the family surface — which is what stops a consumer
 being handed a roster plus permission to search it.  A third, separate clause is
 kept: no module carries a checkbox shape it could locate a write target by.
+Its scan sets aside exactly one reader, read off the shipped object and with
+its reason beside it: the checklist adoption reader (KOD-616), whose pattern
+and docstring are its two literals, and which is held to be no resolution
+site and to reach no tracker write.
 
 The second of those is exactly "no HOLDER of the role also reads the family",
 and that is narrower than "every other module depends on the resolver rather
@@ -89,6 +93,7 @@ import re._compiler as sre_compile
 import re._constants as sre_constants
 import re._parser as sre_parse
 import sys
+import types
 import warnings
 from collections import Counter
 from collections.abc import Iterator, Mapping
@@ -101,6 +106,7 @@ import pytest
 from kodezart.adapters.linear.tracker import LinearMcpTracker
 from kodezart.core.protocols import CriterionResolver, TrackerCriteriaReader
 from kodezart.domain.criterion_creation import existing_criterion
+from kodezart.domain.fire_spec import checklist_items
 from kodezart.services.alarm_supervisor import AlarmSupervisor
 from kodezart.services.criterion_sources import NativeCriterionResolver
 from kodezart.types.domain.criteria import CriterionId
@@ -780,15 +786,19 @@ def _text_of(node: ast.AST) -> str | None:
     return None
 
 
-def _checkbox_constants(tree: ast.AST) -> list[tuple[int, list[str]]]:
+def _checkbox_constants(
+    tree: ast.AST, exempt: frozenset[int] = frozenset()
+) -> list[tuple[int, list[str]]]:
     """Each literal in this module that carries a complete checkbox shape.
 
     Every literal expression is read whole (see ``_text_of``), so a pattern
-    joined from literal pieces is read as the pattern it joins to.
+    joined from literal pieces is read as the pattern it joins to.  A node
+    in *exempt*, by its identity in *tree*, is set aside and nothing else.
     """
     return [
         (getattr(node, "lineno", 0), shapes)
         for node in ast.walk(tree)
+        if id(node) not in exempt
         for text in [_text_of(node)]
         if text is not None
         for shapes in [checkbox_shapes(text)]
@@ -805,12 +815,83 @@ def _literals_read(root: Path) -> int:
     )
 
 
-def _checkbox_scans(root: Path) -> dict[str, list[tuple[int, list[str]]]]:
+def _code_names(code: types.CodeType) -> frozenset[str]:
+    """Every name *code* reads, nested code (a generator's body) included."""
+    return frozenset(code.co_names).union(
+        *(
+            _code_names(inner)
+            for inner in code.co_consts
+            if isinstance(inner, types.CodeType)
+        )
+    )
+
+
+def _reached(function: types.FunctionType) -> list[object]:
+    """Every module-level object *function*'s body reads, nested code included."""
+    names = _code_names(function.__code__)
+    return [
+        function.__globals__[name] for name in sorted(names & set(function.__globals__))
+    ]
+
+
+#: The one reader the checkbox scan sets aside (KOD-616), and why: it reads
+#: the checklist a person wrote in an issue to mint new criteria through the
+#: one minting site (KOD-621); it locates no write target and resolves
+#: nothing by text or by checkbox.  Two literals are set aside, each read off
+#: the shipped object: the pattern the reader reads, at its own assignment
+#: in the reader's module, and the reader's own docstring, which names the
+#: three tick boxes.  The same text anywhere else is still reported.
+CHECKLIST_READER_MODULE = _module_of(checklist_items)
+(CHECKLIST_PATTERN,) = tuple(
+    value for value in _reached(checklist_items) if isinstance(value, re.Pattern)
+)
+
+
+def _exempt_literals(module: str, tree: ast.Module) -> frozenset[int]:
+    """The reader's pattern literal and docstring as nodes of *tree*, by identity.
+
+    Empty in every module but the reader's.  The pattern is the literal the
+    module-level assignment binding the reader's pattern object compiles, and
+    the docstring is the first statement of the module-level definition the
+    reader is, when it is the reader's own docstring.
+    """
+    if module != CHECKLIST_READER_MODULE:
+        return frozenset()
+    (bound,) = tuple(
+        name
+        for name, value in vars(sys.modules[checklist_items.__module__]).items()
+        if value is CHECKLIST_PATTERN
+    )
+    pattern = [
+        argument
+        for node in tree.body
+        if isinstance(node, ast.Assign)
+        and [ast.unparse(target) for target in node.targets] == [bound]
+        and isinstance(node.value, ast.Call)
+        for argument in node.value.args
+        if _text_of(argument) == CHECKLIST_PATTERN.pattern
+    ]
+    docstring = [
+        node.body[0].value
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == checklist_items.__qualname__
+        and isinstance(node.body[0], ast.Expr)
+        and ast.get_docstring(node) == inspect.getdoc(checklist_items)
+    ]
+    return frozenset(id(node) for node in [*pattern, *docstring])
+
+
+def _checkbox_scans(
+    sources: Mapping[str, str],
+) -> dict[str, list[tuple[int, list[str]]]]:
+    """Each module of *sources* carrying a checkbox literal, but the reader's two."""
     found = {}
-    for path in sorted(root.rglob("*.py")):
-        hits = _checkbox_constants(ast.parse(path.read_text(encoding="utf-8")))
+    for module, text in sorted(sources.items()):
+        tree = ast.parse(text)
+        hits = _checkbox_constants(tree, _exempt_literals(module, tree))
         if hits:
-            found[path.relative_to(root).as_posix()] = hits
+            found[module] = hits
     return found
 
 
@@ -860,10 +941,141 @@ def test_no_module_scans_for_checkbox_syntax() -> None:
 
     A pattern is read by what it matches rather than by how it is spelled:
     see ``checkbox_shapes`` for both readings (KOD-651).
+
+    One reader is set aside, and only its two literals: the checklist
+    adoption reader (KOD-616), for the reason recorded at
+    ``CHECKLIST_PATTERN``.  The cases below hold the exemption exact, the
+    scan as strict everywhere else, and the reader no resolution site.
     """
-    assert _checkbox_scans(SOURCE) == {}
+    assert _checkbox_scans(_shipped()) == {}
     # Non-vacuous: the scan read the shipped tree's literals.
     assert _literals_read(SOURCE) > 0
+
+
+def test_the_checkbox_exemption_is_exactly_the_checklist_readers_two_literals() -> None:
+    """Without the exemption, the scan reports the reader's two literals only.
+
+    So the exemption is live — each literal it sets aside carries a checkbox
+    shape — and it sets aside nothing else in the tree (KOD-651, KOD-616).
+    """
+    tree = ast.parse(_shipped()[CHECKLIST_READER_MODULE])
+    exempt = _exempt_literals(CHECKLIST_READER_MODULE, tree)
+    assert len(exempt) == 2
+    unexempted = _checkbox_constants(tree)
+    assert len(unexempted) == 2
+    assert unexempted == [
+        (getattr(node, "lineno", 0), checkbox_shapes(text))
+        for node in ast.walk(tree)
+        if id(node) in exempt
+        for text in [_text_of(node)]
+        if text is not None
+    ]
+    texts = [_text_of(node) or "" for node in ast.walk(tree) if id(node) in exempt]
+    assert sorted(inspect.cleandoc(text) for text in texts) == sorted(
+        [
+            inspect.cleandoc(CHECKLIST_PATTERN.pattern),
+            inspect.getdoc(checklist_items) or "",
+        ]
+    )
+
+
+#: The reader's own two literals, written as one new statement, so the only
+#: thing that can set them aside is where they sit.
+_READER_LITERALS = (
+    f"_planted = ({CHECKLIST_PATTERN.pattern!r}, {inspect.getdoc(checklist_items)!r})"
+)
+
+
+def _reported_as_planted(module: str, text: str, line: int) -> None:
+    """The scan over *text* as *module* reports the planted line and nothing else."""
+    assert _checkbox_scans({module: text}) == {
+        module: [
+            (line, checkbox_shapes(CHECKLIST_PATTERN.pattern)),
+            (line, checkbox_shapes(inspect.getdoc(checklist_items) or "")),
+        ]
+    }
+
+
+def test_the_readers_literals_anywhere_else_in_the_tree_are_still_reported() -> None:
+    """Planted at the end of any shipped module, the reader's module included.
+
+    The exemption is keyed on the reader's own assignment and definition,
+    so the same literals under any other binding are a checkbox scan like
+    any other (KOD-651).
+    """
+    shipped = _shipped()
+    assert CHECKLIST_READER_MODULE in shipped
+    for module, text in sorted(shipped.items()):
+        planted = f"{text}\n{_READER_LITERALS}\n"
+        _reported_as_planted(module, planted, planted.count("\n"))
+
+
+def test_the_readers_literals_in_any_other_function_of_its_module_are_reported() -> (
+    None
+):
+    """Planted as the first statement of each other function in the module.
+
+    Every function and method of the reader's module other than the reader
+    itself, each in turn, is still scanned in full (KOD-651).
+    """
+    text = _shipped()[CHECKLIST_READER_MODULE]
+    tree = ast.parse(text)
+    where = definitions(tree)
+    others = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+        and where[id(node)] != checklist_items.__qualname__
+    ]
+    assert others
+    lines = text.splitlines(keepends=True)
+    for node in others:
+        first = node.body[0]
+        planted = "".join(
+            [
+                *lines[: first.lineno - 1],
+                f"{' ' * first.col_offset}{_READER_LITERALS}\n",
+                *lines[first.lineno - 1 :],
+            ]
+        )
+        _reported_as_planted(CHECKLIST_READER_MODULE, planted, first.lineno)
+
+
+def test_the_exempt_checklist_reader_is_no_resolution_site_and_writes_nothing() -> None:
+    """The reader resolves no criterion and reaches no tracker write (KOD-616).
+
+    It is not in the register of handed lookups, neither reading reports it,
+    and what its body reads is the pattern object and nothing else from its
+    module: no tracker, no writer, no await, and no member of the shipped
+    tracker adapter by any name.
+    """
+    found = _shipped_reading()
+    tree = found.index.trees[CHECKLIST_READER_MODULE]
+    where = definitions(tree)
+    (node,) = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+        and where[id(node)] == checklist_items.__qualname__
+    ]
+    site = _site(CHECKLIST_READER_MODULE, checklist_items.__qualname__, node)
+    assert site[2] == tuple(inspect.signature(checklist_items).parameters)
+    assert site not in HANDED_LOOKUPS
+    assert site not in _resolution_sites(found, CHECKLIST_READER_MODULE)
+    assert site not in _handed_resolution_sites(found, CHECKLIST_READER_MODULE)
+    assert all(site not in group for group in _sites_in(_shipped()).values())
+    reached = _reached(checklist_items)
+    assert len(reached) == 1
+    assert reached[0] is CHECKLIST_PATTERN
+    assert not inspect.iscoroutinefunction(checklist_items)
+    assert not any(isinstance(inner, ast.Await) for inner in ast.walk(node))
+    tracker_members = {
+        name
+        for name, member in inspect.getmembers(LinearMcpTracker)
+        if not name.startswith("_") and callable(member)
+    }
+    assert tracker_members
+    assert _code_names(checklist_items.__code__).isdisjoint(tracker_members)
 
 
 @pytest.mark.parametrize(
