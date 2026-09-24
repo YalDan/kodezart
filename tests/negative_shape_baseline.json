@@ -65,7 +65,7 @@
   "tests/chains/test_delivery_coordinator.py": 50,
   "tests/chains/test_dispatch_definitions.py": 15,
   "tests/chains/test_fire_extraction.py": 34,
-  "tests/chains/test_fire_graph.py": 6,
+  "tests/chains/test_fire_graph.py": 146,
   "tests/chains/test_fire_spec_prompt_consumers.py": 13,
   "tests/chains/test_fresh_write_back_judge.py": 11,
   "tests/chains/test_lane_delivery.py": 71,
@@ -359,7 +359,7 @@
   "tests/services/test_fire_dispatcher.py": 250,
   "tests/services/test_fire_log_facts.py": 29,
   "tests/services/test_fire_record_identity.py": 9,
-  "tests/services/test_fire_time_rulings.py": 195,
+  "tests/services/test_fire_time_rulings.py": 236,
   "tests/services/test_git_source_lookup.py": 3,
   "tests/services/test_landing_dispatch.py": 15,
   "tests/services/test_lane_entry.py": 19,
@@ -374,7 +374,7 @@
   "tests/services/test_native_amendment_independent.py": 28,
   "tests/services/test_native_amendments.py": 75,
   "tests/services/test_native_commit_receipt_independent.py": 9,
-  "tests/services/test_native_execution_record.py": 13,
+  "tests/services/test_native_execution_record.py": 18,
   "tests/services/test_organize_gate_static.py": 9,
   "tests/services/test_organize_session_owner.py": 43,
   "tests/services/test_parent_rollup_authority.py": 4,
@@ -1519,7 +1519,20 @@
    "test_authored_delivery_preserves_one_public_terminal_and_wire"
   ],
   "tests/chains/test_fire_graph.py": [
-   "test_compiled_fire_has_no_delivery_nodes_routes_or_capabilities"
+   "test_compiled_fire_has_no_delivery_nodes_routes_or_capabilities",
+   "test_the_fire_terminal_and_state_grow_no_field_of_the_lane_s_delivery",
+   "test_the_fire_s_state_keys_are_pinned_whole",
+   "test_the_completion_node_emits_exactly_the_terminal_for_every_native_state",
+   "test_the_completion_node_s_construction_site_is_closed_by_object",
+   "test_nothing_on_the_terminal_s_closure_renders_it_but_its_fields",
+   "test_the_terminal_s_whole_machinery_is_pinned_by_digest",
+   "test_every_route_the_app_serves_is_classified",
+   "test_every_configuration_serves_the_classified_routes",
+   "test_every_route_has_a_method_to_drive",
+   "test_the_stream_column_is_what_each_route_answers",
+   "test_what_production_sends_for_the_terminal_is_its_fields_and_no_more",
+   "test_transport_after_the_rendering_is_outside_the_reach",
+   "test_the_egress_path_is_pinned_whole"
   ],
   "tests/chains/test_fire_spec_prompt_consumers.py": [
    "test_real_authored_consumer_prompts_match_recorded_base",
@@ -5335,7 +5348,9 @@
   "tests/services/test_native_execution_record.py": [
    "test_a_native_commit_path_without_the_record_write_refuses",
    "test_the_persist_phase_does_not_complete_when_the_record_write_raises",
-   "test_the_recorded_head_equals_the_branch_head_after_each_commit"
+   "test_the_recorded_head_equals_the_branch_head_after_each_commit",
+   "test_one_iteration_reads_the_lane_authority_at_its_start_commit_and_push",
+   "test_the_writer_is_refused_only_over_a_fact_its_write_depends_on"
   ],
   "tests/services/test_organize_gate_static.py": [
    "test_the_derivation_reaches_the_decisions_and_not_the_whole_tree",
