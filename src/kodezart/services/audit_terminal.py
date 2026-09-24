@@ -84,9 +84,7 @@ class AuditTerminalReader:
         if issue.issue_key != request.issue_key:
             raise AuditClaimReadError("terminal read returned another issue")
         criteria = await self._criteria(request.issue_key)
-        if issue.state_name != self._review_state or compute_gap(
-            criteria=criteria, supersession_refs={}
-        ):
+        if issue.state_name != self._review_state or compute_gap(criteria).owed:
             raise AuditClaimReadError("the expected review terminal is not established")
         comment, record = await self._records.read(
             issue_key=request.issue_key,
