@@ -4101,9 +4101,9 @@
    "test_scheduled_owner_prepares_native_children_and_reentry_is_idempotent",
    "test_partial_owner_configuration_refuses_during_preflight",
    "test_actual_lifespan_registers_and_runs_the_owner",
-   "test_a_scope_deployment_schedules_the_organize_tick_and_no_per_issue_pass",
+   "test_a_declared_scope_schedules_the_organize_tick_beside_the_per_issue_passes",
    "test_the_same_operation_without_organize_scopes_keeps_the_per_issue_passes",
-   "test_preflight_asks_nothing_of_a_pass_a_scope_deployment_withholds",
+   "test_preflight_asks_exactly_the_scans_the_wired_passes_gate",
    "test_a_missing_fold_aborts_the_preflight_before_anything_is_probed",
    "test_a_scope_deployment_whose_credential_cannot_list_issues_is_refused"
   ],

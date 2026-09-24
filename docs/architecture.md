@@ -40,8 +40,9 @@ Dialling the tracker consults no run-event table; a declared one is checked when
 the operation file loads. An operation that declares `[[organize_scopes]]`
 schedules the passes that read that one table — the organize tick, the scope
 heartbeat, the observation tick where a tracker is dialled and the audit where
-one is configured — and withholds the per-issue machine: the dispatch pass, the
-two remaining prompt passes and the lifecycle watcher are not built.
+one is configured — beside the per-issue machine: the dispatch pass, the two
+prompt passes and the lifecycle watcher are built on their own premises, each
+pass's cadence pair among them, whether or not scopes are declared.
 The lifespan registers each acquired resource with an `AsyncExitStack`.
 Shutdown stops the scheduler and queue, drains lifecycle watchers and finishes
 their records, then closes their transports; the checkpointer retains its

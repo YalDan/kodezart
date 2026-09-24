@@ -43,10 +43,10 @@ organize_mandates = []
 # collects each row where audit settings are configured. No cadence has a
 # default: a pass whose interval is unset is not scheduled, and boot names it
 # with scheduled_pass_not_configured.
-# Declaring any row withholds the per-issue machine: no dispatch pass, no
-# fire-prep or grooming session pass and no lifecycle watcher is scheduled,
-# because that deployment is worked scope by scope. Empty keeps them, declares
-# no standing scope and schedules none of the four passes above.
+# Declaring a row switches nothing off: the dispatch pass, the fire-prep and
+# grooming session passes and the lifecycle watcher are scheduled on their own
+# premises, each pass's cadence pair among them, scopes or no scopes. Empty
+# declares no standing scope and schedules none of the four passes above.
 organize_scopes = []
 
 # Identities the agent posts under, in the order the pass templates address

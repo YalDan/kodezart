@@ -8,7 +8,7 @@ from kodezart.types.domain.organize_owner import OrganizePolicy
 class OrganizeSettings(OrganizePolicy):
     """The owner's two bounds, and the organize tick's own cadence and budget.
 
-    The tick is scheduled under the grooming pass's name, on these two
+    The tick is scheduled under its own name, ``organize``, on these two
     settings only. Unset, the tick is not scheduled: no other pass's cadence
     stands in for it (2026-09-24). Set one, set both; a boot with one
     refuses at load naming the pair.

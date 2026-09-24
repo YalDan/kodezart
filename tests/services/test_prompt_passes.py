@@ -21,11 +21,11 @@ from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.composition.passes import (
     _DISPATCH_NAME,
     MARKER_PURPOSES_BY_FAMILY,
+    ORGANIZE_TICK_NAME,
     DispatchRuntime,
     build_dispatch_runtime,
     build_prompt_passes,
     prompt_pass_schedule,
-    runs_scope_flow,
     verify_pass_preflight,
 )
 from kodezart.composition.records import RECORD_KIND_BY_PASS
@@ -789,15 +789,14 @@ async def test_a_refused_dispatch_signal_aborts_naming_the_dispatch_pass(
 ) -> None:
     """The per-issue dispatch pass's signal is probed and refused like any other.
 
-    A deployment that is not worked scope by scope, with a delivery probe and
-    repositories whose teams the dispatch pass scans, schedules the dispatch
-    pass; its gate signal is asked for at boot, and a credential that cannot
-    scan for it aborts startup naming the dispatch pass and the diagnosis.
-    The two session passes declare no signal here, so the dispatch pass is
-    the only thing that can have put the signal in the probe.
+    A deployment with a delivery probe and repositories whose teams the
+    dispatch pass scans schedules the dispatch pass; its gate signal is asked
+    for at boot, and a credential that cannot scan for it aborts startup naming
+    the dispatch pass and the diagnosis. The two session passes declare no
+    signal here, so the dispatch pass is the only thing that can have put the
+    signal in the probe.
     """
     operation = example_config()
-    assert not runs_scope_flow(operation)
     assert any(operation.teams_scanned_by(repo.url) for repo in operation.repos)
     tracker = FakeTrackerPort(scan_refusals={PassSignal.approved_changed: DIAGNOSIS})
     runner = FakeAgentRunner(events=[])
@@ -1007,11 +1006,9 @@ async def test_the_shipped_example_declares_every_prefix_the_wired_passes_ask_fo
 
 
 def _organize_tick(runtime: DispatchRuntime) -> ScheduledPass:
-    """The one scheduled organize tick, under the grooming pass's name."""
+    """The one scheduled organize tick, under its own name."""
     ticks = [
-        entry
-        for entry in runtime.scheduler.passes
-        if entry.name == PromptKey.GROOMING_PASS.value
+        entry for entry in runtime.scheduler.passes if entry.name == ORGANIZE_TICK_NAME
     ]
     assert len(ticks) == 1
     return ticks[0]
@@ -1029,7 +1026,10 @@ def _not_configured(logs: Sequence[Mapping[str, object]]) -> dict[str, object]:
 async def test_the_organize_tick_is_not_scheduled_without_its_own_interval(
     tmp_path: Path,
 ) -> None:
-    """No other pass's cadence stands in for the tick's: grooming's is set here."""
+    """No other pass's cadence stands in for the tick's: grooming's is set here.
+
+    A set grooming cadence schedules the grooming pass, and only that.
+    """
     with structlog.testing.capture_logs() as logs:
         runtime = await _runtime(
             tmp_path,
@@ -1043,9 +1043,9 @@ async def test_the_organize_tick_is_not_scheduled_without_its_own_interval(
         )
 
     assert _config(tmp_path).grooming_pass_interval_seconds == GROOMING_INTERVAL
-    assert PromptKey.GROOMING_PASS.value not in [
-        entry.name for entry in runtime.scheduler.passes
-    ]
+    names = [entry.name for entry in runtime.scheduler.passes]
+    assert ORGANIZE_TICK_NAME not in names
+    assert PromptKey.GROOMING_PASS.value in names
     assert _not_configured(logs)["organize"] == [
         "KODEZART_ORGANIZE__INTERVAL_SECONDS",
         "KODEZART_ORGANIZE__TIMEOUT_SECONDS",
@@ -1086,9 +1086,7 @@ async def test_with_only_the_organize_interval_set_the_tick_alone_runs_at_it(
         ORGANIZE_INTERVAL,
         ORGANIZE_TIMEOUT,
     )
-    assert [entry.name for entry in runtime.scheduler.passes] == [
-        PromptKey.GROOMING_PASS.value
-    ]
+    assert [entry.name for entry in runtime.scheduler.passes] == [ORGANIZE_TICK_NAME]
     config = _config(tmp_path, **{**STANDING_SCOPE_SETTINGS, **NO_CADENCE})
     assert PromptKey.GROOMING_PASS not in prompt_pass_schedule(config)
 
@@ -1138,7 +1136,11 @@ async def test_with_no_cadence_set_a_per_issue_deployment_schedules_nothing(
 async def test_with_no_cadence_set_a_scope_deployment_schedules_nothing(
     tmp_path: Path,
 ) -> None:
-    """The scope passes are named the same way: organize, heartbeat, supervisor."""
+    """Every pass is named the same way: the scope passes and the session passes.
+
+    A declared scope switches nothing off (2026-09-24): the two session passes
+    would run here on their cadence pairs, so unset they are named too.
+    """
     with structlog.testing.capture_logs() as logs:
         runtime = await _runtime(
             tmp_path,
@@ -1161,10 +1163,12 @@ async def test_with_no_cadence_set_a_scope_deployment_schedules_nothing(
 
     assert runtime.scheduler.passes == ()
     assert set(_not_configured(logs)) == {
-        "organize",
+        ORGANIZE_TICK_NAME,
         HEARTBEAT_PASS,
         "supervisor",
         "audit",
+        PromptKey.FIRE_PREP_PASS.value,
+        PromptKey.GROOMING_PASS.value,
     }
     assert _not_configured(logs)[HEARTBEAT_PASS] == [
         "KODEZART_DISPATCH_PASS_INTERVAL_SECONDS",

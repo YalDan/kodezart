@@ -16,6 +16,7 @@ import pytest
 
 from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.chains.scope_walker import read_scope_ready
+from kodezart.composition.passes import ORGANIZE_TICK_NAME
 from kodezart.composition.tracker import criteria_stage_label_key
 from kodezart.config.organize import OrganizeSettings
 from kodezart.domain.criterion_evidence import parse_criterion_evidence
@@ -409,8 +410,9 @@ async def test_a_scope_deployment_boots_from_the_shipped_files_and_fires_nothing
     A deployment configured from the shipped file and the page's own environment
     block boots, reconciles its mappings into the team, schedules the passes that
     read its one scope table — the observation tick that watches each lane's run
-    shape, the organize tick and the standing scopes' heartbeat — and nothing
-    else, holds no checkpointer, and writes no label onto any issue. Its first
+    shape, the organize tick and the standing scopes' heartbeat — beside the
+    per-issue dispatch pass the same environment's dispatch pair and forge token
+    schedule, holds no checkpointer, and writes no label onto any issue. Its first
     scoped run is refused by type before a member is read, because nobody has
     approved the project yet, and it leaves the board untouched.
 
@@ -459,11 +461,22 @@ async def test_a_scope_deployment_boots_from_the_shipped_files_and_fires_nothing
         assert set(reconciled[0]["created"]) == {
             ref.describe() for ref in owned_mappings(loaded)
         }
+        # The page's environment sets the organize, dispatch and supervisor
+        # pairs and no session-pass pair: the dispatch pass runs beside the
+        # scope passes, and the two session passes are named as unset.
         assert [entry.name for entry in app.state.pass_scheduler.passes] == [
+            *(f"dispatch:{repo.url}" for repo in loaded.repos),
             "supervisor",
-            PromptKey.GROOMING_PASS.value,
+            ORGANIZE_TICK_NAME,
             HEARTBEAT_PASS,
         ]
+        assert {
+            entry["name"] for entry in logged(events, "scheduled_pass_not_configured")
+        } == {
+            PromptKey.FIRE_PREP_PASS.value,
+            PromptKey.GROOMING_PASS.value,
+            "audit",
+        }
         # The observation tick records each lane's alarm under a configured
         # prefix and refuses that lane by name without one, so a file that
         # schedules the tick and declares no prefix is a file that stops at its
@@ -471,9 +484,7 @@ async def test_a_scope_deployment_boots_from_the_shipped_files_and_fires_nothing
         assert MARKER_PURPOSE in loaded.marker_prefixes
         assert app.state.checkpointer is None
         for name in ("scheduled_passes_not_wired", "prompt_passes_not_wired"):
-            withheld = logged(events, name)
-            assert len(withheld) == 1, name
-            assert withheld[0]["organize_scopes_declared"] is True, name
+            assert logged(events, name) == [], name
         # Boot instates the vocabulary in the TEAM; it labels no issue and does
         # not touch the project it is about to be asked to walk.
         assert {

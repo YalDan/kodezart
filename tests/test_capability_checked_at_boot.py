@@ -66,6 +66,9 @@ PACKAGE_ROOT = Path(kodezart.__path__[0])
 #: The one function allowed to ask the credential what it can scan.
 PROBE = "verify_scan_capability"
 PROBE_SITE = ("composition/passes.py", "_verify_wired_gates")
+#: The probe's own helper, which reads the alarm table for the scans the
+#: supervisor tick's alarms declare.
+SCANS_SITE = ("composition/passes.py", "_supervisor_scans")
 #: The boot checks, and the one function allowed to call each of them.
 BOOT_CHECKS = ("_verify_wired_gates", require_alarm_table.__name__)
 BOOT_SITE = ("composition/passes.py", "verify_pass_preflight")
@@ -74,7 +77,7 @@ BOOT_SITE = ("composition/passes.py", "verify_pass_preflight")
 TABLE_QUESTION_SITES = frozenset(
     {
         ("domain/run_alarm_table.py", require_alarm_table.__name__),
-        PROBE_SITE,
+        SCANS_SITE,
     }
 )
 TABLE = "ALARM_TABLE"
@@ -257,11 +260,13 @@ ALARM_BOUNDS = frozenset(
     if name.startswith("run_alarm_") and _numeric(field.annotation)
 )
 #: The two readers of the observed set this scan is written for: the boot's
-#: supervisor arm, which declares the observed alarms' scans, and the lane
-#: observation, which announces the observed alarms' transitions.
+#: supervisor arm, which declares the observed alarms' scans (and takes no
+#: configuration at all: whether the tick runs is its cadence pair, read by
+#: its caller), and the lane observation, which announces the observed
+#: alarms' transitions.
 OBSERVED_CONSUMERS = frozenset(
     {
-        ("composition/passes.py", "_verify_wired_gates"),
+        ("composition/passes.py", "_supervisor_scans"),
         ("services/alarm_supervisor.py", "_announceable"),
     }
 )

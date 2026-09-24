@@ -123,8 +123,12 @@ that path, and the boot check does not cover it.
 
 None of the values above has a default, so each one is a choice you make rather
 than a value that appears. The last six are the cadences: the organize tick's,
-the standing scopes' heartbeat's (it runs on the dispatch pair) and the
-observation tick's, each an interval and a timeout. A pass whose interval is
+the dispatch pair (the per-issue dispatch pass and the standing scopes'
+heartbeat both run on it) and the observation tick's, each an interval and a
+timeout. The fire-prep and grooming session passes have pairs of their own,
+`KODEZART_FIRE_PREP_PASS_INTERVAL_SECONDS`/`_TIMEOUT_SECONDS` and the grooming
+two; set them and both passes run over the declared team's board beside the
+scope passes. A pass whose interval is
 unset is not scheduled, so leave a pair out to leave that pass off; set one half
 of a pair without the other and boot refuses, naming both. If your variables are still spelled the old flat way,
 the renames section of
@@ -135,24 +139,21 @@ current name; every retired spelling is refused rather than ignored.
 
 - `tracker_mappings_reconciled` — the backend is dialled and every declared
   mapping is resolved. It names the backend and the two lists above.
-- `scheduled_passes_not_wired` with `organize_scopes_declared: true` — the
-  per-issue dispatch pass is withheld, and this field is why.
-- `prompt_passes_not_wired` with `organize_scopes_declared: true` — the fire-prep
-  and grooming session passes are withheld, for the same reason.
 - `scheduled_pass_not_configured` — one per pass that would run here and whose
   interval is unset, naming the pass and the two settings that would schedule
   it. That pass is not scheduled.
 - `pass_scheduler_started` — the scheduler is running, naming each pass it
-  carries and that pass's interval. On a scope deployment that is the organize
-  tick, the standing scopes' heartbeat, the observation tick that watches each
-  lane's run shape, and the audit pass where one is configured — each one whose
-  cadence is set. The organize tick's interval is
-  `KODEZART_ORGANIZE__INTERVAL_SECONDS` and nothing else; the scheduler sleeps
-  one interval before the first tick.
+  carries and that pass's interval. With the environment above that is one
+  dispatch pass for the declared repository, the observation tick, the organize
+  tick and the standing scopes' heartbeat — each one whose cadence pair is set;
+  the fire-prep and grooming passes are named by
+  `scheduled_pass_not_configured` until their pairs are. The organize tick's
+  interval is `KODEZART_ORGANIZE__INTERVAL_SECONDS` and nothing else; the
+  scheduler sleeps one interval before the first tick.
 
-Both "not wired" lines are expected here, and a boot that does NOT carry them on
-a scope deployment is a boot that just scheduled the per-issue machine over your
-team's whole board.
+Neither "not wired" line appears here: the roster, the tracker and the forge
+token are all present, so every pass whose cadence pair is set is scheduled. A
+declared scope switches no pass off; leaving its pair unset does.
 
 ## Starting a run
 

@@ -83,6 +83,9 @@ _DISPATCH_NAME = "dispatch"
 #: are not a per-repository roster and a pass per repository would ask the
 #: same approval question once per binding that repository happens to hold.
 _HEARTBEAT_NAME = "scope_heartbeat"
+#: The organize tick's own name: it runs beside the grooming pass, never under
+#: its name (owner, 2026-09-24).
+ORGANIZE_TICK_NAME = "organize"
 
 
 @dataclass(frozen=True)
@@ -285,31 +288,28 @@ def absent_roster(operation: OperationConfig) -> tuple[str, ...]:
 
 
 def runs_scope_flow(operation: OperationConfig) -> bool:
-    """Whether this operation declares scopes the organize owner walks.
+    """Whether this operation declares scopes the scope flow works on.
 
-    Such an operation is worked scope by scope: a scope is approved, the
-    organize step maps its workflow, and the walker runs the lanes. The
-    per-issue dispatcher and the two remaining prompt passes scan whole boards
-    and are no part of that flow — declaring the one team and the one
-    repository a scope run needs would otherwise schedule all three over that
-    team's entire board.
-
-    Read off the existing roster rather than a switch of its own: a lane cannot
-    fire without the criteria mandate's terminal marker, which only an organize
-    stage writes, so every deployment that walks scopes declares them here.
+    A declared scope turns the scope flow ON: the organize tick, the standing
+    scopes' heartbeat, the supervisor and the audit read the same rows. It
+    turns nothing else off. Whether any other job runs is its cadence pair
+    (KOD-1238); where it works is the declared teams and repositories, a team
+    narrowed by the projects it names. Until 2026-09-24 this predicate also
+    withheld the two session passes and the dispatcher, a rule the owner never
+    stated and rejected on 2026-09-23.
     """
     return bool(operation.organize_scopes)
 
 
 def session_passes_wire(operation: OperationConfig) -> bool:
-    """Whether the two legacy prompt passes run as agent sessions here.
+    """Whether the two prompt passes run as agent sessions here.
 
-    Both conditions, named once: a roster a template could not render over, and
-    a deployment that works scope by scope. Three sites ask the same question —
-    the wiring, the gate probe and the render preflight — and a second copy of
-    it is a second opinion about which passes this deployment schedules.
+    One condition, named once: a roster a template could render over. Three
+    sites ask the same question — the wiring, the gate probe and the render
+    preflight — and a second copy of it is a second opinion about which passes
+    this deployment schedules.
     """
-    return not runs_scope_flow(operation) and not absent_roster(operation)
+    return not absent_roster(operation)
 
 
 def dispatch_passes_wire(
@@ -318,16 +318,11 @@ def dispatch_passes_wire(
     """Whether the per-issue dispatch passes wire here.
 
     A dialled tracker to claim on, a delivery probe to answer "is this issue
-    already delivered?", and an operation that does not work scope by scope.
-    Named once: the wiring reads it, and so does the marker prefix check
-    that has to know which passes the wiring will build.
+    already delivered?", and an operation config. Named once: the wiring reads
+    it, and so does the marker prefix check that has to know which passes the
+    wiring will build.
     """
-    return (
-        tracker_present
-        and delivery_present
-        and operation is not None
-        and not runs_scope_flow(operation)
-    )
+    return tracker_present and delivery_present and operation is not None
 
 
 def scope_passes_wire(
@@ -487,49 +482,40 @@ async def build_prompt_passes(
 ) -> list[ScheduledPass]:
     """Bind the configured Organize owner and remaining legacy prompt passes.
 
-    Organize runs under the grooming pass's name and report identity, on its
-    own cadence settings only, with its own fresh scope reads and explicit
-    repository bindings, and is scheduled FIRST so a deployment that keeps
-    nothing else keeps it. Every pass here whose cadence is unset is not
-    scheduled and is named as such.
+    Organize runs under its own name and its own cadence settings, with its own
+    fresh scope reads and explicit repository bindings, and is scheduled FIRST so
+    a deployment that keeps nothing else keeps it. Every pass here whose cadence
+    is unset is not scheduled and is named as such.
 
-    The remaining prompt rows belong to the per-issue flow: they scan whole
-    boards from the legacy team/repository roster and use their configured
-    signal gates. They wire only where :func:`session_passes_wire` holds — an
-    operation that declares ``organize_scopes`` gets the organize tick and
-    neither of them. Preflight validates exactly those active rows.
+    The two prompt passes scan the declared boards on their own cadence pairs
+    beside it, scope or no scope: they wire wherever the roster renders
+    (:func:`session_passes_wire`). Preflight validates exactly those active rows.
     """
     log: BoundLogger = get_logger(__name__)
     schedule = prompt_pass_schedule(config)
     scheduled: list[ScheduledPass] = []
     if organize is not None:
-        key = PromptKey.GROOMING_PASS
-        # The grooming pass never runs beside the tick that holds its name.
-        schedule.pop(key, None)
         cadence = config.pass_cadence("organize")
         if cadence is None:
-            await _log_not_configured(log, name="organize", cadence="organize")
+            await _log_not_configured(log, name=ORGANIZE_TICK_NAME, cadence="organize")
         else:
             scheduled.append(
                 ScheduledPass(
-                    name=key.value,
+                    name=ORGANIZE_TICK_NAME,
                     interval_seconds=cadence.interval_seconds,
                     timeout_seconds=cadence.timeout_seconds,
                     run=organize.run,
-                    report=run_report(recorder, _record_kind_for(key), key.value),
+                    report=None,
                 )
             )
     absent = absent_roster(operation)
-    withheld = runs_scope_flow(operation)
-    if absent or withheld:
-        # Two reasons, one event, one field each: a roster a template could not
-        # render over, and a deployment whose work is a scope walk. An operator
-        # reading the log for "why no prompt pass?" finds which it is.
+    if absent:
+        # One reason: a roster a template could not render over. An operator
+        # reading the log for "why no prompt pass?" finds which collection.
         await log.ainfo(
             "prompt_passes_not_wired",
             operation_config_present=True,
             absent=list(absent),
-            organize_scopes_declared=withheld,
         )
         return scheduled
     for key, cadence_name in _PROMPT_PASS_CADENCE.items():
@@ -790,19 +776,14 @@ async def _verify_wired_gates(
     # predicate first and the cadence after it.
     if (
         github_api is not None
-        and not runs_scope_flow(operation)
         and any(operation.teams_scanned_by(repo.url) for repo in operation.repos)
         and config.pass_cadence("dispatch") is not None
     ):
         wired[_DISPATCH_NAME] = config.dispatch_pass_gate_signals
     if runs_scope_flow(operation) and config.pass_cadence("supervisor") is not None:
         # The supervisor tick is registered on exactly this predicate, so its
-        # alarms' scans are this deployment's to answer: one entry per alarm
-        # it observes, named so a refusal says which alarm needs the scan.
-        for alarm in sorted(OBSERVED_ALARMS):
-            wired[f"{SUPERVISOR_TICK_NAME}/{alarm.value}"] = sorted(
-                ALARM_TABLE[alarm].scans
-            )
+        # alarms' scans are this deployment's to answer.
+        wired.update(_supervisor_scans())
     passes_by_signal: dict[PassSignal, list[str]] = {}
     for name, signals in wired.items():
         for signal in signals:
@@ -819,6 +800,19 @@ async def _verify_wired_gates(
             for signal, diagnosis in refusals.items()
         ],
     )
+
+
+def _supervisor_scans() -> dict[str, Sequence[PassSignal]]:
+    """The scans the supervisor tick's alarms declare, one entry per alarm.
+
+    Named ``supervisor/<alarm>`` so a refusal says which alarm needs the scan.
+    Takes no configuration on purpose: what the tick observes is the alarm
+    table, whole; whether the tick runs is its cadence pair, read by the caller.
+    """
+    return {
+        f"{SUPERVISOR_TICK_NAME}/{alarm.value}": sorted(ALARM_TABLE[alarm].scans)
+        for alarm in sorted(OBSERVED_ALARMS)
+    }
 
 
 def _session_running(kind: RunKind) -> SessionType:
@@ -1037,8 +1031,6 @@ async def build_dispatch_runtime(
             tracker_present=dialled is not None,
             operation_config_present=operation is not None,
             delivery_probe_present=github_api is not None,
-            organize_scopes_declared=operation is not None
-            and runs_scope_flow(operation),
         )
     elif config.pass_cadence("dispatch") is None:
         await _log_not_configured(log, name=_DISPATCH_NAME, cadence="dispatch")
@@ -1205,7 +1197,6 @@ async def build_dispatch_runtime(
             "prompt_passes_not_wired",
             operation_config_present=False,
             absent=[],
-            organize_scopes_declared=False,
         )
     return DispatchRuntime(
         scheduler=PassScheduler(passes=tuple(scheduled)),

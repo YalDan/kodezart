@@ -8,6 +8,7 @@ import pytest
 import structlog.testing
 
 from kodezart.chains.scope_walker import read_scope_ready
+from kodezart.composition.passes import ORGANIZE_TICK_NAME
 from kodezart.composition.supervisor import build_supervisor_pass
 from kodezart.config.app import AppConfig
 from kodezart.core.errors import PassGateCapabilityError
@@ -145,10 +146,9 @@ def declared(*, scopes):
 #: A declared roster without a tracker is now a partial organize configuration
 #: rather than a quiet absence, so that case refuses at preflight and names the
 #: member; it never reaches the arm at all.
-#: The dispatch case keeps its id and its probe, and what it demonstrates has
-#: changed: a declared roster withholds the dispatch pass, so what stands in the
-#: schedule before the observation arm is the organize tick and the heartbeat
-#: rather than a board scan.
+#: The dispatch case keeps its id and its probe: a declared roster adds the
+#: organize tick and the heartbeat to the schedule and takes nothing out of it,
+#: so the dispatch pass stands there beside them (2026-09-24).
 WIRINGS = {
     "declared_with_tracker": ((SCOPE,), (SCOPE,), None, False),
     "declared_with_tracker_and_dispatch": ((SCOPE,), (SCOPE,), None, True),
@@ -256,15 +256,14 @@ async def test_the_pass_registers_only_with_declared_scopes_and_a_dialled_tracke
         assert unwired[0]["scopes_declared"] is scopes_declared
 
     # Every other pass is as it was: the arm adds one registration and edits no
-    # other. The two sets are named, because a declared roster and an undeclared
-    # one no longer schedule the same passes: the roster withholds the per-issue
-    # machine and puts the organize tick and the heartbeat there instead, and
-    # both of those are registered before the observation arm runs.
+    # other. A declared roster adds the organize tick and the heartbeat, both
+    # registered before the observation arm runs, and switches no per-issue
+    # pass off: each of those runs on its own cadence pair, set here.
     per_issue = {PromptKey.FIRE_PREP_PASS.value, PromptKey.GROOMING_PASS.value}
     if dispatching:
         per_issue |= {f"dispatch:{REPO}"}
-    scope_passes = {PromptKey.GROOMING_PASS.value, HEARTBEAT_PASS}
-    expected = scope_passes if raw_scopes else per_issue
+    scope_passes = {ORGANIZE_TICK_NAME, HEARTBEAT_PASS}
+    expected = (per_issue | scope_passes) if raw_scopes else per_issue
     assert {entry.name for entry in registered} - {"supervisor"} == expected
 
     # "As before" is the same deployment declaring no roster at all, held to the

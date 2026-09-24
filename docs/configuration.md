@@ -844,19 +844,18 @@ scope's verified audit summary is reported on. It is optional because a
 deployment that configures no audit has nowhere to report; a configured audit
 refuses naming `organize_scopes.report_issue_key` on a row that omits it.
 
-Declaring `[[organize_scopes]]` also withholds the per-issue machine. Such a
-deployment is worked scope by scope, and the periodic dispatch pass and the two
-remaining prompt passes scan whole boards, so none of the three is scheduled and
-no lifecycle watcher is built; `scheduled_passes_not_wired` and
-`prompt_passes_not_wired` each carry `organize_scopes_declared: true` so the
-reason is in the log rather than inferred from an empty schedule. Boot also asks
-nothing of those passes: no gate signal they configure is probed and no template
-they would send is rendered.
+Declaring `[[organize_scopes]]` switches nothing off. The periodic dispatch
+pass and the two prompt passes are scheduled on their own premises — a roster to
+scan, a delivery probe for the dispatcher, and each pass's own cadence pair —
+whether or not scopes are declared. A scope deployment that sets those pairs
+runs them over the declared teams' boards beside the scope passes; one that
+leaves a pair unset gets `scheduled_pass_not_configured` naming that pass. Boot
+asks for exactly the gate signals and the templates of the passes it schedules.
 
 `[[organize_scopes]]` rows are the standing scopes: each one is groomed before
 approval by the organize tick on its own cadence, and submitted as a scope
 run by the `scope_heartbeat` pass once it carries `scope_labels.approved`. That
-pass takes the place of the withheld dispatch scan and reuses its knobs —
+pass runs on the dispatch pass's knobs —
 `KODEZART_DISPATCH_PASS_INTERVAL_SECONDS` and
 `KODEZART_DISPATCH_PASS_TIMEOUT_SECONDS` — and submits onto
 `KODEZART_DISPATCH_LANE`. It adds no configuration field of its own, opens no
@@ -878,7 +877,7 @@ rejected. Each native tick uses the
 existing grooming run identity and resolves the configured repository trunk to
 a fresh immutable remote commit before assessment.
 
-The tick is scheduled under the grooming pass's name, on two fields of its own
+The tick is scheduled under its own name, `organize`, on two fields of its own
 in the same group. Neither has a default, and no other pass's cadence stands in
 for them: unset, the tick is not scheduled.
 

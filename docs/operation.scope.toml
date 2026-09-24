@@ -8,11 +8,12 @@
 # What an absent member costs is paid at the point of need and never at load:
 # the refusal names the member and what it stops.
 #
-# [[organize_scopes]] is the one scope table, and declaring it is what makes
-# this a scope deployment: no per-issue dispatch pass, no fire-prep or grooming
-# session pass and no lifecycle watcher is scheduled. There is no
-# [run_event_states] table here and no [queue_states] table: neither is read on
-# this path.
+# [[organize_scopes]] is the one scope table: declaring it schedules the scope
+# passes (the organize tick, the standing scopes' heartbeat, the observation
+# tick and a configured audit) and switches nothing else off. Whether any pass
+# runs is its cadence pair in the environment; where it works is the one team
+# and the one repository below. There is no [run_event_states] table here and
+# no [queue_states] table: neither is read on this path.
 
 # Human-readable name of the operation these settings describe.
 operation_name = "example-scope-operation"
@@ -115,6 +116,9 @@ run_event = "kodezart-run-event"
 claim = "kodezart-claim"
 # A lane's base is resolved from the work refs recorded under this prefix.
 work_ref = "kodezart-workref"
+# The per-issue dispatch pass, scheduled wherever a forge token and the dispatch
+# cadence pair are set, records each fire's base under this prefix.
+base_spec = "kodezart-basespec"
 # The organize owner's split creation reads this before it writes a split, and
 # refuses naming marker_prefixes['issue_identity'] without it.
 issue_identity = "kodezart-issue"
