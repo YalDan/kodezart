@@ -18,7 +18,7 @@ from kodezart.composition.gating import build_outbound_gate
 from kodezart.composition.jobs import build_job_queue, build_job_service
 from kodezart.composition.knowledge import boot_knowledge_grant, fire_record_template
 from kodezart.composition.passes import build_dispatch_runtime, verify_pass_preflight
-from kodezart.composition.preflight import boot_skills
+from kodezart.composition.preflight import boot_skills, warn_host_mcp_opt_in
 from kodezart.composition.prompts import boot_prompts
 from kodezart.composition.records import build_run_recorder
 from kodezart.composition.tracker import (
@@ -126,10 +126,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
         skills = await boot_skills(settings=config.agent, prompts=prompts, log=log)
         app.state.skills = skills
+        await warn_host_mcp_opt_in(settings=config.agent, log=log)
 
         executor = ClaudeClientExecutor(
             model=config.agent.model,
             setting_sources=config.agent.setting_sources,
+            dangerously_allow_host_mcp=config.agent.dangerously_allow_host_mcp,
             knowledge_grant=await boot_knowledge_grant(
                 knowledge=config.knowledge,
                 prompts=prompts,

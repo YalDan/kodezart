@@ -39,3 +39,21 @@ class AgentSettings(BaseModel):
         default_factory=lambda: SkillsSelection(mode=SkillsMode.NONE),
         description="Suppress-all, all or an explicit skill allowlist.",
     )
+    dangerously_allow_host_mcp: bool = Field(
+        default=False,
+        description=(
+            "Switch the working-directory MCP guard OFF for every session: "
+            "strict_mcp_config becomes False, so a session gets every MCP "
+            "server the operator's user-level Claude configuration declares "
+            "and any server the session's working directory declares. "
+            "Measured 2026-09-24 on Claude Code 2.1.281: with strict mode "
+            "off, headless Claude Code started in a directory holding a "
+            ".mcp.json that declared a server tried to start that server, so "
+            "a cloned repository can run a command on this machine through a "
+            "session; with the flag on, sessions reached the Linear server "
+            "under the operator's stored login (76 tools) and any tracker "
+            "write such a session makes carries the operator's login user, "
+            "not this deployment's key. Off unless the operator accepts "
+            "exactly that."
+        ),
+    )

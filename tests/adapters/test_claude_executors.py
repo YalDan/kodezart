@@ -550,7 +550,13 @@ async def test_the_unwired_executor_is_covered_by_the_same_grant_logic() -> None
     ).read_text(encoding="utf-8")
 
     for source in (agent_source, client_source):
-        assert "map_knowledge_mcp(self._knowledge_grant, session_type)" in source
+        assert (
+            "map_knowledge_mcp(\n"
+            "            self._knowledge_grant,\n"
+            "            session_type,\n"
+            "            dangerously_allow_host_mcp=self._dangerously_allow_host_mcp,\n"
+            "        )"
+        ) in source
 
     granted = await _options_for(
         "kodezart.adapters.claude.agent_executor",
