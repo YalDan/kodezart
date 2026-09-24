@@ -802,7 +802,7 @@ CASES: Mapping[str, Case] = {
     "a graph changed": Case(
         method="update_issue_graph",
         call=write_graph,
-        journals=frozenset({"graph_writes"}),
+        journals=frozenset({"graph_writes", "self_writes"}),
         setup=hold_graph,
     ),
     "a base spec recorded": Case(
