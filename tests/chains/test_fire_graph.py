@@ -882,8 +882,10 @@ def lane_entry_kinds() -> tuple[type[BaseModel], ...]:
 def entered(kind: type[BaseModel]) -> BaseModel:
     """One entry of *kind*, each required field filled by what its annotation admits.
 
-    A string field holds a name; a field that admits ``None`` holds it.  Any
-    other required field reds here rather than being guessed at.
+    A string field holds a name; a field that admits ``None`` holds it; a
+    ``bool`` field holds ``False``, which is what ``base_stale`` answers for
+    a record that carries no dispatch base (KOD-888).  Any other required
+    field reds here rather than being guessed at.
     """
     fields: dict[str, object] = {}
     for name, field in kind.model_fields.items():
@@ -891,6 +893,8 @@ def entered(kind: type[BaseModel]) -> BaseModel:
             continue
         if field.annotation is str:
             fields[name] = f"{name}-pinned"
+        elif field.annotation is bool:
+            fields[name] = False
         else:
             assert type(None) in get_args(field.annotation), (kind, name)
             fields[name] = None
