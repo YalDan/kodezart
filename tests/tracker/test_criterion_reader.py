@@ -122,9 +122,7 @@ async def test_successful_empty_is_distinct_from_a_failed_parent_read(tracker):
         LIVE_GRAMMAR_PARENT,
     ],
 )
-async def test_parent_text_cannot_mint_criterion_membership(
-    tracker, seed_issue, body
-):
+async def test_parent_text_cannot_mint_criterion_membership(tracker, seed_issue, body):
     seed_issue(issue_key=SECOND, body=body)
     assert tuple(await tracker.read_criteria(issue_key=SECOND)) == ()
 
