@@ -5,6 +5,7 @@ import json
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime
+from functools import partial
 
 from kodezart.chains.audit_sweep import AuditReadObservation, AuditReadSweep
 from kodezart.core.logging import get_logger
@@ -19,6 +20,7 @@ from kodezart.domain.errors import AuditClaimReadError
 from kodezart.domain.tracker_writes import marked_comment_body
 from kodezart.services.audit_coverage import AuditCoverage
 from kodezart.services.audit_escalation import AuditEscalations
+from kodezart.services.audit_expectation import expected_after_audit_write
 from kodezart.services.audit_failures import AUDIT_PUBLICATION_FAILURES
 from kodezart.services.audit_publication import AuditPublisher
 from kodezart.services.audit_reopen import AuditReopener
@@ -69,7 +71,6 @@ from kodezart.types.domain.operation import (
 from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.surface import SurfaceKind
-from kodezart.types.domain.tracker import TrackerIssue
 from kodezart.types.domain.write_back import WriteBackFinding, WriteBackResult
 
 _INCOMPLETE = AUDIT_PUBLICATION_FAILURES
@@ -129,21 +130,12 @@ def _accept_own_write(
         if item.source is not None
     )
 
-    def expected(issue: TrackerIssue) -> TrackerIssue:
-        if issue.issue_key != issue_key:
-            return issue
-        if issue_key not in current_issues:
-            raise AuditClaimReadError("the written audit subject left its source set")
-        observed = current_issues[issue_key]
-        return TrackerIssue.model_validate(
-            {
-                **issue.model_dump(),
-                "issue_labels": issue.issue_labels | {"decision"}
-                if classification
-                else issue.issue_labels,
-                "updated_at": observed.updated_at,
-            }
-        )
+    expected = partial(
+        expected_after_audit_write,
+        issue_key=issue_key,
+        current_issues=current_issues,
+        classification=classification,
+    )
 
     wanted = AuditRequestSnapshot(
         candidates=replace(

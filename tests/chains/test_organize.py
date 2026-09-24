@@ -1500,6 +1500,7 @@ def gap_home_objects():
 #: computed, which is the surface this guard speaks for.
 GAP_COMPUTATION_MODULES = frozenset(
     {
+        "chains/audit_sweep.py",
         "chains/authored_delivery.py",
         "chains/authored_publication.py",
         "chains/criteria.py",
@@ -1516,6 +1517,7 @@ GAP_COMPUTATION_MODULES = frozenset(
         "chains/ralph_workflow.py",
         "chains/remediation.py",
         "chains/scope_walker.py",
+        "composition/audit.py",
         "composition/delivery.py",
         "composition/engine.py",
         "composition/organize.py",
@@ -1531,6 +1533,7 @@ GAP_COMPUTATION_MODULES = frozenset(
         "domain/tally_record.py",
         "main.py",
         "services/alarm_supervisor.py",
+        "services/audit_runtime.py",
         "services/audit_terminal.py",
         "services/barren_record_signals.py",
         "services/escalation_signals.py",
@@ -1563,8 +1566,8 @@ CHANGE_STAMP_READERS = {
     "criterion with the record an amendment expected.",
     "domain/fire_spec.py": "Stamps a captured fire spec with the subject version "
     "it was read at.",
-    "services/audit_runtime.py": "Carries the observed stamp onto the record an "
-    "audit write expects back.",
+    "services/audit_expectation.py": "Carries the observed stamp onto the record "
+    "an audit write expects back.",
     "services/fire_dispatcher.py": "The dispatcher's exclusion memory: a lane "
     "issue stays excluded until its own stamp moves.",
     "services/native_amendments.py": "Leaves the stamp out when it compares a "
@@ -3038,6 +3041,10 @@ CALL_SITES_NOT_RUN = {
     "of the organize service, routing through its ports.",
     ("services/organize_owner.py", "OrganizeOwner.run"): "Async; the organize "
     "service's whole pass over its tracker, agent and gate ports.",
+    ("services/audit_terminal.py", "AuditTerminalReader.observe"): "Async; a "
+    "method of the audit terminal reader, reading the issue and its criterion "
+    "family through the tracker port and the branch and pull request through "
+    "the git and forge ports.",
     ("services/run_shape.py", "read_barren_tick"): "Async; reads criteria "
     "through the tracker port.",
     ("services/scope_tally.py", "observe_scope_tally"): "Async; reads the "
@@ -3068,9 +3075,9 @@ def test_every_call_site_the_fixtures_can_run_is_run_under_the_trap():
     ``OrganizeAdmission.is_live``, ``build_scope_organizer``,
     ``observe_ruling_growth``, the organize service's ``_author_write`` and
     the ``apply`` nested in it, ``_converge``, ``_proof_live``, ``_roster``,
-    ``_route`` and ``run``, ``read_barren_tick`` and ``observe_scope_tally``,
-    each of which needs a tracker port, a service instance or the
-    composition's wiring; and
+    ``_route`` and ``run``, ``read_barren_tick``, ``observe_scope_tally`` and
+    the audit terminal reader's ``observe``, each of which needs a tracker
+    port, a service instance or the composition's wiring; and
     ``lapse_undischarged``, which takes alarm readings and no tracker
     record.  A new call site reds here until it is one or the other.  Each
     case answers what it was built for over the baseline stamp.
