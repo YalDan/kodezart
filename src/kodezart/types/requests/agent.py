@@ -7,6 +7,7 @@ from pydantic import Field, model_validator
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.branch import BaseSpec
 from kodezart.types.domain.scope import ScopeKind
+from kodezart.types.domain.subagents import SessionEffort
 
 HttpPermissionMode = Literal["plan", "bypassPermissions"]
 
@@ -46,6 +47,11 @@ class QueryRequest(RepoSourceRequest):
         default_factory=lambda: ["Read", "Glob", "Grep", "Bash"],
     )
     output_schema: dict[str, object] | None = None
+    #: The reasoning effort the session runs at. A query belongs to no prompt
+    #: set role, so nothing declares an effort for it; absent, the engine's
+    #: own default stands, which is the one place a session can run below the
+    #: roles' declared level.
+    effort: SessionEffort | None = None
 
     @model_validator(mode="after")
     def _check_branch_requires_url(self) -> Self:

@@ -60,6 +60,7 @@ One-shot agent query with SSE streaming response.
 | `sessionId`      | `string \| null`                  | No       | `null`                           | Resume a previous session                |
 | `allowedTools`   | `string[]`                        | No       | `["Read","Glob","Grep","Bash"]`  | Tools the agent may use                  |
 | `outputSchema`   | `object \| null`                  | No       | `null`                           | JSON schema for structured output        |
+| `effort`         | `"low" \| "medium" \| "high" \| "xhigh" \| "max" \| null` | No | `null`               | Reasoning effort the session runs at; absent leaves the engine's default |
 
 \* Exactly one of `repoPath` or `repoUrl` must be provided (mutual exclusion
   enforced by validator).
