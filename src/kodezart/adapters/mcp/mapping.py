@@ -135,7 +135,11 @@ def map_knowledge_mcp(
     per-session choice — switches it off for every kind alike.  *tracker*,
     the deployment's own tracker server, is described to the two kinds that
     work the board — the scheduled pass and the organize pass — beside
-    whatever the grant describes.
+    whatever the grant describes, unless the opt-in is on: then the host's
+    own tracker login serves them under its own request budget, and the
+    deployment's server is not described beside it, since the two carry one
+    server name and the session would otherwise reach whichever the SDK
+    lets win.
     """
     match session_type:
         case (
@@ -147,7 +151,11 @@ def map_knowledge_mcp(
             | SessionType.ORGANIZE_PASS
         ):
             servers = _described_servers(grant, session_type)
-            if tracker is not None and session_type in BOARD_SESSION_TYPES:
+            if (
+                tracker is not None
+                and session_type in BOARD_SESSION_TYPES
+                and not dangerously_allow_host_mcp
+            ):
                 servers = {**servers, tracker.server_name: tracker.definition}
             return McpSessionOptions(
                 mcp_servers=servers,

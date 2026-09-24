@@ -943,9 +943,27 @@ scope run's organize stage session, the deployment's own tracker server under
 `KODEZART_TRACKER__TOKEN` — the same server, key and budget the process dials —
 and nothing else: it starts every session in strict MCP mode, so a
 machine-local registration does not reach a session, and no session runs on a
-login the host holds. See the known issue below for every other session kind.
+login the host holds. With `KODEZART_AGENT__DANGEROUSLY_ALLOW_HOST_MCP=true`
+the board sessions are not described the deployment's server at all: they
+reach the tracker through the host's stored login, under that login's own
+request budget. See the known issues below for every other session kind and
+for the budget.
 
 ## Known issues
+
+**A spent Linear request budget ends the scope run (KOD-1256).** Linear allows
+the tracker key 2,500 requests an hour (`x-ratelimit-requests-limit`), refilled
+as a sliding window; one MCP tool call costs about two. When the budget is
+spent, `mcp.linear.app` answers `401 invalid_token` rather than 429, and
+kodezart reads that as a refused credential: the job ends `engine_error`, and
+the heartbeat then resubmits a run each time a few requests refill, each dying
+on its first read. Measured on 2026-09-24: two fire-prep sessions, a grooming
+session and one scope run spent the hour's budget in under an hour. Until the
+adapter treats a spent budget as a wait, run the deployment with
+`KODEZART_AGENT__DANGEROUSLY_ALLOW_HOST_MCP=true` on a host whose Claude login
+holds the tracker: the sessions' calls, the bulk of the spend, then run on that
+login's own budget and the key serves only the process's own reads. Keep the
+heartbeat interval at 300 s or more.
 
 **Agent sessions cannot reach the tracker on their own (KOD-1240).** kodezart
 describes exactly one MCP server to a session, the knowledge server it was

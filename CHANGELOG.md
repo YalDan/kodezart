@@ -11,6 +11,11 @@ concerns.
 
 ### Changed
 
+- With `KODEZART_AGENT__DANGEROUSLY_ALLOW_HOST_MCP=true`, the board sessions
+  (scheduled passes, organize stages) are no longer described the deployment's
+  own tracker server beside the host's: they reach the tracker under the host's
+  stored login and its own request budget. A README known issue records why
+  (KOD-1256: a spent Linear budget ends the run).
 - The fire-prep and grooming passes run their first tick at boot when their
   cadence pairs are set (`ScheduledPass.tick_at_boot`); every other pass still
   sleeps one interval before its first tick.

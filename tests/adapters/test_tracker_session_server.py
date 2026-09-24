@@ -102,6 +102,28 @@ def test_the_scheduled_pass_and_the_organize_pass_are_given_the_tracker_server(
     assert map_knowledge_mcp(NO_KNOWLEDGE_GRANT, session_type)["mcp_servers"] == {}
 
 
+@pytest.mark.parametrize("session_type", list(SessionType))
+def test_the_host_opt_in_leaves_the_board_to_the_host_login(
+    session_type: SessionType,
+) -> None:
+    """With the opt-in on, no kind is described the deployment's tracker server.
+
+    The host's own tracker login reaches the board sessions through the
+    guard that is now off, under its own request budget; describing the
+    deployment's server beside it under the same name would leave the SDK
+    to pick one.
+    """
+    server = _server()
+    opened = map_knowledge_mcp(
+        NO_KNOWLEDGE_GRANT,
+        session_type,
+        dangerously_allow_host_mcp=True,
+        tracker=server,
+    )
+    assert opened["mcp_servers"] == {}
+    assert opened["strict_mcp_config"] is False
+
+
 def test_the_tracker_server_sits_beside_the_granted_knowledge_server() -> None:
     grant = knowledge_grant_for(SessionType.SCHEDULED_PASS)
     server = _server()
