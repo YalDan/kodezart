@@ -339,37 +339,14 @@ async def write_lease_release(port: FakeTrackerPort) -> None:
 
 async def write_issue_creation(port: FakeTrackerPort) -> None:
     # The port creates an issue only by minting one; a criterion under its
-    # parent's child-set grant is the mint this board can take.
-    await port.acquire_surfaces(
-        surfaces=frozenset(
-            {
-                WritableSurface(
-                    kind=SurfaceKind.CRITERION_CHILD_SET,
-                    ref=ScopeRef(kind=ScopeKind.ISSUE, key=ISSUE),
-                )
-            }
-        ),
-        holder=HOLDER,
-        lease_seconds=LEASE_SECONDS,
-    )
+    # parent's child-set grant, taken in this case's setup, is the mint this
+    # board can take.
     await port.create_criterion_if_absent(
         parent_key=ISSUE,
         title="a new criterion",
         check="a new condition holds",
         do="make it hold",
         holder=HOLDER,
-    )
-
-
-async def write_identified_issue(port: FakeTrackerPort) -> None:
-    # No issue on this board carries the identity, so the upsert creates.
-    await port.upsert_issue(
-        scope_key=ScopeRef(kind=ScopeKind.ISSUE, key=OTHER),
-        deliverable_key="a-deliverable",
-        title="an identified issue",
-        body="a body",
-        team_key=FIXTURE_TEAM_KEY,
-        priority=IssuePriority.NONE,
     )
 
 
@@ -708,8 +685,8 @@ class Case:
 #: somewhere else — and every member the port declares must be named by one,
 #: which the census below is what enforces.
 CASES: Mapping[str, Case] = {
-    "an issue retitled": Case(
-        method="update_issue",
+    "an issue's body rewritten over its current text": Case(
+        method="edit_description",
         call=write_issue,
         journals=frozenset({"issue_writes", "self_writes"}),
     ),
@@ -790,15 +767,11 @@ CASES: Mapping[str, Case] = {
         call=write_lease_release,
         journals=frozenset({"lease_releases"}),
     ),
-    "an issue created": Case(
-        method="create_issue",
+    "an issue created by a criterion mint": Case(
+        method="create_criterion_if_absent",
         call=write_issue_creation,
         journals=frozenset({"issue_creations"}),
-    ),
-    "an identified issue upserted": Case(
-        method="upsert_issue",
-        call=write_identified_issue,
-        journals=frozenset({"issue_creations"}),
+        setup=hold_child_set,
     ),
     "a split child created": Case(
         method="create_split_if_absent",

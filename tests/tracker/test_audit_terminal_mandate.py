@@ -348,7 +348,10 @@ async def test_a_surface_changing_under_an_unpinned_mandate_hunt_refuses_the_swe
     async def during(kwargs):
         if kwargs["output_format"]["schema"] == AUDIT_MANDATE_SCHEMA:
             ahead = len(tracker_writes())
-            await tracker.update_issue(issue_key=ROOT, body="Changed instructions.")
+            current = await tracker.read_issue(issue_key=ROOT)
+            await tracker.edit_description(
+                target=ROOT, expected=current.body, replacement="Changed instructions."
+            )
             own.extend(tracker_writes()[ahead:])
 
     executor.during = during

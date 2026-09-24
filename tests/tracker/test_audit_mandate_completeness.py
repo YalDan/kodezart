@@ -44,7 +44,7 @@ from tests.tracker.test_detector_removal_sweep import ready as removal_ready
 ELSEWHERE = "c" * 40
 
 
-async def refuted_restamp(tracker, server, mode):
+async def refuted_restamp(tracker, server, mode, seed_issue):
     """Seed a grading the criterion's row does not name, current or lapsed.
 
     ``current`` leaves the row at the head under review, so the claim arm
@@ -53,7 +53,7 @@ async def refuted_restamp(tracker, server, mode):
     """
     graded = HEAD if mode == "current" else PRIOR
     recorded = PRIOR if mode == "current" else ELSEWHERE
-    await tracker.update_issue(issue_key=CHILD, body=BODY.replace(HEAD, graded))
+    seed_issue(issue_key=CHILD, body=BODY.replace(HEAD, graded))
     await state(
         tracker,
         server,
@@ -74,7 +74,7 @@ async def refuted_restamp(tracker, server, mode):
 
 @pytest.mark.parametrize("mode", ["current", "lapse"])
 async def test_a_refuted_restamp_carries_a_mandate_verdict(
-    setup, tracker, server, tracker_writes, mode
+    setup, tracker, server, tracker_writes, mode, seed_issue
 ):
     """A restamp the stream does not trace is hunted at the current head.
 
@@ -83,7 +83,7 @@ async def test_a_refuted_restamp_carries_a_mandate_verdict(
     return; the hunt writes nothing.
     """
     build, executor, *_ = setup
-    await refuted_restamp(tracker, server, mode)
+    await refuted_restamp(tracker, server, mode, seed_issue)
     before = tracker_writes()
     observation = (await build().run()).observations[0]
 
@@ -107,7 +107,7 @@ async def test_a_refuted_restamp_carries_a_mandate_verdict(
 
 
 async def test_a_restamp_report_must_answer_the_trace_beside_it(
-    setup, tracker, server, tracker_writes
+    setup, tracker, server, tracker_writes, seed_issue
 ):
     """A report completes the trace it was hunted for and no other.
 
@@ -117,7 +117,7 @@ async def test_a_restamp_report_must_answer_the_trace_beside_it(
     produced the observation wrote nothing.
     """
     build, *_ = setup
-    await refuted_restamp(tracker, server, "current")
+    await refuted_restamp(tracker, server, "current", seed_issue)
     before = tracker_writes()
     observation = (await build().run()).observations[0]
     assert tracker_writes() == before
@@ -133,7 +133,7 @@ async def test_a_restamp_report_must_answer_the_trace_beside_it(
 
 @pytest.mark.parametrize("mode", ["current", "lapse"])
 async def test_a_failed_restamp_mandate_keeps_the_raw_trace_and_its_reason(
-    setup, tracker, server, tracker_writes, mode
+    setup, tracker, server, tracker_writes, mode, seed_issue
 ):
     """A restamp hunt that fails keeps the raw trace beside the reason.
 
@@ -142,7 +142,7 @@ async def test_a_failed_restamp_mandate_keeps_the_raw_trace_and_its_reason(
     refuses the subject on, lapse included; nothing is written.
     """
     build, executor, *_ = setup
-    await refuted_restamp(tracker, server, mode)
+    await refuted_restamp(tracker, server, mode, seed_issue)
 
     async def during(kwargs):
         if kwargs["output_format"]["schema"] == AUDIT_MANDATE_SCHEMA:
@@ -164,7 +164,7 @@ async def test_a_failed_restamp_mandate_keeps_the_raw_trace_and_its_reason(
 
 @pytest.mark.parametrize("restamp", [False, True], ids=["claim", "beside-a-restamp"])
 async def test_a_failed_claim_mandate_keeps_the_evidence_and_its_reason(
-    setup, tracker, server, tracker_writes, restamp
+    setup, tracker, server, tracker_writes, restamp, seed_issue
 ):
     """A claim hunt that fails keeps what the arm observed beside the reason.
 
@@ -176,7 +176,7 @@ async def test_a_failed_claim_mandate_keeps_the_evidence_and_its_reason(
     """
     build, executor, *_ = setup
     if restamp:
-        await refuted_restamp(tracker, server, "current")
+        await refuted_restamp(tracker, server, "current", seed_issue)
     else:
         await state(tracker, server, CHILD, "In Review", WorkflowStateKind.STARTED)
     executor.verdict = "refuted"
@@ -210,7 +210,7 @@ async def test_a_failed_claim_mandate_keeps_the_evidence_and_its_reason(
     assert tracker_writes() == before
 
 
-async def refuted_arm(arm, setup, tracker, server, tracker_writes):
+async def refuted_arm(arm, setup, tracker, server, tracker_writes, seed_issue):
     """A real sweep observation whose *arm* is REFUTED and complete.
 
     The sweep that produces it writes nothing: the mandating surfaces it
@@ -233,7 +233,7 @@ async def refuted_arm(arm, setup, tracker, server, tracker_writes):
                 ).run()
             ).observations[0]
     elif arm == "restamp":
-        await refuted_restamp(tracker, server, "current")
+        await refuted_restamp(tracker, server, "current", seed_issue)
         before = tracker_writes()
         observation = (await build().run()).observations[0]
     elif arm == "overclaim_reading":
@@ -244,7 +244,7 @@ async def refuted_arm(arm, setup, tracker, server, tracker_writes):
         before = tracker_writes()
         observation = (await build(include_overclaims=True).run()).observations[0]
     elif arm == "removal_reading":
-        await removal_ready(tracker, server)
+        await removal_ready(tracker, server, seed_issue)
         executor.removal_output = removal_payload("refuted")
         before = tracker_writes()
         observation = (
@@ -276,7 +276,7 @@ ARMS = (
     ("arm", "completed", "reason"), ARMS, ids=[row[0] for row in ARMS]
 )
 async def test_a_refutation_without_its_mandate_fails_the_completeness_assertion(
-    setup, tracker, server, tracker_writes, arm, completed, reason
+    setup, tracker, server, tracker_writes, arm, completed, reason, seed_issue
 ):
     """Drop the mandate verdict from a refutation the sweep produced: refused.
 
@@ -287,7 +287,9 @@ async def test_a_refutation_without_its_mandate_fails_the_completeness_assertion
     here rather than taking its case away with it.
     """
     assert set(MANDATED_ARMS) == set(ARMS)
-    observation = await refuted_arm(arm, setup, tracker, server, tracker_writes)
+    observation = await refuted_arm(
+        arm, setup, tracker, server, tracker_writes, seed_issue
+    )
     assert getattr(observation, arm).verdict is AuditVerdict.REFUTED
     assert getattr(observation, completed) is not None
 
@@ -303,7 +305,7 @@ async def test_a_refutation_without_its_mandate_fails_the_completeness_assertion
 
 @pytest.mark.parametrize("arm", ["forge", "evidence"])
 async def test_a_forge_or_evidence_refutation_is_completed_by_a_refuting_report(
-    setup, tracker, server, tracker_writes, arm
+    setup, tracker, server, tracker_writes, arm, seed_issue
 ):
     """The report beside a refutation must be that refutation's own report.
 
@@ -312,7 +314,9 @@ async def test_a_forge_or_evidence_refutation_is_completed_by_a_refuting_report(
     about another claim than the one the evidence stands on completes
     nothing the observation carries.  Both are refused at construction.
     """
-    observation = await refuted_arm(arm, setup, tracker, server, tracker_writes)
+    observation = await refuted_arm(
+        arm, setup, tracker, server, tracker_writes, seed_issue
+    )
     if arm == "forge":
         claim = observation.forge_report.claim
         holding = AuditClaimReport.model_validate(
