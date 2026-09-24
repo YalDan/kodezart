@@ -5550,6 +5550,14 @@ class FakeBaseResolutionTracker(
     """The ``BaseResolutionTracker`` role, composed of its role doubles."""
 
 
+class FakeCriterionMinter(
+    FakeCriterionMintWriter,
+    FakeCriterionReopener,
+    FakeSurfaceLeaseTracker,
+):
+    """The ``CriterionMinter`` role, composed of its role doubles."""
+
+
 class FakeEscalationSignalReader(
     FakeEscalationResolutionReader,
     FakeTrackerCommentReader,
@@ -5561,6 +5569,7 @@ class FakeFireRulingTracker(
     FakeTrackerArtifactReader,
     FakeCommentRecordWriter,
     FakeSurfaceLeaseTracker,
+    FakeScopeFamilyReader,
 ):
     """The ``FireRulingTracker`` role, composed of its role doubles."""
 
@@ -5573,6 +5582,16 @@ class FakeLaneEscalationTracker(
     FakeSurfaceLeaseTracker,
 ):
     """The ``LaneEscalationTracker`` role, composed of its role doubles."""
+
+
+class FakeLaneLapseEscalationTracker(
+    FakeClassificationWriter,
+    FakeCommentRecordWriter,
+    FakeTrackerArtifactReader,
+    FakeScopeReadPreflight,
+    FakeSurfaceLeaseTracker,
+):
+    """The ``LaneLapseEscalationTracker`` role, composed of its role doubles."""
 
 
 class FakeLaneStateTracker(
@@ -5597,6 +5616,7 @@ class FakeNativeAmendmentTracker(
     FakeDescriptionWriter,
     FakeSurfaceLeaseTracker,
     FakeScopeFamilyReader,
+    FakeCriterionMintWriter,
 ):
     """The ``NativeAmendmentTracker`` role, composed of its role doubles."""
 

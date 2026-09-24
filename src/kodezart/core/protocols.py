@@ -1871,6 +1871,21 @@ class LaneEscalationTracker(
 
 
 @runtime_checkable
+class LaneLapseEscalationTracker(
+    LaneEscalationTracker,
+    TrackerArtifactReader,
+    Protocol,
+):
+    """The question a lapsed grading raises and the reads that verify it landed.
+
+    Named for the lane's lapse escalations
+    (``services/lane_lapse_escalation.py``), which hand the tracker to the
+    lane escalation writer and to the write-back verifier and call nothing on
+    it themselves.
+    """
+
+
+@runtime_checkable
 class AuditPublicationWriter(
     CommentRecordWriter,
     SurfaceLeaseTracker,
@@ -1949,6 +1964,7 @@ class OrganizeOwnerTracker(
 
 @runtime_checkable
 class FireRulingTracker(
+    ScopeMemberReader,
     SubjectCriteriaReader,
     TrackerArtifactReader,
     CommentRecordWriter,
@@ -1975,9 +1991,14 @@ class AmendmentWriteTracker(
 class NativeAmendmentTracker(
     AmendmentWriteTracker,
     ScopeMemberReader,
+    CriterionMinter,
     Protocol,
 ):
-    """The amendment writes plus the membership the native arm reads beside them."""
+    """The amendment writes plus the membership the native arm reads beside them.
+
+    It also hands the tracker to the weakened-assertion marks, whose one
+    obligation mint is the criterion minter's.
+    """
 
 
 @runtime_checkable

@@ -71,7 +71,7 @@ from kodezart.core.protocols import (
     TrackerPort,
 )
 from kodezart.types.domain.tracker import TrackerIssue
-from tests.chains.test_write_back_adoption import write_methods
+from tests.chains.test_write_back_adoption import ROLES, write_methods
 from tests.domain.test_criterion_cross_off import source_tree
 from tests.fakes import FakeTrackerPort
 from tests.tracker.role_register import (
@@ -817,7 +817,7 @@ def test_the_walks_role_carries_one_write_the_put_back():
     """
     carried = frozenset(get_protocol_members(ScopeWalkTracker))
 
-    assert carried & write_methods() == {"restore_workflow_state"}
+    assert carried & write_methods(ROLES) == {"restore_workflow_state"}
 
 
 def test_no_role_dependency_outside_the_allowlist_is_defaulted():

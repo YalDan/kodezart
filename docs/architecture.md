@@ -143,13 +143,14 @@ does not exist.
 | RequestRecordReader | LinearMcpTracker | The comments, issues and routing an audit request is composed from |
 | AuditCandidateReader | LinearMcpTracker | The state entry and membership audit candidate collection selects on |
 | LaneEscalationTracker | LinearMcpTracker | The escalation record a lane writes and the reads it is composed from |
+| LaneLapseEscalationTracker | LinearMcpTracker | The question a lapsed grading raises and the reads the write-back verifier checks it by: what the lane's lapse escalations hand on |
 | AuditPublicationWriter | LinearMcpTracker | The record an audit publishes, under the lease publication holds |
 | EscalationSignalReader | LinearMcpTracker | The resolution and records an escalation's ageing is observed from |
 | RecordSignalReader | LinearMcpTracker | The criterion family and lane record a barren tick, and a lane's recorded ruling growth, are observed from |
 | OrganizeOwnerTracker | LinearMcpTracker | Everything the organize owner reads and every write it makes: the widest single consumer |
 | FireRulingTracker | LinearMcpTracker | The criterion reads and record writes a ruling round makes |
 | AmendmentWriteTracker | LinearMcpTracker | Every read the amendment write-back is composed from and every write it makes |
-| NativeAmendmentTracker | LinearMcpTracker | The amendment writes plus the membership the native arm reads beside them |
+| NativeAmendmentTracker | LinearMcpTracker | The amendment writes plus the membership the native arm reads beside them, and the criterion minter its weakened-assertion marks take |
 | LifecycleStateWriter | LinearMcpTracker | The writes the per-issue lifecycle makes on one issue, and nothing wider |
 | ScopeStatusWriter | LinearScopeStatusUpdates | The scope terminal's one write, a role beside the port rather than a member of it; built over the tracker's caller the way the record sink is |
 | ScopeStatusReader | LinearScopeStatusUpdates | The one read the scope terminal makes before its one write: the reports the container already carries, so a report is posted once across a restart; a role beside the port, over the tracker's caller |

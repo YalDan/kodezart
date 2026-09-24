@@ -25,9 +25,9 @@ from kodezart.chains.write_back_verifier import (
 from kodezart.core.protocols import (
     AgentRunner,
     GitService,
+    LaneLapseEscalationTracker,
     OutboundContentGate,
     PromptSetProvider,
-    TrackerPort,
     WorkspaceProvider,
 )
 from kodezart.domain.amendment import NativeWriteRefusalError
@@ -124,7 +124,7 @@ class LaneLapseEscalations:
     def __init__(
         self,
         *,
-        tracker: TrackerPort,
+        tracker: LaneLapseEscalationTracker,
         operation: OperationConfig,
         runner: AgentRunner,
         workspace: WorkspaceProvider,

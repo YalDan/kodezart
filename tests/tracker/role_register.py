@@ -68,19 +68,19 @@ RUN_RECORD_EXEMPTION = frozenset(
 EXEMPT_UNTIL_KOD_390 = frozenset({"read_surface_authorship"})
 
 
-#: The roles only a consumer nothing constructs takes. The run-shape reading,
-#: the record signals over it and the scope tally are imported by no module
-#: the entry point reaches at this head, so the roles they take are named in
-#: their own modules and nowhere the run goes. Named rather than scanned: wiring one of
-#: those consumers takes its role off the unreached list and reddens the
-#: reachability guard until the entry here goes too.
+#: The roles only a consumer nothing constructs takes. The run-shape reading
+#: and the record signals over it are imported by no module the entry point
+#: reaches at this head, so the roles they take are named in their own
+#: modules and nowhere the run goes; the scope tally's two roles left this
+#: list when the supervisor's scope arm wired the tally into the run. Named
+#: rather than scanned: wiring one of those consumers takes its role off the
+#: unreached list and reddens the reachability guard until the entry here
+#: goes too.
 UNWIRED_CONSUMER_ROLES = frozenset(
     {
         "EscalationResolutionReader",
         "EscalationSignalReader",
         "RecordSignalReader",
-        "ScopeRosterReader",
-        "ScopeTallyReader",
     }
 )
 
