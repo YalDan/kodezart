@@ -1,15 +1,20 @@
-"""One spelling of the non-counting pair, and one module that names Duplicate.
+"""One spelling of the non-counting pair, and one answer about it.
 
 A criterion the board Canceled or closed as a Duplicate counts for nothing
 and refuses nothing (KOD-794).  Two readers that each decide that for
 themselves can part, so the criterion readers ask the one predicate: the
 spec read, the native writer's authority read, ``existing_criterion`` and
-the criteria stage's ``needs_criteria``, and the gap and readiness read
-through ``is_open``, which closes the same kinds.  The organize reader in
+the criteria stage's ``needs_criteria``.  The gap and readiness read asks
+the gap arithmetic's one state match, ``state_membership`` in
+``domain/gap.py`` (KOD-453), whose excluded arms are the same kinds; the
+predicate cannot import that module, because the spec read that asks it
+reads the change stamp and must stay out of the gap's import reach.  So the
+two are held to one answer for every kind below.  The organize reader in
 ``domain/organize.py`` that still names Canceled itself is the known
 exception.
 
-What the scan below pins to one module is the Duplicate kind, in the shapes
+What the scan below pins to the enum's own module, and to that match's one
+arm in the gap arithmetic, is the Duplicate kind, in the shapes
 it sees: the ``DUPLICATE`` attribute, or a subscript by the member's name,
 on the enum spelled by its own name, by a from-import alias or as a module
 attribute; and a string constant equal to the kind's value.  A name bound
@@ -24,6 +29,8 @@ from pathlib import Path
 
 import pytest
 
+from kodezart.domain import gap
+from kodezart.types.domain.gap import GapMembership
 from kodezart.types.domain.tracker import WorkflowStateKind, is_non_counting, is_open
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -31,6 +38,11 @@ SOURCE_ROOT = REPO_ROOT / "src" / "kodezart"
 
 #: The module allowed to name the kind, as its own source path states it.
 HOME = "types/domain/tracker.py"
+
+#: The one other module that names it: the gap arithmetic, once, in the arm
+#: of its one state match (the shape guard in tests/domain/test_gap.py pins
+#: that match).
+ARITHMETIC = "domain/gap.py"
 
 #: The kinds the pair covers, and the kinds that close a criterion, each
 #: authored here as a literal so the predicates are read against the table
@@ -44,6 +56,18 @@ def test_is_non_counting_classifies_every_state_kind(kind):
     """Every member of the enum, so a kind added tomorrow is classified."""
     assert is_non_counting(kind) is (kind in NON_COUNTING)
     assert is_open(kind) is (kind not in CLOSED)
+
+
+@pytest.mark.parametrize("kind", list(WorkflowStateKind))
+def test_the_gap_arithmetic_excludes_exactly_the_non_counting_kinds(kind):
+    """The predicate and the gap's one state match give one answer per kind.
+
+    Both are read against the table above, so neither can drift from it
+    while the other still agrees with it.
+    """
+    excluded = gap.state_membership(kind) is GapMembership.EXCLUDED
+    assert excluded is is_non_counting(kind) is (kind in NON_COUNTING)
+    assert gap.open_state_kind(kind) is is_open(kind) is (kind not in CLOSED)
 
 
 def enum_aliases(tree: ast.AST) -> frozenset[str]:
@@ -96,14 +120,34 @@ def duplicate_kind_sites(source: str) -> int:
     )
 
 
+def match_arm_sites(source: str) -> int:
+    """How many ``DUPLICATE`` attributes *source* holds as a match arm's value."""
+    return sum(
+        1
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.match_case)
+        and isinstance(node.pattern, ast.MatchValue)
+        and isinstance(node.pattern.value, ast.Attribute)
+        and node.pattern.value.attr == WorkflowStateKind.DUPLICATE.name
+    )
+
+
 def test_the_duplicate_kind_is_named_in_one_module():
-    """Exactly one module in the source names the kind at all."""
+    """The enum's module names the kind; the gap arithmetic only in its arm.
+
+    No other module in the source names it at all, and the arithmetic names
+    it exactly once, as the value of one arm of its state match: a reading
+    of the kind anywhere else in that module is a second reading of it.
+    """
     naming = {
         path.relative_to(SOURCE_ROOT).as_posix()
         for path in sorted(SOURCE_ROOT.rglob("*.py"))
         if duplicate_kind_sites(path.read_text())
     }
-    assert naming == {HOME}
+    assert naming == {HOME, ARITHMETIC}
+    arithmetic = (SOURCE_ROOT / ARITHMETIC).read_text()
+    assert duplicate_kind_sites(arithmetic) == 1
+    assert match_arm_sites(arithmetic) == 1
 
 
 #: The reading this scan retired: the pre-change ``open_criteria`` body,
@@ -152,3 +196,12 @@ def test_the_scan_reports_a_module_that_names_the_kind_itself():
         assert duplicate_kind_sites(source) == 1, spelling
     assert duplicate_kind_sites("def f():\n    return DUPLICATE\n") == 0
     assert duplicate_kind_sites((SOURCE_ROOT / HOME).read_text()) >= 1
+    # The arm the arithmetic is allowed is seen as a site and as an arm; the
+    # same kind read outside a match is a site and no arm.
+    arm = (
+        "match kind:\n    case WorkflowStateKind.DUPLICATE:\n        return EXCLUDED\n"
+    )
+    assert duplicate_kind_sites(arm) == match_arm_sites(arm) == 1
+    outside = "if kind is WorkflowStateKind.DUPLICATE:\n    return EXCLUDED\n"
+    assert duplicate_kind_sites(outside) == 1
+    assert match_arm_sites(outside) == 0

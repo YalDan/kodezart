@@ -292,13 +292,14 @@ closed at the readiness read, while a fire entered on such a subject is refused
 as empty at the spec read. The readers that ask the one predicate,
 `is_non_counting`, are the spec read, the native writer's authority read,
 `existing_criterion` and the criteria stage's `needs_criteria`; the gap and
-readiness read asks `is_open`, which closes the same kinds. The organize reader
-in `domain/organize.py` that still names Canceled itself is the known
-exception. A static scan holds the Duplicate
-kind to the enum's own module in the shapes it sees: the `DUPLICATE` attribute,
-or a subscript by the member's name, on the enum spelled by its own name, by a
-from-import alias or as a module attribute, and a string constant equal to the
-kind's value.
+readiness read asks the gap arithmetic's one state match, `state_membership` in
+`domain/gap.py`, whose excluded arms are the same kinds, and a test holds the
+two to one answer for every kind. The organize reader in `domain/organize.py`
+that still names Canceled itself is the known exception. A static scan holds
+the Duplicate kind to the enum's own module, and to one arm of that match, in
+the shapes it sees: the `DUPLICATE` attribute, or a subscript by the member's
+name, on the enum spelled by its own name, by a from-import alias or as a
+module attribute, and a string constant equal to the kind's value.
 
 Each ready lane's gap is measured on the walk observation, as `gaps`: one
 `GapMeasurement` per ready lane naming its open subtree criteria at that read,

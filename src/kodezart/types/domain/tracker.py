@@ -82,8 +82,10 @@ class WorkflowStateKind(StrEnum):
     DUPLICATE = "duplicate"
 
 
-#: The kinds a criterion counts for nothing in.  Named once here so the gap
-#: arithmetic and the spec read give one answer about them (KOD-794).
+#: The kinds a criterion counts for nothing in, named once here for the
+#: criterion readers that ask ``is_non_counting`` (KOD-794).  The gap
+#: arithmetic's own state match excludes the same kinds, and
+#: tests/domain/test_non_counting.py holds the two to one answer.
 _NON_COUNTING_STATE_KINDS: frozenset[WorkflowStateKind] = frozenset(
     {
         WorkflowStateKind.CANCELED,
@@ -112,7 +114,9 @@ def is_non_counting(kind: WorkflowStateKind) -> bool:
 
     Asked by the spec read, the native writer's authority read,
     ``existing_criterion`` and the criteria stage's ``needs_criteria``; the
-    gap and readiness read asks ``is_open``, which closes the same kinds.
+    gap and readiness read asks the gap arithmetic's one state match
+    (``state_membership`` in ``domain/gap.py``), which excludes the same
+    kinds.
     The organize reader in ``domain/organize.py`` that still names Canceled
     itself is the known exception.
     """
