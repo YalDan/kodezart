@@ -75,7 +75,9 @@ async def test_write_attempt_budget_and_receipt_failures(monkeypatch, create, fa
                 holder=holder,
                 expected=original,
             )
-        assert attempted == (3 if failure == "unsent" else 1)
+        # Unsent: the retry budget. Credential: one presentation per silence
+        # and one to give up, since a refused write was never executed.
+        assert attempted == {"unsent": 3, "credential": 5}.get(failure, 1)
         if failure_object is not None:
             assert caught.value.__cause__ is failure_object
         retries = [row for row in logs if row["event"] == "tracker_mcp_retry"]

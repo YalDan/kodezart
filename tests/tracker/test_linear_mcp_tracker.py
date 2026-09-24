@@ -7,6 +7,7 @@ conformance suite covers what every adapter must do; this module covers
 what THIS adapter does to get there.
 """
 
+import asyncio
 import json
 from collections.abc import Mapping
 from datetime import timedelta
@@ -530,9 +531,12 @@ class TestARefusedCredentialIsNeverRetried:
     budget of sleeps re-asking a question whose answer does not change.
     """
 
-    async def test_the_refusal_stops_the_loop_on_the_attempt_that_met_it(
-        self,
-    ) -> None:
+    async def test_a_refusal_that_outlasts_the_silences_is_raised(self) -> None:
+        """Refused on every presentation, the call gives up after the silences.
+
+        The back-off is never spent on it: a refusal is answered with one
+        presentation per silence, four silences in all, then raised.
+        """
         server = FakeLinearMcpServer(
             issues=[FakeMcpIssue(id="T-6")],
             state_types=STATE_TYPES,
@@ -541,13 +545,73 @@ class TestARefusedCredentialIsNeverRetried:
         tracker = tracker_over(server, max_retries=3)
 
         served = await tracker.read_issue(issue_key="T-6")
-        with pytest.raises(TrackerAccessDeniedError):
+        with (
+            structlog.testing.capture_logs() as logs,
+            pytest.raises(TrackerAccessDeniedError),
+        ):
             await tracker.read_issue(issue_key="T-6")
 
         assert served.issue_key == "T-6"
-        # One call served, one refused: no back-off attempt was spent, where
-        # a retried refusal would have made four more.
+        # One call served, then one presentation per silence and the one
+        # that gives up: four silences, five refusals.
+        assert len(server.tool_calls("get_issue")) == 6
+        assert not [entry for entry in logs if entry["event"] == "tracker_mcp_retry"]
+
+    async def test_a_refusal_is_answered_with_silence_then_served(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Refused once, the call waits the silence and is served after it.
+
+        Measured 2026-09-24: the vendor answers 401 for a key whose hourly
+        budget is spent, and the budget is a leaky bucket that only silence
+        refills. The wait is the production one here, recorded rather than
+        slept.
+        """
+        from kodezart.adapters.linear import tracker as tracker_module
+
+        monkeypatch.setattr(tracker_module, "_REFUSAL_WAIT_SECONDS", 900.0)
+        server = FakeLinearMcpServer(
+            issues=[FakeMcpIssue(id="T-8")],
+            state_types=STATE_TYPES,
+            credential_refused_after={"get_issue": 0},
+        )
+        tracker = tracker_over(server, max_retries=3)
+        waited: list[float] = []
+        original_sleep = asyncio.sleep
+
+        async def silence(seconds: float) -> None:
+            if seconds != 900.0:
+                await original_sleep(seconds)
+                return
+            waited.append(seconds)
+            server.restore_credential("get_issue")
+            await original_sleep(0)
+
+        monkeypatch.setattr(asyncio, "sleep", silence)
+
+        with structlog.testing.capture_logs() as logs:
+            served = await tracker.read_issue(issue_key="T-8")
+
+        assert served.issue_key == "T-8"
+        assert waited == [900.0]
         assert len(server.tool_calls("get_issue")) == 2
+        waiting = [
+            entry
+            for entry in logs
+            if entry["event"] == "tracker_credential_refused_waiting"
+        ]
+        assert [
+            (
+                entry["tool"],
+                entry["server_name"],
+                entry["refusal"],
+                entry["wait_seconds"],
+            )
+            for entry in waiting
+        ] == [("get_issue", "fake-linear", 0, 900.0)]
+        assert not [
+            entry for entry in logs if entry["event"] == "tracker_credential_refused"
+        ]
 
     async def test_the_refusal_names_the_credential_once(self) -> None:
         server = FakeLinearMcpServer(
@@ -570,6 +634,12 @@ class TestARefusedCredentialIsNeverRetried:
         assert named[0]["server_name"] == "fake-linear"
         assert named[0]["tool"] == "get_issue"
         assert not [entry for entry in logs if entry["event"] == "tracker_mcp_retry"]
+        silences = [
+            entry["refusal"]
+            for entry in logs
+            if entry["event"] == "tracker_credential_refused_waiting"
+        ]
+        assert silences == [0, 1, 2, 3]
 
     async def test_a_transport_failure_is_still_retried_beside_it(self) -> None:
         """The paired positive: the retried class did not narrow."""

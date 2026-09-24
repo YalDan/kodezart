@@ -750,3 +750,12 @@ def conformance_call_log(
     assert call_log_digest(calls) == recorded_digests().get(nodeid), (
         f"{nodeid} sent {len(calls)} calls that differ from its recorded log"
     )
+
+
+@pytest.fixture(autouse=True)
+def _instant_refusal_waits(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A refused credential waits fifteen minutes per silence in production;
+    a test that does not measure the wait runs it at zero."""
+    from kodezart.adapters.linear import tracker as tracker_module
+
+    monkeypatch.setattr(tracker_module, "_REFUSAL_WAIT_SECONDS", 0.0)

@@ -951,19 +951,22 @@ for the budget.
 
 ## Known issues
 
-**A spent Linear request budget ends the scope run (KOD-1256).** Linear allows
-the tracker key 2,500 requests an hour (`x-ratelimit-requests-limit`), refilled
-as a sliding window; one MCP tool call costs about two. When the budget is
-spent, `mcp.linear.app` answers `401 invalid_token` rather than 429, and
-kodezart reads that as a refused credential: the job ends `engine_error`, and
-the heartbeat then resubmits a run each time a few requests refill, each dying
-on its first read. Measured on 2026-09-24: two fire-prep sessions, a grooming
-session and one scope run spent the hour's budget in under an hour. Until the
-adapter treats a spent budget as a wait, run the deployment with
+**A spent Linear request budget is answered with silence (KOD-1256).** Linear
+allows an API key 2,500 requests an hour and an OAuth app 5,000, as a leaky
+bucket refilled at a constant rate (about 42 a minute for the key); one MCP
+tool call costs several. When the bucket is empty, `mcp.linear.app` answers
+`401 invalid_token` rather than 429. Measured on 2026-09-24: two fire-prep
+sessions, a grooming session and one scope run emptied the key's bucket in
+under an hour, and a heartbeat that resubmitted the run every five minutes
+spent each five minutes' refill on a run that died at the walk's first read,
+fourteen times, so the bucket never filled. Since then a refused tracker call
+stops asking for fifteen minutes, presents the credential once more, and gives
+up after four such silences (`tracker_credential_refused_waiting`, then
+`tracker_credential_refused`); a run that waits stays a live job, so the
+heartbeat submits nothing beside it. Run the deployment with
 `KODEZART_AGENT__DANGEROUSLY_ALLOW_HOST_MCP=true` on a host whose Claude login
-holds the tracker: the sessions' calls, the bulk of the spend, then run on that
-login's own budget and the key serves only the process's own reads. Keep the
-heartbeat interval at 300 s or more.
+holds the tracker: the sessions' calls, the bulk of the spend, then draw on
+that login's own bucket and the key serves only the process's own reads.
 
 **Agent sessions cannot reach the tracker on their own (KOD-1240).** kodezart
 describes exactly one MCP server to a session, the knowledge server it was

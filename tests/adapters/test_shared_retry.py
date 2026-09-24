@@ -203,7 +203,12 @@ async def test_linear_policy_counts_total_attempts_and_backoff(attempts, waits):
 
 
 @pytest.mark.parametrize("kind", ["credential", "unanswered_write"])
-async def test_linear_permanent_or_unsafe_retry_refuses_immediately(kind, waits):
+async def test_linear_unsafe_retry_refuses_at_once_and_a_refusal_waits_in_silence(
+    kind, waits
+):
+    """An unanswered write is never resent; a refused one is presented once
+    per fifteen-minute silence, four silences, then raised. The silences are
+    recorded, not slept."""
     server = fixture_server()
     calls = []
 
@@ -224,8 +229,8 @@ async def test_linear_permanent_or_unsafe_retry_refuses_immediately(kind, waits)
     with pytest.raises(expected) as raised:
         await tracker.post_comment(issue_key=CLAIMED_ISSUE, body="one mutation")
     assert isinstance(raised.value.__cause__, expected_cause)
-    assert len(calls) == 1
-    assert waits == []
+    assert len(calls) == (5 if kind == "credential" else 1)
+    assert waits == ([900.0] * 4 if kind == "credential" else [])
 
 
 @pytest.mark.parametrize("kind", ["timeout", "rate_limit", "transport"])

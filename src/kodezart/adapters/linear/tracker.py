@@ -185,6 +185,18 @@ from kodezart.types.domain.tracker import (
 )
 from kodezart.types.domain.tracker_writes import DescriptionEditResult
 
+#: A refused credential is either a revoked key or a spent budget. Measured
+#: 2026-09-24: the vendor's hosted server answers 401 for a long-lived key
+#: whose hourly request budget is spent, and the vendor documents that budget
+#: as a leaky bucket refilled at a constant LIMIT / PERIOD (2,500 an hour for
+#: an API key). A retry every few minutes spends the refill and the key
+#: never fills; silence is what fills it. So a refused call stops asking for
+#: this long, presents the credential once more, and gives up after this
+#: many silences: an hour in all, a full bucket. A run that waits stays a
+#: live job, so nothing resubmits it meanwhile.
+_REFUSAL_WAIT_SECONDS = 900.0
+_REFUSAL_WAITS = 4
+
 _TOOL_LIST_ISSUES = "list_issues"
 _TOOL_LIST_DIFFS = "list_diffs"
 _ORDER_BY_UPDATED_AT = "updatedAt"
@@ -2627,22 +2639,33 @@ class _LinearTrackerSession:
         outside this scope so a read failure cannot resend a completed write.
         """
         attempt = 0
+        refusals = 0
         while True:
             try:
                 if revalidate is not None:
                     await revalidate()
                 return await invoke()
             except McpCredentialRefusedError as exc:
-                # Named once and raised, never retried: the refusal is the
-                # same on every attempt, so a budget spent on it buys the
-                # first answer again and delays the one event an operator
-                # can act on by the whole back-off.
-                await self._log.aerror(
-                    "tracker_credential_refused",
+                # A refusal is answered with silence, not with the back-off
+                # below: the back-off re-asks within seconds, which is what
+                # a spent budget cannot afford. Named once, when the
+                # silences are spent, and raised then.
+                if refusals >= _REFUSAL_WAITS:
+                    await self._log.aerror(
+                        "tracker_credential_refused",
+                        tool=tool,
+                        server_name=exc.server_name,
+                    )
+                    raise TrackerAccessDeniedError(str(exc)) from exc
+                await self._log.awarning(
+                    "tracker_credential_refused_waiting",
                     tool=tool,
                     server_name=exc.server_name,
+                    refusal=refusals,
+                    wait_seconds=_REFUSAL_WAIT_SECONDS,
                 )
-                raise TrackerAccessDeniedError(str(exc)) from exc
+                await asyncio.sleep(_REFUSAL_WAIT_SECONDS)
+                refusals += 1
             except (McpTransportError, TransientAPIError) as exc:
                 if attempt + 1 >= self._retry.attempts or not _may_resend(tool, exc):
                     raise TrackerUnavailableError(str(exc)) from exc

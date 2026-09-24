@@ -11,6 +11,12 @@ concerns.
 
 ### Changed
 
+- A tracker call the vendor refuses (401, which Linear also answers for a key
+  whose hourly request budget is spent) is answered with silence: the adapter
+  stops asking for fifteen minutes, presents the credential once more, and
+  gives up after four such silences (`tracker_credential_refused_waiting`,
+  then `tracker_credential_refused`). A scope run that waits stays a live job,
+  so the heartbeat submits nothing beside it (KOD-1256).
 - The fire-prep and grooming prompts (`anthropic_v5`) assign a proposed scope's
   tracker issue to the approver principal and name them in the proposal comment,
   so a `scope:proposed` reaches the approver where they read.

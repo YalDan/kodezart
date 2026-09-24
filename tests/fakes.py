@@ -2876,6 +2876,10 @@ class FakeLinearMcpServer:
             ) from exc
         return result
 
+    def restore_credential(self, name: str) -> None:
+        """Lift a refusal on *name*: the budget behind it has refilled."""
+        self._credential_refused_after.pop(name, None)
+
     def tool_calls(self, name: str) -> list[Mapping[str, object]]:
         """Every argument mapping the named tool was invoked with."""
         return [args for tool, args in self.calls if tool == name]

@@ -33,7 +33,10 @@ async def test_tracker_refusal_does_not_escape_as_a_transport_type(credential):
     assert isinstance(
         caught.value.__cause__, (McpTransportError, McpCredentialRefusedError)
     )
-    assert len(server.tool_calls("get_issue")) == 1
+    # A transport failure spends the one attempt; a refusal is presented
+    # once per silence and once more to give up (the silences run at zero
+    # here, see conftest).
+    assert len(server.tool_calls("get_issue")) == (5 if credential else 1)
 
 
 class RefusingCommentReader:

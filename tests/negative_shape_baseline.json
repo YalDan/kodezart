@@ -1161,7 +1161,7 @@
    "test_github_permanent_failures_do_not_spend_retry_budget",
    "test_actions_rerun_post_is_not_replayed",
    "test_linear_policy_counts_total_attempts_and_backoff",
-   "test_linear_permanent_or_unsafe_retry_refuses_immediately",
+   "test_linear_unsafe_retry_refuses_at_once_and_a_refusal_waits_in_silence",
    "test_content_scanner_shared_policy_retries_only_typed_transient_results",
    "test_content_scanner_permanent_result_never_retries",
    "test_each_content_attempt_has_its_own_timeout_and_closes_stream",
@@ -7398,7 +7398,7 @@
    "TestTransientRetry.test_exhausting_the_budget_raises_the_transient_error",
    "TestTransportRetry.test_a_transport_failure_within_budget_is_retried",
    "TestTransportRetry.test_exhausting_the_budget_raises_the_transport_error",
-   "TestARefusedCredentialIsNeverRetried.test_the_refusal_stops_the_loop_on_the_attempt_that_met_it",
+   "TestARefusedCredentialIsNeverRetried.test_a_refusal_that_outlasts_the_silences_is_raised",
    "TestARefusedCredentialIsNeverRetried.test_the_refusal_names_the_credential_once",
    "TestARefusedCredentialIsNeverRetried.test_a_transport_failure_is_still_retried_beside_it",
    "TestARefusedCredentialIsNeverRetried.test_each_retry_waits_the_configured_backoff",
@@ -7431,7 +7431,8 @@
    "TestTheBodyWriteRecordThisAdapterKeeps.test_a_save_the_backend_refuses_records_no_holder",
    "TestTheBodyWriteRecordThisAdapterKeeps.test_a_record_the_backend_attributes_elsewhere_names_no_holder",
    "TestTheBodyWriteRecordThisAdapterKeeps.test_a_sibling_bodys_record_names_no_holder",
-   "TestCapabilityProbe.test_every_signal_a_refused_scan_serves_is_refused_with_its_diagnosis"
+   "TestCapabilityProbe.test_every_signal_a_refused_scan_serves_is_refused_with_its_diagnosis",
+   "TestARefusedCredentialIsNeverRetried.test_a_refusal_is_answered_with_silence_then_served"
   ],
   "tests/tracker/test_linear_tool_arguments.py": [
    "test_the_sweep_reaches_every_tool_the_adapter_names",
