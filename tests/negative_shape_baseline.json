@@ -189,7 +189,7 @@
   "tests/domain/test_fire_spec_arm_reads.py": 23,
   "tests/domain/test_fire_spec_formatter.py": 2,
   "tests/domain/test_fire_spec_purity.py": 10,
-  "tests/domain/test_gap.py": 52,
+  "tests/domain/test_gap.py": 74,
   "tests/domain/test_git_url.py": 16,
   "tests/domain/test_issue_label_config.py": 6,
   "tests/domain/test_lane_alarms.py": 21,
@@ -326,7 +326,7 @@
   "tests/services/test_agent_service.py": 5,
   "tests/services/test_alarm_supervisor.py": 56,
   "tests/services/test_amendment_interrupted_writes.py": 17,
-  "tests/services/test_applied_native_amendments.py": 226,
+  "tests/services/test_applied_native_amendments.py": 230,
   "tests/services/test_assertion_drift.py": 30,
   "tests/services/test_audit_coverage.py": 22,
   "tests/services/test_audit_reopen.py": 26,
@@ -3088,7 +3088,11 @@
    "test_the_lapse_and_the_never_graded_are_one_membership_told_apart_by_the_sha",
    "test_a_lapse_and_a_reopened_grading_are_owed_and_told_apart_by_the_lapse_pointer",
    "test_the_shape_guard_rejects_a_default_arm_however_it_is_spelled",
-   "test_membership_is_on_state_alone_whatever_labels_the_criterion_carries"
+   "test_membership_is_on_state_alone_whatever_labels_the_criterion_carries",
+   "test_the_membership_cases_name_every_tracker_state",
+   "test_a_cancellation_is_excluded_on_state_alone_whatever_supersession_it_carries",
+   "test_a_criterion_carrying_a_reference_keeps_the_answer_of_its_arm",
+   "test_a_reference_naming_a_live_successor_moves_neither_record"
   ],
   "tests/domain/test_git_url.py": [
    "test_parse_repo_url_https_without_dot_git",

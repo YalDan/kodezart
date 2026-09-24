@@ -44,8 +44,13 @@ from kodezart.domain.errors import (
     OrganizeWriteRefusalError,
     ScopeReadError,
 )
-from kodezart.domain.gap import compute_gap, in_gap, open_state_kind
-from kodezart.domain.issue_tree import SubtreeClosure, open_criteria
+from kodezart.domain.gap import (
+    compute_gap,
+    gap_membership,
+    open_state_kind,
+    state_membership,
+)
+from kodezart.domain.issue_tree import SubtreeClosure
 from kodezart.domain.organize import (
     admission_route,
     evidence_is_fillable,
@@ -64,6 +69,7 @@ from kodezart.services.audit_sessions import judge_in_workspace
 from kodezart.services.organize_context import OrganizeContextReader
 from kodezart.services.run_surface_lease import RunSurfaceLease
 from kodezart.types.domain.agent import AgentEvent, RateLimitWarningEvent, ResultEvent
+from kodezart.types.domain.gap import CriterionGap, GapMembership
 from kodezart.types.domain.operation import CheckPrerequisite
 from kodezart.types.domain.organize import (
     MANDATE_PHASE_ROLES,
@@ -1443,7 +1449,7 @@ CHANGE_STAMP_FIELDS = frozenset(
 #: The gap arithmetic, named by the objects rather than by their words: the
 #: subtree gap and the organize gap.  Only the modules defining them are read,
 #: so every definition beside either one is inside the arithmetic whether it
-#: is named here or not — ``in_gap`` sits beside ``compute_gap`` — and a
+#: is named here or not — ``gap_membership`` sits beside ``compute_gap`` — and a
 #: module that builds on them, ``SubtreeClosure``'s among them, reaches them
 #: by its imports.  Each member is load-bearing: the modules reaching one of
 #: them are not the modules reaching the other, so the exact bound below
@@ -1465,7 +1471,7 @@ def gap_home_functions():
     """Every function a gap home defines, read off the module objects.
 
     The homes are the modules defining ``GAP_ARITHMETIC``; every function
-    whose ``__module__`` is one of them is inside the arithmetic — ``in_gap``,
+    whose ``__module__`` is one of them is inside the arithmetic — ``gap_membership``,
     ``organize_at_rest`` and each stage helper beside them — so a definition
     referring to any one of them is a call site of the arithmetic, and every
     one of them is an entry point the trap below runs.
@@ -1801,25 +1807,25 @@ CALL_SITE_ROUTES = {
     "aliased_import": "from kodezart.domain.gap import compute_gap as gap_of\n"
     "\n"
     "def plan(criteria, since):\n"
-    "    return [c for c in gap_of(criteria, supersession_refs={}){READ}]\n",
+    "    return [c for c in gap_of(criteria){READ}]\n",
     "import_inside_the_function": "def plan(criteria, since):\n"
     "    from kodezart.domain.gap import compute_gap as _g\n"
     "\n"
-    "    return [c for c in _g(criteria, supersession_refs={}){READ}]\n",
+    "    return [c for c in _g(criteria){READ}]\n",
     "module_alias_inside_the_function": "def plan(criteria, since):\n"
     "    import kodezart.domain.gap as gap_module\n"
     "\n"
     "    window = gap_module.compute_gap\n"
-    "    return [c for c in window(criteria, supersession_refs={}){READ}]\n",
+    "    return [c for c in window(criteria){READ}]\n",
     "dotted_route_inside_the_function": "def plan(criteria, since):\n"
     "    import kodezart.domain.gap\n"
     "\n"
     "    window = kodezart.domain.gap.compute_gap\n"
-    "    return [c for c in window(criteria, supersession_refs={}){READ}]\n",
+    "    return [c for c in window(criteria){READ}]\n",
     "relative_import_inside_the_function": "def plan(criteria, since):\n"
     "    from ..domain.gap import compute_gap as window\n"
     "\n"
-    "    return [c for c in window(criteria, supersession_refs={}){READ}]\n",
+    "    return [c for c in window(criteria){READ}]\n",
     "loaded_as_a_value_and_handed_on": "from kodezart.domain import gap\n"
     "\n"
     "def plan(criteria, since, run):\n"
@@ -1834,7 +1840,7 @@ CALL_SITE_ROUTES = {
     "\n"
     "from kodezart.domain.gap import compute_gap\n"
     "\n"
-    "_WINDOW = functools.partial(compute_gap, supersession_refs={})\n"
+    "_WINDOW = functools.partial(compute_gap)\n"
     "\n"
     "def plan(criteria, since):\n"
     "    return [c for c in _WINDOW(criteria){READ}]\n",
@@ -1844,12 +1850,12 @@ CALL_SITE_ROUTES = {
     "    window = staticmethod(compute_gap)\n"
     "\n"
     "def plan(criteria, since):\n"
-    "    return [c for c in Arithmetic.window(criteria, supersession_refs={}){READ}]\n",
+    "    return [c for c in Arithmetic.window(criteria){READ}]\n",
     "named_as_module_colon_attr": "import pkgutil\n"
     "\n"
     "def plan(criteria, since):\n"
     "    window = pkgutil.resolve_name('kodezart.domain.gap:compute_gap')\n"
-    "    return [c for c in window(criteria, supersession_refs={}){READ}]\n",
+    "    return [c for c in window(criteria){READ}]\n",
     "named_as_module_dot_attr": "import pkgutil\n"
     "\n"
     "def plan(criteria, since):\n"
@@ -1858,15 +1864,15 @@ CALL_SITE_ROUTES = {
     "predicate_named_as_module_colon_attr": "import pkgutil\n"
     "\n"
     "def plan(criteria, since):\n"
-    "    still_open = pkgutil.resolve_name('kodezart.domain.gap:in_gap')\n"
+    "    still_open = pkgutil.resolve_name('kodezart.domain.gap:open_state_kind')\n"
     "    return [\n"
-    "        c for c in criteria if still_open(c, supersession_ref=None){READ}\n"
+    "        c for c in criteria if still_open(c.state_kind){READ}\n"
     "    ]\n",
     "attribute_off_the_resolving_call": "import pkgutil\n"
     "\n"
     "def plan(criteria, since):\n"
     "    window = pkgutil.resolve_name('kodezart.domain:gap').compute_gap\n"
-    "    return [c for c in window(criteria, supersession_refs={}){READ}]\n",
+    "    return [c for c in window(criteria){READ}]\n",
     "at_rest_named_as_module_dot_attr": "import pkgutil\n"
     "\n"
     "def plan(criteria, since, board):\n"
@@ -1877,37 +1883,37 @@ CALL_SITE_ROUTES = {
     "def plan(criteria, since):\n"
     "    arithmetic = pkgutil.resolve_name('kodezart.domain:gap')\n"
     "    return [\n"
-    "        c for c in arithmetic.compute_gap(criteria, supersession_refs={}){READ}\n"
+    "        c for c in arithmetic.compute_gap(criteria){READ}\n"
     "    ]\n",
     "local_bound_from_import_module": "import importlib\n"
     "\n"
     "def plan(criteria, since):\n"
     "    arithmetic = importlib.import_module('kodezart.domain.gap')\n"
     "    return [\n"
-    "        c for c in arithmetic.compute_gap(criteria, supersession_refs={}){READ}\n"
+    "        c for c in arithmetic.compute_gap(criteria){READ}\n"
     "    ]\n",
     "getattr_on_the_home_module": "def plan(criteria, since):\n"
     "    from kodezart.domain import gap\n"
     "\n"
     "    window = getattr(gap, 'compute_gap')\n"
-    "    return [c for c in window(criteria, supersession_refs={}){READ}]\n",
+    "    return [c for c in window(criteria){READ}]\n",
     "attrgetter_applied_to_the_home_module": "import operator\n"
     "\n"
     "from kodezart.domain import gap\n"
     "\n"
     "def plan(criteria, since):\n"
     "    window = operator.attrgetter('compute_gap')(gap)\n"
-    "    return [c for c in window(criteria, supersession_refs={}){READ}]\n",
+    "    return [c for c in window(criteria){READ}]\n",
     "vars_of_the_home_module": "from kodezart.domain import gap\n"
     "\n"
     "def plan(criteria, since):\n"
     "    window = vars(gap)['compute_gap']\n"
-    "    return [c for c in window(criteria, supersession_refs={}){READ}]\n",
+    "    return [c for c in window(criteria){READ}]\n",
     "dict_of_the_home_module": "from kodezart.domain import gap\n"
     "\n"
     "def plan(criteria, since):\n"
     "    window = gap.__dict__['compute_gap']\n"
-    "    return [c for c in window(criteria, supersession_refs={}){READ}]\n",
+    "    return [c for c in window(criteria){READ}]\n",
     "home_module_bound_to_a_local_and_handed_on": "from kodezart.domain import gap\n"
     "\n"
     "def plan(criteria, since, run):\n"
@@ -1968,7 +1974,7 @@ def test_a_call_site_of_the_arithmetic_is_found_by_object_and_scanned(route, rea
 UNSEEN_CALL_SITE_SHAPES = {
     "an argument": (
         "def plan(criteria, since, window):\n"
-        "    return [c for c in window(criteria, supersession_refs={}){READ}]\n",
+        "    return [c for c in window(criteria){READ}]\n",
         (),
     ),
     "returned from a helper": (
@@ -1978,7 +1984,7 @@ UNSEEN_CALL_SITE_SHAPES = {
         "    return gap.compute_gap\n"
         "\n"
         "def plan(criteria, since):\n"
-        "    return [c for c in arithmetic()(criteria, supersession_refs={}){READ}]\n",
+        "    return [c for c in arithmetic()(criteria){READ}]\n",
         ("arithmetic",),
     ),
     "stored on an object and read elsewhere": (
@@ -1989,7 +1995,7 @@ UNSEEN_CALL_SITE_SHAPES = {
         "        self.window = gap.compute_gap\n"
         "\n"
         "def plan(criteria, since, holder):\n"
-        "    return [c for c in holder.window(criteria, supersession_refs={}){READ}]\n",
+        "    return [c for c in holder.window(criteria){READ}]\n",
         ("Holder.__init__",),
     ),
     "passed through a container built elsewhere": (
@@ -2000,7 +2006,7 @@ UNSEEN_CALL_SITE_SHAPES = {
         "\n"
         "def plan(criteria, since):\n"
         "    return [\n"
-        "        c for c in table()['window'](criteria, supersession_refs={}){READ}\n"
+        "        c for c in table()['window'](criteria){READ}\n"
         "    ]\n",
         ("table",),
     ),
@@ -2010,7 +2016,7 @@ UNSEEN_CALL_SITE_SHAPES = {
         "def plan(criteria, since):\n"
         "    home = pkgutil.resolve_name('kodezart.domain' + ':gap')\n"
         "    return [\n"
-        "        c for c in home.compute_gap(criteria, supersession_refs={}){READ}\n"
+        "        c for c in home.compute_gap(criteria){READ}\n"
         "    ]\n",
         (),
     ),
@@ -2021,7 +2027,7 @@ UNSEEN_CALL_SITE_SHAPES = {
         "    globals()['window'] = gap.compute_gap\n"
         "\n"
         "def plan(criteria, since):\n"
-        "    return [c for c in window(criteria, supersession_refs={}){READ}]\n",
+        "    return [c for c in window(criteria){READ}]\n",
         ("bind",),
     ),
     "setattr inside a function": (
@@ -2033,7 +2039,7 @@ UNSEEN_CALL_SITE_SHAPES = {
         "    setattr(sys.modules[__name__], 'window', gap.compute_gap)\n"
         "\n"
         "def plan(criteria, since):\n"
-        "    return [c for c in window(criteria, supersession_refs={}){READ}]\n",
+        "    return [c for c in window(criteria){READ}]\n",
         ("bind",),
     ),
 }
@@ -2072,7 +2078,8 @@ def test_a_shape_outside_the_reach_is_no_call_site(shape):
 REGISTERED_READER_REFERENCES = {
     "compute_gap as module:attr": "pkgutil.resolve_name("
     "'kodezart.domain.gap:compute_gap')",
-    "in_gap as module:attr": "pkgutil.resolve_name('kodezart.domain.gap:in_gap')",
+    "gap_membership as module:attr": "pkgutil.resolve_name("
+    "'kodezart.domain.gap:gap_membership')",
     "organize_at_rest as module.attr": "pkgutil.resolve_name("
     "'kodezart.domain.organize.organize_at_rest')",
     "attribute off the call naming its module": "pkgutil.resolve_name("
@@ -2116,7 +2123,7 @@ STAMP_VALUE_ROUTES = {
         "\n"
         "def plan(criteria):\n"
         "    return sorted(\n"
-        "        compute_gap(criteria, supersession_refs={}),\n"
+        "        compute_gap(criteria),\n"
         "        key=lambda c: getattr(c, STAMP_FIELD),\n"
         "    )\n",
         "updated_at",
@@ -2127,7 +2134,7 @@ STAMP_VALUE_ROUTES = {
         "\n"
         "    return [\n"
         "        getattr(c, _ORDER_BY_UPDATED_AT)\n"
-        "        for c in compute_gap(criteria, supersession_refs={})\n"
+        "        for c in compute_gap(criteria)\n"
         "    ]\n",
         "updatedAt",
     ),
@@ -2137,7 +2144,7 @@ STAMP_VALUE_ROUTES = {
         "def plan(criteria):\n"
         "    return [\n"
         "        getattr(c, wire._ORDER_BY_UPDATED_AT)\n"
-        "        for c in compute_gap(criteria, supersession_refs={})\n"
+        "        for c in compute_gap(criteria)\n"
         "    ]\n",
         "updatedAt",
     ),
@@ -2237,13 +2244,17 @@ def arithmetic_cases(stamp):
     itself when it is a truth value, a route or ``None``.  Every function of
     a gap home has a case here, so the trap runs each one on its own.
 
-    The arms reached.  ``compute_gap`` and the ``in_gap`` it runs: every
-    workflow state kind, each with and without a supersession, so an open
-    criterion, a completed one, and a canceled and a duplicate one either
-    superseded or not; an empty board; and its three refusals — a criterion
-    twice, a record that is no criterion, a blank supersession.  ``in_gap``
-    on its own: an open criterion, a completed one, a canceled one superseded
-    and unsuperseded, and its two refusals.  The organize
+    The arms reached.  ``compute_gap`` and the ``gap_membership`` it runs:
+    every workflow state kind, each plain and carrying a supersession note
+    the arithmetic does not read, so an open criterion, a completed one, and
+    a canceled and a duplicate one, each excluded on its state alone; an
+    empty board; its two refusals — a criterion twice, a record that is no
+    criterion; and a criterion carrying a blank supersession note, which
+    refuses nothing because the arithmetic takes no supersession input.
+    ``gap_membership`` on its own: an open criterion, a completed one, a
+    canceled one with and without a note, its refusal of a record that is no
+    criterion, and an open one carrying a blank note.  ``state_membership``
+    takes a workflow kind and no record: every kind.  The organize
     gap, asked by ``organize_gap`` and by ``organize_at_rest``: a board with a
     subject at rest, a nested subtree (a deliverable child under it holding
     its own criterion), a subject without its marker, one without an
@@ -2265,9 +2276,10 @@ def arithmetic_cases(stamp):
     ``stage_rows``: the rows on each side of approval.  ``is_admission_live``
     takes two digests and no record, so the stamp cannot reach it: the same
     digest, a changed one, and its refusal of a blank one.
-    ``open_state_kind`` takes a workflow kind and no record either: every
-    kind, each with and without a supersession, and its refusal of a blank
-    supersession.  ``evidence_is_fillable`` takes two names and no record: a
+    ``open_state_kind`` takes a workflow kind and no record either: the kind
+    of every criterion above, plain and carrying a note, which answers alike,
+    and the kind of one carrying a blank note.  ``evidence_is_fillable``
+    takes two names and no record: a
     runnable test named, an observation named, nothing named, and only blank
     names.
     """
@@ -2291,23 +2303,27 @@ def arithmetic_cases(stamp):
             state_name=kind.value,
         )
 
-    kinds = [
-        criterion(f"criterion/{kind.value}{superseded}", kind)
-        for kind in WorkflowStateKind
-        for superseded in ("", "/superseded")
-    ]
-    refs = {
-        each.issue_key: "superseding/1"
-        for each in kinds
-        if each.issue_key.endswith("/superseded")
-    }
-
-    def subtree(criteria, refs=None):
-        return (
-            compute_gap,
-            {"criteria": criteria, "supersession_refs": refs or {}},
-            criteria,
+    def noted(each, successor="superseding/1"):
+        """*each* carrying a supersession note in its body and as a label."""
+        return each.model_copy(
+            update={
+                "body": f"{each.body}\n\nSuperseded by {successor}.",
+                "issue_labels": each.issue_labels | {"superseded"},
+            }
         )
+
+    kinds = [
+        each
+        for kind in WorkflowStateKind
+        for each in (
+            criterion(f"criterion/{kind.value}", kind),
+            noted(criterion(f"criterion/{kind.value}/superseded", kind)),
+        )
+    ]
+    blank_note = noted(criterion("criterion/blank-note", WorkflowStateKind.TRIAGE), " ")
+
+    def subtree(criteria):
+        return (compute_gap, {"criteria": criteria}, criteria)
 
     def family(key, *, marker=True, child=WorkflowStateKind.COMPLETED, parent=None):
         return (
@@ -2378,8 +2394,8 @@ def arithmetic_cases(stamp):
     canceled = criterion("member/canceled", WorkflowStateKind.CANCELED)
     plain = record("member/plain")
 
-    def membership(each, ref):
-        return in_gap, {"criterion": each, "supersession_ref": ref}, (each,)
+    def membership(each):
+        return gap_membership, {"criterion": each}, (each,)
 
     blocked = record(
         SUBJECT,
@@ -2488,14 +2504,14 @@ def arithmetic_cases(stamp):
         "refuses a criterion without its parent": organize((*at_rest, orphan)),
     }
     return {
-        "subtree gap: every state kind": subtree(kinds, refs),
+        "subtree gap: every state kind": subtree(kinds),
         "subtree gap: empty board": subtree(()),
         "subtree gap refuses a criterion twice": subtree((kinds[0], kinds[0])),
         "subtree gap refuses a record that is no criterion": subtree(
             (record("plain/1"),)
         ),
-        "subtree gap refuses a blank supersession": subtree(
-            (kinds[0],), {kinds[0].issue_key: " "}
+        "subtree gap takes no supersession input: a blank note refuses nothing": (
+            subtree((blank_note,))
         ),
         **{
             f"{entry.__name__}: {name}": (
@@ -2506,12 +2522,24 @@ def arithmetic_cases(stamp):
             for name, arguments in organize_boards.items()
             for entry in (organize_gap, organize_at_rest)
         },
-        "in_gap: an open criterion": membership(open_criterion, None),
-        "in_gap: a completed criterion": membership(completed, None),
-        "in_gap: a canceled criterion superseded": membership(canceled, "over/1"),
-        "in_gap: a canceled criterion unsuperseded": membership(canceled, None),
-        "in_gap refuses a record that is no criterion": membership(plain, None),
-        "in_gap refuses a blank supersession": membership(open_criterion, " "),
+        "gap_membership: an open criterion": membership(open_criterion),
+        "gap_membership: a completed criterion": membership(completed),
+        "gap_membership: a canceled criterion superseded": membership(
+            noted(canceled, "over/1")
+        ),
+        "gap_membership: a canceled criterion unsuperseded": membership(canceled),
+        "gap_membership refuses a record that is no criterion": membership(plain),
+        "gap_membership takes no supersession input: a blank note": membership(
+            noted(open_criterion, " ")
+        ),
+        **{
+            f"state_membership: {kind.value}": (
+                state_membership,
+                {"state_kind": kind},
+                (),
+            )
+            for kind in WorkflowStateKind
+        },
         "admission_route: a buildable result": route(
             admission(verdict=AdmissionVerdict.BUILDABLE), {SUBJECT}
         ),
@@ -2589,21 +2617,19 @@ def arithmetic_cases(stamp):
         "is_admission_live: a changed digest": liveness("opaque:1", "opaque:2"),
         "is_admission_live refuses a blank digest": liveness("opaque:1", " "),
         **{
-            f"open_state_kind: {kind.value}{superseded}": (
+            "open_state_kind: "
+            + each.state_kind.value
+            + (" superseded" if "superseded" in each.issue_labels else ""): (
                 open_state_kind,
-                {
-                    "state_kind": kind,
-                    "supersession_ref": "over/1" if superseded else None,
-                },
-                (),
+                {"state_kind": each.state_kind},
+                (each,),
             )
-            for kind in WorkflowStateKind
-            for superseded in ("", " superseded")
+            for each in kinds
         },
-        "open_state_kind refuses a blank supersession": (
+        "open_state_kind takes no supersession input: a blank note": (
             open_state_kind,
-            {"state_kind": WorkflowStateKind.UNSTARTED, "supersession_ref": " "},
-            (),
+            {"state_kind": blank_note.state_kind},
+            (blank_note,),
         ),
         "evidence_is_fillable: a runnable test named": (
             evidence_is_fillable,
@@ -2632,8 +2658,10 @@ def arithmetic_outcome(entry, arguments, records):
     """What one entry point answers: its records by position, or its refusal.
 
     A record answered by its key is read at the position of the record
-    carrying that key; a truth value, a route and ``None`` are read as
-    themselves; a subtree read refuses as a scope read error.
+    carrying that key; a gap read is read as its two halves, the owed records
+    and the keys set aside beside them; a truth value, a membership, a route
+    and ``None`` are read as themselves; a subtree read refuses as a scope
+    read error.
     """
     try:
         answer = entry(**arguments)
@@ -2641,15 +2669,21 @@ def arithmetic_outcome(entry, arguments, records):
         return ("refused", str(refusal))
     if isinstance(answer, bool | str) or answer is None:
         return ("answered", answer)
-    return (
-        "answered",
-        tuple(
+
+    def positions(items):
+        return tuple(
             position
-            for item in answer
+            for item in items
             for position, each in enumerate(records)
             if each is item or (isinstance(item, str) and each.issue_key == item)
-        ),
-    )
+        )
+
+    if isinstance(answer, CriterionGap):
+        return (
+            "answered",
+            {"owed": positions(answer.owed), "excluded": positions(answer.excluded)},
+        )
+    return ("answered", positions(answer))
 
 
 #: The stamp every record carries in the baseline reading.
@@ -2657,8 +2691,11 @@ BASELINE_STAMP = datetime(2026, 1, 1, tzinfo=UTC)
 #: What each case answers over records carrying ``BASELINE_STAMP``.  Written
 #: out, so a board that stops reaching the arm it was built for reds.
 ARITHMETIC_OUTCOMES = {
-    "subtree gap: every state kind": ("answered", (0, 1, 2, 3, 4, 5, 6, 7, 10, 12)),
-    "subtree gap: empty board": ("answered", ()),
+    "subtree gap: every state kind": (
+        "answered",
+        {"owed": (0, 1, 2, 3, 4, 5, 6, 7), "excluded": (10, 11, 12, 13)},
+    ),
+    "subtree gap: empty board": ("answered", {"owed": (), "excluded": ()}),
     "subtree gap refuses a criterion twice": (
         "refused",
         "a criterion identity appears more than once",
@@ -2667,9 +2704,9 @@ ARITHMETIC_OUTCOMES = {
         "refused",
         "gap membership requires a criterion sub-issue",
     ),
-    "subtree gap refuses a blank supersession": (
-        "refused",
-        "a supersession reference must be nonempty",
+    "subtree gap takes no supersession input: a blank note refuses nothing": (
+        "answered",
+        {"owed": (0,), "excluded": ()},
     ),
     "organize_gap: every arm": ("answered", (4, 6, 8, 10, 12, 14, 16)),
     "organize_at_rest: every arm": ("answered", False),
@@ -2688,18 +2725,31 @@ ARITHMETIC_OUTCOMES = {
         }.items()
         for entry in (organize_gap, organize_at_rest)
     },
-    "in_gap: an open criterion": ("answered", True),
-    "in_gap: a completed criterion": ("answered", False),
-    "in_gap: a canceled criterion superseded": ("answered", False),
-    "in_gap: a canceled criterion unsuperseded": ("answered", True),
-    "in_gap refuses a record that is no criterion": (
+    "gap_membership: an open criterion": ("answered", GapMembership.OWED),
+    "gap_membership: a completed criterion": ("answered", GapMembership.DISCHARGED),
+    "gap_membership: a canceled criterion superseded": (
+        "answered",
+        GapMembership.EXCLUDED,
+    ),
+    "gap_membership: a canceled criterion unsuperseded": (
+        "answered",
+        GapMembership.EXCLUDED,
+    ),
+    "gap_membership refuses a record that is no criterion": (
         "refused",
         "gap membership requires a criterion sub-issue",
     ),
-    "in_gap refuses a blank supersession": (
-        "refused",
-        "a supersession reference must be nonempty",
+    "gap_membership takes no supersession input: a blank note": (
+        "answered",
+        GapMembership.OWED,
     ),
+    "state_membership: triage": ("answered", GapMembership.OWED),
+    "state_membership: backlog": ("answered", GapMembership.OWED),
+    "state_membership: unstarted": ("answered", GapMembership.OWED),
+    "state_membership: started": ("answered", GapMembership.OWED),
+    "state_membership: completed": ("answered", GapMembership.DISCHARGED),
+    "state_membership: canceled": ("answered", GapMembership.EXCLUDED),
+    "state_membership: duplicate": ("answered", GapMembership.EXCLUDED),
     "admission_route: a buildable result": ("answered", AdmissionRoute.MARK_COMPLETE),
     "admission_route: an unverifiable result blocked inside the scope": (
         "answered",
@@ -2761,14 +2811,11 @@ ARITHMETIC_OUTCOMES = {
     "open_state_kind: started superseded": ("answered", True),
     "open_state_kind: completed": ("answered", False),
     "open_state_kind: completed superseded": ("answered", False),
-    "open_state_kind: canceled": ("answered", True),
+    "open_state_kind: canceled": ("answered", False),
     "open_state_kind: canceled superseded": ("answered", False),
-    "open_state_kind: duplicate": ("answered", True),
+    "open_state_kind: duplicate": ("answered", False),
     "open_state_kind: duplicate superseded": ("answered", False),
-    "open_state_kind refuses a blank supersession": (
-        "refused",
-        "a supersession reference must be nonempty",
-    ),
+    "open_state_kind takes no supersession input: a blank note": ("answered", True),
     "evidence_is_fillable: a runnable test named": ("answered", True),
     "evidence_is_fillable: an observation named": ("answered", True),
     "evidence_is_fillable: nothing named": ("answered", False),
@@ -2862,11 +2909,12 @@ def call_site_cases(stamp):
 
     ``case -> (call site, keyword arguments, records)``, read as
     ``arithmetic_cases`` is, every record's change stamp ``stamp(n)``.  The
-    arms reached.  ``open_criteria``: open and completed criteria, two of
-    each state kind so an order the stamp imposes shows; an empty family;
-    and its refusal of a canceled or duplicate criterion with no supersession
-    reader.  ``SubtreeClosure.open_criterion_keys``, run on a closure over a
-    subject and a criterion of every state kind.
+    arms reached.  ``SubtreeClosure._walk``, the criterion leaf of the
+    subtree gap, walking a subject over a criterion of every state kind, two
+    of each so an order the stamp imposes shows.  ``SubtreeClosure.scope_gap``
+    over open and completed criteria, over a subject with no criterion, over
+    a criterion of every state kind, and over canceled and duplicate criteria
+    alone, which are excluded on their state and named, never refused.
     """
     built = iter(range(1_000))
 
@@ -2891,52 +2939,56 @@ def call_site_cases(stamp):
         if each.state_kind
         not in {WorkflowStateKind.CANCELED, WorkflowStateKind.DUPLICATE}
     )
+    excluded = tuple(each for each in kinds if each not in settled)
     subject = record(SUBJECT)
     ref = ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT)
-    closure = SubtreeClosure(
-        facts={each.issue_key: each for each in (subject, *kinds)}, ref=ref
-    )
+
+    def closure(criteria):
+        return SubtreeClosure(
+            facts={each.issue_key: each for each in (subject, *criteria)}, ref=ref
+        )
+
+    def scope_gap(criteria):
+        return (
+            SubtreeClosure.scope_gap,
+            {"self": closure(criteria)},
+            (subject, *criteria),
+        )
+
     return {
-        "open_criteria: open and completed criteria": (
-            open_criteria,
-            {"criteria": settled, "ref": ref},
-            settled,
-        ),
-        "open_criteria: an empty family": (
-            open_criteria,
-            {"criteria": (), "ref": ref},
-            (),
-        ),
-        "open_criteria refuses an unresolved supersession": (
-            open_criteria,
-            {"criteria": kinds, "ref": ref},
-            kinds,
-        ),
-        "SubtreeClosure.open_criterion_keys: every state kind": (
-            SubtreeClosure.open_criterion_keys,
-            {"self": closure},
+        "SubtreeClosure._walk: every state kind": (
+            SubtreeClosure._walk,
+            {"self": closure(kinds), "key": SUBJECT},
             (subject, *kinds),
         ),
+        "SubtreeClosure.scope_gap: open and completed criteria": scope_gap(settled),
+        "SubtreeClosure.scope_gap: an empty family": scope_gap(()),
+        "SubtreeClosure.scope_gap: canceled and duplicate criteria alone": (
+            scope_gap(excluded)
+        ),
+        "SubtreeClosure.scope_gap: every state kind": scope_gap(kinds),
     }
 
 
 #: What each call-site case answers over records carrying ``BASELINE_STAMP``,
 #: written out as ``ARITHMETIC_OUTCOMES`` is.
 CALL_SITE_OUTCOMES = {
-    "open_criteria: open and completed criteria": (
+    "SubtreeClosure._walk: every state kind": ("answered", None),
+    "SubtreeClosure.scope_gap: open and completed criteria": (
         "answered",
-        (0, 1, 2, 3, 4, 5, 6, 7),
+        {"owed": (1, 2, 3, 4, 5, 6, 7, 8), "excluded": ()},
     ),
-    "open_criteria: an empty family": ("answered", ()),
-    "open_criteria refuses an unresolved supersession": (
-        "refused",
-        "criterion supersession resolution is unavailable: criterion/canceled/1, "
-        "criterion/canceled/2, criterion/duplicate/1, criterion/duplicate/2 "
-        "(scope: issue:subject/42)",
-    ),
-    "SubtreeClosure.open_criterion_keys: every state kind": (
+    "SubtreeClosure.scope_gap: an empty family": (
         "answered",
-        (1, 2, 3, 4, 5, 6, 7, 8, 11, 12, 13, 14),
+        {"owed": (), "excluded": ()},
+    ),
+    "SubtreeClosure.scope_gap: canceled and duplicate criteria alone": (
+        "answered",
+        {"owed": (), "excluded": (1, 2, 3, 4)},
+    ),
+    "SubtreeClosure.scope_gap: every state kind": (
+        "answered",
+        {"owed": (1, 2, 3, 4, 5, 6, 7, 8), "excluded": (11, 12, 13, 14)},
     ),
 }
 #: The call sites found by object that the arithmetic's fixtures cannot run,
@@ -2991,8 +3043,8 @@ def test_every_call_site_the_fixtures_can_run_is_run_under_the_trap():
     """The call sites outside the entry points are run where the fixtures can run them.
 
     Every call site found by object that is not an entry point the trap
-    already runs is either a case of ``call_site_cases`` — ``open_criteria``
-    and ``SubtreeClosure.open_criterion_keys`` — or named in
+    already runs is either a case of ``call_site_cases`` —
+    ``SubtreeClosure._walk`` and ``SubtreeClosure.scope_gap`` — or named in
     ``CALL_SITES_NOT_RUN`` with why: ``OrganizeAdmission.is_live``,
     ``build_scope_organizer``, ``observe_ruling_growth``, the organize
     service's ``_author_write`` and the ``apply`` nested in it,
@@ -3101,7 +3153,7 @@ IMPORT_ROUTES = {
     "    from kodezart.domain.issue_tree import SubtreeClosure\n"
     "\n"
     "def plan(closure: 'SubtreeClosure', since):\n"
-    "    return [c for c in closure.open_criteria(){READ}]\n",
+    "    return [c for c in closure.scope_gap().owed{READ}]\n",
     "module_named_by_a_string": "import importlib\n"
     "\n"
     "def plan(criteria, since):\n"
@@ -3115,8 +3167,8 @@ IMPORT_ROUTES = {
     "object_named_as_module_colon_attr": "import pkgutil\n"
     "\n"
     "def plan(criteria, since):\n"
-    "    still_open = pkgutil.resolve_name('kodezart.domain.gap:in_gap')\n"
-    "    return [c for c in criteria if still_open(c, supersession_ref=None){READ}]\n",
+    "    still_open = pkgutil.resolve_name('kodezart.domain.gap:open_state_kind')\n"
+    "    return [c for c in criteria if still_open(c.state_kind){READ}]\n",
     "two_hops": "from kodezart.services.planted_helper import window\n"
     "\n"
     "def plan(criteria, since):\n"
@@ -3124,7 +3176,7 @@ IMPORT_ROUTES = {
     "relative_import_in_a_package_init": "from kodezart.domain.planted import window\n"
     "\n"
     "def plan(criteria, since):\n"
-    "    return [c for c in window(criteria, supersession_refs={}){READ}]\n",
+    "    return [c for c in window(criteria){READ}]\n",
 }
 #: The modules the routes above import that are not in the tree: the helper
 #: the two-hop row imports, a module of its own that reaches the arithmetic
@@ -3132,10 +3184,10 @@ IMPORT_ROUTES = {
 #: arithmetic through a relative import, resolved against the package itself.
 PLANTED_HELPERS = {
     "services/planted_helper.py": "from kodezart.domain.issue_tree import"
-    " open_criteria\n"
+    " SubtreeClosure\n"
     "\n"
-    "def window(criteria):\n"
-    "    return open_criteria(criteria)\n",
+    "def window(closure: SubtreeClosure):\n"
+    "    return closure.scope_gap().owed\n",
     "domain/planted/__init__.py": "from ..gap import compute_gap as window\n",
 }
 
@@ -3179,7 +3231,7 @@ def test_a_module_that_only_quotes_a_seed_name_is_not_a_gap_site():
     sources["services/planted.py"] = (
         "from kodezart.types.domain.tracker import TrackerIssue\n"
         "\n"
-        "GAP_LABEL = 'in_gap'\n"
+        "GAP_LABEL = 'gap_membership'\n"
         "COLUMNS = ('compute_gap', 'organize_gap', 'SubtreeClosure')\n"
         "\n"
         "def label(row: TrackerIssue):\n"

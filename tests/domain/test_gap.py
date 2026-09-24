@@ -94,6 +94,113 @@ def test_canceled_and_duplicate_are_excluded_on_state_alone_and_named_beside_the
     assert set(inspect.signature(gap.open_state_kind).parameters) == {"state_kind"}
 
 
+def test_the_membership_cases_name_every_tracker_state() -> None:
+    """A new state has to gain a row here, not just an arm in the source."""
+    assert set(ROWS) == set(WorkflowStateKind)
+
+
+#: Each way a criterion record can carry a supersession: a note in its body,
+#: a label and its title. A comment is no field of the record, so it cannot
+#: reach the arithmetic at all. None of them is read: the arithmetic takes
+#: the record's state and nothing else (KOD-794).
+SUPERSESSION_NOTES = {
+    "body note": lambda issue, successor: issue.model_copy(
+        update={"body": f"{issue.body}\n\nSuperseded by {successor}."}
+    ),
+    "label": lambda issue, successor: issue.model_copy(
+        update={
+            "issue_labels": issue.issue_labels
+            | {"superseded", f"superseded-by:{successor}"}
+        }
+    ),
+    "title": lambda issue, successor: issue.model_copy(
+        update={"title": f"Superseded by {successor}"}
+    ),
+}
+
+
+def carrying(issue, note, successor="opaque-successor"):
+    """*issue* carrying the supersession *note* names, pointing at *successor*."""
+    return SUPERSESSION_NOTES[note](issue, successor)
+
+
+@pytest.mark.parametrize("note", sorted(SUPERSESSION_NOTES))
+@pytest.mark.parametrize(
+    "state", [WorkflowStateKind.CANCELED, WorkflowStateKind.DUPLICATE]
+)
+def test_a_cancellation_is_excluded_on_state_alone_whatever_supersession_it_carries(
+    state, note
+):
+    """A supersession on the record neither closes nor keeps a cancellation.
+
+    Converted from the reading KOD-794 rejected, in which a Canceled or
+    Duplicate criterion stayed owed until its own supersession was supplied.
+    The state decides: carrying a note or not, the record is excluded and
+    named beside the gap, exactly as the one without.
+    """
+    plain = criterion("canceled", state)
+    noted = carrying(plain, note)
+    open_criterion = criterion("open")
+
+    assert noted != plain
+    assert gap.gap_membership(noted) is gap.gap_membership(plain)
+    assert gap.gap_membership(noted) is GapMembership.EXCLUDED
+    assert gap.compute_gap([noted, open_criterion]) == gap.compute_gap(
+        [plain, open_criterion]
+    )
+    assert gap.compute_gap([noted, open_criterion]) == CriterionGap(
+        owed=(open_criterion,), excluded=("canceled",)
+    )
+
+
+@pytest.mark.parametrize("note", sorted(SUPERSESSION_NOTES))
+@pytest.mark.parametrize("state,expected", list(ROWS.items()))
+def test_a_criterion_carrying_a_reference_keeps_the_answer_of_its_arm(
+    state, expected, note
+):
+    """A reference on the record cannot move what its arm answers (KOD-420).
+
+    A criterion re-opened after a cancellation still carries the reference
+    that cancellation was given, and a filter keyed on "carries a reference"
+    instead of on the state arm drops it out of the gap silently. Under the
+    rule KOD-794 settled the same holds for every arm: the reference is not
+    read, so an open criterion carrying one stays owed, a completed one stays
+    discharged and a canceled or duplicate one is excluded on its state.
+    """
+    noted = carrying(criterion("carrying", state), note)
+
+    assert gap.gap_membership(noted) is expected
+    assert gap.compute_gap([noted]) == CriterionGap(
+        owed=(noted,) if expected is GapMembership.OWED else (),
+        excluded=("carrying",) if expected is GapMembership.EXCLUDED else (),
+    )
+
+
+@pytest.mark.parametrize("note", sorted(SUPERSESSION_NOTES))
+@pytest.mark.parametrize("state,expected", list(ROWS.items()))
+def test_a_reference_naming_a_live_successor_moves_neither_record(
+    state, expected, note
+):
+    """The named successor is itself a criterion of the same reading (KOD-420).
+
+    Here the reference on one record names the other, so a filter keyed on
+    the naming record drops it and one keyed on the named record drops the
+    successor. Both are the same silent drop, and the arms decide neither:
+    each record answers its own state.
+    """
+    successor = criterion("successor")
+    noted = carrying(criterion("carrying", state), note, successor.issue_key)
+    computed = gap.compute_gap([noted, successor])
+
+    assert gap.gap_membership(successor) is GapMembership.OWED
+    assert computed.owed == (
+        (noted, successor) if expected is GapMembership.OWED else (successor,)
+    )
+    assert computed.excluded == (
+        ("carrying",) if expected is GapMembership.EXCLUDED else ()
+    )
+
+
 def test_membership_is_on_state_alone_whatever_labels_the_criterion_carries():
     """A label named like an excluding state or a supersession excludes nothing."""
     labelled = criterion("labelled").model_copy(
@@ -203,6 +310,20 @@ def test_empty_gap_and_noncriterion_or_duplicate_inputs():
     repeated = criterion()
     with pytest.raises(ValueError, match="more than once"):
         gap.compute_gap([repeated, repeated])
+    # A blank supersession once refused here; the arithmetic now takes no
+    # supersession input at all, so there is nothing blank to refuse.
+    blank = carrying(criterion("blank"), "body note", " ")
+    assert gap.gap_membership(blank) is GapMembership.OWED
+    assert not any(
+        "supersession" in parameter
+        for asking in (
+            gap.state_membership,
+            gap.gap_membership,
+            gap.open_state_kind,
+            gap.compute_gap,
+        )
+        for parameter in inspect.signature(asking).parameters
+    )
 
 
 def test_gap_module_has_only_pure_dependencies_and_no_fallback_state_arm():

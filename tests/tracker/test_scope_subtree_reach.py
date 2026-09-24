@@ -412,6 +412,9 @@ async def test_a_cancelled_hidden_descendant_is_excluded_and_named_not_silent(
 
     assert ready.excluded == (CHILD_CHECK,)
     assert CHILD_CHECK not in ready.unresolved
+    # Out of the filter's reach and still no obligation: only an OPEN
+    # criterion is named unreachable, and this one is excluded on its state.
+    assert ready.unreachable == ()
     assert [issue.issue_key for issue in ready.closed] == [LANE]
     assert ready.ready == ()
 

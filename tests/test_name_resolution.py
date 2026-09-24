@@ -512,7 +512,7 @@ def test_a_submodule_imported_from_its_package_binds_the_submodule(monkeypatch):
         "def plan(rows):\n"
         "    from kodezart.domain import gap\n"
         "\n"
-        "    return gap.compute_gap(rows, supersession_refs={})\n"
+        "    return gap.compute_gap(rows)\n"
     )
 
     assert [
@@ -537,7 +537,7 @@ def test_a_relative_import_in_a_package_init_resolves_against_the_package():
         "def plan(rows):\n"
         "    from ..gap import compute_gap as window\n"
         "\n"
-        "    return window(rows, supersession_refs={})\n"
+        "    return window(rows)\n"
     )
 
     assert [
@@ -554,12 +554,12 @@ def test_a_relative_import_in_a_package_init_resolves_against_the_package():
 @pytest.mark.parametrize(
     ("text", "edge"),
     [
-        ("kodezart.domain.gap:in_gap", True),
-        ("kodezart.domain.gap.in_gap", True),
+        ("kodezart.domain.gap:gap_membership", True),
+        ("kodezart.domain.gap.gap_membership", True),
         ("kodezart.domain:gap", True),
         ("kodezart.domain.gap", True),
         ("kodezart.domain.gap:absent", False),
-        ("in_gap", False),
+        ("gap_membership", False),
     ],
 )
 def test_a_string_naming_an_object_is_an_import_edge_to_its_module(text, edge):
@@ -685,7 +685,7 @@ def test_a_literal_name_is_the_attribute_of_what_its_receiver_denotes(route):
     source = (
         f"{header}def plan(rows):\n"
         f"    window = {LITERAL_NAME_ROUTES[route]}\n"
-        "    return window(rows, supersession_refs={})\n"
+        "    return window(rows)\n"
     )
     handed = source.replace("(gap)", "(rows)").replace("(gap,", "(rows,")
     handed = handed.replace("(domain)", "(rows)").replace(
@@ -734,14 +734,13 @@ def test_a_local_assigned_inside_the_definition_is_followed(binding):
     }
     for form in forms.values():
         source = (
-            f"{header}def plan(rows):\n{form}"
-            "    return arithmetic.compute_gap(rows, supersession_refs={})\n"
+            f"{header}def plan(rows):\n{form}    return arithmetic.compute_gap(rows)\n"
         )
         assert referrers(source) == ["plan"], form
     handed = (
         f"{header}def plan(rows, held):\n"
         "    arithmetic = held\n"
-        "    return arithmetic.compute_gap(rows, supersession_refs={})\n"
+        "    return arithmetic.compute_gap(rows)\n"
     )
     assert referrers(handed) == []
 
@@ -754,7 +753,7 @@ def test_a_closure_reads_the_locals_of_the_function_enclosing_it():
         "    arithmetic = pkgutil.resolve_name('kodezart.domain:gap')\n"
         "\n"
         "    def inner():\n"
-        "        return arithmetic.compute_gap(rows, supersession_refs={})\n"
+        "        return arithmetic.compute_gap(rows)\n"
         "\n"
         "    return inner\n"
     )
@@ -779,15 +778,14 @@ def test_a_local_assigned_from_itself_ends_the_walk():
 #: across a function boundary, a name built at run time, and a binding made
 #: only when a function runs.  None refers to the arithmetic in ``plan``.
 UNSEEN_SHAPES = {
-    "an argument": "def plan(rows, window):\n"
-    "    return window(rows, supersession_refs={})\n",
+    "an argument": "def plan(rows, window):\n    return window(rows)\n",
     "returned from a helper": "from kodezart.domain import gap\n"
     "\n"
     "def arithmetic():\n"
     "    return gap.compute_gap\n"
     "\n"
     "def plan(rows):\n"
-    "    return arithmetic()(rows, supersession_refs={})\n",
+    "    return arithmetic()(rows)\n",
     "stored on an object and read elsewhere": "from kodezart.domain import gap\n"
     "\n"
     "class Holder:\n"
@@ -795,26 +793,26 @@ UNSEEN_SHAPES = {
     "        self.window = gap.compute_gap\n"
     "\n"
     "def plan(rows, holder):\n"
-    "    return holder.window(rows, supersession_refs={})\n",
+    "    return holder.window(rows)\n",
     "passed through a container built elsewhere": "from kodezart.domain import gap\n"
     "\n"
     "def table():\n"
     "    return {'window': gap.compute_gap}\n"
     "\n"
     "def plan(rows):\n"
-    "    return table()['window'](rows, supersession_refs={})\n",
+    "    return table()['window'](rows)\n",
     "a name built at run time": "from kodezart.domain import gap\n"
     "\n"
     "def plan(rows):\n"
     "    window = getattr(gap, 'compute_' + 'gap')\n"
-    "    return window(rows, supersession_refs={})\n",
+    "    return window(rows)\n",
     "globals() bound inside a function": "from kodezart.domain import gap\n"
     "\n"
     "def bind():\n"
     "    globals()['window'] = gap.compute_gap\n"
     "\n"
     "def plan(rows):\n"
-    "    return window(rows, supersession_refs={})\n",
+    "    return window(rows)\n",
     "setattr inside a function": "import sys\n"
     "\n"
     "from kodezart.domain import gap\n"
@@ -823,7 +821,7 @@ UNSEEN_SHAPES = {
     "    setattr(sys.modules[__name__], 'window', gap.compute_gap)\n"
     "\n"
     "def plan(rows):\n"
-    "    return window(rows, supersession_refs={})\n",
+    "    return window(rows)\n",
 }
 
 

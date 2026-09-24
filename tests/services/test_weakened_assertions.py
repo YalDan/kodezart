@@ -328,8 +328,7 @@ async def test_a_test_left_with_no_assertion_is_marked(repository):
         issue.issue_key
         for issue in gap.compute_gap(
             criteria=await port.read_criteria(issue_key=SUBJECT),
-            supersession_refs={},
-        )
+        ).owed
         if issue.issue_key not in before
     ]
     assert standing == [key]

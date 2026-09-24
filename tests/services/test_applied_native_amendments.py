@@ -988,8 +988,7 @@ async def test_a_weakened_designated_assertion_marks_the_lane_and_is_never_pushe
             issue.issue_key
             for issue in gap.compute_gap(
                 criteria=await port.read_criteria(issue_key=SUBJECT),
-                supersession_refs={},
-            )
+            ).owed
         }
         # And nothing was published: no remote branch and no judgment session,
         # because no departure was claimed for the edit.
@@ -1030,8 +1029,7 @@ async def test_a_record_pinned_on_a_subtree_member_still_marks_the_lane_itself(
             issue.issue_key
             for issue in gap.compute_gap(
                 criteria=await port.read_criteria(issue_key=SUBJECT),
-                supersession_refs={},
-            )
+            ).owed
         }
         assert await git(repo, "ls-remote", "origin", "refs/heads/native-test") == ""
     finally:
@@ -1173,8 +1171,7 @@ async def test_a_weakening_after_the_mark_was_crossed_off_is_marked_again(reposi
             issue.issue_key
             for issue in gap.compute_gap(
                 criteria=await port.read_criteria(issue_key=SUBJECT),
-                supersession_refs={},
-            )
+            ).owed
         }
         assert crossed in standing
         assert sub_issue_leases(port, crossed) == {WRITER_JOB}
@@ -1246,8 +1243,7 @@ async def test_a_weakening_from_the_same_head_after_the_mark_was_crossed_off_reo
             issue.issue_key
             for issue in gap.compute_gap(
                 criteria=await port.read_criteria(issue_key=SUBJECT),
-                supersession_refs={},
-            )
+            ).owed
         }
         assert crossed in standing
         assert sub_issue_leases(port, crossed) == {WRITER_JOB}
@@ -1290,8 +1286,7 @@ async def test_a_designated_test_left_with_no_assertion_is_marked(repository):
             issue.issue_key
             for issue in gap.compute_gap(
                 criteria=await port.read_criteria(issue_key=SUBJECT),
-                supersession_refs={},
-            )
+            ).owed
             if issue.issue_key not in before
         ]
         assert standing == [key]
