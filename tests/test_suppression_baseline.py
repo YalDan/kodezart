@@ -187,11 +187,14 @@ ALLOWED: dict[str, tuple[str, ...]] = {
 
 #: Every place the tree names a form that keeps a collected test from
 #: running, by path and form in file order.  Three inventories of this
-#: surface disagreed; the roster is derived from the tree instead, and a
-#: sixth site is a row added here with the reason it earns its place.
+#: surface disagreed; the roster is derived from the tree instead, and an
+#: eighth site is a row added here with the reason it earns its place.
 ALLOWED_SKIPS: dict[str, tuple[str, ...]] = {
     # The gate's own mechanism: the one place a gated marker becomes a skip.
     "tests/conftest.py": ("pytest.mark.skip",),
+    # A live probe with no deployment credential, or no subject to point
+    # at, has nothing to measure; each skip names what is not set.
+    "tests/probes/test_live_linear_wire.py": ("pytest.skip", "pytest.skip"),
     # Both files guard the presence of the set KOD-88 authors.  The set
     # shipped, so neither guard fires; they are rostered, not load-bearing.
     "tests/prompts/test_set_completeness.py": ("pytest.mark.skipif",),
@@ -204,7 +207,7 @@ ALLOWED_SKIPS: dict[str, tuple[str, ...]] = {
 
 #: Every mark the collection gate deselects, by path and mark in file
 #: order.  A test newly carrying one stops running in the gate, which is
-#: the shape a skipped test takes here, so a fifteenth site is a row added
+#: the shape a skipped test takes here, so a sixteenth site is a row added
 #: below with the reason it earns its place.
 ALLOWED_GATED_MARKS: dict[str, tuple[str, ...]] = {
     # The one class that needs a database rather than a credential.
@@ -222,6 +225,7 @@ ALLOWED_GATED_MARKS: dict[str, tuple[str, ...]] = {
         "pytest.mark.live",
         "pytest.mark.live",
     ),
+    "tests/probes/test_live_linear_wire.py": ("pytest.mark.live",),
     "tests/probes/test_live_ownership.py": ("pytest.mark.live",),
     "tests/probes/test_strict_output_enforcement.py": ("pytest.mark.live",),
     "tests/probes/test_v5_orchestration_live.py": ("pytest.mark.live",),
