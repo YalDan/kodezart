@@ -187,8 +187,9 @@ EXEMPT = {
         "require; the scope walker answers discharge through "
         "SubtreeClosure.is_closed"
     ),
-    "services/organize_owner.py::OrganizeOwner.run": (
-        "selection over organize children, at the heartbeat that walks them"
+    "services/organize_owner.py::OrganizeOwner._converge": (
+        "selection over organize children, in the convergence loop the "
+        "heartbeat runs over them"
     ),
     "services/scope_planning.py::read_scope_plan": (
         "selection over dispatch candidates, which are not criterion sub-issues"
