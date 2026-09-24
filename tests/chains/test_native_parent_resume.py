@@ -424,6 +424,15 @@ async def test_reconciled_checkpoint_refuses_invalidated_native_authority(
     monkeypatch,
     change,
 ):
+    """A resumed reconciled phase whose authority changed is never published.
+
+    A substituted workspace or another holder is refused when the phase is
+    restored, and a tracker outage when the resumed run reads its criteria,
+    all before any session. Restoring reads no tracker source (KOD-1249): the
+    lane's authority, the verified archive included, is read before the push,
+    so a withdrawn archive is refused only after the resumed phase has written
+    its commit message and committed locally.
+    """
     from datetime import UTC, datetime
     from pathlib import Path
 
@@ -486,7 +495,9 @@ async def test_reconciled_checkpoint_refuses_invalidated_native_authority(
             monkeypatch.setattr(port, "scope_issues", unavailable)
         with pytest.raises((NativeWriteRefusalError, FireSpecEntryError)):
             await fresh.native_graph.ainvoke(None, config=config)
-        assert not second.calls
+        assert [schema_title(call) for call in second.calls] == (
+            ["CommitMessageOutput"] if change == "archive" else []
+        )
         assert Path(path).exists()
         assert not await git(
             repository[0], "ls-remote", "origin", "refs/heads/native-loop"

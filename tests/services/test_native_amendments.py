@@ -58,6 +58,7 @@ from tests.fakes import (
 )
 from tests.lane_fixture import RecordingAfterPublish
 from tests.prompts.test_prompt_wiring import load_registry
+from tests.services.test_native_execution_record import one_reading_per, tracker_calls
 
 REPO_URL = "https://example.invalid/owner/repo"
 #: The configured git base URL the engine resolves every repository reference
@@ -546,6 +547,14 @@ async def test_current_authority_after_awaited_judge_or_commit_message(
     boundary,
     change,
 ):
+    """A Check changed or an outage during an awaited session refuses publication.
+
+    A claim's judgment is followed by the claim graph's own recheck, so the
+    change there refuses before any commit. The commit message is followed by
+    no reading of the lane's authority: it is read at the writer's start and
+    before the push, never before the commit (KOD-1249), so the harness
+    commit is made, stays local and is never published.
+    """
     port = tracker()
 
     async def mutate(title, payload, kwargs):
@@ -577,9 +586,12 @@ async def test_current_authority_after_awaited_judge_or_commit_message(
                 )
                 == ""
             )
-            assert (
-                await git(repository[0], "log", "native-test", "--format=%s", "-1")
-                == "newer writer starting point"
+            assert await git(
+                repository[0], "log", "native-test", "--format=%s", "-1"
+            ) == (
+                "fix: implementation"
+                if boundary == "CommitMessageOutput"
+                else "newer writer starting point"
             )
     finally:
         await cleanup(workspace)
@@ -780,6 +792,13 @@ async def test_a_roster_designating_one_test_twice_is_refused_before_the_writer_
 async def test_ruling_change_during_commit_content_gate_refuses_before_commit(
     repository,
 ):
+    """A ruling changed while the commit message is gated is refused unpublished.
+
+    The name predates KOD-1249 and is kept, since the test census records it.
+    The lane's authority is now read at the writer's start and before the
+    push, never before the commit, so the change is refused after the harness
+    commit is made: that commit stays local and the branch is never published.
+    """
     port = tracker()
     ruling = Ruling.model_validate(ruling_data(issue_ref=SUBJECT))
     await port.post_comment(
@@ -823,8 +842,45 @@ async def test_ruling_change_during_commit_content_gate_refuses_before_commit(
         )
         assert (
             await git(repository[0], "log", "native-test", "--format=%s", "-1")
-            == "newer writer starting point"
+            == "fix: implementation"
         )
+    finally:
+        await cleanup(workspace)
+
+
+async def test_one_committing_iteration_reads_the_lane_authority_twice_through_git(
+    repository: tuple[Path, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """KOD-1249: the production persister's commit hook reads no tracker source.
+
+    The git persister asks the commit hook on entry and again before a dirty
+    tree's commit, and asks the publish hook once. The lane's authority is
+    read when the writer starts and before the push, and nowhere else: the
+    same two readings the in-memory persister pins in
+    ``tests/services/test_native_execution_record.py``.
+
+    At f4c2fed6 the same iteration answered 364 calls: 35 subtree readings
+    (245 criteria reads) and 84 comment listings.
+    """
+    port = tracker()
+    executor = Executor(claim=False)
+    service, guard, workspace, _ = await build(repository, executor, port=port)
+    calls = tracker_calls(port, monkeypatch)
+    try:
+        events = await drive(service, guard, repository)
+        (sha,) = [
+            event.commit_sha
+            for event in events
+            if isinstance(event, ResultEvent) and event.commit_sha
+        ]
+        remote = await git(
+            repository[0], "ls-remote", "origin", "refs/heads/native-test"
+        )
+        assert remote.split()[0] == sha
+        assert [
+            call["output_format"]["schema"]["title"] for call in executor.calls
+        ] == ["NativeWriterOutput", "CommitMessageOutput"]
+        assert calls == one_reading_per(len(port.issues), readings=2)
     finally:
         await cleanup(workspace)
 

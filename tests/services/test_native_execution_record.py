@@ -2,11 +2,13 @@
 
 import inspect
 from collections import Counter
+from collections.abc import Awaitable, Callable, Iterable
 from datetime import timedelta
 
 import pytest
 
 from kodezart.chains.criteria import TrackerCriteria
+from kodezart.core.protocols import AfterPublish, NativeWriteGuard
 from kodezart.domain.amendment import NativeWriteRefusalError
 from kodezart.services.agent_service import AgentService
 from kodezart.services.lane_records import LaneRecordReader
@@ -14,6 +16,7 @@ from kodezart.services.lane_state_writer import TrackerLaneStateWriter
 from kodezart.services.native_amendments import NativeAmendments
 from kodezart.types.domain.agent import ResultEvent
 from kodezart.types.domain.branch import trunk_base
+from kodezart.types.domain.criteria import TrackerCriterionSet
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.persist import PersistResult
 from kodezart.types.domain.prompts import PromptKey
@@ -29,14 +32,17 @@ from tests.chains.test_native_fire import (
     DIRECT_OWED,
     SUBJECT,
     NativeExecutor,
+    criterion_body,
     native_operation,
     tracker,
 )
 from tests.fakes import (
     SUPPRESS_ALL_SKILLS,
+    FakeTrackerPort,
     FakeWorkspaceProvider,
     PassThroughGate,
     make_prompt_provider,
+    make_tracker_issue,
 )
 from tests.lane_fixture import (
     LaneGit,
@@ -92,7 +98,10 @@ class Arm:
             gate=PassThroughGate(),
         )
 
-    async def guard(self):
+    async def guard(
+        self, *, roster: TrackerCriterionSet | None = None
+    ) -> NativeWriteGuard:
+        """The writer's guard, holding *roster*, or what the board owes now."""
         spec, _ = await self.criteria.read_entry(issue_key=SUBJECT)
         return NativeAmendments(
             tracker=self.port,
@@ -111,7 +120,7 @@ class Arm:
             lease_seconds=900,
         ).for_writer(
             spec=spec,
-            criteria=await self.criteria.read_current(spec=spec),
+            criteria=roster or await self.criteria.read_current(spec=spec),
             base_ref=lane().base.base_branch,
             repo_url=REPO_URL,
             holder=lane().run_id,
@@ -124,9 +133,15 @@ class Arm:
             await self.guard(), after_publish=after_publish, events=events
         )
 
-    async def iterate(self, guard, *, after_publish, events=None):
+    async def iterate(
+        self,
+        guard: NativeWriteGuard,
+        *,
+        after_publish: AfterPublish,
+        events: list[object] | None = None,
+    ) -> list[object]:
         """One native execution iteration under *guard*, as the loop drives it."""
-        seen = [] if events is None else events
+        seen: list[object] = [] if events is None else events
         async for event in self.service.stream_workflow(
             prompt="Implement the current Checks.",
             repo_url=REPO_URL,
@@ -160,7 +175,7 @@ class Arm:
         return await self.git.remote_branch_sha("/workspace", REMOTE, BRANCH)
 
 
-def commit_shas(events):
+def commit_shas(events: Iterable[object]) -> list[str]:
     return [
         event.commit_sha
         for event in events
@@ -222,7 +237,9 @@ async def test_the_recorded_head_equals_the_branch_head_after_each_commit():
     assert (await arm.recorded()).head_sha != await arm.branch_head()
 
 
-def tracker_calls(port, monkeypatch) -> Counter[str]:
+def tracker_calls(
+    port: FakeTrackerPort, monkeypatch: pytest.MonkeyPatch
+) -> Counter[str]:
     """Count, by name, every call *port* answers from here on."""
     calls: Counter[str] = Counter()
     for name, _ in inspect.getmembers_static(type(port), inspect.iscoroutinefunction):
@@ -230,7 +247,12 @@ def tracker_calls(port, monkeypatch) -> Counter[str]:
             continue
         answer = getattr(port, name)
 
-        async def counted(*args, _name=name, _answer=answer, **kwargs):
+        async def counted(
+            *args: object,
+            _name: str = name,
+            _answer: Callable[..., Awaitable[object]] = answer,
+            **kwargs: object,
+        ) -> object:
             calls[_name] += 1
             return await _answer(*args, **kwargs)
 
@@ -238,17 +260,30 @@ def tracker_calls(port, monkeypatch) -> Counter[str]:
     return calls
 
 
-async def test_one_iteration_reads_the_lane_authority_at_its_start_commit_and_push(
-    monkeypatch,
-):
-    """KOD-1249: one reading of the subtree per barrier, and none between them.
+def one_reading_per(members: int, readings: int) -> dict[str, int]:
+    """The calls *readings* readings of the lane's authority answer.
 
-    Each reading is one family read, one criteria read per member and one
-    comment listing per member, the criteria and the owed Checks both taken
-    from that one map. It is taken when the writer starts, before the harness
-    commits and before it pushes; restoring a phase and reconciling a writer
-    that claimed nothing read nothing. This double's persister asks the commit
-    hook once; the git persister also asks it on entry, one reading more.
+    One reading is one family read, one criteria read per member and one
+    comment listing per member: the criteria and the owed Checks are both
+    taken from that one membership map, and the rulings are listed once.
+    """
+    return {
+        "scope_issues": readings,
+        "read_criteria": readings * members,
+        "list_comments": readings * members,
+    }
+
+
+async def test_one_iteration_reads_the_lane_authority_at_its_start_and_before_its_push(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """KOD-1249: one reading when the writer starts, one before the push.
+
+    Restoring a phase, reconciling a writer that claimed nothing and the
+    persister's commit hook read nothing. This double's persister asks the
+    commit hook once; the git persister asks it twice for a dirty tree, and
+    ``tests/services/test_native_amendments.py`` pins the same two readings
+    through it.
 
     At f4c2fed6 the same iteration answered 333 calls: 32 subtree readings
     (224 criteria reads) and 77 comment listings.
@@ -260,18 +295,23 @@ async def test_one_iteration_reads_the_lane_authority_at_its_start_commit_and_pu
     events = await arm.iterate(guard, after_publish=RecordingAfterPublish())
 
     assert commit_shas(events) == [arm.repo.head]
-    members = len(arm.port.issues)
-    assert calls == {
-        "scope_issues": 3,
-        "read_criteria": 3 * members,
-        "list_comments": 3 * members,
-    }
+    assert arm.repo.pushed == arm.repo.head
+    assert calls == one_reading_per(len(arm.port.issues), readings=2)
+
+
+#: A criterion that joins the subtree while the writer works. It is already
+#: Done, so it is no Check the writer owes and the owed set cannot see it.
+JOINED = "fire/done-joined"
+#: The refusal a changed fact of one criterion reaches, and none other: the
+#: owed Checks and the named roster are unchanged in every case that expects it.
+FACTS_CHANGED = "native criterion facts changed during writing"
 
 
 @pytest.mark.parametrize(
-    ("change", "refused"),
+    ("key", "change", "refusal"),
     [
         (
+            DIRECT_OWED,
             {
                 "title": "retitled while the writer worked",
                 "assignee_key": "someone-else",
@@ -279,41 +319,109 @@ async def test_one_iteration_reads_the_lane_authority_at_its_start_commit_and_pu
                     IssueRelation(kind=IssueRelationKind.RELATED, issue_key=SUBJECT),
                 ),
             },
-            False,
+            None,
         ),
-        ({"body": "**Check:** a Check rewritten while the writer worked"}, True),
-        ({"state_kind": WorkflowStateKind.STARTED, "state_name": "In Progress"}, True),
-        ({"issue_labels": frozenset({"criterion", "decision"})}, True),
-        ({"parent_key": DIRECT_DONE}, True),
-        ({"parent_key": None}, True),
+        # A Check the roster does not hold: the owed Checks are unchanged.
+        (
+            DIRECT_DONE,
+            {"body": "**Check:** a Check rewritten while the writer worked"},
+            FACTS_CHANGED,
+        ),
+        # A held criterion someone else finished stays owed, its Check unchanged.
+        (
+            DIRECT_OWED,
+            {"state_kind": WorkflowStateKind.COMPLETED, "state_name": "Done"},
+            FACTS_CHANGED,
+        ),
+        (
+            DIRECT_OWED,
+            {"issue_labels": frozenset({"criterion", "decision"})},
+            FACTS_CHANGED,
+        ),
+        (DIRECT_OWED, {"parent_key": DIRECT_DONE}, FACTS_CHANGED),
+        (
+            JOINED,
+            {
+                "parent_key": SUBJECT,
+                "issue_labels": frozenset({"criterion"}),
+                "state_kind": WorkflowStateKind.COMPLETED,
+                "state_name": "Done",
+                "body": criterion_body(JOINED),
+            },
+            FACTS_CHANGED,
+        ),
+        (DIRECT_OWED, {"parent_key": None}, "named native criterion left the subtree"),
     ],
-    ids=["other facts", "Check", "state kind", "labels", "parent", "left the subtree"],
+    ids=[
+        "other facts",
+        "Check",
+        "state kind",
+        "labels",
+        "parent",
+        "joined the subtree",
+        "left the subtree",
+    ],
 )
 async def test_the_writer_is_refused_only_over_a_fact_its_write_depends_on(
-    change, refused
-):
+    key: str, change: dict[str, object], refusal: str | None
+) -> None:
     """KOD-1249: a criterion is compared on identity, Check, state, labels, parent.
 
     A criterion given a new title, assignee or relation while the writer works
-    (a mention elsewhere on the board adds a relation) still publishes. The
-    same criterion given a new Check, state or label, moved under another
-    parent or out of the subtree, refuses before the harness commits.
+    (a mention elsewhere on the board adds a relation) still publishes. A new
+    Check, state or label, a move under another parent, or a criterion that
+    joins or leaves the subtree refuses before the push. Each refused case
+    but the last changes nothing the owed Checks or the named roster see, so
+    the comparison of the criteria's own facts is the only one that refuses
+    it. The authority is not read before the commit, so the harness commit is
+    made and stays local.
     """
     arm = Arm()
     guard = await arm.guard()
 
-    def edit(_opened):
-        issue = arm.port.issues[DIRECT_OWED]
-        arm.port.issues[DIRECT_OWED] = issue.model_copy(
-            update={**change, "updated_at": issue.updated_at + timedelta(minutes=1)}
+    def edit(_opened: object) -> None:
+        issue = arm.port.issues.get(key)
+        arm.port.issues[key] = (
+            make_tracker_issue(key).model_copy(update=change)
+            if issue is None
+            else issue.model_copy(
+                update={**change, "updated_at": issue.updated_at + timedelta(minutes=1)}
+            )
         )
 
     arm.executor.on_execution = edit
-    if refused:
-        with pytest.raises(NativeWriteRefusalError):
-            await arm.iterate(guard, after_publish=RecordingAfterPublish())
-        assert arm.persister.calls == []
-        assert arm.repo.shas == []
-    else:
+    if refusal is None:
         events = await arm.iterate(guard, after_publish=RecordingAfterPublish())
         assert commit_shas(events) == [arm.repo.head]
+        assert arm.repo.pushed == arm.repo.head
+    else:
+        with pytest.raises(NativeWriteRefusalError, match=refusal):
+            await arm.iterate(guard, after_publish=RecordingAfterPublish())
+        assert arm.repo.shas == [arm.repo.head]
+        assert arm.repo.pushed is None
+
+
+async def test_a_roster_the_board_no_longer_owes_is_refused_at_the_start() -> None:
+    """KOD-1249: at the start the owed Checks are the comparison that can refuse.
+
+    The criteria and the rulings the writer starts on are the reading taken
+    there, so only the roster the loop hands over can differ from it: one
+    holding a Check the board no longer states is refused before any session.
+    """
+    arm = Arm()
+    _, roster = await arm.criteria.read_entry(issue_key=SUBJECT)
+    stale = TrackerCriterionSet(
+        criteria=[
+            criterion.model_copy(update={"text": "a Check the board no longer states"})
+            if criterion.id == DIRECT_OWED
+            else criterion
+            for criterion in roster.criteria
+        ]
+    )
+    guard = await arm.guard(roster=stale)
+
+    with pytest.raises(NativeWriteRefusalError, match="Current Checks changed"):
+        await arm.iterate(guard, after_publish=RecordingAfterPublish())
+    assert arm.executor.calls == []
+    assert arm.persister.calls == []
+    assert arm.repo.shas == []

@@ -260,11 +260,6 @@ class TrackerCriteria:
         stay in this reading, and the comparison a barrier then makes is by
         identity and Check text rather than by state.
         """
-        keys = (
-            frozenset()
-            if held is None
-            else frozenset(criterion.id for criterion in held.criteria)
-        )
         try:
             criteria = await self._read_subtree_criteria(spec)
         except _TRANSPORT_FAILURES as exc:
@@ -272,14 +267,14 @@ class TrackerCriteria:
                 issue_key=spec.subject,
                 reason="current tracker criteria could not be read",
             ) from exc
-        return await self._owed(spec, criteria, keys)
+        return await self.owed_from(spec=spec, criteria=criteria, held=held)
 
     async def owed_from(
         self,
         *,
         spec: TrackerSpec,
         criteria: Mapping[str, TrackerIssue],
-        held: TrackerCriterionSet,
+        held: TrackerCriterionSet | None,
     ) -> TrackerCriterionSet:
         """What :meth:`read_current` answers, from a reading already taken.
 
@@ -288,9 +283,12 @@ class TrackerCriteria:
         rulings registry anyway, so its owed Checks come out of that same map
         instead of a second reading of the subtree (KOD-1249).
         """
-        return await self._owed(
-            spec, criteria, frozenset(criterion.id for criterion in held.criteria)
+        keys = (
+            frozenset()
+            if held is None
+            else frozenset(criterion.id for criterion in held.criteria)
         )
+        return await self._owed(spec, criteria, keys)
 
     def _finished(
         self, spec: TrackerSpec, criteria: Mapping[str, TrackerIssue]

@@ -47,9 +47,21 @@ async def read_subtree_criteria(
     refuse a lane nothing is wrong with.
     """
     return subtree_criteria(
-        await read_scope_members(
-            tracker=tracker, scope=ScopeRef(kind=ScopeKind.ISSUE, key=subject)
-        )
+        await read_subtree_members(tracker=tracker, subject=subject)
+    )
+
+
+async def read_subtree_members(
+    *, tracker: ScopeMemberReader, subject: str
+) -> dict[str, TrackerIssue]:
+    """Every member of *subject*'s subtree, criteria and other issues, keyed.
+
+    The extent :func:`read_subtree_criteria` is read over, stated once, so a
+    reader that needs the whole membership (the native writer's authority
+    read, for its rulings registry) reads the same extent (KOD-1249).
+    """
+    return await read_scope_members(
+        tracker=tracker, scope=ScopeRef(kind=ScopeKind.ISSUE, key=subject)
     )
 
 

@@ -99,8 +99,7 @@ class NativeExecution:
         self._active_workspace = phase.workspace.workspace_path
         # A parent resuming a saved phase hands it to a new guard, which takes
         # the authority the phase carries. Restoring reads no tracker source
-        # (KOD-1249): the lane's authority is read again before the harness
-        # commits and before it pushes.
+        # (KOD-1249): the lane's authority is read again before the push.
         self._guard.restore(snapshot=phase.authority)
 
     async def _resume_workspace(self, phase: ActiveNativeExecution) -> None:
@@ -242,12 +241,17 @@ class NativeExecution:
         await self._restore(phase)
         path, request = phase.workspace.workspace_path, self._request
 
-        # The lane's authority is read again through the persister's two hooks:
-        # a Check or ruling that changed while the commit message was written
-        # refuses before the harness commits, and one that changed after the
-        # commit refuses before the push.
+        # The lane's authority is read once more, before the push (KOD-1249).
+        # The commit hook reads no tracker source: the git persister asks it
+        # on entry and again before a dirty tree's commit, and a Check or
+        # ruling that changed meanwhile is refused before publication, with
+        # the harness commit left local. The hook still refuses a moved HEAD,
+        # and its presence keeps the persister from recovering a divergent
+        # branch.
         async def before_commit() -> None:
-            await self._guard.require_current(workspace_path=path, start=phase.start)
+            await self._guard.require_unchanged_head(
+                workspace_path=path, start=phase.start
+            )
 
         async def before_publish(sha: str) -> None:
             await self._guard.require_publishable(

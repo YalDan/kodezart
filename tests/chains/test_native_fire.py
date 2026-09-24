@@ -17,7 +17,7 @@ import pathlib
 import re
 import types
 import typing
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from datetime import UTC, datetime
 from unittest.mock import Mock
 
@@ -2860,6 +2860,17 @@ class CountingSource:
     async def read_current(self, *, spec, held=None):
         self.calls.append(("read_current", held))
         return await self._source.read_current(spec=spec, held=held)
+
+    async def owed_from(
+        self,
+        *,
+        spec: TrackerSpec,
+        criteria: Mapping[str, TrackerIssue],
+        held: TrackerCriterionSet | None,
+    ) -> TrackerCriterionSet:
+        """The port's reading-free answer, recorded like the two readings."""
+        self.calls.append(("owed_from", held))
+        return await self._source.owed_from(spec=spec, criteria=criteria, held=held)
 
 
 @pytest.mark.parametrize("round_two", [False, True])

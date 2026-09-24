@@ -44,6 +44,7 @@ from kodezart.services.native_amendments import NativeAmendments
 from kodezart.services.ruling_records import RulingRecordReader
 from kodezart.services.scope_membership import (
     read_subtree_criteria,
+    read_subtree_members,
     subtree_criteria,
 )
 from kodezart.types.domain.agent import (
@@ -2017,12 +2018,13 @@ NAMED_READERS: tuple[Callable[..., object], ...] = (
 
 #: The native writer's authority read, the one reader that holds the whole
 #: membership anyway: it reads the subtree once, for its pinned registry over
-#: every member, and takes its criteria from that same map through the one
-#: reading's own filter, so the extent is still defined once and is now read
-#: once (KOD-887, KOD-1249). Its module's membership sites, exactly: that one
-#: reading and that one filter, and no label filter of its own.
+#: every member, through the extent the one reading is itself taken over, and
+#: takes its criteria from that same map through the one reading's own
+#: filter. The extent is still defined once, and is now read once (KOD-887,
+#: KOD-1249). Its module's membership sites, exactly: that extent and that
+#: filter, no other membership read and no label filter of its own.
 AUTHORITY_READER = NativeAmendments._read_authority
-AUTHORITY_MEMBERSHIP = ["read_scope_members", subtree_criteria.__name__]
+AUTHORITY_MEMBERSHIP = [read_subtree_members.__name__, subtree_criteria.__name__]
 
 
 def qualified(function: Callable[..., object]) -> str:
@@ -2030,9 +2032,7 @@ def qualified(function: Callable[..., object]) -> str:
     return f"{function.__module__}.{function.__qualname__}"
 
 
-def subtree_readers(
-    module_name: str, source: str, *, reading: Callable[..., object]
-) -> set[str]:
+def subtree_readers(module_name: str, source: str, *, reading: object) -> set[str]:
     """Every function of the module whose body calls *reading*.
 
     Resolved by object, in the module's own namespace after import: a called
@@ -2078,9 +2078,10 @@ def test_the_question_step_and_the_fire_entry_read_one_subtree_function() -> Non
     readers' modules, the functions that call the one reading are exactly the
     named readers, and no module on the surface reads membership any other
     way.  The native writer's authority read holds the whole membership for
-    its registry, so it takes its criteria through the one reading's own
-    filter over that same map; its module is pinned to exactly that reading
-    and that filter, and the filter is called by that read alone.
+    its registry, read over the one reading's own extent, so it takes its
+    criteria through the one reading's own filter over that same map; its
+    module is pinned to exactly that extent and that filter, and each is
+    called by that read alone.
 
     Outside this guard's reach: a value handed across a function boundary,
     where the other function is not resolved at this site (returned from a
@@ -2142,9 +2143,10 @@ def test_the_question_step_and_the_fire_entry_read_one_subtree_function() -> Non
     writer = AUTHORITY_READER.__module__
     writer_source = inspect.getsource(importlib.import_module(writer))
     assert writer not in surface
-    assert subtree_readers(writer, writer_source, reading=subtree_criteria) == {
-        qualified(AUTHORITY_READER)
-    }
+    for reading in (read_subtree_members, subtree_criteria):
+        assert subtree_readers(writer, writer_source, reading=reading) == {
+            qualified(AUTHORITY_READER)
+        }
     assert subtree_reading_sites(writer_source, forbidden=forbidden) == (
         AUTHORITY_MEMBERSHIP
     )

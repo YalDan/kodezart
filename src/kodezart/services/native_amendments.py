@@ -51,7 +51,7 @@ from kodezart.services.audit_sessions import judge_in_workspace
 from kodezart.services.owned_workspace import owned_workspace
 from kodezart.services.ruling_records import RulingRecordReader
 from kodezart.services.scope_membership import (
-    read_scope_members,
+    read_subtree_members,
     subtree_criteria,
 )
 from kodezart.services.tracker_artifacts import read_tracker_artifact
@@ -78,7 +78,6 @@ from kodezart.types.domain.operation import (
     RepoEntry,
 )
 from kodezart.types.domain.prompts import PromptKey
-from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.tracker import (
@@ -228,9 +227,8 @@ class NativeAmendments:
         answers to disagree with (KOD-1249).
         """
         try:
-            members = await read_scope_members(
-                tracker=self._tracker,
-                scope=ScopeRef(kind=ScopeKind.ISSUE, key=spec.subject),
+            members = await read_subtree_members(
+                tracker=self._tracker, subject=spec.subject
             )
         except (
             TrackerUnavailableError,
@@ -365,7 +363,7 @@ class _NativeWriterGuard:
 
         A parent resuming a saved phase hands it to a new guard, which holds
         no authority until this. The sources are read at :meth:`begin` and
-        before the harness commits and publishes, not here.
+        before the harness publishes, not here.
         """
         if (
             snapshot.spec != self._spec
@@ -388,6 +386,12 @@ class _NativeWriterGuard:
         workspace_path: str,
         start: NativeWriterStart,
     ) -> None:
+        """Read the lane's authority and refuse a change, HEAD unmoved.
+
+        The claim graph's recheck around each judgment and each of this
+        writer's own tracker writes; a writer that claimed nothing never asks
+        it (KOD-1249).
+        """
         await self._require_current_at_head(
             workspace_path=workspace_path, expected_head_sha=start.head_sha
         )
@@ -637,7 +641,7 @@ class _NativeWriterGuard:
                 raise NativeWriteRefusalError("A claim names no current native subject")
         if not output.claims:
             # No departure to judge, so no source is read here: the persistence
-            # step reads the lane's authority before the harness commits
+            # step reads the lane's authority before the harness publishes
             # (KOD-1249). A claim is judged under the graph's own rechecks.
             return AmendmentReport(verdicts=())
         return await NativeAmendmentGraph(
@@ -746,8 +750,13 @@ class _WriterActions:
             current if i.issue_key == previous.issue_key else i
             for i in guard._criterion_issues or ()
         )
-        guard._criteria = await guard._owner._criteria.read_current(
-            spec=guard._spec, held=guard._criteria
+        # The owed Checks follow from the criteria held, this write included,
+        # rather than from a second reading of the subtree; the recheck below
+        # reads it once and compares both (KOD-1249).
+        guard._criteria = await guard._owner._criteria.owed_from(
+            spec=guard._spec,
+            criteria={issue.issue_key: issue for issue in guard._criterion_issues},
+            held=guard._criteria,
         )
         await self.require_current()
         return current

@@ -2449,8 +2449,8 @@ class NativeWriteGuard(Protocol):
         """Take the authority a saved phase carries, reading no source.
 
         A parent resuming a saved phase hands it to a new guard. The sources
-        are read at ``begin`` and before the harness commits and publishes,
-        not when a phase is restored (KOD-1249).
+        are read at ``begin`` and before the harness publishes, not when a
+        phase is restored (KOD-1249).
         """
         ...
 
@@ -2462,15 +2462,6 @@ class NativeWriteGuard(Protocol):
         output: NativeWriterOutput,
     ) -> AmendmentReport:
         """Independently reconcile actual writer claims before persistence."""
-        ...
-
-    async def require_current(
-        self,
-        *,
-        workspace_path: str,
-        start: NativeWriterStart,
-    ) -> None:
-        """Refuse changed HEAD, Checks or rulings after an awaited boundary."""
         ...
 
     async def require_publishable(
@@ -2508,7 +2499,9 @@ class NativeWriteGuard(Protocol):
     ) -> None:
         """Check the writer left HEAD where it started, without tracker I/O.
 
-        Asked after the writer returns and before a failed writer's cleanup.
+        Asked after the writer returns, before a failed writer's cleanup, and
+        by the harness's commit hook: the lane's authority is read at
+        ``begin`` and before the push, never before the commit (KOD-1249).
         """
         ...
 
