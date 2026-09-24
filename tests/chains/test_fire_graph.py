@@ -43,7 +43,14 @@ from enum import Enum
 from itertools import product
 from math import prod
 from pathlib import Path
-from types import CodeType, FrameType, FunctionType, MethodType, UnionType
+from types import (
+    CodeType,
+    FrameType,
+    FunctionType,
+    MethodType,
+    ModuleType,
+    UnionType,
+)
 from typing import Annotated, Literal, Union, get_args, get_origin
 
 import pytest
@@ -59,7 +66,11 @@ from kodezart.api.v1.endpoints import agent as agent_routes
 from kodezart.api.v1.endpoints import jobs as job_routes
 from kodezart.chains import ralph_workflow
 from kodezart.chains.fire_consolidation import FireConsolidation
-from kodezart.chains.ralph_workflow import FireGraph, RalphWorkflowEngine
+from kodezart.chains.ralph_workflow import (
+    FireGraph,
+    RalphWorkflowEngine,
+    fire_terminal,
+)
 from kodezart.composition.engine import OriginRoutedWorkflowEngine
 from kodezart.composition.jobs import build_job_service
 from kodezart.core.protocols import FireCriteriaSource
@@ -1177,17 +1188,19 @@ async def test_the_completion_node_emits_exactly_the_terminal_for_every_native_s
     assert criteria.asked == [native_spec()] * driven
 
 
-#: The completion node and every function its event construction calls,
-#: each with the sha256 of its source text, as they stood when the site was
-#: closed — the way :data:`EGRESS_PATH` pins the path.  The drive above runs
-#: the node over the states it builds; a branch keyed on a state no drive
-#: builds moves a digest here instead, and is made in the commit that
-#: updates the table, which is the review this pin exists to force.  Held
-#: equal to the set derived from the node's own source.
+#: The completion node, the builder it hands the writer's event through,
+#: and every function the event's construction calls, each with the sha256
+#: of its source text, as they stood when the site was closed — the way
+#: :data:`EGRESS_PATH` pins the path.  The drive above runs the node over
+#: the states it builds; a branch keyed on a state no drive builds moves a
+#: digest here instead, and is made in the commit that updates the table,
+#: which is the review this pin exists to force.  Held equal to the set
+#: derived from the node's own source and its builder's.
 CONSTRUCTION_SITE: dict[Callable[..., object], str] = {
     RalphWorkflowEngine._complete_node: (
-        "7dd54a7fdcefc307cae72a65ac8112f18f20a1d7593435886048101486b1346f"
+        "2cfefe7e6204a4eae0c49a59fc3cec325996dad611de2fe6caac2a75b1b300ed"
     ),
+    fire_terminal: "266b5d0a53e674c24e69768ca423520c429d26bdc93cdb06813cb2bff99b3285",
     gate_cleared: "d946d1754e3e827be61ef888723ad0fa88ef5ef5845e4c48409c76ac905426f3",
     classify_outcome: (
         "d6bb8236eee686089a804e475ec56791712d7242887343223a6b0656aedb0f35"
@@ -1198,11 +1211,17 @@ CONSTRUCTION_SITE: dict[Callable[..., object], str] = {
 def event_builders(node: Callable[..., object]) -> set[Callable[..., object]]:
     """Every function *node*'s source calls to build the event it hands the writer.
 
-    By object: the one call handed to the writer is held to be a call of
-    the name ``WorkflowCompleteEvent`` — no conditional expression, no
-    other callable — and every call inside its arguments is of a bare name,
-    resolved in the node's module after import to a function.  Bounded by
-    the node's syntax tree.
+    By object: the one call handed to the writer is held to be either a
+    call of the name ``WorkflowCompleteEvent`` or a call of a bare name
+    resolved in the node's module after import to a function, the builder.
+    A builder's own source holds exactly one ``return``, and its value is a
+    call of the name ``WorkflowCompleteEvent``.  Whichever call constructs
+    the event is bound by that name, in its own module, to
+    :class:`WorkflowCompleteEvent`; it and the call handed to the writer
+    hold no conditional expression and no other callable: every call
+    inside their arguments is of a bare name, resolved in its own module
+    after import to a function.  The builder and those functions are
+    returned.  Bounded by the node's syntax tree and the builder's.
     """
     module = inspect.getmodule(node)
     assert module is not None
@@ -1217,14 +1236,30 @@ def event_builders(node: Callable[..., object]) -> set[Callable[..., object]]:
     assert len(handed) == 1
     (event,) = handed[0]
     assert isinstance(event, ast.Call)
-    assert isinstance(event.func, ast.Name) and event.func.id == "WorkflowCompleteEvent"
+    assert isinstance(event.func, ast.Name)
+    sites: list[tuple[ModuleType, ast.Call]] = [(module, event)]
+    found: set[Callable[..., object]] = set()
+    if event.func.id != "WorkflowCompleteEvent":
+        builder = vars(module)[event.func.id]
+        assert inspect.isfunction(builder)
+        found.add(builder)
+        module = inspect.getmodule(builder)
+        assert module is not None
+        body = ast.parse(textwrap.dedent(inspect.getsource(builder)))
+        returns = [part for part in ast.walk(body) if isinstance(part, ast.Return)]
+        assert len(returns) == 1
+        construction = returns[0].value
+        assert isinstance(construction, ast.Call)
+        assert isinstance(construction.func, ast.Name)
+        assert construction.func.id == "WorkflowCompleteEvent"
+        sites.append((module, construction))
     assert vars(module)["WorkflowCompleteEvent"] is WorkflowCompleteEvent
-    names: set[str] = set()
-    for call in ast.walk(event):
-        if isinstance(call, ast.Call) and call is not event:
-            assert isinstance(call.func, ast.Name), ast.dump(call.func)
-            names.add(call.func.id)
-    found = {vars(module)[name] for name in names}
+    for where, site in sites:
+        for part in ast.walk(site):
+            assert not isinstance(part, ast.IfExp), ast.dump(part)
+            if isinstance(part, ast.Call) and part is not site:
+                assert isinstance(part.func, ast.Name), ast.dump(part.func)
+                found.add(vars(where)[part.func.id])
     assert all(inspect.isfunction(builder) for builder in found)
     return found
 
@@ -1234,12 +1269,14 @@ def test_the_completion_node_s_construction_site_is_closed_by_object() -> None:
 
     The drive above runs the node over the states it builds.  A branch on
     a state no drive builds is caught here instead, by pinning the text:
-    the node's own source and the source of every function its event
-    construction calls — derived from the node's syntax tree and resolved
-    in its module — are held to their digests, so ANY change to them is
-    made in the commit that updates the table.  The event handed to the
-    writer is one call of ``WorkflowCompleteEvent`` by name, with no
-    conditional expression.  And the compiled tracker-native graph's
+    the node's own source, the builder it hands the writer's event
+    through, and the source of every function the event's construction
+    calls — derived from the node's syntax tree and the builder's, and
+    resolved in their modules — are held to their digests, so ANY change to
+    them is made in the commit that updates the table.  The event handed
+    to the writer is one call, of ``WorkflowCompleteEvent`` by name or of a
+    builder whose one ``return`` is that call, with no conditional
+    expression.  And the compiled tracker-native graph's
     ``complete`` node is bound to that very method, the engine's own bound
     ``RalphWorkflowEngine._complete_node``, so a graph pointed at another
     callable reds here.
