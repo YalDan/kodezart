@@ -164,6 +164,13 @@ class LinearIssueWire(LinearWireModel):
     #: none; those two facts are different and only one of them is a
     #: statement about the issue.
     relations: LinearIssueRelationsWire | None = None
+    #: Absent for a root issue.  Measured 2026-09-24 on the first live
+    #: approval read: the connected server answers ``get_issue`` for a root
+    #: issue with no ``parentId`` key at all, and for a sub-issue with its
+    #: parent's key, on the detail read as on the listing entry.  Absence is
+    #: therefore "no parent" for every read of an issue that may be a root;
+    #: the one read that is never of a root, :class:`LinearCriterionIssueWire`,
+    #: requires the key instead and says why.
     parent_id: str | None = None
     assignee: str | None = None
     created_at: datetime
@@ -223,7 +230,13 @@ class LinearIssueStateHistoryWire(LinearIssueDetailWire):
 
 
 class LinearCriterionIssueWire(LinearIssueDetailWire):
-    """A child's reported membership cannot be omitted.
+    """A criterion read: labels and parentage cannot be omitted.
+
+    A criterion is a child of its scope's root by definition, so the one
+    answer that leaves ``parentId`` out to mean "no parent" — a root issue's,
+    as :attr:`LinearIssueWire.parent_id` records — is never an answer about
+    a criterion.  The key is required here, alone among the issue reads: an
+    answer without it is a malformed criterion, not a root.
 
     Description absence retains the ordinary issue read's normalization;
     a criterion can have an empty body without disappearing from the set.

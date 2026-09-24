@@ -298,6 +298,7 @@
   "tests/probes/test_ab_failure_capture.py": 8,
   "tests/probes/test_ab_smoke.py": 1,
   "tests/probes/test_harness_capabilities.py": 14,
+  "tests/probes/test_live_linear_wire.py": 4,
   "tests/probes/test_live_ownership.py": 49,
   "tests/probes/test_strict_output_enforcement.py": 12,
   "tests/probes/test_v5_orchestration_live.py": 7,
@@ -4276,6 +4277,11 @@
    "test_probe_d_named_workflow_invocation",
    "test_probe_e_agent_type_and_bounding",
    "test_probe_f_origin_gate"
+  ],
+  "tests/probes/test_live_linear_wire.py": [
+   "test_the_answer_has_the_shape_the_adapter_reads",
+   "test_a_listed_milestone_reads_back_in_shape",
+   "test_the_key_has_hourly_request_budget_left"
   ],
   "tests/probes/test_live_ownership.py": [
    "test_created_at_order_is_stable_across_read_backs",

@@ -48,6 +48,7 @@ from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.surface import SurfaceKind, WritableSurface
 from kodezart.types.domain.tracker import ClaimStatus, IssueQuery
+from tests.probes.deployment import DEPLOYMENT_ENV, deployment_config
 from tests.probes.recording import record
 
 #: One board, one pair of sessions, one probe issue for the whole module —
@@ -109,19 +110,14 @@ LANDING_DELAY_SECONDS = 45.0
 ORDER_MARKERS = 8
 ORDER_READS = 3
 
-#: The suite is hermetic by design: it deletes ambient ``KODEZART_``
-#: variables and unbinds the working-directory dotenv, so the gate cannot
-#: read a developer's live deployment. A probe that measures a DEPLOYMENT
-#: therefore names the file it is measuring against.
-DEPLOYMENT_ENV = Path(__file__).resolve().parents[2] / ".env"
-
 
 def _deployment_config() -> AppConfig:
-    assert DEPLOYMENT_ENV.is_file(), (
+    config = deployment_config()
+    assert config is not None, (
         f"the live marker selected this probe with no deployment "
         f"configuration at {DEPLOYMENT_ENV.name}"
     )
-    return AppConfig(_env_file=DEPLOYMENT_ENV)
+    return config
 
 
 def _ids(comment_keys: Sequence[str]) -> str:

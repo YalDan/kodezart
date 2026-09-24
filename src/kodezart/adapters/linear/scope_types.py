@@ -92,17 +92,14 @@ class LinearScopeInitiativeWire(LinearScopeContainerWire, LinearScopeMetadataWir
 
 
 class LinearApprovalIssueWire(LinearAddressedIssueWire):
-    """An approval read requires reported labels and issue parentage.
+    """An approval read requires reported labels.
 
-    Measured 2026-09-24 on the first live approval read: a root issue's
-    ``get_issue`` answer carries no ``parentId`` key at all, while a
-    sub-issue's carries its parent's key.  Absence is therefore "no parent",
-    the same reading :class:`LinearIssueWire` gives the listing entry, and
-    a required field here refused every root member of a scope.
+    Parentage is read as the inherited ``parent_id`` declares it: absent for
+    a root issue, its parent's key for a sub-issue.  A required field here
+    once refused every root member of a scope (59493efc).
     """
 
     labels: list[str]
-    parent_id: str | None = None
 
 
 class LinearApprovalProjectWire(LinearScopeProjectWire):

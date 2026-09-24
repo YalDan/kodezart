@@ -35,6 +35,32 @@ lanes that can move.
   to that project is the one human act in a run: nothing here sets it, and an
   agent following this page must not set it either.
 
+### Measure before you boot
+
+Two kinds of drift each cost a boot cycle to find on 2026-09-24: a wire model
+that disagreed with the shape the live tracker answers in, and a key whose
+hourly request budget an earlier boot had already spent. One live probe
+measures both, and reads only:
+
+```sh
+LINEAR_PROBE_PROJECT=<a project's UUID> \
+LINEAR_PROBE_ROOT_ISSUE=<the key of an issue in it with no parent> \
+LINEAR_PROBE_CRITERION_ISSUE=<the key of a sub-issue of that root> \
+LINEAR_PROBE_INITIATIVE=<an initiative's UUID> \
+uv run pytest -m live tests/probes/test_live_linear_wire.py
+```
+
+The credential is the one in the repository-root `.env`, the file every live
+probe measures against (`tests/probes/deployment.py`); without it, or without
+the four subjects above, the probe skips and names what is not set. Each tool
+call is made in the argument shape the adapter sends, and its answer is held to
+every wire model the adapter reads that tool with. The ledger printed at the end
+carries each call's latency and each model's verdict, and its last row is the
+key's remaining hourly request budget, read from the tracker API's rate-limit
+headers: 2,500 requests an hour per key, about two per MCP tool call (measured
+2026-09-24). A spent key answers every session with `401 invalid_token` until
+the hour resets, so read that row before booting rather than after.
+
 ## What the first boot writes to your team
 
 Boot reconciles every mapping the operation owns before the process serves
