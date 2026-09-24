@@ -5,7 +5,9 @@ capabilities. Milestone reads currently omit a URL; that absence remains
 explicit here and is refused by the adapter's metadata capability.
 """
 
-from pydantic import Field
+from collections.abc import Mapping
+
+from pydantic import Field, model_validator
 
 from kodezart.adapters.linear.wire import (
     LinearAddressedIssueWire,
@@ -17,6 +19,29 @@ class LinearScopeIdentityWire(LinearWireModel):
     """A listed object's canonical identifier."""
 
     id: str = Field(min_length=1)
+
+
+class LinearScopeContainerWire(LinearScopeIdentityWire):
+    """A project or initiative answered at top level: its UUID is its identity.
+
+    Measured 2026-09-24 against the connected Linear MCP: a top-level project
+    or initiative answer reports a display identifier (``P-DUC-33``, ``I-4``)
+    under ``id`` and the UUID under ``uuid``, while every payload that
+    REFERENCES a container — an issue's ``projectId``, an initiative's
+    ``projects``, a project's ``initiatives`` — carries the UUID alone.  The
+    UUID is the one identity every read agrees on, so it is what ``id`` holds
+    here whenever the answer reports it; an answer without ``uuid`` (a nested
+    reference, an older server) keeps its ``id`` as it came.
+    """
+
+    @model_validator(mode="before")
+    @classmethod
+    def _uuid_is_the_identity(cls, data: object) -> object:
+        if isinstance(data, Mapping):
+            uuid = data.get("uuid")
+            if isinstance(uuid, str) and uuid:
+                return {**data, "id": uuid}
+        return data
 
 
 class LinearScopeNamedWire(LinearScopeIdentityWire):
@@ -43,7 +68,7 @@ class LinearScopeIssuesWire(LinearScopePageWire):
 
 
 class LinearScopeProjectsWire(LinearScopePageWire):
-    projects: list[LinearScopeIdentityWire]
+    projects: list[LinearScopeContainerWire]
 
 
 class LinearScopeMilestonesWire(LinearWireModel):
@@ -57,11 +82,11 @@ class LinearScopeMetadataWire(LinearScopeNamedWire):
     url: str | None = None
 
 
-class LinearScopeProjectWire(LinearScopeMetadataWire):
+class LinearScopeProjectWire(LinearScopeContainerWire, LinearScopeMetadataWire):
     initiatives: list[LinearScopeIdentityWire]
 
 
-class LinearScopeInitiativeWire(LinearScopeMetadataWire):
+class LinearScopeInitiativeWire(LinearScopeContainerWire, LinearScopeMetadataWire):
     parent_initiatives: list[LinearScopeIdentityWire]
     sub_initiatives: list[LinearScopeIdentityWire]
 
