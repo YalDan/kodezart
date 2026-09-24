@@ -57,6 +57,7 @@ from tests.chains.union_holdings import (
     held_by,
     ports_of,
 )
+from tests.fakes import FakeScopePlanReader, FakeWorkRefReader, role_view
 from tests.name_resolution import definitions
 from tests.services import test_union_composition as pinned
 
@@ -412,8 +413,10 @@ class Fixture:
         their first call, with the error ``PLANTED_ERRORS`` gives it.
         """
         ports = {
-            "tracker": self.tracker,
-            "refs": self.tracker,
+            # Each port as its role's double over the board ``self.tracker``
+            # seeds: the step holds exactly the roles it is typed on.
+            "tracker": role_view(FakeScopePlanReader, self.tracker),
+            "refs": role_view(FakeWorkRefReader, self.tracker),
             "git": self.git,
             "runner": runner
             or SubprocessCheckChainRunner(
@@ -1231,7 +1234,7 @@ async def test_the_ports_the_step_is_handed_record_what_it_asks(tmp_path):
     not the port's own bound method, whose ``__self__`` is the port.
     """
     assert PORT_PARAMETERS == {
-        "tracker": protocols.TrackerPort,
+        "tracker": protocols.ScopePlanReader,
         "refs": protocols.WorkRefReader,
         "git": protocols.GitService,
         "runner": protocols.CheckChainRunner,

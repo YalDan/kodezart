@@ -20,6 +20,7 @@ from collections.abc import Callable, Iterator
 from functools import partial
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
+from typing import Protocol, runtime_checkable
 
 import pytest
 from pydantic import BaseModel, PrivateAttr
@@ -38,6 +39,7 @@ from kodezart.types.domain.pr_state import PRLifecycle, PRState
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.union import UnionOutcome
 from kodezart.types.domain.union_tick import ScopeUnionRequest
+from tests.chains import union_holdings
 from tests.chains.test_delivery_coordinator import RECORD_OPERATION, RaisingRunner
 from tests.chains.test_delivery_coordinator import delivery as delivery
 from tests.chains.test_delivery_coordinator import repository as repository
@@ -65,7 +67,9 @@ from tests.chains.union_holdings import (
     held_by,
     is_port,
     is_record,
+    part_ports,
     public_callables,
+    reaches_the_forge,
     refused,
     written_surface,
 )
@@ -77,7 +81,10 @@ from tests.fakes import (
     FakePRCreator,
     FakePRStateReader,
     FakeRepoCache,
+    FakeScopePlanReader,
+    FakeTrackerCommentReader,
     FakeTrackerPort,
+    role_view,
 )
 from tests.services import test_union_composition as pinned
 
@@ -482,7 +489,7 @@ def test_the_step_is_read_for_its_parts_and_its_ports() -> None:
         "UnionComposition",
     }
     assert {port.__name__ for port in STEP_PORTS} == {
-        "TrackerPort",
+        "ScopePlanReader",
         "WorkRefReader",
         "GitService",
         "CheckChainRunner",
@@ -552,6 +559,71 @@ def test_the_forge_predicate_recognises_every_forge_double() -> None:
 
     assert [value for value in doubles if allowed_as(value) is not None] == []
     assert allowed_as(pinned.ObservedGit()) == "port"
+
+
+@runtime_checkable
+class MergingPort(Protocol):
+    """A port that declares a merge and nothing the forge client answers."""
+
+    async def enable_auto_merge(self, *, pr_number: int) -> None: ...
+
+
+# Declared as if in the ports module, so the holdings rule reads it as a port.
+MergingPort.__module__ = protocols.__name__
+
+
+def planted_forge_part() -> type:
+    """A part constructed with the forge client, every forge port and a merge."""
+
+    def construct(self: object, **collaborators: object) -> None:
+        return None
+
+    construct.__annotations__ = {
+        "client": GitHubAPIClient,
+        **{f"forge_{port.__name__}": port for port in FORGE_PORTS},
+        "merger": MergingPort,
+        "return": type(None),
+    }
+    return type("PlantedForgePart", (), {"__init__": construct})
+
+
+def test_a_registered_part_typed_on_the_forge_admits_no_forge_collaborator(
+    monkeypatch,
+) -> None:
+    """Guards the rule's widening to the registered parts' ports: it stops at the forge.
+
+    A part registered with a constructor typed on the forge client, on every
+    forge port and on a port that declares a merge adds no port to what the
+    walk admits, so every forge double, a handle answering exactly one of
+    those ports, and the forge client itself are still refused with the
+    registration in force.  The other direction: the comment reader the lane
+    record reader is typed on is admitted, and its exact double is held as a
+    port.
+    """
+    part = planted_forge_part()
+    registered = {**REGISTERED_PARTS, part: "planted: a forge part"}
+    planted_ports = (*FORGE_PORTS, MergingPort)
+    ports = part_ports(registered)
+
+    assert all(reaches_the_forge(port) for port in planted_ports)
+    assert is_port(MergingPort)
+    assert ports == part_ports(REGISTERED_PARTS) == (protocols.TrackerCommentReader,)
+    monkeypatch.setitem(REGISTERED_PARTS, part, registered[part])
+    monkeypatch.setattr(
+        union_holdings, "HELD_PORTS", tuple(dict.fromkeys((*STEP_PORTS, *ports)))
+    )
+    forge = (
+        FakePRCreator(),
+        FakeForgeQuery(),
+        FakePRStateReader(records={}),
+        FakeDeliveryProbe(),
+        FakeCIMonitor(),
+        *(forge_handle(port) for port in planted_ports),
+        GitHubAPIClient.__new__(GitHubAPIClient),
+    )
+
+    assert [value for value in forge if allowed_as(value) is not None] == []
+    assert allowed_as(role_view(FakeTrackerCommentReader, FakeTrackerPort())) == "port"
 
 
 def test_the_holdings_walk_reaches_a_collaborator_inside_a_container() -> None:
@@ -777,11 +849,15 @@ async def everything_the_step_holds(delivery) -> list[object]:
     and what the composed step holds."""
     step = delivery.coordinator()
     await step.verify()
+    board = FakeTrackerPort()
     union_for = build_scope_union(
-        tracker=FakeTrackerPort(),
+        tracker=role_view(FakeScopePlanReader, board),
         git=FakeGitService(),
         cache=FakeRepoCache(),
-        records=LaneRecordReader(tracker=FakeTrackerPort(), operation=RECORD_OPERATION),
+        records=LaneRecordReader(
+            tracker=role_view(FakeTrackerCommentReader, board),
+            operation=RECORD_OPERATION,
+        ),
         config=AppConfig(),
     )
     composed = await union_for(
@@ -938,11 +1014,15 @@ async def test_the_composed_union_step_holds_no_forge_collaborator() -> None:
     here, so a stale row cannot stand as a permission nothing uses.
     """
     git = FakeGitService()
+    board = FakeTrackerPort()
     union_for = build_scope_union(
-        tracker=FakeTrackerPort(),
+        tracker=role_view(FakeScopePlanReader, board),
         git=git,
         cache=FakeRepoCache(),
-        records=LaneRecordReader(tracker=FakeTrackerPort(), operation=RECORD_OPERATION),
+        records=LaneRecordReader(
+            tracker=role_view(FakeTrackerCommentReader, board),
+            operation=RECORD_OPERATION,
+        ),
         config=AppConfig(),
     )
 

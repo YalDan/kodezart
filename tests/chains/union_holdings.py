@@ -9,8 +9,10 @@ Everything the walk reaches must be one of these: a record (a value of an
 exact scalar type, or of a class the records package defines); a routine or
 a builtin container, which the walk looks inside; one of the step's own
 parts; one of the registered parts; or an implementation of a port the step
-is typed to hold, which answers nothing its ports do not declare.  Anything
-else is refused, whatever its members are called.
+or a registered part is typed to hold, which answers nothing its ports do
+not declare.  A registered part's port is admitted only when it declares no
+member the forge client answers and no merge.  Anything else is refused,
+whatever its members are called.
 
 What the walk reads, and what it does not: it reads what an object holds in
 its instance attributes (all of them, dunder names included, except a
@@ -45,6 +47,7 @@ from types import (
 from typing import get_type_hints
 
 import kodezart.types
+from kodezart.adapters.github.api import GitHubAPIClient
 from kodezart.core import protocols
 from kodezart.services.lane_records import LaneRecordReader
 
@@ -162,6 +165,47 @@ REGISTERED_PARTS: dict[type, str] = {
         "the shipped ref reader reads each lane's recorded refs through it"
     ),
 }
+
+
+#: The forge client the product ships: what a port reaching the forge answers.
+FORGE_CLIENT: type = GitHubAPIClient
+
+
+def reaches_the_forge(port: type) -> bool:
+    """Whether *port* declares a member the forge client answers, or a merge.
+
+    A merge is read off the member's name in any spelling, so a port that
+    grew one is caught whatever the verb around it.
+    """
+    return any(
+        hasattr(FORGE_CLIENT, member) or "merge" in member.lower()
+        for member in declared(port)
+    )
+
+
+def part_ports(parts: Collection[type]) -> tuple[type, ...]:
+    """Every port a registered part's constructor is typed on, off the forge.
+
+    Read off each constructor's own annotations, as the step's are.  A port
+    that reaches the forge is never admitted this way, whatever part names
+    it: a registered part is a permission for that part, not for a forge.
+    """
+    return tuple(
+        dict.fromkeys(
+            port
+            for part in parts
+            for port in ports_of(part).values()
+            if not reaches_the_forge(port)
+        )
+    )
+
+
+#: Every port the walk admits an implementation of: the step's own, then
+#: the registered parts' (``LaneRecordReader`` reads its lanes' records
+#: through a comment reader it is constructed with).
+HELD_PORTS: tuple[type, ...] = tuple(
+    dict.fromkeys((*STEP_PORTS, *part_ports(REGISTERED_PARTS)))
+)
 
 
 def is_record(value: object) -> bool:
@@ -290,8 +334,9 @@ def allowed_as(value: object) -> str | None:
 
     A record; a routine or a builtin container, which the walk looks inside;
     one of the step's own parts; one of the registered parts; or an
-    implementation of a port the step is typed to hold, which answers nothing
-    its ports do not declare and answers no name ``dir`` cannot see.  Anything
+    implementation of a port the step or a registered part is typed to hold
+    (``HELD_PORTS``), which answers nothing its ports do not declare and
+    answers no name ``dir`` cannot see.  Anything
     else is refused whatever its members are called: a forge client or
     double, a hand-built handle, an instance of a scalar's subclass, a
     container whose state is more than its items, a port implementation that
@@ -312,7 +357,7 @@ def allowed_as(value: object) -> str | None:
         return "part"
     if kind in REGISTERED_PARTS:
         return "registered"
-    ports = [port for port in STEP_PORTS if isinstance(value, port)]
+    ports = [port for port in HELD_PORTS if isinstance(value, port)]
     if (
         ports
         and not answers_by_hook(kind)

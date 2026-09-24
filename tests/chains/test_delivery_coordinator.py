@@ -36,7 +36,13 @@ from kodezart.types.domain.tracker import (
 )
 from kodezart.types.domain.union import UnionOutcome
 from kodezart.types.domain.union_tick import UnionTickContext
-from tests.fakes import FakeTrackerPort
+from tests.fakes import (
+    FakeScopePlanReader,
+    FakeTrackerCommentReader,
+    FakeTrackerPort,
+    FakeWorkRefReader,
+    role_view,
+)
 from tests.services import test_union_composition as pinned
 
 PROJECT = ScopeRef(kind=ScopeKind.PROJECT, key="project-one")
@@ -129,7 +135,10 @@ def recorded_run_state(lane: str, *, deliverable: str) -> str:
 def recorded_refs(port: FakeTrackerPort) -> RecordedDeliverableRefs:
     """The scope path's own carrier for a lane's deliverable branch."""
     return RecordedDeliverableRefs(
-        records=LaneRecordReader(tracker=port, operation=RECORD_OPERATION)
+        records=LaneRecordReader(
+            tracker=role_view(FakeTrackerCommentReader, port),
+            operation=RECORD_OPERATION,
+        )
     )
 
 
@@ -212,13 +221,16 @@ class Fixture:
     def coordinator(
         self, runner: object = None, refs: object = None
     ) -> ScopeUnionCoordinator:
+        # Each port is handed as its role's double over the one board
+        # ``self.tracker`` seeds, so the step holds exactly the roles it is
+        # typed on and a case still reads and changes that board.
         return ScopeUnionCoordinator(
             scope_kind=PROJECT.kind,
-            tracker=self.tracker,
+            tracker=role_view(FakeScopePlanReader, self.tracker),
             # The port carrier by default, which is what every case below
             # about the roster's shape pins; a case about which carrier
             # answers on the scope path names the record reader instead.
-            refs=self.tracker if refs is None else refs,
+            refs=role_view(FakeWorkRefReader, self.tracker) if refs is None else refs,
             git=self.git,
             runner=runner
             or SubprocessCheckChainRunner(

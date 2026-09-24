@@ -13,6 +13,7 @@ from kodezart.core.protocols import (
     GitService,
     OutboundContentGate,
     RepoCache,
+    ScopePlanReader,
     ScopeStatusUpdates,
     TrackerPort,
 )
@@ -31,7 +32,7 @@ from kodezart.types.domain.union_tick import ScopeUnionRequest, UnionTickContext
 
 def build_scope_union(
     *,
-    tracker: TrackerPort,
+    tracker: ScopePlanReader,
     git: GitService,
     cache: RepoCache,
     records: LaneRecordReader,
@@ -54,7 +55,10 @@ def build_scope_union(
 
     No forge collaborator is passed, and none is in this function's hand
     (KOD-778). Nothing here writes: the union holds no tracker writer, and its
-    Git writes live in a scratch tree removed on every exit.
+    Git writes live in a scratch tree removed on every exit. Each collaborator
+    is taken as the role it is handed on as: the scope plan read for the step,
+    and the record reader (itself typed on the comment read) for the refs
+    (KOD-834).
     """
     log: BoundLogger = get_logger(__name__)
     runner = SubprocessCheckChainRunner(timeout=config.union_check_step_timeout_seconds)

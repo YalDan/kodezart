@@ -3844,6 +3844,24 @@ class _FakeTrackerState:
         self.issues[issue_key] = issue.model_copy(update={"updated_at": stamp})
         self.self_writes.record(issue_key=issue_key, updated_at=stamp)
 
+    def _issue_as_read(self, issue_key: str) -> TrackerIssue:
+        """One stored issue as a read answers it; the caller logs the read.
+
+        Shared by every role read that answers whole issues (``read_issue``,
+        the criterion family's parent, the scope family's members, the
+        planning read), so a role double that composes none of the others
+        answers no public ``read_issue`` it was never given.  The log is
+        appended by the port read that calls this, which is where the read
+        census looks for it.
+        """
+        issue = self.issues[issue_key]
+        if self.stamp_moves_on_read:
+            issue = issue.model_copy(
+                update={"updated_at": issue.updated_at + FIXTURE_WRITE_STEP}
+            )
+            self.issues[issue_key] = issue
+        return issue
+
     def _require_graph_holder(
         self, *, kind: SurfaceKind, issue_key: str, holder: str
     ) -> None:
@@ -4093,13 +4111,7 @@ class FakeIssueReader(_FakeTrackerState):
     async def read_issue(self, *, issue_key: str) -> TrackerIssue:
         await asyncio.sleep(0)
         self.issue_reads.append(issue_key)
-        issue = self.issues[issue_key]
-        if self.stamp_moves_on_read:
-            issue = issue.model_copy(
-                update={"updated_at": issue.updated_at + FIXTURE_WRITE_STEP}
-            )
-            self.issues[issue_key] = issue
-        return issue
+        return self._issue_as_read(issue_key)
 
 
 class FakeClassificationWriter(FakeIssueReader):
@@ -4273,22 +4285,18 @@ class FakeContainerMetadataReader(_FakeTrackerState):
         return container
 
 
-class FakeTrackerCriteriaReader(FakeIssueReader):
+class FakeTrackerCriteriaReader(_FakeTrackerState):
     """The ``TrackerCriteriaReader`` role of this double."""
 
     async def read_criteria(self, *, issue_key: str) -> Sequence[TrackerIssue]:
-        _, criteria = await self._read_criterion_family(issue_key=issue_key)
-        return criteria
-
-    async def _read_criterion_family(
-        self, *, issue_key: str
-    ) -> tuple[TrackerIssue, tuple[TrackerIssue, ...]]:
         if issue_key not in self.issues:
             raise CriterionReadError(
                 issue_key=issue_key, reason="parent issue is absent"
             )
-        parent = await self.read_issue(issue_key=issue_key)
-        return parent, tuple(
+        await asyncio.sleep(0)
+        self.issue_reads.append(issue_key)
+        parent = self._issue_as_read(issue_key)
+        return tuple(
             sorted(
                 (
                     issue
@@ -4301,7 +4309,7 @@ class FakeTrackerCriteriaReader(FakeIssueReader):
         )
 
 
-class FakeCriterionMintWriter(FakeTrackerCriteriaReader):
+class FakeCriterionMintWriter(FakeIssueReader, FakeTrackerCriteriaReader):
     """The ``CriterionMintWriter`` role of this double."""
 
     async def create_criterion_if_absent(
@@ -4634,7 +4642,7 @@ class FakeFireDispatchTracker(
         return self.initiative_identifiers_by_project.get(project_id, frozenset())
 
 
-class FakeScopeFamilyReader(FakeIssueReader):
+class FakeScopeFamilyReader(_FakeTrackerState):
     """The ``ScopeFamilyReader`` role of this double."""
 
     async def scope_issues(self, *, ref: ScopeRef) -> Sequence[TrackerIssue]:
@@ -4646,7 +4654,9 @@ class FakeScopeFamilyReader(FakeIssueReader):
                     continue
                 if key not in self.issues:
                     raise ScopeReadError("issue is missing", ref=ref)
-                selected[key] = await self.read_issue(issue_key=key)
+                await asyncio.sleep(0)
+                self.issue_reads.append(key)
+                selected[key] = self._issue_as_read(key)
                 keys.extend(
                     issue.issue_key
                     for issue in self.issues.values()
@@ -4660,7 +4670,9 @@ class FakeScopeFamilyReader(FakeIssueReader):
                 if key not in self.issues:
                     raise ScopeReadError("scope member is missing", ref=ref)
                 if key not in selected:
-                    selected[key] = await self.read_issue(issue_key=key)
+                    await asyncio.sleep(0)
+                    self.issue_reads.append(key)
+                    selected[key] = self._issue_as_read(key)
         for start in selected:
             path: set[str] = set()
             current: str | None = start
@@ -4939,11 +4951,13 @@ class FakeLifecycleStateWriter(
         return await self._post_comment(issue_key=issue_key, body=body)
 
 
-class FakePlanningIssueReader(FakeIssueReader):
+class FakePlanningIssueReader(_FakeTrackerState):
     """The ``PlanningIssueReader`` role of this double."""
 
     async def read_planning_issue(self, *, issue_key: str) -> TrackerIssue:
-        return await self.read_issue(issue_key=issue_key)
+        await asyncio.sleep(0)
+        self.issue_reads.append(issue_key)
+        return self._issue_as_read(issue_key)
 
 
 class FakeModelMemberReader(FakeTrackerCriteriaReader, FakePlanningIssueReader):
@@ -4976,7 +4990,10 @@ class FakeModelMemberReader(FakeTrackerCriteriaReader, FakePlanningIssueReader):
 
 
 class FakeOrganizeContextTracker(
-    FakeContainerMetadataReader, FakeTrackerCommentReader, FakeScopeFamilyReader
+    FakeContainerMetadataReader,
+    FakeTrackerCommentReader,
+    FakeIssueReader,
+    FakeScopeFamilyReader,
 ):
     """The ``OrganizeContextTracker`` role of this double."""
 
@@ -5002,6 +5019,7 @@ class FakeOrganizeContextTracker(
 class FakeTrackerArtifactReader(
     FakeContainerMetadataReader,
     FakeTrackerCommentReader,
+    FakeIssueReader,
     FakeTrackerCriteriaReader,
     FakePlanningIssueReader,
 ):
@@ -5703,6 +5721,23 @@ class FakeSubjectCriteriaReader(
     FakeIssueReader,
 ):
     """The ``SubjectCriteriaReader`` role, composed of its role doubles."""
+
+
+def role_view[Role: _FakeTrackerState](
+    role: type[Role], board: _FakeTrackerState
+) -> Role:
+    """*role*'s double, answering over *board*'s store and holding nothing else.
+
+    The store is a double's instance state, and the view is given that same
+    state object as its own: every read and write through the view lands on
+    the board a case seeds and inspects through *board*, while the view
+    answers exactly its role's members and holds no reference to *board*
+    itself, so a consumer handed the view reaches no member its role does
+    not declare, by call or by what it holds.
+    """
+    view = role.__new__(role)
+    view.__dict__ = vars(board)
+    return view
 
 
 class FakeScopeStatusWriter:
