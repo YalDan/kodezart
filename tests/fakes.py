@@ -3599,7 +3599,7 @@ class _FakeTrackerState:
     #: the attributes those reads move, only ever by appending, equal to this
     #: set, and it shows every write moving the state outside the logs.  It
     #: runs every read on a full board of each subclass that declares
-    #: ``READ_LOGS`` or that a test module calls ``nothing_written`` on, and
+    #: ``_READ_LOGS`` or that a test module calls ``nothing_written`` on, and
     #: reads the source of each method defined on the class line of each of
     #: those.  There it finds each log moved, as a direct ``self.<log>``
     #: target or a mutating call on one, inside the port's reads alone, and
@@ -3621,7 +3621,7 @@ class _FakeTrackerState:
     #: spelling fetched the log; the trap's one limit is a call on the base
     #: type that skips the override.  A read log that recorded a write, or
     #: decided an answer, fails there.
-    READ_LOGS = frozenset(
+    _READ_LOGS = frozenset(
         {
             "issue_reads",
             "scans",
@@ -5864,7 +5864,7 @@ def written_state(port: FakeTrackerPort) -> dict[str, object]:
 
     The whole state a write could move: every attribute of the instance,
     whatever it is called and whether or not a journal names it, except the
-    logs its class declares in ``READ_LOGS``.  The copy is deep so that a
+    logs its class declares in ``_READ_LOGS``.  The copy is deep so that a
     value the rendering keeps as it is — a model, a record — is not shared
     with the live double, where a write in place would change the snapshot
     with it.
@@ -5872,7 +5872,7 @@ def written_state(port: FakeTrackerPort) -> dict[str, object]:
     return {
         name: _comparable(value)
         for name, value in sorted(copy.deepcopy(vars(port)).items())
-        if name not in type(port).READ_LOGS
+        if name not in type(port)._READ_LOGS
     }
 
 
@@ -5886,7 +5886,7 @@ def nothing_written(port: FakeTrackerPort) -> Callable[[], bool]:
     the double is deep-copied when it is handed over, and when the answer is
     asked for every attribute of the live double is compared with the same
     attribute of that copy, both rendered by the rule above, leaving out
-    only the read logs the double's class declares in ``READ_LOGS``.  So
+    only the read logs the double's class declares in ``_READ_LOGS``.  So
     any attribute a call moves counts — a write journal, the issues
     themselves, the comments, the claims, a subclass's own state, and a
     board a fixture moved by its own hand after the handover — whether or
@@ -5896,7 +5896,7 @@ def nothing_written(port: FakeTrackerPort) -> Callable[[], bool]:
 
     The read logs are measured, not assumed: the census beside this module
     runs every member the port declares, holds the attributes the reads
-    move equal to ``READ_LOGS``, finds each log moved inside the port's
+    move equal to ``_READ_LOGS``, finds each log moved inside the port's
     reads alone, and shows every write moving the state outside them.  A
     write journal declared a read log is refused below, because the
     rendering then no longer reaches it.  An ensure that ADOPTS a value the

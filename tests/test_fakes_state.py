@@ -1063,7 +1063,7 @@ async def paged_queries(
         await row.call(port)
         (query,) = [
             entry
-            for log in double.READ_LOGS
+            for log in double._READ_LOGS
             if isinstance(logged := getattr(port, log), list)
             for entry in logged
             if isinstance(entry, kind)
@@ -1247,18 +1247,21 @@ def declaring_doubles() -> list[type[FakeTrackerPort]]:
 
     Walked over ``__subclasses__``, each class once, so bounded by the
     classes defined; the counting board the lane's delivery is driven on is
-    imported above and is always among them.
+    imported above and is always among them.  The double itself is always
+    among them too: it is composed over the store its role classes share,
+    and its logs are declared there, on the class line rather than on the
+    composed class.
     """
-    found: list[type[FakeTrackerPort]] = []
-    seen: set[type[FakeTrackerPort]] = set()
-    pending: list[type[FakeTrackerPort]] = [FakeTrackerPort]
+    found: list[type[FakeTrackerPort]] = [FakeTrackerPort]
+    seen: set[type[FakeTrackerPort]] = {FakeTrackerPort}
+    pending: list[type[FakeTrackerPort]] = list(FakeTrackerPort.__subclasses__())
     while pending:
         double = pending.pop()
         if double in seen:
             continue
         seen.add(double)
         pending.extend(double.__subclasses__())
-        if "READ_LOGS" in vars(double):
+        if "_READ_LOGS" in vars(double):
             found.append(double)
     return found
 
@@ -1392,7 +1395,7 @@ async def test_the_census_board_holds_something_in_every_attribute(
     held = {
         name: value
         for name, value in vars(port).items()
-        if name not in type(port).READ_LOGS
+        if name not in type(port)._READ_LOGS
     }
     assert held != {}
     assert sorted(name for name, value in held.items() if holds_nothing(value)) == []
@@ -1576,7 +1579,7 @@ def read_logs(port: FakeTrackerPort) -> dict[str, object]:
     return {
         name: rendered
         for name, rendered in tracker_state(port).items()
-        if name in FakeTrackerPort.READ_LOGS
+        if name in FakeTrackerPort._READ_LOGS
     }
 
 
@@ -1627,7 +1630,7 @@ async def test_the_read_logs_are_what_the_reads_fill() -> None:
             assert isinstance(after, tuple), (case, name)
             assert after[: len(before)] == before, (case, name)
             filled.add(name)
-    assert filled == FakeTrackerPort.READ_LOGS
+    assert filled == FakeTrackerPort._READ_LOGS
 
 
 async def test_a_read_log_records_no_write() -> None:
@@ -1638,10 +1641,10 @@ async def test_a_read_log_records_no_write() -> None:
     out still sees it; and no write journal is a read log.  A write whose
     only trace is a read log, or a journal named as one, fails here.
     """
-    assert FakeTrackerPort.READ_LOGS & TRACKER_WRITE_JOURNALS == frozenset()
+    assert FakeTrackerPort._READ_LOGS & TRACKER_WRITE_JOURNALS == frozenset()
     for case in WRITES:
         moved = set(await moved_by(case))
-        assert moved - FakeTrackerPort.READ_LOGS, case
+        assert moved - FakeTrackerPort._READ_LOGS, case
 
 
 #: The calls that move the list, dict or set they are called on.
@@ -1717,20 +1720,16 @@ def test_a_read_log_is_moved_by_the_port_s_reads_alone() -> None:
     assert CountingTracker in census_doubles()
     for double in census_doubles():
         filled: set[str] = set()
-        line = [
-            cls
-            for cls in double.__mro__
-            if cls is not object and issubclass(cls, FakeTrackerPort)
-        ]
+        line = [cls for cls in double.__mro__ if cls is not object]
         for cls in line:
             for name, member in vars(cls).items():
                 function = getattr(member, "__func__", member)
                 if name == "__init__" or not inspect.isfunction(function):
                     continue
-                logged = moved_in(function) & double.READ_LOGS
+                logged = moved_in(function) & double._READ_LOGS
                 assert not logged or name in reads, (double, name, logged)
                 filled |= logged
-        assert filled == double.READ_LOGS, double
+        assert filled == double._READ_LOGS, double
 
 
 #: The calls a read log is recorded with.
@@ -1977,7 +1976,7 @@ def test_a_read_log_decides_no_answer() -> None:
         assert functions != [], double
         assert {instance for _, _, instance in functions} == {"self"}, double
         for name, function, instance in functions:
-            read = logs_read_in(function, double.READ_LOGS, instance=instance)
+            read = logs_read_in(function, double._READ_LOGS, instance=instance)
             assert read == set(), (double, name)
 
 
@@ -2340,7 +2339,7 @@ def trapped(port: FakeTrackerPort) -> dict[str, Trap]:
     spelling that fetches the attribute fetches the trap.
     """
     traps: dict[str, Trap] = {}
-    for name in sorted(type(port).READ_LOGS):
+    for name in sorted(type(port)._READ_LOGS):
         held = getattr(port, name)
         trap: Trap
         if isinstance(held, list):
@@ -2397,7 +2396,7 @@ async def test_no_read_log_is_read_inside_the_double_at_run_time(
     row = CASES[case]
     port = await case_board(case, double)
     traps = trapped(port)
-    assert set(traps) == double.READ_LOGS
+    assert set(traps) == double._READ_LOGS
     line = class_line_codes(double)
 
     await row.call(port)
