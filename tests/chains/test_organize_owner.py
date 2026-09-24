@@ -1037,8 +1037,10 @@ async def test_a_partially_marked_scope_marks_only_the_member_that_lacks_it(
     Two members under one scope reach the marker sweep: one already carries
     the phase marker and one does not, and neither is the scope's own key.
     Exactly one marker write is sent, onto the member that lacks it, under the
-    job as its holder. The marked member is sent no write, is never leased
-    and is never judged.
+    job as its holder. The marked member is sent no write and is never
+    judged. The round's lease is the one grant on it: the round declares
+    every member of its snapshot, marked or not, once (KOD-558), so the
+    grants are one per member and none is the marker's own.
     """
     from tests.fakes import FakeMcpIssue
 
@@ -1071,7 +1073,7 @@ async def test_a_partially_marked_scope_marks_only_the_member_that_lacks_it(
         and "kind: lease\n" in str(args.get("body", ""))
         and args.get("issueId") is not None
     ]
-    assert leased == ["unmarked-child"]
+    assert sorted(leased) == sorted((CLAIMED_ISSUE, "marked-child", "unmarked-child"))
     assert judged_members(executor) == ["unmarked-child"]
     for key in (CLAIMED_ISSUE, "marked-child", "unmarked-child"):
         assert "graph complete" in board.server.issues[key].labels
