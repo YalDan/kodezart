@@ -2445,15 +2445,13 @@ class NativeWriteGuard(Protocol):
         """Capture original facts and only the writer's verified source changes."""
         ...
 
-    async def restore(
-        self,
-        *,
-        snapshot: NativeAuthoritySnapshot,
-        workspace_path: str,
-        start: NativeWriterStart,
-        receipt: PersistResult | None = None,
-    ) -> None:
-        """Restore the same original authority and recheck its actual sources."""
+    def restore(self, *, snapshot: NativeAuthoritySnapshot) -> None:
+        """Take the authority a saved phase carries, reading no source.
+
+        A parent resuming a saved phase hands it to a new guard. The sources
+        are read at ``begin`` and before the harness commits and publishes,
+        not when a phase is restored (KOD-1249).
+        """
         ...
 
     async def judge(
@@ -2508,7 +2506,10 @@ class NativeWriteGuard(Protocol):
         workspace_path: str,
         start: NativeWriterStart,
     ) -> None:
-        """Check local evidence before failed writer cleanup, without tracker I/O."""
+        """Check the writer left HEAD where it started, without tracker I/O.
+
+        Asked after the writer returns and before a failed writer's cleanup.
+        """
         ...
 
 
@@ -2541,6 +2542,21 @@ class FireCriteriaReader(Protocol):
         *held* is the roster the caller entered with. A criterion of that
         roster the caller has since finished stays in the snapshot; one
         finished before the caller entered is in no roster and stays out.
+        """
+        ...
+
+    async def owed_from(
+        self,
+        *,
+        spec: TrackerSpec,
+        criteria: Mapping[str, TrackerIssue],
+        held: TrackerCriterionSet,
+    ) -> TrackerCriterionSet:
+        """What :meth:`read_current` answers, from a reading the caller took.
+
+        *criteria* is every criterion sub-issue of one reading of the spec's
+        subtree, which a caller reading that subtree for its whole
+        membership anyway already holds (KOD-1249). Nothing is read here.
         """
         ...
 

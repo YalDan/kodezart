@@ -97,17 +97,11 @@ class NativeExecution:
             )
         await self._resume_workspace(phase)
         self._active_workspace = phase.workspace.workspace_path
-        await self._guard.restore(
-            snapshot=phase.authority,
-            workspace_path=phase.workspace.workspace_path,
-            start=phase.start,
-            receipt=phase.receipt
-            if isinstance(phase, PersistedNativeExecution)
-            else None,
-        )
-        # Tracker validation awaits external reads. Recheck the original files
-        # and index after those reads before the next native effect starts.
-        await self._resume_workspace(phase)
+        # A parent resuming a saved phase hands it to a new guard, which takes
+        # the authority the phase carries. Restoring reads no tracker source
+        # (KOD-1249): the lane's authority is read again before the harness
+        # commits and before it pushes.
+        self._guard.restore(snapshot=phase.authority)
 
     async def _resume_workspace(self, phase: ActiveNativeExecution) -> None:
         try:
@@ -191,7 +185,9 @@ class NativeExecution:
             else:
                 self._release_incomplete_workspace = True
             raise
-        await self._guard.require_current(workspace_path=path, start=phase.start)
+        # A writer that moved HEAD is refused here, before its report is
+        # read, without reading the tracker.
+        await self._guard.require_unchanged_head(workspace_path=path, start=phase.start)
         if result is None or result.is_error or result.structured_output is None:
             raise NativeWriteRefusalError("The native writer returned no claim report")
         try:
@@ -246,6 +242,10 @@ class NativeExecution:
         await self._restore(phase)
         path, request = phase.workspace.workspace_path, self._request
 
+        # The lane's authority is read again through the persister's two hooks:
+        # a Check or ruling that changed while the commit message was written
+        # refuses before the harness commits, and one that changed after the
+        # commit refuses before the push.
         async def before_commit() -> None:
             await self._guard.require_current(workspace_path=path, start=phase.start)
 

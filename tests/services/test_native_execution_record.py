@@ -1,5 +1,9 @@
 """The commit act and its record are one operation, not two ordered steps."""
 
+import inspect
+from collections import Counter
+from datetime import timedelta
+
 import pytest
 
 from kodezart.chains.criteria import TrackerCriteria
@@ -15,7 +19,14 @@ from kodezart.types.domain.persist import PersistResult
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run_state import LaneBinding
 from kodezart.types.domain.session import PermissionMode, SessionType, ToolPreset
+from kodezart.types.domain.tracker import (
+    IssueRelation,
+    IssueRelationKind,
+    WorkflowStateKind,
+)
 from tests.chains.test_native_fire import (
+    DIRECT_DONE,
+    DIRECT_OWED,
     SUBJECT,
     NativeExecutor,
     native_operation,
@@ -109,6 +120,12 @@ class Arm:
         )
 
     async def commit(self, *, after_publish, events=None):
+        return await self.iterate(
+            await self.guard(), after_publish=after_publish, events=events
+        )
+
+    async def iterate(self, guard, *, after_publish, events=None):
+        """One native execution iteration under *guard*, as the loop drives it."""
         seen = [] if events is None else events
         async for event in self.service.stream_workflow(
             prompt="Implement the current Checks.",
@@ -122,7 +139,7 @@ class Arm:
             skills=SUPPRESS_ALL_SKILLS,
             session_type=SessionType.TICKET_FIRE,
             visibility=RepoVisibility.PUBLIC,
-            native_guard=await self.guard(),
+            native_guard=guard,
             after_publish=after_publish,
         ):
             seen.append(event)
@@ -203,3 +220,100 @@ async def test_the_recorded_head_equals_the_branch_head_after_each_commit():
     await arm.commit(after_publish=skipped)
     assert len(skipped.calls) == 1
     assert (await arm.recorded()).head_sha != await arm.branch_head()
+
+
+def tracker_calls(port, monkeypatch) -> Counter[str]:
+    """Count, by name, every call *port* answers from here on."""
+    calls: Counter[str] = Counter()
+    for name, _ in inspect.getmembers_static(type(port), inspect.iscoroutinefunction):
+        if name.startswith("_"):
+            continue
+        answer = getattr(port, name)
+
+        async def counted(*args, _name=name, _answer=answer, **kwargs):
+            calls[_name] += 1
+            return await _answer(*args, **kwargs)
+
+        monkeypatch.setattr(port, name, counted)
+    return calls
+
+
+async def test_one_iteration_reads_the_lane_authority_at_its_start_commit_and_push(
+    monkeypatch,
+):
+    """KOD-1249: one reading of the subtree per barrier, and none between them.
+
+    Each reading is one family read, one criteria read per member and one
+    comment listing per member, the criteria and the owed Checks both taken
+    from that one map. It is taken when the writer starts, before the harness
+    commits and before it pushes; restoring a phase and reconciling a writer
+    that claimed nothing read nothing. This double's persister asks the commit
+    hook once; the git persister also asks it on entry, one reading more.
+
+    At f4c2fed6 the same iteration answered 333 calls: 32 subtree readings
+    (224 criteria reads) and 77 comment listings.
+    """
+    arm = Arm()
+    guard = await arm.guard()
+    calls = tracker_calls(arm.port, monkeypatch)
+
+    events = await arm.iterate(guard, after_publish=RecordingAfterPublish())
+
+    assert commit_shas(events) == [arm.repo.head]
+    members = len(arm.port.issues)
+    assert calls == {
+        "scope_issues": 3,
+        "read_criteria": 3 * members,
+        "list_comments": 3 * members,
+    }
+
+
+@pytest.mark.parametrize(
+    ("change", "refused"),
+    [
+        (
+            {
+                "title": "retitled while the writer worked",
+                "assignee_key": "someone-else",
+                "relations": (
+                    IssueRelation(kind=IssueRelationKind.RELATED, issue_key=SUBJECT),
+                ),
+            },
+            False,
+        ),
+        ({"body": "**Check:** a Check rewritten while the writer worked"}, True),
+        ({"state_kind": WorkflowStateKind.STARTED, "state_name": "In Progress"}, True),
+        ({"issue_labels": frozenset({"criterion", "decision"})}, True),
+        ({"parent_key": DIRECT_DONE}, True),
+        ({"parent_key": None}, True),
+    ],
+    ids=["other facts", "Check", "state kind", "labels", "parent", "left the subtree"],
+)
+async def test_the_writer_is_refused_only_over_a_fact_its_write_depends_on(
+    change, refused
+):
+    """KOD-1249: a criterion is compared on identity, Check, state, labels, parent.
+
+    A criterion given a new title, assignee or relation while the writer works
+    (a mention elsewhere on the board adds a relation) still publishes. The
+    same criterion given a new Check, state or label, moved under another
+    parent or out of the subtree, refuses before the harness commits.
+    """
+    arm = Arm()
+    guard = await arm.guard()
+
+    def edit(_opened):
+        issue = arm.port.issues[DIRECT_OWED]
+        arm.port.issues[DIRECT_OWED] = issue.model_copy(
+            update={**change, "updated_at": issue.updated_at + timedelta(minutes=1)}
+        )
+
+    arm.executor.on_execution = edit
+    if refused:
+        with pytest.raises(NativeWriteRefusalError):
+            await arm.iterate(guard, after_publish=RecordingAfterPublish())
+        assert arm.persister.calls == []
+        assert arm.repo.shas == []
+    else:
+        events = await arm.iterate(guard, after_publish=RecordingAfterPublish())
+        assert commit_shas(events) == [arm.repo.head]

@@ -105,6 +105,7 @@ from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.job import JobState
 from kodezart.types.domain.lane_entry import LaneEntry
 from kodezart.types.domain.outcome import WorkflowOutcome
+from kodezart.types.domain.tracker import TrackerIssue
 from kodezart.types.domain.trajectory import IterationRecord, LoopTrajectory
 from kodezart.types.domain.workflow import WorkflowState
 from kodezart.utils.sse import format_sse
@@ -823,6 +824,16 @@ class HeldCriteria:
 
     async def read_current(
         self, *, spec: TrackerSpec, held: TrackerCriterionSet | None = None
+    ) -> TrackerCriterionSet:
+        self.asked.append(spec)
+        return self.roster
+
+    async def owed_from(
+        self,
+        *,
+        spec: TrackerSpec,
+        criteria: Mapping[str, TrackerIssue],
+        held: TrackerCriterionSet,
     ) -> TrackerCriterionSet:
         self.asked.append(spec)
         return self.roster

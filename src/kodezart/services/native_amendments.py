@@ -29,13 +29,12 @@ from kodezart.domain.amendment import (
 from kodezart.domain.comment_markers import configured_marker_prefix
 from kodezart.domain.criterion_amendment import require_criterion_source
 from kodezart.domain.errors import (
-    CriterionReadError,
     DuplicateCommentMarkerError,
     RulingRecordReadError,
     ScopeReadError,
     WriteBackReadError,
 )
-from kodezart.domain.fire_spec import criterion_check
+from kodezart.domain.fire_spec import criterion_check, criterion_field_bodies
 from kodezart.domain.git_url import resolve_repo_url
 from kodezart.domain.rulings import (
     designated_tests,
@@ -53,7 +52,7 @@ from kodezart.services.owned_workspace import owned_workspace
 from kodezart.services.ruling_records import RulingRecordReader
 from kodezart.services.scope_membership import (
     read_scope_members,
-    read_subtree_criteria,
+    subtree_criteria,
 )
 from kodezart.services.tracker_artifacts import read_tracker_artifact
 from kodezart.services.weakened_assertions import WeakenedAssertionMarks
@@ -78,7 +77,6 @@ from kodezart.types.domain.operation import (
     OperationMemberAbsentError,
     RepoEntry,
 )
-from kodezart.types.domain.persist import PersistResult
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.session import SessionType
@@ -93,6 +91,35 @@ from kodezart.types.domain.tracker import (
 # The single branch-writing SDK stage is reused by implementation and both
 # remediation entries. Assembly consumes this registration before exposing it.
 NATIVE_WRITING_STAGES: Final = frozenset({PromptKey.IMPLEMENTATION})
+
+#: One reading of a lane's authority: its criterion sub-issues in key order,
+#: the Checks its writer owes, and its pinned ruling records.
+type _Authority = tuple[
+    tuple[TrackerIssue, ...],
+    TrackerCriterionSet,
+    tuple[tuple[TrackerComment, Ruling], ...],
+]
+
+
+def _criterion_facts(
+    issue: TrackerIssue,
+) -> tuple[str, tuple[str, ...], WorkflowStateKind, frozenset[str], str | None]:
+    """The facts of one criterion sub-issue a native write depends on.
+
+    Its identity, its Check, its state kind, its labels and its parent, and
+    nothing else about the issue. Its title, priority, assignee, relations,
+    timestamps and its other rows move with work this writer is not
+    answerable for: a mention of a criterion elsewhere on the board gives it
+    a new relation, and a whole-issue comparison refused a live lane over
+    exactly that (KOD-1241, KOD-1249).
+    """
+    return (
+        issue.issue_key,
+        criterion_field_bodies(issue.body, field="Check"),
+        issue.state_kind,
+        issue.issue_labels,
+        issue.parent_key,
+    )
 
 
 class NativeAmendments:
@@ -190,15 +217,17 @@ class NativeAmendments:
         )
 
     async def _read_authority(
-        self, spec: TrackerSpec
-    ) -> tuple[tuple[TrackerIssue, ...], tuple[tuple[TrackerComment, Ruling], ...]]:
+        self, spec: TrackerSpec, held: TrackerCriterionSet
+    ) -> _Authority:
+        """One reading of the lane's authority: criteria, owed Checks, rulings.
+
+        The subtree is read once. The registry is read over every member,
+        the criteria and the issues around them alike, and the criteria and
+        the Checks this writer owes against *held* are both taken from that
+        same map, so no second reading of the subtree exists for the three
+        answers to disagree with (KOD-1249).
+        """
         try:
-            criteria = await read_subtree_criteria(
-                tracker=self._tracker, subject=spec.subject
-            )
-            # The registry is read over every member, the criteria and the
-            # issues around them alike; the criteria come from the one
-            # subtree reading and nowhere else.
             members = await read_scope_members(
                 tracker=self._tracker,
                 scope=ScopeRef(kind=ScopeKind.ISSUE, key=spec.subject),
@@ -214,6 +243,7 @@ class NativeAmendments:
             raise NativeWriteRefusalError(
                 "Current ruling membership could not be read"
             ) from exc
+        criteria = subtree_criteria(members)
         criterion_issues = tuple(
             sorted(criteria.values(), key=lambda issue: issue.issue_key)
         )
@@ -245,8 +275,11 @@ class NativeAmendments:
             raise NativeWriteRefusalError(
                 "The pinned roster designates one protected test twice"
             )
-        return criterion_issues, tuple(
-            sorted(rulings, key=lambda row: row[1].ruling_id)
+        owed = await self._criteria.owed_from(spec=spec, criteria=criteria, held=held)
+        return (
+            criterion_issues,
+            owed,
+            tuple(sorted(rulings, key=lambda row: row[1].ruling_id)),
         )
 
 
@@ -292,15 +325,19 @@ class _NativeWriterGuard:
             cwd=workspace_path,
             ref=self._base_ref,
         )
-        self._criterion_issues, self._ruling_records = await owner._read_authority(
-            self._spec
-        )
+        authority = await owner._read_authority(self._spec, self._criteria)
+        self._criterion_issues, _, self._ruling_records = authority
         self._rulings = tuple(ruling for _, ruling in self._ruling_records)
         instructions = owner._prompts.template_for(
             PromptKey.NATIVE_WRITER_CONTRACT,
         ).render({"pinned_rulings": pinned_registry(self._rulings)})
         start = NativeWriterStart(head_sha=head, instructions=instructions)
-        await self.require_current(workspace_path=workspace_path, start=start)
+        # The reading the writer starts on is also its first comparison: the
+        # roster the loop hands over must be what the board owes now.
+        self._require_unchanged_authority(authority)
+        await self._require_unchanged_sources(
+            workspace_path=workspace_path, expected_head_sha=head
+        )
         return start
 
     def snapshot(self) -> NativeAuthoritySnapshot:
@@ -323,15 +360,13 @@ class _NativeWriterGuard:
             holder=self._holder,
         )
 
-    async def restore(
-        self,
-        *,
-        snapshot: NativeAuthoritySnapshot,
-        workspace_path: str,
-        start: NativeWriterStart,
-        receipt: PersistResult | None = None,
-    ) -> None:
-        """Restore original authority and refuse unrelated current source changes."""
+    def restore(self, *, snapshot: NativeAuthoritySnapshot) -> None:
+        """Take the authority a saved phase carries; reads nothing (KOD-1249).
+
+        A parent resuming a saved phase hands it to a new guard, which holds
+        no authority until this. The sources are read at :meth:`begin` and
+        before the harness commits and publishes, not here.
+        """
         if (
             snapshot.spec != self._spec
             or snapshot.base_ref != self._base_ref
@@ -346,14 +381,6 @@ class _NativeWriterGuard:
         self._rulings = tuple(ruling for _, ruling in snapshot.ruling_records)
         self._archives = snapshot.archives
         self._base_sha = snapshot.base_sha
-        if receipt is None:
-            await self.require_current(workspace_path=workspace_path, start=start)
-        else:
-            await self.require_publishable(
-                workspace_path=workspace_path,
-                start=start,
-                authorized_commit_sha=receipt.commit_sha,
-            )
 
     async def require_current(
         self,
@@ -392,37 +419,43 @@ class _NativeWriterGuard:
         workspace_path: str,
         expected_head_sha: str,
     ) -> None:
-        owner = self._owner
         await self._require_head(workspace_path, expected_head_sha)
         if self._rulings is None or self._base_sha is None:
             raise NativeWriteRefusalError("The native writer was not initialized")
-        current_issues, current_records = await owner._read_authority(self._spec)
+        self._require_unchanged_authority(
+            await self._owner._read_authority(self._spec, self._criteria)
+        )
+        await self._require_unchanged_sources(
+            workspace_path=workspace_path, expected_head_sha=expected_head_sha
+        )
+
+    def _require_unchanged_authority(self, current: _Authority) -> None:
+        """Refuse a reading of the lane's authority that differs from the held one.
+
+        Criterion sub-issues are compared on the facts a write depends on
+        (:func:`_criterion_facts`), never whole.
+        """
+        current_issues, owed, current_records = current
         if current_records != self._ruling_records:
             raise NativeWriteRefusalError(
                 "Pinned rulings changed during native writing"
             )
-        if self._criterion_issues is None or len(current_issues) != len(
-            self._criterion_issues
-        ):
+        if self._criterion_issues is None or [
+            _criterion_facts(issue) for issue in current_issues
+        ] != [_criterion_facts(issue) for issue in self._criterion_issues]:
             raise NativeWriteRefusalError(
-                "Native criterion facts changed during writing"
+                "Current Checks or native criterion facts changed during writing"
             )
-        for expected, current_issue in zip(
-            self._criterion_issues, current_issues, strict=True
-        ):
-            try:
-                require_criterion_source(expected=expected, current=current_issue)
-            except CriterionReadError as exc:
-                raise NativeWriteRefusalError(
-                    "Current Checks or native criterion facts changed during writing"
-                ) from exc
-        current = await owner._criteria.read_current(
-            spec=self._spec, held=self._criteria
-        )
-        if current != self._criteria:
+        if owed != self._criteria:
             raise NativeWriteRefusalError(
                 "Current Checks changed during native writing"
             )
+
+    async def _require_unchanged_sources(
+        self, *, workspace_path: str, expected_head_sha: str
+    ) -> None:
+        """Refuse a changed verified archive, replacement refs, a moved base or HEAD."""
+        owner = self._owner
         for expected_archive in self._archives:
             try:
                 current_archive = await read_tracker_artifact(
@@ -590,7 +623,6 @@ class _NativeWriterGuard:
         start: NativeWriterStart,
         output: NativeWriterOutput,
     ) -> AmendmentReport:
-        await self.require_current(workspace_path=workspace_path, start=start)
         if self._rulings is None:
             raise NativeWriteRefusalError("The ruling registry has not been read")
         criterion_ids = {item.issue_key for item in self._criterion_issues or ()}
@@ -603,6 +635,11 @@ class _NativeWriterGuard:
             )
             if claim.subject.id not in roster:
                 raise NativeWriteRefusalError("A claim names no current native subject")
+        if not output.claims:
+            # No departure to judge, so no source is read here: the persistence
+            # step reads the lane's authority before the harness commits
+            # (KOD-1249). A claim is judged under the graph's own rechecks.
+            return AmendmentReport(verdicts=())
         return await NativeAmendmentGraph(
             actions=_WriterActions(
                 guard=self, workspace_path=workspace_path, start=start

@@ -46,12 +46,24 @@ async def read_subtree_criteria(
     for one subject, and the barrier that compares their selections would
     refuse a lane nothing is wrong with.
     """
-    subtree = await read_scope_members(
-        tracker=tracker, scope=ScopeRef(kind=ScopeKind.ISSUE, key=subject)
+    return subtree_criteria(
+        await read_scope_members(
+            tracker=tracker, scope=ScopeRef(kind=ScopeKind.ISSUE, key=subject)
+        )
     )
+
+
+def subtree_criteria(members: Mapping[str, TrackerIssue]) -> dict[str, TrackerIssue]:
+    """Every criterion sub-issue of one subtree reading already taken, keyed.
+
+    The filter :func:`read_subtree_criteria` applies, stated once, so a
+    reader that needs the whole membership too (the native writer's
+    authority read) takes its criteria from that same map instead of
+    reading the subtree a second time (KOD-1249).
+    """
     return {
         key: issue
-        for key, issue in subtree.items()
+        for key, issue in members.items()
         if "criterion" in issue.issue_labels
     }
 

@@ -42,7 +42,10 @@ from kodezart.services.criterion_sources import NativeCriterionResolver
 from kodezart.services.fire_time_rulings import FireTimeRulings
 from kodezart.services.native_amendments import NativeAmendments
 from kodezart.services.ruling_records import RulingRecordReader
-from kodezart.services.scope_membership import read_subtree_criteria
+from kodezart.services.scope_membership import (
+    read_subtree_criteria,
+    subtree_criteria,
+)
 from kodezart.types.domain.agent import (
     Ruling,
     RulingAnswer,
@@ -2004,21 +2007,22 @@ UNSEEN_SHAPES = (
 )
 
 #: The readers the one reading is taken by, and the only ones: the entry's
-#: capture, the barrier's reading against the captured spec, the set an
-#: answer may address at the write, and the native writer's authority read.
+#: capture, the barrier's reading against the captured spec and the set an
+#: answer may address at the write.
 NAMED_READERS: tuple[Callable[..., object], ...] = (
     TrackerCriteria._capture,
     TrackerCriteria._read_subtree_criteria,
     FireTimeRulings._resolvable,
-    NativeAmendments._read_authority,
 )
 
-#: The one other membership reading on the surface, by module, exactly: the
-#: native writer reads its pinned registry over every member of the subtree,
-#: the issues around the criteria included, and selects no criterion from it.
-REGISTRY_MEMBERSHIP: dict[str, list[str]] = {
-    NativeAmendments.__module__: ["read_scope_members"],
-}
+#: The native writer's authority read, the one reader that holds the whole
+#: membership anyway: it reads the subtree once, for its pinned registry over
+#: every member, and takes its criteria from that same map through the one
+#: reading's own filter, so the extent is still defined once and is now read
+#: once (KOD-887, KOD-1249). Its module's membership sites, exactly: that one
+#: reading and that one filter, and no label filter of its own.
+AUTHORITY_READER = NativeAmendments._read_authority
+AUTHORITY_MEMBERSHIP = ["read_scope_members", subtree_criteria.__name__]
 
 
 def qualified(function: Callable[..., object]) -> str:
@@ -2026,25 +2030,27 @@ def qualified(function: Callable[..., object]) -> str:
     return f"{function.__module__}.{function.__qualname__}"
 
 
-def subtree_readers(module_name: str, source: str) -> set[str]:
-    """Every function of the module whose body calls the one reading.
+def subtree_readers(
+    module_name: str, source: str, *, reading: Callable[..., object]
+) -> set[str]:
+    """Every function of the module whose body calls *reading*.
 
     Resolved by object, in the module's own namespace after import: a called
-    name counts when the module binds it to ``read_subtree_criteria``, under
-    whatever name, or when it is an attribute of a module that does.  A call
-    inside a nested function counts for the function it is nested in.
+    name counts when the module binds it to *reading*, under whatever name,
+    or when it is an attribute of a module that does.  A call inside a nested
+    function counts for the function it is nested in.
     """
     namespace = vars(importlib.import_module(module_name))
 
     def reads(call: ast.Call) -> bool:
         func = call.func
         if isinstance(func, ast.Name):
-            return namespace.get(func.id) is read_subtree_criteria
+            return namespace.get(func.id) is reading
         if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name):
             owner = namespace.get(func.value.id)
             return (
                 isinstance(owner, ModuleType)
-                and getattr(owner, func.attr, None) is read_subtree_criteria
+                and getattr(owner, func.attr, None) is reading
             )
         return False
 
@@ -2068,11 +2074,13 @@ def test_the_question_step_and_the_fire_entry_read_one_subtree_function() -> Non
 
     What the pass is shown is composed at the entry, and what an answer may
     address is read at the write; both are the subtree only while both are
-    read through the same function, and so is the native writer's authority
-    read.  The surface is exactly the named readers' modules, the functions
-    that call the one reading are exactly the named readers, and no module on
-    the surface reads membership any other way, save the native writer's one
-    registry reading, which selects no criterion.
+    read through the same function.  The surface is exactly the named
+    readers' modules, the functions that call the one reading are exactly the
+    named readers, and no module on the surface reads membership any other
+    way.  The native writer's authority read holds the whole membership for
+    its registry, so it takes its criteria through the one reading's own
+    filter over that same map; its module is pinned to exactly that reading
+    and that filter, and the filter is called by that read alone.
 
     Outside this guard's reach: a value handed across a function boundary,
     where the other function is not resolved at this site (returned from a
@@ -2121,12 +2129,22 @@ def test_the_question_step_and_the_fire_entry_read_one_subtree_function() -> Non
     readers = {
         reader
         for module, source in surface.items()
-        for reader in subtree_readers(module, source)
+        for reader in subtree_readers(module, source, reading=read_subtree_criteria)
     }
     assert readers == {qualified(reader) for reader in NAMED_READERS}
 
     for module, source in surface.items():
         assert SUBTREE_READING in called_names(ast.parse(source)), module
-        assert subtree_reading_sites(
-            source, forbidden=forbidden
-        ) == REGISTRY_MEMBERSHIP.get(module, []), module
+        assert subtree_reading_sites(source, forbidden=forbidden) == [], module
+
+    # The native writer's authority read calls neither the one reading nor
+    # the addressable set, so it is off the surface and pinned here instead.
+    writer = AUTHORITY_READER.__module__
+    writer_source = inspect.getsource(importlib.import_module(writer))
+    assert writer not in surface
+    assert subtree_readers(writer, writer_source, reading=subtree_criteria) == {
+        qualified(AUTHORITY_READER)
+    }
+    assert subtree_reading_sites(writer_source, forbidden=forbidden) == (
+        AUTHORITY_MEMBERSHIP
+    )

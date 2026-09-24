@@ -274,6 +274,24 @@ class TrackerCriteria:
             ) from exc
         return await self._owed(spec, criteria, keys)
 
+    async def owed_from(
+        self,
+        *,
+        spec: TrackerSpec,
+        criteria: Mapping[str, TrackerIssue],
+        held: TrackerCriterionSet,
+    ) -> TrackerCriterionSet:
+        """What :meth:`read_current` answers, from a reading already taken.
+
+        *criteria* is every criterion sub-issue of one reading of the spec's
+        subtree. The native writer reads the lane's whole membership for its
+        rulings registry anyway, so its owed Checks come out of that same map
+        instead of a second reading of the subtree (KOD-1249).
+        """
+        return await self._owed(
+            spec, criteria, frozenset(criterion.id for criterion in held.criteria)
+        )
+
     def _finished(
         self, spec: TrackerSpec, criteria: Mapping[str, TrackerIssue]
     ) -> TrackerCriterionSet:
