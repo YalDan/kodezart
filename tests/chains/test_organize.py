@@ -3863,18 +3863,53 @@ DONE_SIBLING = "done-sibling"
 DONE_SIBLING_CHECK = "done-sibling-check"
 
 
-async def test_a_round_whose_own_write_empties_the_roster_still_spends_its_dry_round(
+def moved_out_by_another_actor(board, session):
+    """Re-parent the leaving member out of the scope, as a person would.
+
+    A run-stage author's graph proposal is refused and reported, never
+    applied (KOD-561), so a run-stage round cannot empty its own roster.
+    Called on every session of a ticket-row case: when *session* judges the
+    leaving member's landed body, the member is re-parented on the board
+    itself, not through the owner. That is after the round's own write and
+    before the round's re-read of the scope once that write holds, so the
+    round sees the member gone. Returns whether this session made the edit.
+    """
+    import json
+    import re
+
+    if session["output_format"]["schema"].get("title") != "WriteBackFinding":
+        return False
+    written = re.search(
+        r"<written_artifact>\s*(.*?)\s*</written_artifact>", session["prompt"], re.S
+    )
+    surface = json.loads(written[1])["surface"]
+    member = board.server.issues[LEAVING_MEMBER]
+    if (
+        surface["kind"] != "issue_description"
+        or surface["ref"]["key"] != LEAVING_MEMBER
+        or member.parent_id is None
+    ):
+        return False
+    member.parent_id = None
+    return True
+
+
+async def test_a_roster_emptied_by_another_actors_edit_still_spends_its_dry_round(
     monkeypatch,
 ):
-    """A finding left live when the pass's own write empties the roster halts.
+    """A finding left live when another actor's edit empties the roster halts.
 
-    The ticket stage's only unlabelled member is authored in round one, and
-    its proposal clears its parent, so it leaves the scope. The labelled
-    sibling's criterion child is named with a class once that member has
-    gone. Round two then has no subject, because a child's finding keeps no
-    subject of its own, yet the finding is live: the round still verifies,
-    the finding survives, and the pass halts at the convergence bound naming
-    it instead of completing the stage.
+    A run-stage author's graph proposal is refused and reported (KOD-561),
+    so on a run-stage row the roster can only empty through an edit made
+    outside the round. The ticket stage's only unlabelled member is authored
+    in round one with a body; while that write is judged, another actor
+    re-parents the member out of the scope, and the round's re-read after
+    the write sees it gone. The labelled sibling's criterion child is named
+    with a class once that member has gone. Round two then has no subject,
+    because a child's finding keeps no subject of its own, yet the finding
+    is live: the round still verifies, the finding survives, and the pass
+    halts at the convergence bound naming it instead of completing the
+    stage.
     """
     import re
 
@@ -3904,18 +3939,21 @@ async def test_a_round_whose_own_write_empties_the_roster_still_spends_its_dry_r
         labels=["check"],
     )
     named = []
+    moved = []
     original = executor.stream
 
     async def scripted(**kwargs):
         title = kwargs["output_format"]["schema"].get("title")
         keys = re.findall(r"<issue_key>(.*?)</issue_key>", kwargs["prompt"])
+        if moved_out_by_another_actor(board, kwargs):
+            moved.append(LEAVING_MEMBER)
         async for event in original(**kwargs):
             if title == "OrganizeProposal" and keys[-1:] == [LEAVING_MEMBER]:
                 event = result(
                     structured_output={
-                        "kind": "graph",
+                        "kind": "body",
                         "issue_id": LEAVING_MEMBER,
-                        "changes": [{"kind": "parent", "parent_id": None}],
+                        "body": h.PREPARED_BODY,
                     }
                 )
             elif (
@@ -3943,6 +3981,13 @@ async def test_a_round_whose_own_write_empties_the_roster_still_spends_its_dry_r
     monkeypatch.setattr(executor, "stream", scripted)
     report = await h.run_owner(owner)
     assert board.server.issues[LEAVING_MEMBER].parent_id is None
+    assert moved == [LEAVING_MEMBER]
+    assert board.server.issues[LEAVING_MEMBER].description == h.PREPARED_BODY
+    assert [
+        args
+        for name, args in board.calls
+        if name == "save_issue" and "parentId" in args
+    ] == []
     assert named == [DONE_SIBLING_CHECK] * 2
     halt = report.halt
     assert halt is not None
@@ -3958,12 +4003,16 @@ async def test_a_round_whose_own_write_empties_the_roster_still_spends_its_dry_r
 def leaving_member_scope(monkeypatch, *, groom, answer):
     """The board of the round-emptying case, on either row.
 
-    The root and the labelled sibling carry the row's marker, the leaving
-    member carries none, and the leaving member's proposal clears its
-    parent. Once that member has no parent, every verification of the
-    sibling's criterion child is answered by ``answer(payload)``, where
-    *payload* is the harness's own answer. Returns the owner, the board and
-    the key of every verification so answered.
+    The root and the labelled sibling carry the row's marker and the leaving
+    member carries none. On the pre-approval row the leaving member's
+    proposal clears its parent, a structural change that row may make. On
+    the ticket row its proposal is a body, since a run-stage author's graph
+    proposal is refused and reported (KOD-561), and another actor
+    re-parents it out of the scope while that write is judged. Once that
+    member has no parent, every verification of the sibling's criterion
+    child is answered by ``answer(payload)``, where *payload* is the
+    harness's own answer. Returns the owner, the board and the key of every
+    verification so answered.
     """
     import re
 
@@ -3999,19 +4048,24 @@ def leaving_member_scope(monkeypatch, *, groom, answer):
     )
     answered = []
     original = executor.stream
+    proposal = (
+        {
+            "kind": "graph",
+            "issue_id": LEAVING_MEMBER,
+            "changes": [{"kind": "parent", "parent_id": None}],
+        }
+        if groom
+        else {"kind": "body", "issue_id": LEAVING_MEMBER, "body": h.PREPARED_BODY}
+    )
 
     async def scripted(**kwargs):
         title = kwargs["output_format"]["schema"].get("title")
         keys = re.findall(r"<issue_key>(.*?)</issue_key>", kwargs["prompt"])
+        if not groom:
+            moved_out_by_another_actor(board, kwargs)
         async for event in original(**kwargs):
             if title == "OrganizeProposal" and keys[-1:] == [LEAVING_MEMBER]:
-                event = result(
-                    structured_output={
-                        "kind": "graph",
-                        "issue_id": LEAVING_MEMBER,
-                        "changes": [{"kind": "parent", "parent_id": None}],
-                    }
-                )
+                event = result(structured_output=proposal)
             elif (
                 title == "AdmissionJudgment"
                 and keys[-1:] == [DONE_SIBLING_CHECK]
@@ -4083,11 +4137,15 @@ async def test_a_refusal_with_no_finding_after_the_roster_empties_still_halts(
 ):
     """A dry round that fails on a refusal alone is not followed by a completion.
 
-    The ticket stage's round one clears the leaving member's parent. Its dry
-    round then refuses the sibling's criterion child and names no finding,
-    so round two has no subject and no live finding, yet the dry round
-    before it did not hold. Round two verifies again, the refusal stands,
-    and the pass halts at the convergence bound carrying it.
+    A run-stage author's graph proposal is refused and reported (KOD-561),
+    so on a run-stage row the roster can only empty through an edit made
+    outside the round. The ticket stage's round one writes the leaving
+    member's body, and another actor re-parents that member out of the
+    scope while the write is judged. The round's dry round then refuses the
+    sibling's criterion child and names no finding, so round two has no
+    subject and no live finding, yet the dry round before it did not hold.
+    Round two verifies again, the refusal stands, and the pass halts at the
+    convergence bound carrying it.
     """
     h = owner_harness()
     owner, board, answered = leaving_member_scope(
@@ -4095,6 +4153,12 @@ async def test_a_refusal_with_no_finding_after_the_roster_empties_still_halts(
     )
     report = await h.run_owner(owner)
     assert board.server.issues[LEAVING_MEMBER].parent_id is None
+    assert board.server.issues[LEAVING_MEMBER].description == h.PREPARED_BODY
+    assert [
+        args
+        for name, args in board.calls
+        if name == "save_issue" and "parentId" in args
+    ] == []
     assert answered == [DONE_SIBLING_CHECK] * 2
     halt = report.halt
     assert halt is not None
