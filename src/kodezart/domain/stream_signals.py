@@ -214,7 +214,7 @@ def lapse_undischarged(
     rederived = read_alarm_value(presence_reading, PresenceEvidence, signal)
     if (
         _account(projections) is not RunEventKind.CRITERION_LAPSED
-        or not open_state_kind(state, supersession_ref=None)
+        or not open_state_kind(state)
         or rederived
     ):
         return None

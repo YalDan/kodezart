@@ -231,6 +231,22 @@ def test_the_identical_lapse_on_a_ready_lane_raises_nothing(kind):
     assert undischarged(clean, on=on) is None
 
 
+@pytest.mark.parametrize(
+    "kind", [WorkflowStateKind.CANCELED, WorkflowStateKind.DUPLICATE]
+)
+def test_a_lapse_on_a_canceled_or_duplicate_criterion_owes_nothing(kind):
+    """Excluded on its state alone, as the gap reads it: nobody owes a grading.
+
+    The lane said the grading lapsed and nothing will re-derive it, which on
+    an open criterion is the alarm above. A Canceled or Duplicate criterion
+    counts for nothing in the gap, so the lapse on it is owed by nobody.
+    """
+    on = LAPSE_PAIR[0]
+    readings = (state(kind), account(CROSSED_OFF, LAPSED), rederived(False))
+
+    assert undischarged(readings, on=on) is None
+
+
 def test_a_lapse_the_next_grading_closed_again_owes_nothing():
     readings = (
         state(WorkflowStateKind.COMPLETED),
