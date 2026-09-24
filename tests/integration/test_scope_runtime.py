@@ -5284,7 +5284,7 @@ async def test_a_killed_scope_run_re_enters_from_the_tracker_alone(monkeypatch):
     criterion crossed off and its second still owed. Nothing of that process
     survives but what it wrote down: the board, the repositories and the
     origin. Run two is built fresh over those three, and from them alone it
-    reads what is left to do — A is not worked again, C resumes on the branch
+    reads what is left to do — A is not worked again, C resumes at the head
     its record names and is graded only against the criterion it still owes,
     and B, whose blocker closed in the run before, is fired against the
     deliverable branch A's record names. No graph state was persisted by either
@@ -5292,8 +5292,11 @@ async def test_a_killed_scope_run_re_enters_from_the_tracker_alone(monkeypatch):
 
     Between the two runs C's loop branch moves one commit past the sha its
     record names, as a commit left on the branch after the run would move it,
-    and run two still re-enters C on that branch with nothing reported at
-    warning or above. On the tracker-native arm a branch whose artifact
+    and run two re-enters C at the sha its record names, never at the moved
+    tip (KOD-705): it cuts a fresh loop branch from that sha, keeps the old
+    loop association beside the new one, leaves the old branch where it
+    stands, and says so at info, with nothing reported at warning or above.
+    On the tracker-native arm a branch whose artifact
     directory was cleaned and a branch the directory was never written to
     are the same state: nothing on this arm writes the directory, as the
     native fire graph's node set holds no ticket or criteria generation node
@@ -5477,23 +5480,35 @@ async def test_a_killed_scope_run_re_enters_from_the_tracker_alone(monkeypatch):
         ]
         assert [create["head"] for create in wire.creates].count(finished) == 1
 
-        # C resumes: the recorded loop branch checked out and not cut, the
-        # criterion its last fire closed absent from the roster, and one record
-        # on the same branch naming both processes. The loop's tree is the
-        # first acquisition that NAMES a branch, since the question step opens
-        # a detached one of its own before it.
+        # C resumes at the sha its record names, never at the moved remote tip
+        # (KOD-705): the loop branch stands elsewhere, so a fresh loop branch
+        # is cut from that sha and the old one is left where it stands. The
+        # criterion its last fire closed is absent from the roster, and one
+        # record names both processes, the old loop branch beside the new one.
+        # The loop's tree is the first acquisition that NAMES a branch, since
+        # the question step opens a detached one of its own before it.
         opened = opened_branch(second.workspace.acquisitions)
-        assert opened["branch_name"] == opened["ref"] == killed.branch
-        assert opened["create_branch"] is False
+        assert opened["ref"] == killed.head_sha != moved
+        assert opened["create_branch"] is True
+        assert opened["branch_name"] != killed.branch
         assert "C/second live Check  bytes" in second.executor.execution_prompts[0]
         assert "C live Check  bytes" not in second.executor.execution_prompts[0]
         assert "Exact native subject C" in second.executor.execution_prompts[0]
         resumed = await lane_record(port, "C")
-        assert resumed.branch == killed.branch
+        assert resumed.branch == opened["branch_name"]
         assert {item.run_id for item in resumed.associations} == {
             "first-job",
             "second-job",
         }
+        loops = {
+            (item.branch, item.run_id)
+            for item in resumed.associations
+            if item.role is BranchRole.LOOP
+        }
+        assert (killed.branch, "first-job") in loops
+        assert (resumed.branch, "second-job") in loops
+        # The old loop branch did not move: nothing rewound or deleted it.
+        assert repos.head_of(killed.branch) == moved
 
         # B is fired on the strength of a closed blocker and nothing else: this
         # test edits no issue between the runs, so what unlocked B is A's own
