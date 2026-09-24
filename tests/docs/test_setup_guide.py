@@ -409,9 +409,9 @@ def test_each_half_of_the_host_mcp_measurement_names_the_state_it_measured() -> 
     "with it on" meant the flag in the other, so the two halves read as one
     state described twice, and against each other. Each half now names the
     flag's state and the guard's, and says what a session is given: the
-    knowledge server alone and no tracker tools, or the host's own servers and
-    a cloned repository's. The shipped default it claims is read off the
-    settings model.
+    servers this process describes and nothing of the host's, or the host's
+    own servers and a cloned repository's. The shipped default it claims is
+    read off the settings model.
     """
     assert HOST_MCP_VARIABLE in shipped_config_variables()
     assert AgentSettings.model_fields["dangerously_allow_host_mcp"].default is False
@@ -428,8 +428,9 @@ def test_each_half_of_the_host_mcp_measurement_names_the_state_it_measured() -> 
     ]
     assert len(off) == 1, sentences
     assert len(on) == 1, sentences
-    assert "only the knowledge server" in off[0]
-    assert "no tracker tools" in off[0]
+    assert "only what this process describes" in off[0]
+    assert "deployment's own tracker server" in off[0]
+    assert "nothing of the host's" in off[0]
     assert "user-level Claude configuration" in on[0]
     assert "`.mcp.json`" in on[0]
     unnamed = [s for s in sentences if re.search(r"\bwith it (?:on|off)\b", s, re.I)]

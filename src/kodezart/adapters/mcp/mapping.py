@@ -27,6 +27,7 @@ the RESULT of the first rather than re-testing membership, so the two can
 never be answered differently for one session.
 """
 
+from dataclasses import dataclass
 from typing import TypedDict
 
 from claude_agent_sdk.types import (
@@ -56,6 +57,23 @@ class McpSessionOptions(TypedDict):
 
     mcp_servers: dict[str, McpServerConfig]
     strict_mcp_config: bool
+
+
+@dataclass(frozen=True)
+class TrackerSessionServer:
+    """The deployment's own tracker server, as a scheduled-pass session is given it.
+
+    Built once at the composition root from the same settings and credential
+    the tracker client dials (KOD-846 clause 5), and attached to the sessions
+    the grooming and fire-prep passes open, so a pass reads and writes the
+    board under this deployment's key and budget rather than a login the host
+    happens to hold.  No other session kind receives it: a fire works a
+    repository, a query is the caller's, and the organize session reaches the
+    tracker through the host opt-in by its own decision (KOD-1239).
+    """
+
+    server_name: str
+    definition: McpServerConfig
 
 
 def _described_servers(
@@ -98,6 +116,7 @@ def map_knowledge_mcp(
     session_type: SessionType,
     *,
     dangerously_allow_host_mcp: bool = False,
+    tracker: TrackerSessionServer | None = None,
 ) -> McpSessionOptions:
     """Session options for *session_type* under *grant*.
 
@@ -105,7 +124,9 @@ def map_knowledge_mcp(
     added later fails to type-check rather than reaching the SDK default
     and running its working directory unguarded.  The guard is on unless
     *dangerously_allow_host_mcp* — the operator's opt-in, never a
-    per-session choice — switches it off for every kind alike.
+    per-session choice — switches it off for every kind alike.  *tracker*,
+    the deployment's own tracker server, is described to the scheduled pass
+    alone, beside whatever the grant describes.
     """
     match session_type:
         case (
@@ -116,8 +137,11 @@ def map_knowledge_mcp(
             | SessionType.SCHEDULED_PASS
             | SessionType.ORGANIZE_PASS
         ):
+            servers = _described_servers(grant, session_type)
+            if tracker is not None and session_type is SessionType.SCHEDULED_PASS:
+                servers = {**servers, tracker.server_name: tracker.definition}
             return McpSessionOptions(
-                mcp_servers=_described_servers(grant, session_type),
+                mcp_servers=servers,
                 strict_mcp_config=not dangerously_allow_host_mcp,
             )
 
@@ -133,16 +157,17 @@ def prompt_with_knowledge_map(
     """*prompt* preceded by the what-lives-where map, for a granted session.
 
     The grant decision is not re-taken here.  *attached* is what
-    :func:`map_knowledge_mcp` answered for this session: no described
-    server means the grant does not name it, and its prompt is returned
-    unchanged — byte for byte the string the caller passed.  A session told
-    what lives where is therefore exactly a session configured to reach it.
+    :func:`map_knowledge_mcp` answered for this session: the knowledge
+    server absent from its map means the grant does not name it, and its
+    prompt is returned unchanged — byte for byte the string the caller
+    passed.  A session told what lives where is therefore exactly a session
+    configured to reach it.
 
-    The gate reads the server map rather than the mapping as a whole: the
-    mapping always carries the working-directory guard, so its own
-    truthiness answers a different question than this one.
+    The gate reads the knowledge server's own entry rather than the map's
+    truthiness: a scheduled pass also carries the tracker server, which says
+    nothing about what lives in the knowledge store.
     """
-    if not attached["mcp_servers"]:
+    if grant.server_name not in attached["mcp_servers"]:
         return prompt
     if fire_record is not None and run_identity is not None:
         clause = fire_record.render({"record_title": run_identity.title()})

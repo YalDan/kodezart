@@ -15,6 +15,7 @@ from kodezart.adapters.linear.tracker import (
     is_long_lived_credential,
 )
 from kodezart.adapters.mcp.http_tool_caller import HttpMcpToolCaller
+from kodezart.adapters.mcp.mapping import TrackerSessionServer
 from kodezart.config.tracker import TrackerSettings
 from kodezart.core.backoff import RetryPolicy
 from kodezart.core.errors import (
@@ -49,19 +50,48 @@ AGENT_IDENTITY_FIELD: Final[str] = "agent_identities"
 ATTRIBUTABLE_WRITER: Final[str] = "attributable writer"
 
 
+def tracker_auth_headers(*, settings: TrackerSettings, token: str) -> dict[str, str]:
+    """The credential header the tracker server is dialled with, spelled once."""
+    return {settings.auth_header: f"{settings.auth_scheme} {token}"}
+
+
+def tracker_session_server(*, settings: TrackerSettings) -> TrackerSessionServer | None:
+    """The tracker server a scheduled-pass session is given, or ``None`` without a key.
+
+    The same definition the programmatic client below dials — the URL, the
+    server identity and the deployment's own credential — so the grooming
+    and fire-prep sessions work the board under this deployment's key and
+    budget (KOD-846 clause 5).  No credential, no server: the tracker is
+    unwired and the pass sessions run without it, as boot says.
+    """
+    if settings.token is None:
+        return None
+    return TrackerSessionServer(
+        server_name=settings.server_name,
+        definition={
+            "type": "http",
+            "url": settings.server_url,
+            "headers": tracker_auth_headers(
+                settings=settings, token=settings.token.get_secret_value()
+            ),
+        },
+    )
+
+
 def make_mcp_tool_caller(
     *, settings: TrackerSettings, token: str
 ) -> ManagedMcpToolCaller:
     """The vendor MCP transport this deployment dials.
 
-    One server definition, one consumer: this factory, which builds the
-    programmatic client on the deterministic path.  No session attaches
-    the tracker server.
+    One server definition, two consumers: this factory, which builds the
+    programmatic client on the deterministic path, and
+    :func:`tracker_session_server`, which hands the scheduled-pass sessions
+    the same server under the same credential.
     """
     return HttpMcpToolCaller(
         url=settings.server_url,
         server_name=settings.server_name,
-        headers={settings.auth_header: f"{settings.auth_scheme} {token}"},
+        headers=tracker_auth_headers(settings=settings, token=token),
         timeout_seconds=settings.timeout_seconds,
         call_timeout_seconds=settings.call_timeout_seconds,
         sse_read_timeout_seconds=settings.sse_read_timeout_seconds,

@@ -588,9 +588,10 @@ async def build_prompt_passes(
                 workspace_path=str(working_dir),
                 permission_mode=UNATTENDED_PERMISSION_MODE,
                 # No allowlist: the session reaches the tracker through the
-                # vendor server the host attaches, and a list naming the
-                # in-process tools would read as the whole set a pass may use
-                # while saying nothing about the ones it exists to call.
+                # deployment's own server definition (tracker_session_server),
+                # and a list naming the in-process tools would read as the
+                # whole set a pass may use while saying nothing about the ones
+                # it exists to call.
                 allowed_tools=[],
                 skills=skills,
                 session_type=SessionType.SCHEDULED_PASS,

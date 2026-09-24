@@ -23,6 +23,7 @@ from kodezart.composition.prompts import boot_prompts
 from kodezart.composition.records import build_run_recorder
 from kodezart.composition.tracker import (
     boot_tracker,
+    tracker_session_server,
 )
 from kodezart.composition.workspace import build_git_stack
 from kodezart.composition.write_adoption import verify_write_adoption
@@ -132,6 +133,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             model=config.agent.model,
             setting_sources=config.agent.setting_sources,
             dangerously_allow_host_mcp=config.agent.dangerously_allow_host_mcp,
+            tracker_server=tracker_session_server(settings=config.tracker),
             knowledge_grant=await boot_knowledge_grant(
                 knowledge=config.knowledge,
                 prompts=prompts,

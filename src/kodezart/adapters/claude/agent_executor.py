@@ -23,6 +23,7 @@ from kodezart.adapters.claude.permission_modes import map_permission_mode
 from kodezart.adapters.claude.sdk_mapping import map_message
 from kodezart.adapters.claude.skills_mapping import map_setting_sources, map_skills
 from kodezart.adapters.mcp.mapping import (
+    TrackerSessionServer,
     map_knowledge_mcp,
     prompt_with_knowledge_map,
 )
@@ -62,11 +63,13 @@ class ClaudeAgentExecutor:
         knowledge_grant: KnowledgeGrant,
         fire_record: PromptTemplate | None = None,
         dangerously_allow_host_mcp: bool = False,
+        tracker_server: TrackerSessionServer | None = None,
     ) -> None:
         self._setting_sources = setting_sources
         self._knowledge_grant = knowledge_grant
         self._fire_record = fire_record
         self._dangerously_allow_host_mcp = dangerously_allow_host_mcp
+        self._tracker_server = tracker_server
         self._log: BoundLogger = get_logger(__name__)
 
     async def stream(
@@ -99,6 +102,7 @@ class ClaudeAgentExecutor:
             self._knowledge_grant,
             session_type,
             dangerously_allow_host_mcp=self._dangerously_allow_host_mcp,
+            tracker=self._tracker_server,
         )
         options = ClaudeAgentOptions(
             cwd=cwd,

@@ -828,8 +828,10 @@ not, so configuring them "to be safe" is how a first setup breaks itself.
   Claude configuration declares, reaches it.
   `KODEZART_AGENT__DANGEROUSLY_ALLOW_HOST_MCP=true` switches that guard off for
   every session kind at once. Measured 2026-09-24: with the flag off (the
-  shipped default, the guard on), a session gets only the knowledge server the
-  grant describes for it, and no tracker tools. With the flag on (the guard
+  shipped default, the guard on), a session gets only what this process
+  describes for it: the knowledge server the grant names and, for a scheduled
+  pass, the deployment's own tracker server under `KODEZART_TRACKER__TOKEN`,
+  and nothing of the host's. With the flag on (the guard
   off), a session also gets what the guard kept out: every server your
   user-level Claude configuration declares, the tracker among them under your
   stored Claude login, so its tracker writes carry that login's user rather
@@ -939,8 +941,9 @@ issue below; attaching the tracker to sessions from configuration is planned.
 describes exactly one MCP server to a session, the knowledge server it was
 granted, and starts the session with `strict_mcp_config` so nothing else loads.
 Measured on 2026-09-24 through the query endpoint: a session reports
-`mcp_servers: []` and has no tracker tools, so a scheduled pass or a query that
-must read or write the tracker cannot. Turning strict mode off is not the fix:
+`mcp_servers: []` and has no tracker tools, so a query that must read or write
+the tracker cannot. The scheduled passes are the exception since KOD-846: their
+sessions are described the deployment's own tracker server under its key. Turning strict mode off is not the fix:
 in that mode headless Claude Code also loads the host's user-level servers and
 any `.mcp.json` a cloned repository plants in the working directory, which lets
 a repository start a command on the host. The tracker and the knowledge store

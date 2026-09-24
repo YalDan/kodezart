@@ -133,10 +133,12 @@ kodezart's own passes — the organize tick, the scope runs its heartbeat
 submits, the observation tick and the audit pass — write through the tracker
 dialled with `KODEZART_TRACKER__TOKEN`; the marker prefixes, labels and states
 in the operation config apply to those writes, and boot checks the prefixes.
-The agent sessions those passes open reach the tracker through whichever MCP
-server the Claude host attaches from the operator's own user settings, under
-that credential and its own rate budget. The operation config does not describe
-that path, and the boot check does not cover it.
+The grooming and fire-prep sessions are given the deployment's own tracker
+server — the same URL and key — so what they write carries this deployment's
+key and counts against its budget. The organize session is the exception: it
+reaches the tracker through the host's own MCP servers (the opt-in above),
+under the host's stored login and its own rate budget; the operation config
+does not describe that path, and the boot check does not cover it.
 
 None of the values above has a default, so each one is a choice you make rather
 than a value that appears. The last six are the cadences: the organize tick's,

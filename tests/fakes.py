@@ -23,6 +23,7 @@ from kodezart.adapters.in_repo_prompt_registry import (
     InRepoPromptRegistry,
     default_sets_root,
 )
+from kodezart.adapters.mcp.mapping import TrackerSessionServer
 from kodezart.adapters.record_failures import record_failure_boundary
 from kodezart.composition.records import RECORD_KIND_BY_PASS
 from kodezart.core.errors import (
@@ -398,6 +399,7 @@ def executor_for(
     output_style: str | None = None,
     fire_record: PromptTemplate | None = None,
     dangerously_allow_host_mcp: bool = False,
+    tracker_server: TrackerSessionServer | None = None,
 ):
     """Build the adapter that lives in *module* with configured setting sources."""
     if module.endswith("client_executor"):
@@ -408,12 +410,14 @@ def executor_for(
             fire_record=fire_record,
             output_style=output_style,
             dangerously_allow_host_mcp=dangerously_allow_host_mcp,
+            tracker_server=tracker_server,
         )
     return ClaudeAgentExecutor(
         setting_sources=DEFAULT_SETTING_SOURCES,
         knowledge_grant=grant,
         fire_record=fire_record,
         dangerously_allow_host_mcp=dangerously_allow_host_mcp,
+        tracker_server=tracker_server,
     )
 
 
@@ -500,6 +504,7 @@ async def recorded_session(
     fire_record: PromptTemplate | None = None,
     run_identity: RunIdentity | None = None,
     dangerously_allow_host_mcp: bool = False,
+    tracker_server: TrackerSessionServer | None = None,
 ) -> RecordedSession:
     """Run one session through *module*'s adapter against a recording transport."""
     recorded: list[RecordedSession] = []
@@ -516,6 +521,7 @@ async def recorded_session(
         output_style=output_style,
         fire_record=fire_record,
         dangerously_allow_host_mcp=dangerously_allow_host_mcp,
+        tracker_server=tracker_server,
     )
     events: list[AgentEvent] = []
 

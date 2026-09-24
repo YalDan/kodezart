@@ -456,6 +456,14 @@ is30 seconds (5–120), HTTP stream-read timeout300 (30–3600), and stdio stder
 tail2000 bytes (200–20000). These transport bounds still serve actual record
 clients; they are not SDK tool timeout promises.
 
+A scheduled-pass session — grooming, fire prep, the audit's sessions — is also
+described the deployment's own tracker server: the same URL, server identity
+and `KODEZART_TRACKER__TOKEN` the tracker client dials, so its board reads and
+writes carry this deployment's key and count against its budget (KOD-846).
+Without a credential no server is described. No other session kind receives
+it; the organize session's path is the host opt-in described under
+`KODEZART_AGENT__DANGEROUSLY_ALLOW_HOST_MCP`.
+
 ## The knowledge-server grant
 
 `KODEZART_KNOWLEDGE__SESSION_GRANTS` names, one by one, the kinds of agent
