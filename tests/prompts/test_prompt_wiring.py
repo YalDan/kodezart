@@ -49,7 +49,10 @@ from kodezart.types.domain.prompts import (
 )
 from kodezart.types.domain.ticket_review import TicketReviewMode
 from tests.fakes import as_validated
-from tests.prompt_census import configured_investigation_cap
+from tests.prompt_census import (
+    CONFIGURED_WORKFLOWS_PLUGIN_DIR,
+    configured_investigation_cap,
+)
 
 DEFAULT_SET = "claude-opus"
 #: The configured fan-out cap, read off the field declaration rather than a
@@ -276,6 +279,7 @@ def load_registry(
             if investigation_cap is not None
             else CONFIGURED_INVESTIGATION_CAP
         ),
+        workflows_plugin_dir=CONFIGURED_WORKFLOWS_PLUGIN_DIR,
         ticket_review_mode=ticket_review_mode,
         fallback_model=fallback_model,
         session_models=session_models,

@@ -196,7 +196,7 @@ async def test_the_style_and_the_fan_out_bound_share_one_settings_object() -> No
         output_style=_DECLARED_STYLE,
         session_policy=SessionPolicy(
             workflow_access=WorkflowAccess(
-                workflows_path=".claude/workflows",
+                plugin_path=".claude",
                 size_guideline=6,
                 enabled=True,
             ),

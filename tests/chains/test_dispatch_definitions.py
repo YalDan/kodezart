@@ -44,7 +44,10 @@ from tests.fakes import (
     make_criteria,
     no_delay_floor,
 )
-from tests.prompt_census import configured_investigation_cap
+from tests.prompt_census import (
+    CONFIGURED_WORKFLOWS_PLUGIN_DIR,
+    configured_investigation_cap,
+)
 from tests.prompts.sets import V5_SET
 
 LENS_NAMES = ("doc-verifier", "draft-critic", "explorer")
@@ -65,6 +68,7 @@ def v5_provider(
         template_overrides={},
         bindings={},
         investigation_cap=configured_investigation_cap(),
+        workflows_plugin_dir=CONFIGURED_WORKFLOWS_PLUGIN_DIR,
         ticket_review_mode=mode,
     )
 
@@ -463,5 +467,6 @@ def legacy_provider() -> InRepoPromptRegistry:
         template_overrides={},
         bindings={},
         investigation_cap=configured_investigation_cap(),
+        workflows_plugin_dir=CONFIGURED_WORKFLOWS_PLUGIN_DIR,
         ticket_review_mode=TicketReviewMode.REVIEWED,
     )

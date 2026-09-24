@@ -1,7 +1,10 @@
 """Deployment choices used by agent sessions and their boot preflight."""
 
+from pathlib import Path
+
 from pydantic import BaseModel, ConfigDict, Field
 
+import kodezart
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.skills import SettingSource, SkillsMode, SkillsSelection
 
@@ -26,6 +29,14 @@ class AgentSettings(BaseModel):
     )
     home_dir: str = Field(
         default="~/.claude", description="Host user-scope skills and plugins directory."
+    )
+    workflows_plugin_dir: str = Field(
+        default=str(Path(kodezart.__file__).resolve().parents[2] / ".claude"),
+        description=(
+            "Local Claude Code plugin every session loads, so the named "
+            "workflows in its workflows/ folder can be launched from any "
+            "working directory; the checkout's .claude by default."
+        ),
     )
     setting_sources: list[SettingSource] = Field(
         default_factory=lambda: [

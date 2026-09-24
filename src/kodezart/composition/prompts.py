@@ -4,6 +4,8 @@ Moved verbatim from the composition root, which imports and wires rather
 than defines.
 """
 
+from pathlib import Path
+
 from kodezart.adapters.in_repo_prompt_registry import (
     InRepoPromptRegistry,
     default_sets_root,
@@ -35,6 +37,7 @@ async def boot_prompts(
         template_overrides=config.prompt_template_overrides,
         bindings=bindings_for(operation, dispatch_workflow=config.dispatch_workflow),
         investigation_cap=config.investigation_cap,
+        workflows_plugin_dir=Path(config.agent.workflows_plugin_dir).expanduser(),
         ticket_review_mode=config.ticket_review_mode,
         fallback_model=config.agent.fallback_model,
         session_models={

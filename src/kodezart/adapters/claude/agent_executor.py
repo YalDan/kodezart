@@ -15,6 +15,7 @@ from kodezart.adapters.claude.agents_mapping import (
     map_allowed_tools,
     map_effort,
     map_model,
+    map_plugins,
     map_settings,
     map_system_prompt,
     map_workflow_env,
@@ -118,6 +119,7 @@ class ClaudeAgentExecutor:
             model=map_model(session_policy, None),
             fallback_model=session_policy.fallback_model,
             env=map_workflow_env(session_policy.workflow_access),
+            plugins=map_plugins(session_policy.workflow_access),
             settings=map_settings(session_policy.workflow_access, None),
             **knowledge,
         )

@@ -1,6 +1,9 @@
 """The explicit prompt-role census, independent of the enum under test."""
 
+from pathlib import Path
 from typing import Final
+
+from kodezart.config.agent import AgentSettings
 
 PROMPT_FUNCTION_NAMES: Final[frozenset[str]] = frozenset(
     {
@@ -58,3 +61,10 @@ def configured_investigation_cap() -> int:
     from kodezart.config.app import AppConfig
 
     return int(AppConfig.model_fields["investigation_cap"].default)
+
+
+#: The shipped workflows plugin, read off the field declaration for the same
+#: reason the cap above is.
+CONFIGURED_WORKFLOWS_PLUGIN_DIR: Final[Path] = Path(
+    AgentSettings.model_fields["workflows_plugin_dir"].default
+)

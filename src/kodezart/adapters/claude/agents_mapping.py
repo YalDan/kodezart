@@ -11,7 +11,7 @@ from collections.abc import Sequence
 from typing import Final, Literal
 
 from claude_agent_sdk.types import AgentDefinition as SDKAgentDefinition
-from claude_agent_sdk.types import SystemPromptPreset
+from claude_agent_sdk.types import SdkPluginConfig, SystemPromptPreset
 
 from kodezart.types.domain.session import AllowedTools, ToolPreset
 from kodezart.types.domain.subagents import (
@@ -25,10 +25,12 @@ from kodezart.types.domain.subagents import (
 #: harness's own system prompt, never a replacement for it.
 _SYSTEM_PROMPT_PRESET: Final[Literal["claude_code"]] = "claude_code"
 
-#: Environment names the harness reads for workflow availability.
-_WORKFLOWS_DIR_VAR: Final = "CLAUDE_CODE_WORKFLOWS"
+#: Environment names the harness reads for workflow availability. Both are
+#: on/off switches: the harness reads ``CLAUDE_CODE_WORKFLOWS`` as a boolean
+#: and never as a directory, so the workflows reach a session as a plugin.
+_WORKFLOWS_VAR: Final = "CLAUDE_CODE_WORKFLOWS"
 _WORKFLOWS_DISABLED_VAR: Final = "CLAUDE_CODE_DISABLE_WORKFLOWS"
-_DISABLED_VALUE: Final = "1"
+_SWITCH_ON: Final = "1"
 
 #: The settings key bounding how wide one workflow may fan out.
 _SIZE_GUIDELINE_KEY: Final = "workflowSizeGuideline"
@@ -100,8 +102,21 @@ def map_workflow_env(access: WorkflowAccess | None) -> dict[str, str]:
     if access is None:
         return {}
     if not access.enabled:
-        return {_WORKFLOWS_DISABLED_VAR: _DISABLED_VALUE}
-    return {_WORKFLOWS_DIR_VAR: access.workflows_path}
+        return {_WORKFLOWS_DISABLED_VAR: _SWITCH_ON}
+    return {_WORKFLOWS_VAR: _SWITCH_ON}
+
+
+def map_plugins(access: WorkflowAccess | None) -> list[SdkPluginConfig]:
+    """Map the workflows' plugin onto the SDK ``plugins`` option.
+
+    The harness finds a named workflow under the session's working
+    directory or in a loaded plugin; a scheduled pass runs in a scratch
+    directory and a fire in a clone of another repository, so the plugin
+    is what makes the shipped workflows reachable from both.
+    """
+    if access is None or not access.enabled:
+        return []
+    return [SdkPluginConfig(type="local", path=access.plugin_path)]
 
 
 def map_settings(access: WorkflowAccess | None, output_style: str | None) -> str | None:
@@ -136,8 +151,15 @@ def map_model(policy: SessionPolicy, construction_model: str | None) -> str | No
 
 
 _SDK_TOOL_PRESETS: Final[dict[ToolPreset, tuple[str, ...]]] = {
-    ToolPreset.EVALUATION: ("Read", "Glob", "Grep", "Bash"),
-    ToolPreset.DELEGATED_EVALUATION: ("Read", "Glob", "Grep", "Bash", "Agent"),
+    ToolPreset.EVALUATION: ("Read", "Glob", "Grep", "Bash", "Workflow"),
+    ToolPreset.DELEGATED_EVALUATION: (
+        "Read",
+        "Glob",
+        "Grep",
+        "Bash",
+        "Agent",
+        "Workflow",
+    ),
     ToolPreset.AUTHORING: (
         "Read",
         "Glob",
@@ -146,8 +168,17 @@ _SDK_TOOL_PRESETS: Final[dict[ToolPreset, tuple[str, ...]]] = {
         "Agent",
         "WebSearch",
         "WebFetch",
+        "Workflow",
     ),
-    ToolPreset.IMPLEMENTATION: ("Read", "Glob", "Grep", "Bash", "Edit", "Write"),
+    ToolPreset.IMPLEMENTATION: (
+        "Read",
+        "Glob",
+        "Grep",
+        "Bash",
+        "Edit",
+        "Write",
+        "Workflow",
+    ),
 }
 
 

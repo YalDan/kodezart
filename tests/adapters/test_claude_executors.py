@@ -633,7 +633,7 @@ DOC_VERIFIER = AgentDefinition(
 )
 
 WORKFLOW_ACCESS = WorkflowAccess(
-    workflows_path=".claude/workflows",
+    plugin_path=".claude",
     size_guideline=6,
     enabled=True,
 )
@@ -698,9 +698,10 @@ async def test_fallback_model_reaches_the_sdk_options(module: str) -> None:
 
 @pytest.mark.parametrize("module", EXECUTOR_MODULES)
 async def test_workflow_gates_reach_the_sdk_env_and_settings(module: str) -> None:
-    """The env/settings passthrough that decides whether a workflow can fire."""
+    """The env, settings and plugin that decide whether a workflow can fire."""
     options = options_of(await recorded_session(module, session_policy=FULL_POLICY))
-    assert options.env == {"CLAUDE_CODE_WORKFLOWS": ".claude/workflows"}
+    assert options.env == {"CLAUDE_CODE_WORKFLOWS": "1"}
+    assert options.plugins == [{"type": "local", "path": ".claude"}]
     assert options.settings is not None
     assert json.loads(options.settings) == {"workflowSizeGuideline": 6}
 
@@ -710,7 +711,7 @@ async def test_disabled_workflow_access_sets_the_disable_variable(module: str) -
     """Declaring access and disabling it is not the same as declaring none."""
     policy = SessionPolicy(
         workflow_access=WorkflowAccess(
-            workflows_path=".claude/workflows",
+            plugin_path=".claude",
             size_guideline=6,
             enabled=False,
         ),
@@ -718,6 +719,7 @@ async def test_disabled_workflow_access_sets_the_disable_variable(module: str) -
     options = options_of(await recorded_session(module, session_policy=policy))
     assert options.env == {"CLAUDE_CODE_DISABLE_WORKFLOWS": "1"}
     assert options.settings is None
+    assert options.plugins == []
 
 
 @pytest.mark.parametrize("module", EXECUTOR_MODULES)
@@ -735,6 +737,7 @@ async def test_declaring_nothing_constructs_todays_options(module: str) -> None:
     assert options.fallback_model is None
     assert options.env == {}
     assert options.settings is None
+    assert options.plugins == []
 
 
 @pytest.mark.parametrize("module", EXECUTOR_MODULES)

@@ -33,6 +33,7 @@ def default_registry() -> InRepoPromptRegistry:
         template_overrides=config.prompt_template_overrides,
         bindings=dict(bindings_for(operation)),
         investigation_cap=config.investigation_cap,
+        workflows_plugin_dir=Path(config.agent.workflows_plugin_dir),
         ticket_review_mode=config.ticket_review_mode,
     )
 

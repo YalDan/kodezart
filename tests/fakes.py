@@ -211,7 +211,10 @@ from kodezart.types.domain.tracker_writes import DescriptionEditResult
 from kodezart.types.domain.trajectory import IterationRecord, LoopTrajectory
 from kodezart.types.domain.workflow import RemediationRequest, WorkflowSubmission
 from kodezart.types.domain.workspace import GitWorktreeIdentity, WorkspaceSnapshot
-from tests.prompt_census import configured_investigation_cap
+from tests.prompt_census import (
+    CONFIGURED_WORKFLOWS_PLUGIN_DIR,
+    configured_investigation_cap,
+)
 
 #: A ref that is already a commit rather than a name a commit is resolved from.
 _COMPLETE_SHA = re.compile(r"[0-9a-f]{40}")
@@ -2234,6 +2237,7 @@ def make_prompt_provider(default_set: str = DEFAULT_PROMPT_SET) -> InRepoPromptR
         template_overrides={},
         bindings={},
         investigation_cap=configured_investigation_cap(),
+        workflows_plugin_dir=CONFIGURED_WORKFLOWS_PLUGIN_DIR,
         ticket_review_mode=TicketReviewMode.REVIEWED,
     )
 
