@@ -85,6 +85,7 @@
   "tests/chains/test_node_session_events.py": 16,
   "tests/chains/test_organize.py": 275,
   "tests/chains/test_organize_correction.py": 6,
+  "tests/chains/test_organize_declared_surfaces.py": 192,
   "tests/chains/test_organize_delivery_independent.py": 16,
   "tests/chains/test_organize_description_authority.py": 10,
   "tests/chains/test_organize_graph_independent.py": 4,
@@ -210,6 +211,7 @@
   "tests/domain/test_organize.py": 33,
   "tests/domain/test_organize_graph_peers.py": 3,
   "tests/domain/test_organize_routing.py": 6,
+  "tests/domain/test_organize_surfaces.py": 19,
   "tests/domain/test_outcome.py": 31,
   "tests/domain/test_owed_rulings.py": 47,
   "tests/domain/test_record_consistency.py": 26,
@@ -270,6 +272,7 @@
   "tests/integration/test_live_criteria_probes.py": 17,
   "tests/integration/test_one_scope_roster.py": 10,
   "tests/integration/test_organize_authority.py": 10,
+  "tests/integration/test_organize_disjointness.py": 46,
   "tests/integration/test_organize_scheduler.py": 33,
   "tests/integration/test_organize_tick_halt.py": 7,
   "tests/integration/test_pr_footer_gating.py": 10,
@@ -1744,6 +1747,42 @@
   ],
   "tests/chains/test_organize_correction.py": [
    "test_escalation_rechecks_approval_before_its_second_write"
+  ],
+  "tests/chains/test_organize_declared_surfaces.py": [
+   "test_the_round_holds_the_whole_declared_set_before_its_first_write",
+   "test_a_contended_declared_set_writes_nothing_and_opens_no_session",
+   "test_the_pre_approval_row_declares_no_member_that_reads_approved",
+   "test_a_member_whose_approval_is_withdrawn_mid_round_is_not_marked_by_it",
+   "test_a_round_whose_lease_lapsed_in_a_session_writes_nothing_more",
+   "test_no_halt_is_written_while_the_rounds_lease_is_held",
+   "test_the_declared_set_is_acquired_once_a_round_not_once_a_write",
+   "test_a_member_the_round_mints_is_declared_by_the_next_round",
+   "test_approval_landing_before_the_groom_marker_refuses_the_marker",
+   "test_approval_landing_inside_the_markers_renewal_refuses_the_marker",
+   "test_a_graph_write_inside_the_declared_set_lands",
+   "test_a_graph_write_naming_a_member_that_joined_late_is_a_finding_on_it",
+   "test_a_graph_write_naming_an_issue_outside_the_scope_stays_a_refusal",
+   "test_the_refused_write_lands_once_the_next_round_declares_the_member",
+   "test_a_residual_on_a_member_reading_approved_is_recorded_on_the_subject",
+   "test_a_residual_whose_write_lands_in_the_next_round_is_never_written",
+   "test_an_answer_that_writes_nothing_is_not_weighed_against_the_set",
+   "test_every_open_finding_is_written_to_its_own_item_before_the_halt_returns",
+   "test_a_halt_inside_a_round_carries_the_findings_left_open",
+   "test_a_residual_on_a_member_verified_clean_earlier_in_the_round_is_written",
+   "test_an_admission_results_own_findings_are_written_at_its_halt",
+   "test_a_finding_the_next_round_repairs_never_reaches_the_board",
+   "test_two_findings_of_different_classes_on_one_item_are_two_records",
+   "test_a_record_the_phase_may_not_write_is_named_unrecorded_and_the_rest_land",
+   "test_a_finding_on_a_criterion_child_is_written_to_that_child",
+   "test_a_halt_record_whose_admission_went_stale_is_named_unrecorded",
+   "test_a_tracker_failure_after_a_refused_record_names_both_unrecorded",
+   "test_a_tracker_failure_reading_a_records_revision_is_named_unrecorded",
+   "test_approval_landing_before_a_grooming_halts_first_record_writes_nothing",
+   "test_a_split_the_pre_approval_row_authors_is_a_finding_not_a_write",
+   "test_a_repair_that_needs_other_addresses_is_refused_before_it_writes",
+   "test_a_body_the_criteria_row_authors_is_a_finding_not_a_write",
+   "test_criteria_the_ticket_row_authors_are_a_finding_not_a_write",
+   "test_a_round_that_starts_blocked_writes_none_of_the_findings_it_holds"
   ],
   "tests/chains/test_organize_delivery_independent.py": [
    "test_halted_first_binding_does_not_starve_second_binding",
@@ -3426,6 +3465,19 @@
    "test_result_cannot_be_routed_using_another_issues_edges",
    "test_buildable_requires_no_pending_blocker_proof"
   ],
+  "tests/domain/test_organize_surfaces.py": [
+   "test_the_pre_approval_row_declares_graph_description_and_label_set",
+   "test_each_row_declares_its_kinds_at_every_member",
+   "test_a_row_declares_nothing_without_a_member",
+   "test_graph_change_is_declared_by_the_pre_approval_row_and_by_no_other",
+   "test_no_row_declares_a_container_surface",
+   "test_an_undeclared_surface_is_a_finding_on_its_own_issue",
+   "test_no_outside_surface_is_no_finding",
+   "test_the_evidence_names_the_phase_the_kind_the_key_and_the_declared_kinds",
+   "test_the_same_refusal_composes_the_same_findings",
+   "test_two_addresses_on_one_item_are_two_findings",
+   "test_many_addresses_compose_in_one_order_whatever_the_set_iterates"
+  ],
   "tests/domain/test_outcome.py": [
    "test_wire_values_are_pinned_verbatim",
    "test_the_classifier_never_produces_the_queue_assigned_members",
@@ -3963,6 +4015,12 @@
   "tests/integration/test_organize_authority.py": [
    "test_a_milestone_addressed_scope_grooms_on_its_projects_triage",
    "test_a_port_that_swallows_the_marker_write_ends_grooming_before_the_judge"
+  ],
+  "tests/integration/test_organize_disjointness.py": [
+   "test_an_unapproved_scope_is_groomed_and_admits_no_run",
+   "test_approval_during_a_grooming_session_refuses_its_write_and_frees_the_run",
+   "test_an_approved_scope_runs_its_stages_and_the_grooming_tick_takes_no_lease",
+   "test_a_run_admitted_while_grooming_holds_its_set_is_refused_at_its_stage"
   ],
   "tests/integration/test_organize_scheduler.py": [
    "test_scheduled_owner_prepares_native_children_and_reentry_is_idempotent",
