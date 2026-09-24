@@ -125,6 +125,15 @@ EXEMPT = {
         "nothing about a family, and each body that consults it is reported "
         "where it does"
     ),
+    "types/domain/tracker.py::is_non_counting": (
+        "the vocabulary's non-counting predicate over one kind, asked where a "
+        "selection is made: which criteria a fire's spec read and the native "
+        "writer's authority read take, and whether the organize criteria stage "
+        "is owed, the selection over organize children the convergence loop "
+        "made itself before KOD-616 moved it here; it decides nothing about "
+        "whether a family is finished, and tests/domain/test_non_counting.py "
+        "holds it to the rule's excluded arms for every kind"
+    ),
     "chains/criteria.py::TrackerCriteria._owed": (
         "selects the criteria this fire works on (the unstarted ones, plus the "
         "ones this fire already crossed off); decides nothing about whether "
@@ -186,10 +195,6 @@ EXEMPT = {
         "blockers nobody recorded, as KOD-188, KOD-285, KOD-217 and KOD-717 "
         "require; the scope walker answers discharge through "
         "SubtreeClosure.is_closed"
-    ),
-    "services/organize_owner.py::OrganizeOwner._converge": (
-        "selection over organize children, in the convergence loop the "
-        "heartbeat runs over them"
     ),
     "services/scope_planning.py::read_scope_plan": (
         "selection over dispatch candidates, which are not criterion sub-issues"
