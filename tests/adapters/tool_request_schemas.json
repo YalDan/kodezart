@@ -1,5 +1,19 @@
 {
   "QueryRequest": {
+    "$defs": {
+      "SessionEffort": {
+        "description": "Reasoning-effort levels the engine accepts for a session or agent.",
+        "enum": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "title": "SessionEffort",
+        "type": "string"
+      }
+    },
     "additionalProperties": false,
     "description": "Request body for ``POST /api/v1/agent/query``.\n\nSupports one-shot agent queries with optional session resume, branch\ntargeting, and structured output.",
     "properties": {
@@ -21,6 +35,17 @@
         ],
         "default": null,
         "title": "Branch"
+      },
+      "effort": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/SessionEffort"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
       },
       "outputSchema": {
         "anyOf": [

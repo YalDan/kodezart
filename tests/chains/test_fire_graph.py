@@ -2085,7 +2085,7 @@ EGRESS_PATH: dict[Callable[..., object], str] = {
         "7d0987455078317117be5bf99d57f3e70d72128180a31ccd83ff42109fa9c3a0"
     ),
     agent_handler.AgentHandler.stream_query: (
-        "aa935c671ec4e9ea9a61c61bff49b6ceffa2a9888e016aa490699a7be38f4b9e"
+        "771fa1ef61a6209a2356185c627231826c6f1085cb76d3cec45b19a55c1d1739"
     ),
     agent_handler.AgentHandler.attach_job: (
         "2cb907ec716d4503ee419a14cf4cca0938642daa0e24add04382ea93df8f4359"

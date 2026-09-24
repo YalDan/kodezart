@@ -69,6 +69,7 @@ from kodezart.types.domain.run_event import (
 )
 from tests.fakes import ManagedFakeLinearMcpServer, pass_render_variables
 from tests.object_resolution import denoted, names_of
+from tests.prompts.test_prompt_wiring import load_registry
 from tests.run_events import RUN_EVENT_STATES, RUN_EVENT_TOML
 
 #: The non-human writer the dialling case declares and the backend reports, so
@@ -865,12 +866,19 @@ def test_the_rendered_table_and_its_bound_rows_carry_no_tracker_state_string():
         bindings = prompt_namespaces.operation_bindings(config)
         bound = {f"{file}:bound": repr(bindings[TABLE_FIELD])}
         assert state_names_in(bound, tokens) == {}
-        for name, text in prompts.items():
+        for name in prompts:
+            # Rendered as a session receives it: the set's composed member,
+            # its fragments substituted and its set-level bindings present,
+            # never the raw file (a v5 member asks for fragments by name).
+            key = PromptKey(Path(name).stem)
+            set_name = Path(name).parts[-2]
+            template = load_registry(default_set=set_name).template_for(key)
             variables = {
-                **pass_render_variables(PromptKey(Path(name).stem)),
+                **template.bindings,
+                **pass_render_variables(key),
                 **bindings,
             }
-            lines = table_rendered_lines(text, variables)
+            lines = table_rendered_lines(template.body, variables)
             assert lines, name
             rendered = {f"{file}:{name}": "\n".join(lines)}
             assert state_names_in(rendered, tokens) == {}
