@@ -3,8 +3,7 @@
 The configured investigation cap is an ``AppConfig`` field with the
 ``KODEZART_`` prefix, so the operator choice is asserted directly —
 it reads from the environment, it refuses values outside its declared range
-at construction, and the range itself is the one the fire-time ruling
-recorded.
+at construction, and it has a floor and no ceiling.
 
 KOD-93-AC-1: the two defaults the flip moved, read with a clean environment.
 A default is only a default when nothing else is speaking, which is what
@@ -20,17 +19,16 @@ from kodezart.config.app import AppConfig
 from kodezart.types.domain.ticket_review import TicketReviewMode
 
 ENV_NAME = "KODEZART_INVESTIGATION_CAP"
-#: Floor and ceiling per the KOD-89 fire-time ruling FR-3: the floor keeps
-#: the rendered spec coherent, the ceiling is twice the measured width of
-#: the prose protocol the set replaces.
+#: The floor keeps the rendered spec coherent; there is no ceiling.
 CAP_FLOOR = 1
-CAP_CEILING = 10
+#: A width far above any earlier ceiling, accepted because none is set.
+WIDE_CAP = 1000
 
 
 @pytest.mark.usefixtures("_pristine_environment")
-def test_the_cap_defaults_to_the_width_the_replaced_protocol_ran_at() -> None:
-    """Five: the count the prose dispatch protocol actually instructed."""
-    assert AppConfig().investigation_cap == 5
+def test_the_cap_defaults_to_eight() -> None:
+    """Eight agents per investigation unless the operator sets otherwise."""
+    assert AppConfig().investigation_cap == 8
 
 
 @pytest.mark.usefixtures("_pristine_environment")
@@ -43,7 +41,7 @@ def test_the_cap_is_read_from_the_prefixed_environment(
 
 
 @pytest.mark.usefixtures("_pristine_environment")
-@pytest.mark.parametrize("value", [CAP_FLOOR - 1, CAP_CEILING + 1, -3])
+@pytest.mark.parametrize("value", [CAP_FLOOR - 1, -3])
 def test_an_out_of_range_cap_raises_at_construction(
     monkeypatch: pytest.MonkeyPatch,
     value: int,
@@ -56,12 +54,12 @@ def test_an_out_of_range_cap_raises_at_construction(
 
 
 @pytest.mark.usefixtures("_pristine_environment")
-@pytest.mark.parametrize("value", [CAP_FLOOR, CAP_CEILING])
-def test_both_bounds_are_themselves_accepted(
+@pytest.mark.parametrize("value", [CAP_FLOOR, WIDE_CAP])
+def test_the_floor_and_a_wide_cap_are_accepted(
     monkeypatch: pytest.MonkeyPatch,
     value: int,
 ) -> None:
-    """Non-vacuity: the range is inclusive, so the edges are not failures."""
+    """Non-vacuity: the floor is inclusive, and no ceiling refuses a wide cap."""
     monkeypatch.setenv(ENV_NAME, str(value))
     assert AppConfig().investigation_cap == value
 

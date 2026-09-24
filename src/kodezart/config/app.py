@@ -748,18 +748,13 @@ class AppConfig(BaseSettings):
         ),
     )
     investigation_cap: int = Field(
-        default=5,
+        default=8,
         ge=1,
-        le=10,
         description=(
-            "Read-only investigator sessions one generative dispatch may fan "
-            "out to. The default is the width the prose dispatch protocol "
-            "this set replaces actually instructed — five parallel dispatches "
-            "— so the migration changes how the fan-out is coordinated and "
-            "counted, not how wide it runs. The floor of one keeps the "
-            "rendered spec coherent; the ceiling of ten is twice that "
-            "measured width, because every unit above it is another whole "
-            "session charged against one draft."
+            "Read-only investigator agents one investigation may fan out to, "
+            "stated in the rendered spec; the floor of one keeps that spec "
+            "coherent, and above it the only limits are the machine's "
+            "concurrency and Claude Code's own per-workflow agent limit."
         ),
     )
     prompt_set_overrides: dict[str, str] = Field(
