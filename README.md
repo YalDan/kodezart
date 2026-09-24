@@ -822,6 +822,19 @@ not, so configuring them "to be safe" is how a first setup breaks itself.
   session kinds that read it. The ready-to-use block is in `.env.example`, and
   `docs/configuration.md` carries the recipe and the tracker-instead-of-Notion
   alternative.
+  The grant is the only way this process attaches an MCP server to a session,
+  and every session runs with the working-directory MCP guard on: nothing a
+  cloned repository's `.mcp.json` declares, and nothing your own user-level
+  Claude configuration declares, reaches it.
+  `KODEZART_AGENT__DANGEROUSLY_ALLOW_HOST_MCP=true` switches that guard off for
+  every session kind at once. Measured 2026-09-24: with it off, headless Claude
+  Code started in a directory holding a `.mcp.json` that declared a server
+  tried to start that server, so a cloned repository can run a command on the
+  host through a session; with it on, sessions reached the Linear server under
+  the operator's stored Claude login rather than this deployment's key, and
+  any tracker write such a session makes carries the operator's login user.
+  Boot logs `host_mcp_allowed_dangerously` as a warning when it is on. Leave it
+  off unless you accept exactly that trade.
 - **`private_surface` prose is required only for organization-privacy judgment.**
   `KODEZART_AGENTIC_CONTENT_SCANNER_ENABLED` ships disabled, and leaving it
   disabled needs no prose. Enabling it without a `private_surface` description

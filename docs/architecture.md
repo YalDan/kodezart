@@ -1239,7 +1239,13 @@ construction sets `strict_mcp_config=True`**, whether or not it also
 configures `mcp_servers` — the guard answers the working directory, so a
 session that describes no server of its own needs it exactly as much as one
 that does. One mapping helper builds both keywords together rather than
-passing them separately at each construction site.
+passing them separately at each construction site. The one shape the
+invariant accepts beside the literal is the negation of the operator's
+`dangerously_allow_host_mcp` opt-in (`KODEZART_AGENT__DANGEROUSLY_ALLOW_HOST_MCP`,
+`AgentSettings`), threaded from the composition root through the executor
+into that helper: with it on, every session runs unguarded and also loads the
+servers the host's own user-level Claude configuration declares, and boot
+logs `host_mcp_allowed_dangerously` as a warning.
 `tests/adapters/test_mcp_strictness.py` enforces it over every
 `ClaudeAgentOptions` construction in `src/kodezart/`, merging the explicit
 keywords with every `**`-unpacked option source — one merged set per branch
