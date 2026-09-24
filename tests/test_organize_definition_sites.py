@@ -101,6 +101,9 @@ BOUND = "max_convergence_rounds"
 CAUSES = "types/domain/organize_owner.py"
 #: The one report builder the loop raises through.
 HALT = "_halt"
+#: The request a round raises for a halt it decided on while it holds its
+#: declared set; the loop writes it through ``HALT`` once the set is released.
+HALT_REQUEST = "_HaltRequestError"
 #: The causes the convergence loop raises, by object, by member name and by
 #: value. STAGE_INCOMPLETE is the barrier's too, so it is not among them.
 RAISED = (
@@ -323,8 +326,25 @@ def test_the_scope_a_node_sits_in_is_its_innermost_definition() -> None:
 
 
 def test_the_halt_sites_live_in_the_convergence_loop_in_source_order() -> None:
+    """Every halt the loop decides on, in source order, and all of them in it.
+
+    A halt decided inside a round is raised as a request and written by the
+    loop's one handler once the round's declared set is released; the
+    exhaustion of the bound is written directly. So the sites are the
+    request's constructions and the builder's calls, read together.
+    """
     trees = scanned_sources()
     reads = halt_reads(trees)
+    # Every reading of the request's name is a construction the loop raises
+    # or the handler that writes it: one held in a name, or raised anywhere
+    # else, would be a halt site outside the loop.
+    requests = halt_request_reads(trees)
+    assert {
+        (module, scope_of(tree, node), node in called or node in handled)
+        for module, tree, node, called, handled in requests
+    } == {("services/organize_owner.py", LOOP, True)}, [
+        (module, node.lineno) for module, _, node, _, _ in requests
+    ]
     # Every reading of the halt builder is a call the loop makes: a bound
     # method held in a name, or read by ``getattr``, is a reading too, and
     # one that is not called where it is read would hide the call site.
@@ -337,6 +357,10 @@ def test_the_halt_sites_live_in_the_convergence_loop_in_source_order() -> None:
     calls = [
         (module, tree, called[node])
         for module, tree, node, called in reads
+        if node in called
+    ] + [
+        (module, tree, called[node])
+        for module, tree, node, called, _ in requests
         if node in called
     ]
     ordered = sorted(calls, key=lambda call: call[2].lineno)
@@ -367,6 +391,11 @@ def test_the_halt_sites_live_in_the_convergence_loop_in_source_order() -> None:
             "StageHaltCause.ADMISSION_EXHAUSTED",
             "admission",
             "else of for range(self._policy.max_admission_rounds)",
+        ),
+        (
+            "request.cause",
+            None,
+            "except _HaltRequestError",
         ),
         (
             "StageHaltCause.CONVERGENCE_EXHAUSTED",
@@ -408,6 +437,36 @@ def halt_reads(
                 and node.args[1].value == HALT
             ):
                 found.append((module, tree, node, called))
+    return found
+
+
+def halt_request_reads(
+    trees: dict[str, ast.Module],
+) -> list[tuple[str, ast.Module, ast.AST, dict[ast.AST, ast.Call], frozenset[ast.AST]]]:
+    """Every reading of the halt request's name, with what it is read for.
+
+    Each comes with the map from a read to the call it is the callee of and
+    the set of names ``except`` handlers catch, so a caller can tell a raise
+    site and the one handler from a reading held for later. The class's own
+    definition binds the name and reads nothing, so it is not here.
+    """
+    found = []
+    for module, tree in trees.items():
+        called = {
+            node.func: node for node in ast.walk(tree) if isinstance(node, ast.Call)
+        }
+        handled = frozenset(
+            node.type
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ExceptHandler) and node.type is not None
+        )
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Name)
+                and node.id == HALT_REQUEST
+                and isinstance(node.ctx, ast.Load)
+            ):
+                found.append((module, tree, node, called, handled))
     return found
 
 
