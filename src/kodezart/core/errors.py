@@ -552,6 +552,24 @@ class OutputStyleNotConfirmedError(Exception):
         self.reported: str | None = reported
 
 
+class TrackerServerNotConnectedError(TransientAPIError):
+    """Raised when a board session's opening frame does not show its tracker connected.
+
+    ``status`` is what the frame reported, or ``None`` when the frame did not
+    list the server.  Transient because the measured cause, a server refusing
+    connections, clears on its own: the graph's retry policy retries the node,
+    and an exhausted budget fails the job with this error.
+    """
+
+    def __init__(self, *, server: str, status: str | None) -> None:
+        super().__init__(
+            f"tracker server {server!r} "
+            f"{'absent' if status is None else status} on the session's init frame"
+        )
+        self.server: str = server
+        self.status: str | None = status
+
+
 class RunRecordWriteError(Exception):
     """Raised when a run's declared destination did not take its record.
 

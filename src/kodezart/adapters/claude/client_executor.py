@@ -27,13 +27,17 @@ from kodezart.adapters.claude.permission_modes import map_permission_mode
 from kodezart.adapters.claude.sdk_mapping import INIT_SUBTYPE, map_message
 from kodezart.adapters.claude.skills_mapping import map_setting_sources, map_skills
 from kodezart.adapters.mcp.mapping import (
+    BOARD_SESSION_TYPES,
     TrackerSessionServer,
     map_knowledge_mcp,
     prompt_with_knowledge_map,
 )
 from kodezart.core.constants import STDERR_TAIL_BYTES
 from kodezart.core.error_egress import redact_credentials
-from kodezart.core.errors import OutputStyleNotConfirmedError
+from kodezart.core.errors import (
+    OutputStyleNotConfirmedError,
+    TrackerServerNotConnectedError,
+)
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.prompt_rendering import PromptTemplate
 from kodezart.domain.errors import AgentSDKError
@@ -88,6 +92,8 @@ class ClaudeClientExecutor:
     """Agent executor using the persistent SDK client.
 
     Same AgentExecutor protocol as ClaudeAgentExecutor, different transport.
+    A board session fails on its opening frame unless that frame reports the
+    deployment's tracker server connected.
     """
 
     def __init__(
@@ -130,6 +136,27 @@ class ClaudeClientExecutor:
             declared=self._output_style,
             reported=event.output_style,
         )
+
+    def _confirm_tracker_server(
+        self, event: AgentEvent, session_type: SessionType
+    ) -> None:
+        """Hold a board session to the tracker server it works the board through.
+
+        The opening frame reports each MCP server's status.  A board session
+        whose tracker server it does not report connected would run without
+        the board and answer as if the board were empty, so it fails on that
+        frame instead.  The name is the deployment's tracker server name with
+        the host opt-in on or off; a deployment with no tracker checks nothing.
+        """
+        if not isinstance(event, SystemEvent) or event.subtype != INIT_SUBTYPE:
+            return
+        if session_type not in BOARD_SESSION_TYPES or self._tracker_server is None:
+            return
+        name = self._tracker_server.server_name
+        status = event.mcp_servers.get(name)
+        if status == "connected":
+            return
+        raise TrackerServerNotConnectedError(server=name, status=status)
 
     async def stream(
         self,
@@ -207,6 +234,7 @@ class ClaudeClientExecutor:
                 async for message in client.receive_response():
                     for event in map_message(message):
                         self._confirm_output_style(event)
+                        self._confirm_tracker_server(event, session_type)
                         yield event
         except ResultError as exc:
             # Ahead of the ProcessError arm, which this SDK type subclasses:
