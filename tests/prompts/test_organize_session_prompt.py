@@ -11,10 +11,16 @@ import pytest
 
 from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.core.prompt_namespaces import operation_bindings
+from kodezart.domain.organize import is_organize_subject, owes_stage_label
 from kodezart.services.organize_session_owner import OrganizeSessionOwner
 from kodezart.types.domain.organize import MandateKind
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
-from tests.fakes import SUPPRESS_ALL_SKILLS, FakeAgentRunner, FakeTrackerPort
+from tests.fakes import (
+    SUPPRESS_ALL_SKILLS,
+    FakeAgentRunner,
+    FakeTrackerPort,
+    make_tracker_issue,
+)
 from tests.integration.test_scope_deployment import SCOPE_EXAMPLE
 from tests.prompts.sets import OPUS_SET, V5_SET
 from tests.prompts.test_prompt_wiring import load_registry
@@ -149,3 +155,35 @@ def test_the_groom_phase_may_create_a_missing_criterion_and_nothing_more(
     forbidding = [s for s in ticket if "never touch a criterion sub-issue" in s]
     assert forbidding == [TICKET_CRITERION_RULE]
     assert [s for s in ticket if "creating it is the repair" in s] == []
+
+
+#: How each set accounts for a member the list leaves out: marked already,
+#: owing nothing, or escalated and waiting on a person.
+UNLISTED = {
+    V5_SET: (
+        "A member not listed above already carries the marker, owes nothing to"
+        " this phase, or is escalated and is left alone: it is not touched."
+    ),
+    OPUS_SET: (
+        "Members not listed already carry the marker, owe nothing to this phase,"
+        " or are escalated and are left alone; you do not touch them."
+    ),
+}
+
+
+@pytest.mark.parametrize("set_name", SETS)
+def test_a_member_left_off_the_list_may_be_an_escalated_one(set_name: str) -> None:
+    """The list leaves out an escalated member that still owes the marker.
+
+    The owner lists only work subjects, and an escalated member is none: it
+    carries the decision label, so it is never listed, while it still owes the
+    phase's marker and the halt names it. A prompt saying every unlisted member
+    either carries the marker or owes nothing would misstate that member, so
+    each phase names the third case and leaves it alone.
+    """
+    escalated = make_tracker_issue("external/44", issue_labels=frozenset({"decision"}))
+    assert not is_organize_subject(escalated)
+    assert owes_stage_label(escalated)
+
+    for kind in MandateKind:
+        assert UNLISTED[set_name] in sentences(rendered(set_name, kind)), kind

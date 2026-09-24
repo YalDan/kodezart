@@ -4,7 +4,7 @@ Marker to add: `{{phase_marker}}`
 Members that owe it, each by its key:
 {{#each owed_members}}- {{this}}
 {{/each}}
-Take each member listed above through the rubric below. Add the marker `{{phase_marker}}` to a member once it satisfies the rubric; leave the marker off a member that does not. Members not listed either already carry the marker or owe nothing to this phase, and you do not touch them.
+Take each member listed above through the rubric below. Add the marker `{{phase_marker}}` to a member once it satisfies the rubric; leave the marker off a member that does not. Members not listed already carry the marker, owe nothing to this phase, or are escalated and are left alone; you do not touch them.
 
 {{#if phase_groom}}Groom rubric. A member is groomed only when all four conditions hold:
 
