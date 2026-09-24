@@ -22,9 +22,18 @@ def test_configured_audit_has_no_implicit_or_nonpositive_timeout(value):
 
 
 def test_nested_audit_environment_preserves_actual_operator_timeout(monkeypatch):
+    """The nested timeout reaches the audit settings as the operator set it.
+
+    Set beside its interval: a cadence is a pair (KOD-1238), and one half
+    alone refuses at load naming both.
+    """
+    monkeypatch.setenv("KODEZART_AUDIT_SWEEP_INTERVAL_SECONDS", "3600")
     monkeypatch.setenv("KODEZART_AUDIT__TIMEOUT_SECONDS", "431")
     config = AppConfig(_env_file=None)
     assert config.audit.timeout_seconds == 431
+    cadence = config.pass_cadence("audit")
+    assert cadence is not None
+    assert (cadence.interval_seconds, cadence.timeout_seconds) == (3600, 431)
     assert config.write_back is None
 
 
