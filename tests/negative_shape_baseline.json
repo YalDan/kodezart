@@ -317,7 +317,7 @@
   "tests/prompts/test_organize_mandate_bindings.py": 10,
   "tests/prompts/test_organize_roles.py": 10,
   "tests/prompts/test_organize_rubrics.py": 5,
-  "tests/prompts/test_organize_session_prompt.py": 5,
+  "tests/prompts/test_organize_session_prompt.py": 9,
   "tests/prompts/test_pass_roster.py": 40,
   "tests/prompts/test_principal_roles.py": 22,
   "tests/prompts/test_prompt_wiring.py": 88,
@@ -4509,7 +4509,8 @@
    "test_the_run_stage_rubric_states_the_implementation_test"
   ],
   "tests/prompts/test_organize_session_prompt.py": [
-   "test_the_ticket_phase_fills_a_body_in_its_own_shape"
+   "test_the_ticket_phase_fills_a_body_in_its_own_shape",
+   "test_the_groom_phase_may_create_a_missing_criterion_and_nothing_more"
   ],
   "tests/prompts/test_pass_roster.py": [
    "test_no_shipped_template_names_a_team_or_repository_slot",

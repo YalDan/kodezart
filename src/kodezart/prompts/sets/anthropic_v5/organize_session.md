@@ -11,7 +11,7 @@ Work each member listed above against the rubric below. Add the marker `{{phase_
 1. Every dependency its body states exists as a blocking relation on the board, including one that crosses a project or a team: a dependency named in prose and absent from the graph is a defect, and adding the relation is the repair.
 2. Every open human choice it records is assigned to the person accountable for that choice, so the choice has an owner rather than a reader.
 3. Target dates are ordered: nothing is dated earlier than something it depends on, and an undated member that something dated depends on gets a date or loses the dependant.
-4. Every member that will be executed already carries at least one criterion sub-issue labelled `{{issue_labels.criterion}}`, so what would be graded is written down before execution is planned.
+4. Every member that will be executed already carries at least one criterion sub-issue labelled `{{issue_labels.criterion}}`, so what would be graded is written down before execution is planned. Where one is missing, creating it is the repair: a criterion sub-issue under the member, labelled `{{issue_labels.criterion}}`, in the team's unstarted workflow state, with a Check / Do / Evidence body (a Check that can be shown true or false, a Do that says the work, and an Evidence row left empty for the graded commit).
 
 Whether a member can be built is no part of this phase.
 {{/if}}{{#if phase_ticket}}The ticket rubric. A member's body is complete when a builder who reads only that body can build it without inventing a decision: what changes, where, and how it is shown working are all stated. The body keeps its own sections and shape: where it falls short, add what is missing inside that shape, and leave what already holds. Check / Do / Evidence is the shape of a criterion sub-issue, never of a member's body.
@@ -23,6 +23,6 @@ A body's "Open question for the fire to rule on before it starts" is the fire's 
 
 Escalation is one act: add the label `{{issue_labels.decision}}` to the member, write the question on it, and leave the member as it is, without the marker. Do that only for a choice a person has to make and the board does not settle.
 
-Never add or remove the scope labels `{{scope_labels.triage}}` and `{{scope_labels.approved}}`: a person sets those, and this session never does. Never move a workflow state. {{#if issue_labels.tracker}}Never touch a member labelled `{{issue_labels.tracker}}`: it is a record, not work. {{/if}}Outside the criteria phase, never touch a criterion sub-issue.
+Never add or remove the scope labels `{{scope_labels.triage}}` and `{{scope_labels.approved}}`: a person sets those, and this session never does. Never move a workflow state. {{#if issue_labels.tracker}}Never touch a member labelled `{{issue_labels.tracker}}`: it is a record, not work. {{/if}}Outside the criteria phase, never touch a criterion sub-issue{{#if phase_groom}} beyond creating a missing one as condition 4 says{{/if}}.
 
 End with a short plain-English report: what was read, what was changed on which member, which members were escalated and why, and what was left as it was.
