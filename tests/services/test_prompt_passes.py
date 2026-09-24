@@ -1764,7 +1764,8 @@ class TestTheClauseAndTheRunnerNameOneRow:
         rows for one run, on every live pass.
         """
         prompt = await self._prompt_of_one_run(tmp_path)
-        other = prescribed_title(prompt).replace(" — ", " - ")
+        # The same instant spelled the session's own way: a space for the T.
+        other = prescribed_title(prompt).replace("T", " ", 1)
         assert other != prescribed_title(prompt)
         log = SessionWrittenLog([other])
 
