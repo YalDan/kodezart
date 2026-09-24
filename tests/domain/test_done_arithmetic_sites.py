@@ -51,8 +51,13 @@ import pytest
 
 from kodezart.chains.scope_walker import read_scope_ready
 from kodezart.core.protocols import TrackerPort
-from kodezart.domain.gap import compute_gap, in_gap
-from kodezart.domain.issue_tree import SubtreeClosure, open_criteria
+from kodezart.domain.gap import (
+    compute_gap,
+    gap_membership,
+    open_state_kind,
+    state_membership,
+)
+from kodezart.domain.issue_tree import SubtreeClosure
 from kodezart.types.domain.criteria import TrackerCriterion
 from kodezart.types.domain.operation import LifecycleStage
 from kodezart.types.domain.tracker import TrackerIssue, WorkflowStateKind, is_open
@@ -65,9 +70,18 @@ from tests.fakes import make_tracker_issue
 from tests.object_resolution import UNBOUND, denoted, names_of, names_of_tree
 
 #: The package the rule is packaged in, and so the tree it speaks for.
-SOURCE = Path(sys.modules[in_gap.__module__].__file__ or "").resolve().parents[1]
-#: The four symbols this arithmetic is stated through, each with its owner.
-ARITHMETIC = (in_gap, compute_gap, SubtreeClosure, open_criteria)
+SOURCE = (
+    Path(sys.modules[state_membership.__module__].__file__ or "").resolve().parents[1]
+)
+#: The symbols this arithmetic is stated through, each with its owner: the
+#: kind-level reading, its two askings, the family's gap and the rollup.
+ARITHMETIC = (
+    state_membership,
+    gap_membership,
+    open_state_kind,
+    compute_gap,
+    SubtreeClosure,
+)
 #: The kinds the vocabulary treats as closed, read off its own predicate.
 TERMINAL = frozenset(kind.name for kind in WorkflowStateKind if not is_open(kind))
 VOCABULARY = WorkflowStateKind.__name__
@@ -95,17 +109,13 @@ def module_of(symbol: object) -> str:
     )
 
 
-RULE_SITE = f"{module_of(in_gap)}::{in_gap.__qualname__}"
+RULE_SITE = f"{module_of(state_membership)}::{state_membership.__qualname__}"
 #: Each arithmetic name against the module that owns it, read off the symbol.
 OWNERS = {symbol.__name__: symbol.__module__ for symbol in ARITHMETIC}
 
 #: Every body that reads a terminal criterion state and is not the rule, each
 #: with the reason it is not the rule's business.
 EXEMPT = {
-    "domain/issue_tree.py::open_criteria": (
-        "the rollup's own arm: a supersession that has not been established is "
-        "refused rather than decided, before the rule is consulted (KOD-794)"
-    ),
     "types/domain/tracker.py::<module>": (
         "the vocabulary itself: the closed-kind set the openness predicate is "
         "written from decides nothing"
@@ -357,21 +367,28 @@ def probe(kind: WorkflowStateKind, *, label: str = CRITERION_LABEL):
     )
 
 
+def superseded_probe(kind: WorkflowStateKind) -> TrackerIssue:
+    """A probe carrying a supersession note, which the rule does not read."""
+    return probe(kind).model_copy(update={"body": "Superseded by fire/other."})
+
+
 def test_the_scanned_vocabulary_is_the_rules_own_terminal_set():
     """The scanned kinds are the ones the rule itself treats as closed.
 
     Read twice over: off the openness predicate, and off the rule's answers
     for every member of the vocabulary.  A closed kind is one the rule
-    answers "not owed" for, or answers differently for once a supersession
-    reference is established; every other kind is owed whatever is
-    established.  Neither reading can move without the other saying so.
+    answers "not owed" for; every other kind is owed.  The rule reads the
+    state alone, so a probe carrying a supersession note is answered as the
+    same probe without one (KOD-794).  Neither reading can move without the
+    other saying so.
     """
     assert TERMINAL == {"COMPLETED", "CANCELED", "DUPLICATE"}
     closed = set()
     for kind in WorkflowStateKind:
-        owed = in_gap(probe(kind), supersession_ref=None)
-        superseded = in_gap(probe(kind), supersession_ref="fire/other")
-        if not owed or owed != superseded:
+        owed = open_state_kind(kind)
+        assert gap_membership(probe(kind)) is state_membership(kind)
+        assert gap_membership(superseded_probe(kind)) is state_membership(kind)
+        if not owed:
             closed.add(kind.name)
         else:
             assert kind.name not in TERMINAL, kind
@@ -402,10 +419,14 @@ def test_a_name_bound_to_a_comparison_is_not_an_alias_of_the_member():
 
 def test_the_closure_arithmetic_is_declared_once_and_only_there():
     """One owner per symbol, and no second declaration of any of the names."""
-    assert module_of(in_gap) == module_of(compute_gap) == "domain/gap.py"
     assert (
-        module_of(SubtreeClosure) == module_of(open_criteria) == "domain/issue_tree.py"
+        module_of(state_membership)
+        == module_of(gap_membership)
+        == module_of(open_state_kind)
+        == module_of(compute_gap)
+        == "domain/gap.py"
     )
+    assert module_of(SubtreeClosure) == "domain/issue_tree.py"
     names = frozenset(OWNERS)
     places = {symbol.__name__: module_of(symbol) for symbol in ARITHMETIC}
     assert _declarations(SOURCE, names) == {
@@ -483,68 +504,71 @@ def _closed_readings(
     ]
 
 
-def rollup_arm(function: ast.FunctionDef) -> tuple[list[ast.stmt], ast.Return]:
-    """The refusal of the rollup's exempt arm, and the return after it.
+def calls_of(function: ast.AST) -> list[ast.Call]:
+    """Every call a body makes, in walk order."""
+    return [node for node in ast.walk(function) if isinstance(node, ast.Call)]
 
-    The refusal is the body up to and including the first ``if`` that
-    raises; the rest must be one ``return``.
+
+def test_the_rollup_reads_no_closed_kind_and_hands_each_criterion_to_the_rule():
+    """The rollup's walk asks the rule about each criterion and decides nothing.
+
+    Its criterion arm is a call of the rule, resolved by object in the module
+    that declares it, and no closed kind is read anywhere in the walk: a
+    Canceled or Duplicate criterion is not refused or kept by the rollup, the
+    rule excludes it on state alone (KOD-794), so the rollup's module needs no
+    exemption at all.
     """
-    body = [
-        statement
-        for statement in function.body
-        if not (
-            isinstance(statement, ast.Expr)
-            and isinstance(statement.value, ast.Constant)
-            and isinstance(statement.value.value, str)
-        )
-    ]
-    refusal_end = next(
-        index
-        for index, statement in enumerate(body)
-        if isinstance(statement, ast.If)
-        and any(isinstance(node, ast.Raise) for node in ast.walk(statement))
-    )
-    (returned,) = body[refusal_end + 1 :]
-    assert isinstance(returned, ast.Return)
-    return body[: refusal_end + 1], returned
-
-
-def test_the_rollups_exempt_arm_hands_its_decision_to_the_rule():
-    """The exempt arm refuses what the rule cannot answer, then asks the rule.
-
-    Its return is a call of the rule, resolved by object in the module that
-    declares it, and a closed kind is read only inside the refusal before
-    it: a body that decided the family itself after refusing would be a
-    second arithmetic under the arm's exemption.
-    """
-    module = module_of(open_criteria)
+    module = module_of(SubtreeClosure)
     text = (SOURCE / module).read_text()
     names = names_of(module, text, SOURCE)
-    (function,) = ast.parse(textwrap.dedent(inspect.getsource(open_criteria))).body
-    assert isinstance(function, ast.FunctionDef)
-    refusal, returned = rollup_arm(function)
-    assert isinstance(returned.value, ast.Call)
-    assert denoted(returned.value.func, names) is compute_gap
-    assert _closed_readings(refusal, names)
-    assert _closed_readings([returned], names) == []
-
-
-def test_a_rollup_arm_restating_the_rule_after_its_refusal_is_reported():
-    names = names_of_tree(ast.parse(f"from {VOCABULARY_MODULE} import {VOCABULARY}\n"))
     (function,) = ast.parse(
-        "def open_criteria(criteria, *, ref):\n"
-        f"    if any(c.state_kind is {VOCABULARY}.CANCELED for c in criteria):\n"
-        "        raise LookupError(ref)\n"
-        "    return tuple(\n"
-        f"        c for c in criteria if c.state_kind is not {VOCABULARY}.COMPLETED\n"
-        "    )\n"
+        textwrap.dedent(inspect.getsource(SubtreeClosure._walk))
     ).body
     assert isinstance(function, ast.FunctionDef)
-    refusal, returned = rollup_arm(function)
-    assert _closed_readings(refusal, names)
-    assert _closed_readings([returned], names) != []
-    assert isinstance(returned.value, ast.Call)
-    assert denoted(returned.value.func, names) is not compute_gap
+    assert any(denoted(call.func, names) is compute_gap for call in calls_of(function))
+    assert _closed_readings(function.body, names) == []
+    assert {site for site in surface(SOURCE) if site.startswith(f"{module}::")} == set()
+    assert not any(site.startswith(f"{module}::") for site in EXEMPT)
+
+
+PLANTED_ROLLUP = (
+    f"from {WorkflowStateKind.__module__} import {VOCABULARY}\n\n\n"
+    "class SubtreeClosure:\n"
+    "    def _walk(self, issue):\n"
+    "        return tuple(\n"
+    f"            c for c in (issue,) if c.state_kind is not {VOCABULARY}.COMPLETED\n"
+    "        )\n"
+)
+ASKING_ROLLUP = (
+    f"from {compute_gap.__module__} import {compute_gap.__name__}\n\n\n"
+    "class SubtreeClosure:\n"
+    "    def _walk(self, issue):\n"
+    f"        return {compute_gap.__name__}((issue,)).owed\n"
+)
+
+
+def test_a_rollup_restating_the_rule_is_reported(tmp_path):
+    """A walk deciding a criterion from its own state is a second arithmetic.
+
+    The same walk asking the rule instead is not reported, so the report is
+    about the restatement and not about the walk.
+    """
+    names = names_of_tree(ast.parse(PLANTED_ROLLUP))
+    (planted,) = ast.parse(PLANTED_ROLLUP).body[1:]
+    assert isinstance(planted, ast.ClassDef)
+    (function,) = planted.body
+    assert isinstance(function, ast.FunctionDef)
+    assert _closed_readings(function.body, names) != []
+    assert all(
+        denoted(call.func, names) is not compute_gap for call in calls_of(function)
+    )
+    restating, asking = tmp_path / "restating", tmp_path / "asking"
+    restating.mkdir()
+    asking.mkdir()
+    (restating / "rollup.py").write_text(PLANTED_ROLLUP)
+    (asking / "rollup.py").write_text(ASKING_ROLLUP)
+    assert surface(restating) == frozenset({"rollup.py::SubtreeClosure._walk"})
+    assert surface(asking) == frozenset()
 
 
 def test_every_exemption_names_a_site_the_walk_reports():
