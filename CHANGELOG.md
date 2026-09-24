@@ -15,6 +15,12 @@ concerns.
   is not, what the first boot writes to the team, the environment it needs, what
   boot logs, how to start and re-enter a run, and which member refuses where.
   `docs/operation.scope.toml` is the config it points at.
+- `KODEZART_QUEUE__RUN_TIMEOUT_SECONDS`, an optional time limit on each queued
+  job (KOD-1251). A job past it is cancelled, logs `job_timed_out` and ends with
+  the new outcome `job_timed_out`; its stream closes, so a fire's claim is
+  released, and its lane takes the next job
+  (`src/kodezart/adapters/asyncio_job_queue.py`). Unset, there is no limit and
+  the queue behaves as before.
 
 ### Changed
 

@@ -829,7 +829,9 @@ class AppConfig(BaseSettings):
     )
     queue: JobQueueSettings = Field(
         default_factory=JobQueueSettings,
-        description="Job queue capacity and record/replay retention.",
+        description=(
+            "Job queue capacity, record/replay retention and the run time limit."
+        ),
     )
 
     @model_validator(mode="after")

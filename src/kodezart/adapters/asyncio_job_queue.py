@@ -10,6 +10,11 @@ Concurrency is enforced by worker count and nothing else: N tasks pull
 from one ``asyncio.Queue`` per lane, where N is the configured
 per-lane concurrency.  There is no semaphore and no lock; the configured
 default of 1 is the only thing making runs serial.
+
+A job may be given a time limit.  With one configured, a run still going
+when it expires is cancelled and its job ends ``job_timed_out``, so a
+session stuck on a stream that never ends frees its lane instead of
+holding it until a restart.  Unset, a run has no limit at all.
 """
 
 import asyncio
@@ -132,8 +137,10 @@ class AsyncioJobQueue:
         event_buffer_retention_seconds: float,
         event_buffer_capacity: int,
         registry: InMemoryJobRegistry | None = None,
+        run_timeout_seconds: float | None = None,
     ) -> None:
         self._engine: WorkflowEngine = engine
+        self._run_timeout_seconds: float | None = run_timeout_seconds
         self._max_concurrent_runs_per_lane: int = max_concurrent_runs_per_lane
         self._max_depth_per_lane: int = max_depth_per_lane
         self._terminal_retention_seconds: float = terminal_retention_seconds
@@ -304,49 +311,78 @@ class AsyncioJobQueue:
         await self._log.ainfo("job_started", job_id=job_id, lane=lane)
 
         outcome: WorkflowOutcome | None = None
+        # A limit of ``None`` sets no deadline at all, which is the queue as
+        # it was before the limit existed.  Whether the limit ended the run
+        # is asked of the deadline itself, so a ``TimeoutError`` the engine
+        # raises on its own stays an engine error.
+        deadline = asyncio.timeout(self._run_timeout_seconds)
         try:
-            async for event in self._engine.run(
-                prompt=request.prompt,
-                issue_key=request.issue_key,
-                run_identity=(
-                    RunIdentity(
-                        kind=RunKind.FIRE,
-                        name=request.issue_key,
-                        started_at=record.submitted_at,
-                    )
-                    if request.issue_key is not None
-                    else None
-                ),
-                repo_path=request.repo_path,
-                repo_url=request.repo_url,
-                base_spec=request.base_spec,
-                scope=request.scope,
-                implied_base=request.implied_base,
-                permission_mode=request.permission_mode,
-                allowed_tools=request.allowed_tools,
-                cache_key=job_id,
-            ):
-                await self._publish(job_id, event)
-                if isinstance(event, WorkflowCompleteEvent | ScopeTerminalEvent):
-                    outcome = event.outcome
+            async with deadline:
+                async for event in self._engine.run(
+                    prompt=request.prompt,
+                    issue_key=request.issue_key,
+                    run_identity=(
+                        RunIdentity(
+                            kind=RunKind.FIRE,
+                            name=request.issue_key,
+                            started_at=record.submitted_at,
+                        )
+                        if request.issue_key is not None
+                        else None
+                    ),
+                    repo_path=request.repo_path,
+                    repo_url=request.repo_url,
+                    base_spec=request.base_spec,
+                    scope=request.scope,
+                    implied_base=request.implied_base,
+                    permission_mode=request.permission_mode,
+                    allowed_tools=request.allowed_tools,
+                    cache_key=job_id,
+                ):
+                    await self._publish(job_id, event)
+                    if isinstance(event, WorkflowCompleteEvent | ScopeTerminalEvent):
+                        outcome = event.outcome
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            # The run raised before it could classify itself, so the
-            # queue names the fate it observed.  Without this the record
-            # reaches TERMINAL with a null outcome, which is also what a
-            # shutdown sweep and a clean-but-silent run leave behind —
-            # three different fates read as one absence.
-            outcome = WorkflowOutcome.engine_error
-            await self._log.aexception(
-                "job_failed",
-                job_id=job_id,
-                lane=lane,
-                error=str(exc),
-                error_kind=type(exc).__name__,
-            )
-            await self._publish(job_id, build_error_event(exc))
+            if deadline.expired():
+                outcome = WorkflowOutcome.job_timed_out
+                await self._time_out(job_id, lane)
+            else:
+                # The run raised before it could classify itself, so the
+                # queue names the fate it observed.  Without this the record
+                # reaches TERMINAL with a null outcome, which is also what a
+                # shutdown sweep and a clean-but-silent run leave behind —
+                # three different fates read as one absence.
+                outcome = WorkflowOutcome.engine_error
+                await self._log.aexception(
+                    "job_failed",
+                    job_id=job_id,
+                    lane=lane,
+                    error=str(exc),
+                    error_kind=type(exc).__name__,
+                )
+                await self._publish(job_id, build_error_event(exc))
         await self._finish(job_id, lane, outcome)
+
+    async def _time_out(self, job_id: str, lane: str) -> None:
+        """Say that the limit ended the run: in the log, and on the stream.
+
+        The error frame is what a client attached to the job reads, and what
+        the lifecycle watch of a fire reads as the class the run died of, so
+        the tracker's failure note names the timeout rather than no class.
+        """
+        await self._log.aerror(
+            "job_timed_out",
+            job_id=job_id,
+            lane=lane,
+            run_timeout_seconds=self._run_timeout_seconds,
+        )
+        reason = TimeoutError(
+            f"job ran past the queue's run time limit of "
+            f"{self._run_timeout_seconds} seconds and was cancelled"
+        )
+        await self._publish(job_id, build_error_event(reason))
 
     async def _publish(self, job_id: str, event: AgentEvent) -> None:
         stream = self._streams[job_id]

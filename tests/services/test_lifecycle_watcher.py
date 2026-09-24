@@ -650,6 +650,89 @@ class TestGracefulShutdownHandsTheClaimBack:
         assert tracker.queue_writes == [(ISSUE, QueueState.DONE)]
 
 
+class TestARunLimitHandsTheClaimBack:
+    """A job the queue's run limit ends frees its issue (KOD-1251).
+
+    Over the shipped queue, because the limit is that adapter's own: it ends
+    the stream of the job it cancelled, and the end of a stream is what a
+    watch reads as its job's end. Before the limit, a run stuck on a stream
+    that never ended kept the heartbeat renewing its claim for as long as the
+    process lived.
+    """
+
+    async def test_a_timed_out_job_leaves_its_issue_claimable(self) -> None:
+        queue = AsyncioJobQueue(
+            # Never released: only the limit can end this run.
+            engine=_OneEventEngine(released=asyncio.Event()),
+            max_concurrent_runs_per_lane=1,
+            max_depth_per_lane=4,
+            terminal_retention_seconds=60.0,
+            event_buffer_retention_seconds=60.0,
+            event_buffer_capacity=64,
+            run_timeout_seconds=0.2,
+        )
+        await queue.start()
+        try:
+            tracker = FakeTrackerPort(issues=[make_tracker_issue(ISSUE)])
+            await tracker.claim_issue(
+                issue_key=ISSUE,
+                holder=HOLDER,
+                lease_seconds=LEASE_SECONDS,
+            )
+            watch = LifecycleWatcher(
+                recorder=RunRecorder(records={}, sinks={}),
+                queue=queue,
+                registry=queue,
+                writer=TrackerLifecycleWriter(
+                    marker_prefixes={"run_outcome": "fixture-outcome"},
+                    surface_lease_seconds=900,
+                    tracker=tracker,
+                    gate=PassThroughGate(),
+                ),
+                heartbeat=claim_heartbeat(tracker),
+                report=FakeFireReport(),
+            )
+            record = await queue.submit(
+                lane="lane",
+                request=WorkflowSubmission(
+                    prompt="do the thing",
+                    repo_path=None,
+                    repo_url=REPO_URL,
+                    base_spec=trunk_base("main"),
+                    implied_base=None,
+                    scope=None,
+                    permission_mode=PermissionMode.UNATTENDED,
+                    allowed_tools=["Read", "Glob", "Grep", "Bash", "Edit", "Write"],
+                ),
+            )
+
+            await asyncio.wait_for(
+                watch.watch(
+                    issue_key=ISSUE,
+                    job_id=record.job_id,
+                    pre_claim_state=PRE_CLAIM_STATE,
+                ),
+                timeout=5.0,
+            )
+
+            ended = await queue.get(job_id=record.job_id)
+            assert ended is not None
+            assert ended.outcome is WorkflowOutcome.job_timed_out
+            assert await tracker.active_claim(issue_key=ISSUE) is None
+            again = await tracker.claim_issue(
+                issue_key=ISSUE,
+                holder="pass-b",
+                lease_seconds=LEASE_SECONDS,
+            )
+            assert again.status is ClaimStatus.GRANTED
+            # The failure arm put the issue back and named what ended the run.
+            assert tracker.restored_states == [(ISSUE, PRE_CLAIM_STATE)]
+            (comment,) = tracker.comments
+            assert "TimeoutError" in comment.body
+        finally:
+            await queue.stop()
+
+
 class TestTheWatcherIsUnknownJobSafe:
     """An unknown job id is the queue's error to raise, never swallowed."""
 

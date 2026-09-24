@@ -10,6 +10,7 @@ from kodezart.composition.jobs import build_job_queue
 from kodezart.config.app import AppConfig
 from kodezart.domain.errors import QueueFullError
 from kodezart.types.domain.agent import AssistantTextEvent
+from kodezart.types.domain.outcome import WorkflowOutcome
 from tests.api.v1.test_jobs import (
     ChattyWorkflowEngine,
     GatedWorkflowEngine,
@@ -27,7 +28,12 @@ FIELDS = {
     "terminal_retention_seconds": 120.0,
     "event_buffer_retention_seconds": 60.0,
     "event_buffer_capacity": 4,
+    "run_timeout_seconds": 7200.0,
 }
+
+#: The fields that had a flat spelling before the queue section existed. The
+#: run limit arrived nested and never had one, so there is no old name to refuse.
+FORMER_FLAT_FIELDS = [field for field in FIELDS if field != "run_timeout_seconds"]
 
 
 @pytest.mark.parametrize("source", ["init", "env", "dotenv", "secret"])
@@ -73,7 +79,7 @@ def test_queue_sources_keep_standard_precedence(tmp_path, monkeypatch):
     assert AppConfig(_env_file=None, _secrets_dir=secrets).queue.model_dump() == FIELDS
 
 
-@pytest.mark.parametrize("field", list(FIELDS))
+@pytest.mark.parametrize("field", FORMER_FLAT_FIELDS)
 @pytest.mark.parametrize("source", ["init", "env", "dotenv", "secret"])
 def test_old_flat_queue_names_refuse(source, field, tmp_path, monkeypatch):
     with pytest.raises(ValidationError, match="Extra inputs") as caught:
@@ -91,12 +97,37 @@ def test_old_flat_queue_names_refuse(source, field, tmp_path, monkeypatch):
         ("max_depth_per_lane", 1025),
         ("event_buffer_capacity", 0),
         ("event_buffer_capacity", 10001),
+        ("run_timeout_seconds", 0),
+        ("run_timeout_seconds", -1.0),
         ("max_depth_per_lnae", 2),
     ],
 )
 def test_queue_bounds_and_nested_typos_refuse(field, value):
     with pytest.raises(ValidationError):
         AppConfig(_env_file=None, queue={field: value})
+
+
+def test_the_run_limit_is_unset_unless_configured():
+    """No silent limit: an operation that names none runs as it always did."""
+    assert AppConfig(_env_file=None).queue.run_timeout_seconds is None
+
+
+async def test_composed_queue_reads_the_run_limit_by_its_env_name(monkeypatch):
+    monkeypatch.setenv("KODEZART_QUEUE__RUN_TIMEOUT_SECONDS", "0.2")
+    settings = AppConfig(_env_file=None).queue
+    assert settings.run_timeout_seconds == 0.2
+    engine = GatedWorkflowEngine()
+    queue = build_job_queue(settings=settings, workflow_engine=engine)
+    await queue.start()
+    try:
+        record = await queue.submit(lane="lane", request=_request("stuck"))
+        await _wait_terminal(queue, record.job_id)
+        terminal = await queue.get(job_id=record.job_id)
+        assert terminal is not None
+        assert terminal.outcome is WorkflowOutcome.job_timed_out
+        assert engine.finished == []
+    finally:
+        await queue.stop()
 
 
 @pytest.mark.parametrize("workers", [1, 2])

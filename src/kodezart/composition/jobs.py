@@ -20,7 +20,7 @@ def build_job_queue(
     workflow_engine: WorkflowEngine,
     registry: InMemoryJobRegistry | None = None,
 ) -> AsyncioJobQueue:
-    """The in-process queue, with its validated capacity and retention settings.
+    """The in-process queue, with its validated capacity, retention and run limit.
 
     *registry* is the record store the queue writes into. A deployment builds
     it BEFORE the engine and passes the same object to both, so a scope run's
@@ -35,6 +35,7 @@ def build_job_queue(
         terminal_retention_seconds=settings.terminal_retention_seconds,
         event_buffer_retention_seconds=settings.event_buffer_retention_seconds,
         event_buffer_capacity=settings.event_buffer_capacity,
+        run_timeout_seconds=settings.run_timeout_seconds,
     )
 
 

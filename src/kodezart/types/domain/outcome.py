@@ -55,6 +55,11 @@ class WorkflowOutcome(StrEnum):
     text and its pinned answer could not be confirmed on the tracker, so the
     loop was never entered. It is a statement about the tracker rather than
     about the work — nothing the first iteration would have read is there.
+
+    ``job_timed_out`` is the third queue-assigned member, beside
+    ``engine_error`` and ``shutdown_abandoned``: the job ran past the queue's
+    configured run time limit and the queue cancelled it. Like them it is a
+    fact about the JOB, and ``classify_outcome`` never produces it.
     """
 
     merge_divergent = "merge_divergent"
@@ -81,3 +86,4 @@ class WorkflowOutcome(StrEnum):
     ci_failed_unclassified = "ci_failed_unclassified"
     ci_no_run_at_ref = "ci_no_run_at_ref"
     ruling_unrecorded = "ruling_unrecorded"
+    job_timed_out = "job_timed_out"

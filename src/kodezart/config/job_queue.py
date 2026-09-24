@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class JobQueueSettings(BaseModel):
-    """Worker capacity and independent record/replay retention windows."""
+    """Worker capacity, record/replay retention windows and the run time limit."""
 
     model_config = ConfigDict(extra="forbid", frozen=True, hide_input_in_errors=True)
 
@@ -39,6 +39,14 @@ class JobQueueSettings(BaseModel):
         ge=1,
         le=10000,
         description="Replay events retained per job; overflow drops the oldest.",
+    )
+    run_timeout_seconds: float | None = Field(
+        default=None,
+        gt=0.0,
+        description=(
+            "Longest one job may run before the queue cancels it and ends it "
+            "job_timed_out. Unset: no limit."
+        ),
     )
 
     @model_validator(mode="after")

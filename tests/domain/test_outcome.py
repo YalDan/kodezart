@@ -126,6 +126,7 @@ def test_wire_values_are_pinned_verbatim() -> None:
 QUEUE_ASSIGNED = (
     WorkflowOutcome.engine_error,
     WorkflowOutcome.shutdown_abandoned,
+    WorkflowOutcome.job_timed_out,
 )
 
 
@@ -415,3 +416,14 @@ def test_the_new_member_appends_with_its_exact_wire_value() -> None:
         WorkflowOutcome.ci_no_run_at_ref
     )
     assert member not in QUEUE_ASSIGNED
+
+
+def test_the_run_limit_member_appends_as_a_queue_assigned_fate() -> None:
+    """KOD-1251: the queue's own verdict on a job that ran past its limit."""
+    member = WorkflowOutcome.job_timed_out
+
+    assert member.value == "job_timed_out"
+    assert list(WorkflowOutcome).index(member) > list(WorkflowOutcome).index(
+        WorkflowOutcome.shutdown_abandoned
+    )
+    assert member in QUEUE_ASSIGNED

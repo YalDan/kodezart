@@ -1503,7 +1503,7 @@ def machinery_digest(line: Iterable[type[BaseModel]]) -> str:
 #: review this pin exists to force.  A pydantic upgrade that lays a schema
 #: out differently moves it as well, and is reviewed the same way.
 TERMINAL_MACHINERY_DIGEST = (
-    "1c8663a53f13e19b6e2672d2d33d3f758a7cacdea55becb61f61e0021b29c207"
+    "ad6d5692fb766a02c3b7072f117a1a9975ccce415c5200d30d0202c89448e664"
 )
 
 
@@ -2061,7 +2061,7 @@ EGRESS_PATH: dict[Callable[..., object], str] = {
         "55544aa6ca52e76b284c27b3d9de15540a8f597454659d529fdd9bfaa78a9cf6"
     ),
     asyncio_job_queue.AsyncioJobQueue._run_job: (
-        "5763ef3bc64dbad043b3d439170dc9d824aa58ccd25ed51bf38f28a371eee9dc"
+        "d5ce295e946726cf3de544d371a971ceee8bf830c9cdebac9956c1504eb07805"
     ),
     asyncio_job_queue.AsyncioJobQueue._publish: (
         "d6a85e1885ad36f4ca75934bd37c541f65f26ad643520400b48411d0270a61f7"

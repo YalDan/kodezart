@@ -165,6 +165,10 @@ curl -X POST http://localhost:8000/api/v1/agent/fire \
 Registry facts for a queued or running job, plus the checkpointed run state.
 `404` with a `BaseResponse` error body when the job id is unknown or its
 record has been released (`KODEZART_QUEUE__TERMINAL_RETENTION_SECONDS`).
+A job the queue cancelled at its run time limit
+(`KODEZART_QUEUE__RUN_TIMEOUT_SECONDS`) is terminal with outcome
+`job_timed_out`, and its stream ends on an `error` event whose `errorKind` is
+`TimeoutError`.
 
 ### Example
 
@@ -280,7 +284,8 @@ Nested events use their concrete discriminator and retain required null fields,
 so the scope envelope validates against the same schema it emits.
 When this controller invocation finishes cleanly it emits one `scope_terminal`
 event and the job's outcome is that event's; a run that raised is `engine_error`
-and emits none. A lane is done when no criterion under it is open, and the
+and emits none, and a run the queue's run time limit cut off is `job_timed_out`
+and emits none either. A lane is done when no criterion under it is open, and the
 outcome reads that column and nothing else — not a pull request, not a merge.
 Unapproved and skipped lanes, unresolved criterion keys, unreachable criteria
 and the excluded criterion keys the board set aside remain explicit in

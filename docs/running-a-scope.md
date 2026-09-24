@@ -154,6 +154,18 @@ the renames section of
 [`docs/migration-v0.2-to-v0.3.md`](migration-v0.2-to-v0.3.md) maps each to its
 current name; every retired spelling is refused rather than ignored.
 
+Decide one more before the first run: `KODEZART_QUEUE__RUN_TIMEOUT_SECONDS`,
+the longest one queued job may run. Unset, there is no limit, and a session
+stuck on a stream that never ends holds the dispatch lane, and every scope run
+and fire behind it, until the process restarts. Set, a job past it is
+cancelled, logs `job_timed_out` and ends with that outcome, and the lane takes
+the next job; while the scope stays approved, the heartbeat submits it again on
+its next tick and the run re-enters as a killed one does (see Stopping and
+re-entering below). A scope run is one job for its whole walk, and every lane
+it fires waits for CI: up to `KODEZART_CI_POLL_INTERVAL_SECONDS` times
+`KODEZART_CI_POLL_MAX_ATTEMPTS`, about 30 minutes at the defaults. Set the
+limit well above the longest walk you expect, not above one CI wait.
+
 ## What boot logs
 
 - `tracker_mappings_reconciled` — the backend is dialled and every declared

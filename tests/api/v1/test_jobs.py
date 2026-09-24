@@ -33,6 +33,7 @@ from kodezart.types.domain import job as job_types
 from kodezart.types.domain.agent import (
     AgentEvent,
     AssistantTextEvent,
+    ErrorEvent,
     WorkflowCompleteEvent,
 )
 from kodezart.types.domain.branch import (
@@ -224,6 +225,7 @@ def _make_queue(
     terminal_retention_seconds: float = 86400.0,
     event_buffer_retention_seconds: float = 900.0,
     event_buffer_capacity: int = 512,
+    run_timeout_seconds: float | None = None,
 ) -> AsyncioJobQueue:
     return AsyncioJobQueue(
         engine=engine,
@@ -232,6 +234,7 @@ def _make_queue(
         terminal_retention_seconds=terminal_retention_seconds,
         event_buffer_retention_seconds=event_buffer_retention_seconds,
         event_buffer_capacity=event_buffer_capacity,
+        run_timeout_seconds=run_timeout_seconds,
     )
 
 
@@ -790,8 +793,16 @@ class RaisingWorkflowEngine:
     classifying itself.
     """
 
-    def __init__(self, *, events: list[AgentEvent] | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        events: list[AgentEvent] | None = None,
+        error: Exception | None = None,
+    ) -> None:
         self._events: list[AgentEvent] = events if events is not None else []
+        self._error: Exception = (
+            RuntimeError("adapter retries exhausted") if error is None else error
+        )
 
     async def run(
         self,
@@ -810,8 +821,7 @@ class RaisingWorkflowEngine:
     ) -> AsyncGenerator[AgentEvent, None]:
         for event in self._events:
             yield event
-        msg = "adapter retries exhausted"
-        raise RuntimeError(msg)
+        raise self._error
 
 
 async def test_a_run_whose_engine_raises_terminates_naming_the_hard_failure() -> None:
@@ -998,6 +1008,124 @@ async def test_status_of_a_hard_failure_is_terminal_and_names_the_cause() -> Non
 
         assert payload["state"] == "terminal"
         assert payload["outcome"] == WorkflowOutcome.engine_error.value
+
+
+# ---------------------------------------------------------------------------
+# KOD-1251: a queued job may be given a time limit
+# ---------------------------------------------------------------------------
+
+#: Waited out for real by the tests below. A held run never finishes on its
+#: own, so the only thing that can end it inside the settle bound is the limit.
+RUN_LIMIT = 0.2
+
+
+async def test_a_job_past_the_run_limit_is_cancelled_and_ends_timed_out() -> None:
+    """The limit ends a run that would otherwise hold its lane forever.
+
+    The job ends under its own outcome, says so in the log, and publishes an
+    error frame, so the stream closes on a named cause rather than on silence.
+    """
+    engine = GatedWorkflowEngine()
+    queue = _make_queue(engine, run_timeout_seconds=RUN_LIMIT)
+    await queue.start()
+    try:
+        with structlog.testing.capture_logs() as logs:
+            record = await queue.submit(lane=DEFAULT_LANE, request=_request("stuck"))
+            await _wait_terminal(queue, record.job_id)
+
+        final = await queue.get(job_id=record.job_id)
+        assert final is not None
+        assert (final.state, final.outcome) == (
+            JobState.TERMINAL,
+            WorkflowOutcome.job_timed_out,
+        )
+        assert engine.started == ["stuck"]
+        assert engine.finished == []
+
+        published = await _drain(queue, record.job_id)
+        assert len(published) == 1
+        assert isinstance(published[0], ErrorEvent)
+        assert published[0].error_kind == "TimeoutError"
+        assert str(RUN_LIMIT) in published[0].error
+
+        timed_out = [entry for entry in logs if entry["event"] == "job_timed_out"]
+        assert len(timed_out) == 1
+        assert timed_out[0]["log_level"] == "error"
+        assert timed_out[0]["job_id"] == record.job_id
+        assert timed_out[0]["run_timeout_seconds"] == RUN_LIMIT
+        assert [entry for entry in logs if entry["event"] == "job_failed"] == []
+    finally:
+        await queue.stop()
+
+
+async def test_the_lane_runs_the_next_job_once_the_limit_ends_the_stuck_one() -> None:
+    """One worker, one stuck job: the job behind it still runs, untouched.
+
+    The next job finishes inside the limit, so it keeps the outcome it
+    reported; the limit ends only the run that went past it.
+    """
+    engine = GatedWorkflowEngine(events=[_complete_event(WorkflowOutcome.ci_passed)])
+    engine.release("next")
+    queue = _make_queue(engine, run_timeout_seconds=RUN_LIMIT)
+    await queue.start()
+    try:
+        stuck = await queue.submit(lane=DEFAULT_LANE, request=_request("stuck"))
+        waiting = await queue.submit(lane=DEFAULT_LANE, request=_request("next"))
+        await _wait_terminal(queue, waiting.job_id)
+
+        assert engine.started == ["stuck", "next"]
+        assert engine.finished == ["next"]
+        stuck_record = await queue.get(job_id=stuck.job_id)
+        next_record = await queue.get(job_id=waiting.job_id)
+        assert stuck_record is not None
+        assert next_record is not None
+        assert stuck_record.outcome is WorkflowOutcome.job_timed_out
+        assert next_record.outcome is WorkflowOutcome.ci_passed
+    finally:
+        await queue.stop()
+
+
+async def test_with_no_limit_a_long_job_is_left_running() -> None:
+    """Unset is the queue as it was: no deadline, however long the run holds."""
+    engine = GatedWorkflowEngine(events=[_complete_event(WorkflowOutcome.ci_passed)])
+    queue = _make_queue(engine)
+    await queue.start()
+    try:
+        record = await queue.submit(lane=DEFAULT_LANE, request=_request("long"))
+        await _until(lambda: engine.started == ["long"])
+        await asyncio.sleep(RUN_LIMIT * 3)
+
+        held = await queue.get(job_id=record.job_id)
+        assert held is not None
+        assert (held.state, held.outcome) == (JobState.RUNNING, None)
+
+        engine.release("long")
+        await _wait_terminal(queue, record.job_id)
+        final = await queue.get(job_id=record.job_id)
+        assert final is not None
+        assert final.outcome is WorkflowOutcome.ci_passed
+    finally:
+        await queue.stop()
+
+
+async def test_a_timeout_the_engine_raises_itself_stays_an_engine_error() -> None:
+    """Only the queue's own deadline makes a job time out.
+
+    A ``TimeoutError`` raised inside the run, well before the limit, is the
+    run failing, and it keeps the outcome every other raise gets.
+    """
+    engine = RaisingWorkflowEngine(error=TimeoutError("tracker read timed out"))
+    queue = _make_queue(engine, run_timeout_seconds=SETTLE_TIMEOUT * 10)
+    await queue.start()
+    try:
+        record = await queue.submit(lane=DEFAULT_LANE, request=_request("fix"))
+        await _wait_terminal(queue, record.job_id)
+
+        final = await queue.get(job_id=record.job_id)
+        assert final is not None
+        assert final.outcome is WorkflowOutcome.engine_error
+    finally:
+        await queue.stop()
 
 
 async def test_job_id_is_the_langgraph_thread_id(checkpointed_app: _JobApp) -> None:
