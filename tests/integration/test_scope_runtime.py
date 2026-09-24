@@ -26,6 +26,7 @@ from kodezart.config.app import AppConfig
 from kodezart.config.job_queue import JobQueueSettings
 from kodezart.config.write_back import WriteBackSettings
 from kodezart.core.errors import TrackerUnavailableError
+from kodezart.core.prompt_namespaces import operation_bindings
 from kodezart.core.protocols import NodeSessionRecorder, PRCreator
 from kodezart.domain.agent import (
     best_iteration_ref,
@@ -111,6 +112,7 @@ from tests.chains.test_native_fire import (
     native_operation,
 )
 from tests.fakes import (
+    DEFAULT_PROMPT_SET,
     FIXTURE_EPOCH,
     SUPPRESS_ALL_SKILLS,
     FakeArtifactPersister,
@@ -124,7 +126,6 @@ from tests.fakes import (
     FakeTrackerPort,
     FakeWorkspaceProvider,
     PassThroughGate,
-    make_prompt_provider,
     make_tracker_issue,
 )
 from tests.lane_fixture import (
@@ -135,6 +136,7 @@ from tests.lane_fixture import (
     base_echo,
     criteria_echo,
 )
+from tests.prompts.test_prompt_wiring import load_registry
 
 
 @pytest.fixture(autouse=True)
@@ -372,6 +374,7 @@ def runtime(
     criteria in this module.
     """
     port = port or board(lanes=lanes)
+    declared = native_operation() if operation is None else operation
     executor = (
         ObservedNativeExecutor(
             evaluations
@@ -421,7 +424,7 @@ def runtime(
             NativeSourceReader if source is None else (lambda: source),
         )
         engine = build_workflow_engine(
-            operation=native_operation() if operation is None else operation,
+            operation=declared,
             config=AppConfig(
                 write_back=WriteBackSettings(max_verify_rounds=2),
                 ticket_review_mode=TicketReviewMode.REVIEWED,
@@ -442,7 +445,13 @@ def runtime(
             ref_publisher=FakeRefPublisher()
             if ref_publisher is None
             else ref_publisher,
-            prompts=make_prompt_provider(),
+            # The operation's own names are bound, the way boot binds them:
+            # the organize session's prompt addresses the labels the
+            # operation declares, and nothing else the harness renders
+            # names one.
+            prompts=load_registry(
+                default_set=DEFAULT_PROMPT_SET, bindings=operation_bindings(declared)
+            ),
             skills=SUPPRESS_ALL_SKILLS,
             gate=PassThroughGate(),
             github_api=forge,

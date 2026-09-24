@@ -961,7 +961,6 @@ async def build_dispatch_runtime(
                     git=git,
                     prompts=prompts,
                     skills=skills,
-                    gate=gate,
                 ),
             ),
         )

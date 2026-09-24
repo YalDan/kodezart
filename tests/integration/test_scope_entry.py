@@ -6,7 +6,6 @@ wiring written here.
 """
 
 import asyncio
-import json
 import re
 
 import pytest
@@ -56,8 +55,6 @@ MILESTONE = ScopeRef(kind=ScopeKind.MILESTONE, key="first-milestone")
 TICKET_MARKER = "body complete"
 #: The pre-approval row's marker, which no run stage of this table writes.
 GROOM_MARKER = "graph complete"
-#: The body every member's admission is granted on.
-PREPARED = "Prepared body grounded in the source."
 
 
 def organize_operation():
@@ -107,90 +104,69 @@ def organize_operation():
     return OperationConfig.model_validate(fields)
 
 
-class OrganizingExecutor(ObservedNativeExecutor):
-    """Answers the organize schemas; every other schema is the native double's.
+#: What an organize session's prompt carries, as the session double reads
+#: it: the marker it is to add, and the members that owe it, one per line.
+MARKER_LINE = re.compile(r"Marker to add: `(.*?)`")
+OWED_LINE = re.compile(r"^- (\S+)$", re.M)
 
-    The criteria proposal quotes the Checks the board's children already
-    carry, so the stage's creation step finds nothing absent and the run
-    reaches its walk without authoring a criterion.
+
+def is_organize_session(kwargs):
+    """Whether one executor call is the organize session, read off its prompt.
+
+    The session names no schema — its product is the board, not an answer —
+    so the prompt's marker line is what tells it from every other session.
+    """
+    return kwargs.get("output_format") is None and bool(
+        MARKER_LINE.search(kwargs.get("prompt", ""))
+    )
+
+
+class OrganizingExecutor(ObservedNativeExecutor):
+    """Stands in for the organize session's own tracker tools.
+
+    The session is handed the marker and the members that owe it, and
+    labels them through its tools; this double reads both off the prompt
+    and writes each label through the port. Every other session is the
+    native double's.
     """
 
     def __init__(self, evaluations, *, port):
         super().__init__(evaluations)
         self.port = port
         self.organize_calls = []
-        #: One row per admission session: the lane it named, how long the
+        #: One row per member the session labelled: the lane, how long the
         #: board's ordered classification journal was at the time, and the
         #: stage markers that lane carried then. The length is what makes
         #: "this marker write follows that session" a comparison rather than
         #: a story, and the markers are what says which stage the session
-        #: belonged to — the same lane is assessed once per stage.
+        #: belonged to — the same lane is labelled once per stage.
         self.admissions = []
 
-    def _checks(self, issue_key):
-        return [
-            re.search(r"\*\*Check:\*\*\s*(.*)", issue.body)[1].strip()
-            for issue in self.port.issues.values()
-            if issue.parent_key == issue_key and "criterion" in issue.issue_labels
-        ]
+    async def label(self, key, marker):
+        """The session's one write per member, through the port."""
+        self.admissions.append(
+            (
+                key,
+                len(self.port.classification_writes),
+                self.port.issues[key].issue_labels & frozenset({TICKET_MARKER, STAGED}),
+            )
+        )
+        await self.port.set_issue_classification(issue_key=key, classification=marker)
 
     async def stream(self, **kwargs):
-        # A dispatch that names no schema is a real shape on this path —
-        # the removal session's product is a tree, not an answer — so the
-        # title is read as absent rather than reached for.
-        title = (kwargs.get("output_format") or {}).get("schema", {}).get("title")
-        if title not in {"AdmissionJudgment", "OrganizeProposal", "WriteBackFinding"}:
+        if not is_organize_session(kwargs):
             async for event in super().stream(**kwargs):
                 yield event
             return
-        prompt = kwargs["prompt"]
         self.organize_calls.append(kwargs)
-        if title == "WriteBackFinding":
-            artifact = json.loads(
-                re.search(
-                    r"<written_artifact>\s*(.*?)\s*</written_artifact>", prompt, re.S
-                )[1]
-            )
-            payload = {
-                "verdict": "holds",
-                "evidence": f"Read the actual landed artifact: {artifact['content']}",
-                "cited_refs": [],
-            }
-        else:
-            key = re.findall(r"<issue_key>(.*?)</issue_key>", prompt)[-1]
-            if title == "AdmissionJudgment":
-                body = self.port.issues[key].body
-                self.admissions.append(
-                    (
-                        key,
-                        len(self.port.classification_writes),
-                        self.port.issues[key].issue_labels
-                        & frozenset({TICKET_MARKER, STAGED}),
-                    )
-                )
-                payload = {
-                    "issue_id": key,
-                    "verdict": "buildable",
-                    "evidence": f"Fresh native body checked: {body}",
-                }
-            elif "Author criterion sub-issue proposals" in prompt:
-                payload = {
-                    "kind": "criteria",
-                    "issue_id": key,
-                    "criteria": [
-                        {
-                            "title": check,
-                            "check": check,
-                            "do": f"Compare the source and {check}.",
-                            "runnable_test": "tests/fixture/test_criterion.py",
-                        }
-                        for check in self._checks(key)
-                    ],
-                }
-            else:
-                payload = {"kind": "body", "issue_id": key, "body": PREPARED}
+        marker = MARKER_LINE.search(kwargs["prompt"])[1]
+        for key in OWED_LINE.findall(kwargs["prompt"]):
+            await self.label(key, marker)
         yield SystemEvent(subtype="init", data={"session_id": "organize-session"})
-        yield organize_result(structured_output=payload)
+        yield organize_result(
+            structured_output=None,
+            result="Labelled every member that owed the marker.",
+        )
 
 
 def under_milestone(port):
@@ -689,46 +665,27 @@ async def test_setting_the_label_starts_a_run_that_stages_every_issue_then_walks
 
 
 class EscalatingExecutor(OrganizingExecutor):
-    """Answers one lane's SECOND-stage admission with an unresolved choice.
+    """Escalates one lane at the SECOND stage instead of labelling it.
 
-    The stage is read off the board rather than counted: a member reaching
-    the criteria stage already carries the ticket stage's marker, so the same
-    lane's first-stage admission is answered the ordinary way and only its
-    second refuses. A double that refused every admission of that lane would
-    halt the run one stage earlier and prove nothing about stage two.
+    The stage is read off the marker the session is asked to add rather than
+    counted: the same lane's first-stage session labels it the ordinary way,
+    and only its criteria-stage session leaves the marker off and adds the
+    decision label, the way a live session escalates a member. A double that
+    escalated every session of that lane would halt the run one stage
+    earlier and prove nothing about stage two.
     """
 
     def __init__(self, evaluations, *, port, refuses):
         super().__init__(evaluations, port=port)
         self.refuses = refuses
 
-    async def stream(self, **kwargs):
-        # A dispatch that names no schema is a real shape on this path —
-        # the removal session's product is a tree, not an answer — so the
-        # title is read as absent rather than reached for.
-        title = (kwargs.get("output_format") or {}).get("schema", {}).get("title")
-        if title == "AdmissionJudgment":
-            key = re.findall(r"<issue_key>(.*?)</issue_key>", kwargs["prompt"])[-1]
-            if (
-                key == self.refuses
-                and TICKET_MARKER in self.port.issues[key].issue_labels
-            ):
-                self.organize_calls.append(kwargs)
-                yield SystemEvent(
-                    subtype="init", data={"session_id": "organize-session"}
-                )
-                yield organize_result(
-                    structured_output={
-                        "issue_id": key,
-                        "verdict": "not_buildable",
-                        "invented_decision": "Which reading of the subject governs?",
-                        "evidence": "The prepared body admits two readings.",
-                        "refusal_kind": "human_decision",
-                    }
-                )
-                return
-        async for event in super().stream(**kwargs):
-            yield event
+    async def label(self, key, marker):
+        if key == self.refuses and marker == STAGED:
+            await self.port.set_issue_classification(
+                issue_key=key, classification="decision"
+            )
+            return
+        await super().label(key, marker)
 
 
 async def test_a_stage_two_escalation_holds_the_run_before_any_fire_and_stays_visible(
@@ -736,8 +693,8 @@ async def test_a_stage_two_escalation_holds_the_run_before_any_fire_and_stays_vi
 ):
     """Blocked, visible, and costing nothing on the next round (KOD-828).
 
-    The run reaches the criteria stage and one member's admission answers
-    with an unresolved choice. The job ends on the halt its caller already
+    The run reaches the criteria stage and its session escalates one member
+    instead of labelling it. The job ends on the halt its caller already
     knows: no lane is offered, no execution prompt is sent, and the member
     carries the decision label a person reads. The next run of the same scope
     is held by the barrier instead — the label that member lacks is the whole
@@ -776,17 +733,17 @@ async def test_a_stage_two_escalation_holds_the_run_before_any_fire_and_stays_vi
 
         (halted,) = errors(events)
         assert halted.error_kind == "OrganizeHaltError"
-        assert StageHaltCause.HUMAN_DECISION.value in halted.error
+        assert StageHaltCause.STAGE_INCOMPLETE.value in halted.error
         assert "decision" in port.issues["B"].issue_labels
         # Nothing was offered and nothing fired: the halt reached the caller
         # before the walk began.
         assert [event for event in events if isinstance(event, ScopeWalkEvent)] == []
         assert harness.executor.execution_prompts == []
-        # Stage one finished for everybody; stage two labelled nobody, because
-        # the halt is the stage's and not the member's.
+        # Stage one finished for everybody; stage two labelled the members it
+        # was not held on, and the halt is the stage's: one member short.
         for key in lanes:
             assert TICKET_MARKER in port.issues[key].issue_labels
-            assert STAGED not in port.issues[key].issue_labels
+            assert (STAGED in port.issues[key].issue_labels) is (key != "B")
 
         # The next submission is held by the barrier, and it costs nothing:
         # the escalated member is not re-admitted, and the members that owe

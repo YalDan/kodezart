@@ -41,6 +41,7 @@ from tests.integration.test_scope_entry import (
     approve,
     drain,
     errors,
+    is_organize_session,
     recording_stage_writes,
     staging_runtime,
     standing_board,
@@ -240,11 +241,7 @@ class GatedExecutor(OrganizingExecutor):
         self.release = asyncio.Event()
 
     async def stream(self, **kwargs):
-        # A dispatch that names no schema is a real shape on this path —
-        # the removal session's product is a tree, not an answer — so the
-        # title is read as absent rather than reached for.
-        title = (kwargs.get("output_format") or {}).get("schema", {}).get("title")
-        if title not in {"AdmissionJudgment", "OrganizeProposal", "WriteBackFinding"}:
+        if not is_organize_session(kwargs):
             self.reached.set()
             await self.release.wait()
         async for event in super().stream(**kwargs):
