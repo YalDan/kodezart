@@ -114,7 +114,7 @@ def is_ageing_raised(record: RunAlarm | None) -> bool:
     if record is None:
         return False
     observed = record.readings[1:]
-    if len(observed) not in (0, _OBSERVED_READINGS):
+    if observed and len(observed) != _OBSERVED_READINGS:
         raise RunShapeReadError(
             signal=_SIGNAL.value,
             source_ref=record.raised_at_sha,

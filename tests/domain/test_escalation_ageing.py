@@ -10,6 +10,7 @@ from pydantic import ValidationError
 import kodezart.domain
 from kodezart.config.app import AppConfig
 from kodezart.domain import (
+    escalation_age_record,
     lane_alarms,
     mandate_graph,
     run_alarm_record,
@@ -350,6 +351,7 @@ SIGNAL_MODULES = [
         {
             "collections.abc",
             "dataclasses",
+            "kodezart.domain.run_alarm_record",
             "kodezart.domain.run_alarm_table",
             "kodezart.domain.run_event_stream",
             "kodezart.domain.stream_signals",
@@ -399,10 +401,26 @@ SIGNAL_MODULES = [
             "pydantic",
             "kodezart.domain.comment_markers",
             "kodezart.domain.errors",
+            "kodezart.domain.run_event_stream",
             "kodezart.types.domain.run_alarm",
+            "kodezart.types.domain.run_event",
             "kodezart.types.domain.scope",
             "kodezart.types.domain.surface",
             "kodezart.types.domain.tracker",
+        },
+    ),
+    # What the one ageing record at an open question's address says next:
+    # arithmetic over the lane orders and the stored record it is handed, so
+    # the same import set and the same no-literal-bound rule.
+    (
+        escalation_age_record,
+        {
+            "collections.abc",
+            "dataclasses",
+            "kodezart.domain.errors",
+            "kodezart.domain.run_shape",
+            "kodezart.types.domain.escalation",
+            "kodezart.types.domain.run_alarm",
         },
     ),
 ]
