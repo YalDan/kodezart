@@ -82,6 +82,7 @@ from tests.test_graded_sha_comparison_sites import (
 )
 from tests.tracker import test_audit_evidence as audit_fixtures
 from tests.tracker.conftest import clock as clock
+from tests.tracker.conftest import seed_issue as seed_issue
 from tests.tracker.conftest import tracker as tracker
 from tests.tracker.test_audit_claim import CHILD, REQUEST, ROOT
 from tests.tracker.test_audit_claim import HEAD as AUDIT_HEAD
