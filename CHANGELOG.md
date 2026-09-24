@@ -11,6 +11,9 @@ concerns.
 
 ### Changed
 
+- The fire-prep and grooming prompts (`anthropic_v5`) assign a proposed scope's
+  tracker issue to the approver principal and name them in the proposal comment,
+  so a `scope:proposed` reaches the approver where they read.
 - With `KODEZART_AGENT__DANGEROUSLY_ALLOW_HOST_MCP=true`, the board sessions
   (scheduled passes, organize stages) are no longer described the deployment's
   own tracker server beside the host's: they reach the tracker under the host's
