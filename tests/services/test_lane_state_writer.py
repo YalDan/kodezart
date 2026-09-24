@@ -31,7 +31,8 @@ from kodezart.domain.fire_spec import (
     criterion_ref,
     replace_criterion_fields,
 )
-from kodezart.domain.issue_tree import SubtreeClosure, index_issue_tree, open_criteria
+from kodezart.domain.gap import compute_gap
+from kodezart.domain.issue_tree import SubtreeClosure, index_issue_tree
 from kodezart.domain.lane_record import (
     LANDING_ROW_SUBJECT,
     REENTRY_SECTION,
@@ -2950,7 +2951,7 @@ async def test_the_rollup_over_the_subtree_answers_one_lane_check_four_ways(
     )
     assert [event.subject_key for event in refutations(port)] == refuted
     if arm in {"descendant", "deep"}:
-        assert open_criteria(closure.criteria(LANE), ref=closure.ref) == ()
+        assert compute_gap(closure.criteria(LANE)).owed == ()
 
 
 async def test_a_lapsed_and_a_refuted_lane_check_share_a_state_not_a_stream():
