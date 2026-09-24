@@ -326,7 +326,11 @@ async def test_unconfigured_names_never_substitute_for_configured_approval(
     assert await tracker.execution_approved(issue_key=CHILD.key) is False
 
 
-@pytest.mark.parametrize("field", ["labels", "parentId"])
+# ``parentId`` is not in this list: measured 2026-09-24, the connected server
+# answers a root issue's detail read with no ``parentId`` key at all, so its
+# absence IS the answer "no parent" (tests/tracker/test_scope_root_issue_answer.py).
+# A dropped ``labels`` key still says nothing about the labels.
+@pytest.mark.parametrize("field", ["labels"])
 async def test_issue_membership_omission_is_not_an_empty_answer(field: str) -> None:
     class OmittedServer(ScopeMcpServer):
         def _tool_get_issue(
