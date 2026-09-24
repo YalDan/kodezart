@@ -258,10 +258,10 @@ tools = ["Read", "Glob", "Grep"]
 # under each role, in one place: changing what judgment costs is an edit
 # here, not an edit per key. Effort is NAMED at every role because the
 # harness exposes no way to ask what it resolved. The judgment roles run at
-# the maximum and the utility role at the floor, by the owner's ruling of
+# the maximum and the question role at the floor, by the owner's ruling of
 # 2026-09-24: the maximum replaced the earlier ladder that ran judgment one
-# level below authoring, and a name, a message or a short structured answer
-# runs at the floor. Per-key skill loadouts
+# level below authoring, and a short structured board question runs at the
+# floor. Per-key skill loadouts
 # are deliberately absent from this set: a loadout has one source, and for
 # this set that source is the role. No template of this set names a skill
 # or when to invoke one — a skill's own description is its trigger.
@@ -345,18 +345,21 @@ effort = "max"
 skills = ["code-review"]
 keys = ["implementation", "fix"]
 
-# The roster here and utility_keys above are the same roster, and the
-# metadata model refuses a set where they disagree.
+# This roster and the question roster below together are utility_keys
+# above, and the metadata model refuses a set where they disagree.
 [session_roles.utility]
-effort = "low"
+effort = "max"
 skills = []
-keys = ["branch_name", "commit_message", "pr_description", "knowledge_map", "fire_record", "native_writer_contract", "mutation_survival", "organize_spec_rubric", "pass_gate", "scope_scan", "scope_done"]
+keys = ["branch_name", "commit_message", "pr_description", "knowledge_map", "fire_record", "native_writer_contract", "mutation_survival", "organize_spec_rubric"]
 # The rubric key is on this roster because a rubric opens no session:
 # its text is rendered into another role's mandate_rubric block, where a
 # reasoning-depth instruction or a skills header would be data the judging
 # role reads as its standard. The effort declared here is never served.
-# The pass gate and the two scope questions are here because each is one
-# short board question answered in a structured shape, on whatever engine
-# the deployment pins the key to (KODEZART_AGENT__SESSION_MODELS); none
-# loads skills or carries a depth block, so each prefix caches from one ask
-# to the next.
+
+# One short structured board question each, at the floor by the owner's
+# ruling of 2026-09-24, on the engine KODEZART_AGENT__SESSION_MODELS pins
+# the key to; no skills and no depth block, so each prefix caches.
+[session_roles.question]
+effort = "low"
+skills = []
+keys = ["pass_gate", "scope_scan", "scope_done"]

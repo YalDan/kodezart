@@ -159,6 +159,8 @@ class SessionRole(StrEnum):
     EVALUATIVE = "evaluative"
     #: Emits a name, a message, a description, or a prelude.
     UTILITY = "utility"
+    #: Answers one short structured question about the board.
+    QUESTION = "question"
     #: Changes the workspace.
     IMPLEMENTATION = "implementation"
     #: Grooms or prepares a whole board as one unattended session on a
@@ -243,11 +245,16 @@ class PromptSetMetadata(BaseModel):
                 raise ValueError(msg)
             seen.update(policy.keys)
 
-        utility = self.session_roles.get(SessionRole.UTILITY)
-        if utility is not None and set(utility.keys) != set(self.utility_keys):
+        depth_free = [
+            policy
+            for role, policy in self.session_roles.items()
+            if role in (SessionRole.UTILITY, SessionRole.QUESTION)
+        ]
+        rostered = {key for policy in depth_free for key in policy.keys}
+        if depth_free and rostered != set(self.utility_keys):
             msg = (
                 f"prompt set {self.name!r} declares a utility roster that "
-                "disagrees with the utility role's keys"
+                "disagrees with the utility and question roles' keys"
             )
             raise ValueError(msg)
         return self

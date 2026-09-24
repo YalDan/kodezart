@@ -33,12 +33,12 @@ V5_SET_DIR = default_sets_root() / V5_SET
 LADDER: tuple[SessionEffort, ...] = tuple(SessionEffort)
 
 #: The set's own declared role → effort. The judgment roles run at the
-#: maximum and the utility role at the floor (owner ruling of 2026-09-24);
+#: maximum and the question role at the floor (owner ruling of 2026-09-24);
 #: the maximum replaced the fire-time ruling FR-2 that ran judgment one
 #: level below authoring.
 EXPECTED_EFFORT: dict[SessionRole, SessionEffort] = {
     **dict.fromkeys(SessionRole, SessionEffort.MAX),
-    SessionRole.UTILITY: SessionEffort.LOW,
+    SessionRole.QUESTION: SessionEffort.LOW,
 }
 
 
@@ -97,15 +97,19 @@ def test_the_registry_serves_each_key_the_effort_of_its_role(key: PromptKey) -> 
 
 def test_every_role_runs_at_the_top_of_the_ladder() -> None:
     """The substance of the policy since 2026-09-24: no judgment role thinks
-    less, and the utility role alone runs at the floor."""
+    less, and the three board questions alone run at the floor."""
     top = LADDER[-1]
     assert top is SessionEffort.MAX
-    declared = {
-        role: policy.effort for role, policy in v5_metadata().session_roles.items()
-    }
+    metadata = v5_metadata()
+    declared = {role: policy.effort for role, policy in metadata.session_roles.items()}
     assert declared == {
         **dict.fromkeys(SessionRole, top),
-        SessionRole.UTILITY: LADDER[0],
+        SessionRole.QUESTION: LADDER[0],
+    }
+    assert set(metadata.session_roles[SessionRole.QUESTION].keys) == {
+        PromptKey.PASS_GATE.value,
+        PromptKey.SCOPE_SCAN.value,
+        PromptKey.SCOPE_DONE.value,
     }
 
 
