@@ -12,7 +12,6 @@ from kodezart.core.backoff import RetryPolicy
 from kodezart.core.errors import TrackerProtocolError
 from kodezart.core.protocols import TrackerPort
 from kodezart.domain.errors import (
-    CriterionReadError,
     EmptyFireCriteriaError,
     ScopedExecutionUnavailableError,
     ScopePlanRefusalError,
@@ -448,9 +447,9 @@ async def test_native_outside_descendant_omission_cannot_close_blocker(missing):
         return payload
 
     tracker._call = call
-    with pytest.raises(
-        CriterionReadError if missing == "labels" else TrackerProtocolError
-    ):
+    # Both omissions refuse at the family's own hydration, which reads every
+    # subtree member through the planning wire (KOD-1241, 2026-09-24).
+    with pytest.raises(TrackerProtocolError):
         await read_scope_ready(ref=PROJECT, tracker=tracker)
 
 

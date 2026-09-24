@@ -3965,11 +3965,22 @@ class LinearScopeFamilyReader(LinearIssueReader):
     """The ``ScopeFamilyReader`` role, over the shared session."""
 
     async def scope_issues(self, *, ref: ScopeRef) -> Sequence[TrackerIssue]:
-        """Resolve live container membership or an issue's whole subtree."""
+        """Resolve live container membership or an issue's whole subtree.
+
+        Each member is hydrated through the planning read's own wire, which
+        refuses a payload that omits labels or relations. The port promises
+        every member with its relations, and since 2026-09-24 (KOD-1241)
+        scope planning builds its plan from this one read of each member
+        instead of reading every member a second time through
+        ``read_planning_issue`` and comparing the two.
+        """
         return await LinearScopeReader(
             call=self._call,
-            read_issue=self.read_issue,
+            read_issue=self._planning_issue,
         ).scope_issues(ref=ref)
+
+    async def _planning_issue(self, *, issue_key: str) -> TrackerIssue:
+        return self._to_issue(await self._read_planning_wire(issue_key))
 
 
 class LinearFireSubjectReader(

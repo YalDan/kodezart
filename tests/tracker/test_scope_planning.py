@@ -156,49 +156,26 @@ async def test_closed_decisions_and_sibling_edges_return_native_plan_facts(
     assert {issue.issue_key for issue in plan.dependencies} == {"external", "ancestor"}
 
 
-@pytest.mark.parametrize(
-    "damage",
-    ["foreign-dependency", "changed-dependency", "changed-member", "new-member"],
-)
 @pytest.mark.parametrize("read_scope", [read_scope_plan, read_scope_facts])
-async def test_unstable_native_facts_never_return_a_plan(
-    build, monkeypatch, damage, read_scope
+async def test_a_dependency_read_answering_another_identity_never_returns_a_plan(
+    build, monkeypatch, read_scope
 ):
-    tracker = build(
-        [
-            row("root", blockers=("external",)),
-            row("external"),
-            row("new", parent="root"),
-        ]
-    )
-    original_read, original_scope = tracker.read_planning_issue, tracker.scope_issues
-    reads = []
+    """The one check a dependency read keeps: it answers for the key it was asked.
+
+    The reread-and-compare refusals went on 2026-09-24 (KOD-1241): the
+    board is read once and a later reading is the next read's to make.
+    """
+    tracker = build([row("root", blockers=("external",)), row("external")])
+    original_read = tracker.read_planning_issue
 
     async def read(*, issue_key):
         value = await original_read(issue_key=issue_key)
         if issue_key == "external":
-            reads.append(issue_key)
-            if damage == "foreign-dependency":
-                return value.model_copy(update={"issue_key": "foreign"})
-            if damage == "changed-dependency" and len(reads) > 1:
-                return value.model_copy(update={"body": "changed"})
+            return value.model_copy(update={"issue_key": "foreign"})
         return value
 
-    calls = []
-
-    async def scoped(*, ref):
-        values = list(await original_scope(ref=ref))
-        calls.append(ref)
-        if damage == "new-member" and len(calls) == 1:
-            values = [value for value in values if value.issue_key != "new"]
-        if len(calls) > 1:
-            if damage == "changed-member":
-                values[0] = values[0].model_copy(update={"body": "changed"})
-        return values
-
     monkeypatch.setattr(tracker, "read_planning_issue", read)
-    monkeypatch.setattr(tracker, "scope_issues", scoped)
-    with pytest.raises(ScopeReadError):
+    with pytest.raises(ScopeReadError, match="identity"):
         await read_scope(ref=SCOPE, tracker=tracker)
 
 
