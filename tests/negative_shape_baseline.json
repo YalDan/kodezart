@@ -17,6 +17,7 @@
   "tests/adapters/test_git_ref_publisher.py": 7,
   "tests/adapters/test_git_worktree_provider.py": 20,
   "tests/adapters/test_github_api.py": 131,
+  "tests/adapters/test_host_mcp_opt_in.py": 28,
   "tests/adapters/test_host_skill_inventory.py": 20,
   "tests/adapters/test_hosted_mcp_session.py": 13,
   "tests/adapters/test_http_mcp_tool_caller.py": 93,
@@ -822,6 +823,18 @@
    "test_one_poll_spends_one_attempt_however_many_pages_it_reads",
    "test_the_walk_stops_early_on_a_page_that_carries_no_runs",
    "test_the_page_bound_is_threaded_from_config_to_the_forge_client"
+  ],
+  "tests/adapters/test_host_mcp_opt_in.py": [
+   "test_the_opt_in_ships_off",
+   "test_the_opt_in_is_read_under_its_nested_environment_name",
+   "test_the_setting_names_the_measured_risk",
+   "test_off_keeps_the_guard_on_every_session_kind",
+   "test_on_takes_the_guard_off_every_session_kind_and_nothing_else",
+   "test_a_session_carries_the_guard_its_executor_was_built_with",
+   "test_the_knowledge_map_prelude_follows_the_server_not_the_guard",
+   "test_boot_warns_once_when_the_opt_in_is_on",
+   "test_boot_says_nothing_when_the_opt_in_is_off",
+   "test_the_composition_root_wires_the_setting_and_the_warning"
   ],
   "tests/adapters/test_host_skill_inventory.py": [
    "test_isinstance_skill_inventory",

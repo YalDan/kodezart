@@ -12,6 +12,15 @@ types, a shared-temporary path for the audit one — and not whether this
 process happened to describe a server.  A session with nothing described
 therefore runs strict with an empty server map: no MCP at all.
 
+The one way the guard comes off is the operator's
+``dangerously_allow_host_mcp`` opt-in (``AgentSettings``), threaded here
+from the executor exactly as its setting sources are.  With it on, every
+session also receives the servers the host's own Claude configuration
+declares — the tracker under the operator's stored login, measured
+2026-09-24 — and whatever its working directory declares.  The opt-in
+answers the guard and nothing else: the servers this process describes,
+and the knowledge-map prelude, are decided as before.
+
 The grant has two consequences — the servers a session is configured with,
 and the what-lives-where map its prompt is preluded with.  The second reads
 the RESULT of the first rather than re-testing membership, so the two can
@@ -40,7 +49,9 @@ class McpSessionOptions(TypedDict):
     Both keys are always present, and they answer different questions.
     ``mcp_servers`` is what this process described, possibly nothing;
     ``strict_mcp_config`` is whether definitions discovered in the
-    session's working directory may load beside it, which is never.
+    session's working directory and in the host's own Claude configuration
+    may load beside it — never, unless the operator's
+    ``dangerously_allow_host_mcp`` opt-in is on.
     """
 
     mcp_servers: dict[str, McpServerConfig]
@@ -85,12 +96,16 @@ def _described_servers(
 def map_knowledge_mcp(
     grant: KnowledgeGrant,
     session_type: SessionType,
+    *,
+    dangerously_allow_host_mcp: bool = False,
 ) -> McpSessionOptions:
     """Session options for *session_type* under *grant*.
 
     Exhaustive over the vocabulary with no default arm, so a session kind
     added later fails to type-check rather than reaching the SDK default
-    and running its working directory unguarded.
+    and running its working directory unguarded.  The guard is on unless
+    *dangerously_allow_host_mcp* — the operator's opt-in, never a
+    per-session choice — switches it off for every kind alike.
     """
     match session_type:
         case (
@@ -103,7 +118,7 @@ def map_knowledge_mcp(
         ):
             return McpSessionOptions(
                 mcp_servers=_described_servers(grant, session_type),
-                strict_mcp_config=True,
+                strict_mcp_config=not dangerously_allow_host_mcp,
             )
 
 

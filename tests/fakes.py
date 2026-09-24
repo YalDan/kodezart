@@ -397,6 +397,7 @@ def executor_for(
     model: str | None = None,
     output_style: str | None = None,
     fire_record: PromptTemplate | None = None,
+    dangerously_allow_host_mcp: bool = False,
 ):
     """Build the adapter that lives in *module* with configured setting sources."""
     if module.endswith("client_executor"):
@@ -406,11 +407,13 @@ def executor_for(
             knowledge_grant=grant,
             fire_record=fire_record,
             output_style=output_style,
+            dangerously_allow_host_mcp=dangerously_allow_host_mcp,
         )
     return ClaudeAgentExecutor(
         setting_sources=DEFAULT_SETTING_SOURCES,
         knowledge_grant=grant,
         fire_record=fire_record,
+        dangerously_allow_host_mcp=dangerously_allow_host_mcp,
     )
 
 
@@ -496,6 +499,7 @@ async def recorded_session(
     messages: Sequence[object] = (),
     fire_record: PromptTemplate | None = None,
     run_identity: RunIdentity | None = None,
+    dangerously_allow_host_mcp: bool = False,
 ) -> RecordedSession:
     """Run one session through *module*'s adapter against a recording transport."""
     recorded: list[RecordedSession] = []
@@ -506,7 +510,12 @@ async def recorded_session(
         else _recording_query(recorded, messages)
     )
     executor = executor_for(
-        module, grant, model=model, output_style=output_style, fire_record=fire_record
+        module,
+        grant,
+        model=model,
+        output_style=output_style,
+        fire_record=fire_record,
+        dangerously_allow_host_mcp=dangerously_allow_host_mcp,
     )
     events: list[AgentEvent] = []
 

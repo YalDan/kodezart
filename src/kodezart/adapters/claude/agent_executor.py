@@ -61,10 +61,12 @@ class ClaudeAgentExecutor:
         setting_sources: list[SettingSource],
         knowledge_grant: KnowledgeGrant,
         fire_record: PromptTemplate | None = None,
+        dangerously_allow_host_mcp: bool = False,
     ) -> None:
         self._setting_sources = setting_sources
         self._knowledge_grant = knowledge_grant
         self._fire_record = fire_record
+        self._dangerously_allow_host_mcp = dangerously_allow_host_mcp
         self._log: BoundLogger = get_logger(__name__)
 
     async def stream(
@@ -93,7 +95,11 @@ class ClaudeAgentExecutor:
             session_type=session_type.value,
             agent_count=len(agents),
         )
-        knowledge = map_knowledge_mcp(self._knowledge_grant, session_type)
+        knowledge = map_knowledge_mcp(
+            self._knowledge_grant,
+            session_type,
+            dangerously_allow_host_mcp=self._dangerously_allow_host_mcp,
+        )
         options = ClaudeAgentOptions(
             cwd=cwd,
             permission_mode=map_permission_mode(permission_mode),
