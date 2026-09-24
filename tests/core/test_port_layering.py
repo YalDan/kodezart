@@ -1458,15 +1458,29 @@ def test_each_scope_value_is_defined_in_the_domain_types_package(value: type) ->
 
 
 def test_the_lease_calls_are_declared_on_the_port_in_the_port_module() -> None:
-    """Every call the lease role declares, the port declares in its own body.
+    """Every call the lease role declares, the port answers from the port module.
 
-    Read off each class's own namespace, so a call inherited from a base
-    declared in another module does not count as declared here.
+    The port declares no member of its own; it composes the roles that do
+    (KOD-833).  So each lease call must resolve on the port to the function a
+    role declares in its own body, where that role is a protocol of the port
+    module and a class of the port's own resolution order.  Read by object,
+    off each class's own namespace, so a call inherited from a base declared
+    in another module (an adapter, a test module) does not count as declared
+    here.
     """
     role_calls = {name for name, _ in _own_callables(SurfaceLeaseTracker)}
 
     assert {"acquire_surfaces", "renew_surfaces", "release_surfaces"} <= role_calls
-    assert role_calls <= set(vars(TrackerPort))
+    assert SurfaceLeaseTracker in TrackerPort.__mro__
+    for name in sorted(role_calls):
+        resolved = getattr(TrackerPort, name)
+        owner = next(cls for cls in TrackerPort.__mro__ if name in vars(cls))
+        assert inspect.isfunction(resolved), name
+        assert vars(owner)[name] is resolved, name
+        assert resolved.__module__ == owner.__module__ == protocols.__name__, name
+        assert resolved.__qualname__ == f"{owner.__qualname__}.{name}", name
+        assert getattr(protocols, owner.__name__) is owner, name
+        assert getattr(owner, "_is_protocol", False), name
     assert (
         TrackerPort.__module__ == SurfaceLeaseTracker.__module__ == protocols.__name__
     )
