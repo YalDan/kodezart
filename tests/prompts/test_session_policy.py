@@ -35,9 +35,12 @@ LADDER: tuple[SessionEffort, ...] = tuple(SessionEffort)
 #: The set's own declared role → effort. The judgment roles run at the
 #: maximum and the question role at the floor (owner ruling of 2026-09-24);
 #: the maximum replaced the fire-time ruling FR-2 that ran judgment one
-#: level below authoring.
+#: level below authoring. The implementation role, the workhorse, runs at
+#: the engine's default (owner ruling of 2026-09-25, after the Opus 5.5
+#: prompting guide's effort calibration).
 EXPECTED_EFFORT: dict[SessionRole, SessionEffort] = {
     **dict.fromkeys(SessionRole, SessionEffort.MAX),
+    SessionRole.IMPLEMENTATION: SessionEffort.MEDIUM,
     SessionRole.QUESTION: SessionEffort.LOW,
 }
 
@@ -95,16 +98,18 @@ def test_the_registry_serves_each_key_the_effort_of_its_role(key: PromptKey) -> 
     assert registry.session_policy(key).effort is metadata.session_roles[role].effort
 
 
-def test_every_role_runs_at_the_top_of_the_ladder() -> None:
+def test_judgment_roles_run_at_the_top_and_the_workhorse_at_medium() -> None:
     """The substance of the policy since 2026-09-24: no judgment role thinks
     less; the three board questions and the pull-request description alone run
-    at the floor (owner rulings of 2026-09-24 and 2026-09-25)."""
+    at the floor, and the implementation role runs at the engine's default
+    (owner rulings of 2026-09-24 and 2026-09-25)."""
     top = LADDER[-1]
     assert top is SessionEffort.MAX
     metadata = v5_metadata()
     declared = {role: policy.effort for role, policy in metadata.session_roles.items()}
     assert declared == {
         **dict.fromkeys(SessionRole, top),
+        SessionRole.IMPLEMENTATION: SessionEffort.MEDIUM,
         SessionRole.QUESTION: LADDER[0],
     }
     assert set(metadata.session_roles[SessionRole.QUESTION].keys) == {
