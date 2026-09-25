@@ -2066,7 +2066,7 @@ EGRESS_PATH: dict[Callable[..., object], str] = {
         "324b17ce17550d1bd0859cbc70f8958dffcd8d7694b244a3f6fa7d0a5cf88e08"
     ),
     FireConsolidation.cleanup_backups: (
-        "353aed993557d1dd1e9095121da74b4416e6bf5ae87b7f7fdd97b811ab5087ee"
+        "3d25335172b7d43855b6ac49a958558b18ed9c39a7c417e39d0da9a7e7cbf8e7"
     ),
     asyncio_job_queue.AsyncioJobQueue._worker: (
         "55544aa6ca52e76b284c27b3d9de15540a8f597454659d529fdd9bfaa78a9cf6"
@@ -2084,10 +2084,10 @@ EGRESS_PATH: dict[Callable[..., object], str] = {
         "16713e2573486f8b4b1c70d0054ed76f8cf8648710da53e7f078ea7a78ee0012"
     ),
     AgentService.stream: (
-        "df524d52ffd4a599d2b539ec42f7c69988d92a584c731209be308712192eb042"
+        "65b19329869375426d1f2cad709df2b458b0c301087f63f7e6be75cc6b8bade1"
     ),
     AgentService._run_in_workspace: (
-        "77df3f7aa17ae2ead48e9a1e948b9b332ff306d5a4a032945c912f916186834d"
+        "d0220f6d8c36e3720a4df9d6ef984320d38f927b013f02022d3fdcdeecae7835"
     ),
     agent_handler._queued_event_payload: (
         "0a3e97589e823a8da2cbfe87e9d0d4e439af480bcc27ea7a02bea0fbe6fe2192"
