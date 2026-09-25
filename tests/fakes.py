@@ -1144,6 +1144,7 @@ class FakeWorkspaceProvider:
         branch_name: str | None = None,
         create_branch: bool = True,
         cache_key: str | None = None,
+        parent: str | None = None,
     ) -> str:
         self.calls.append(("acquire", repo_path or repo_url or "", ref))
         self.acquisitions.append(

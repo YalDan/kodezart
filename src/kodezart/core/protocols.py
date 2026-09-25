@@ -381,8 +381,13 @@ class WorkspaceProvider(Protocol):
         branch_name: str | None = None,
         create_branch: bool = True,
         cache_key: str | None = None,
+        parent: str | None = None,
     ) -> str:
-        """Acquire an isolated workspace. Returns its path."""
+        """Acquire an isolated workspace. Returns its path.
+
+        Given *parent*, the workspace is the directory in it named for the
+        repository, so several repositories can stand side by side under one.
+        """
         ...
 
     async def release(self, workspace_path: str) -> None:

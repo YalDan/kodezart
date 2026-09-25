@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from kodezart.core.logging import BoundLogger, get_logger
+from kodezart.core.prompt_namespaces import repo_display
 from kodezart.core.protocols import GitService, RepoCache
 from kodezart.domain.agent import generate_workspace_id
 from kodezart.domain.errors import GitOperationError, GitRepositoryError, WorkspaceError
@@ -59,8 +60,13 @@ class GitWorktreeProvider:
         branch_name: str | None = None,
         create_branch: bool = True,
         cache_key: str | None = None,
+        parent: str | None = None,
     ) -> str:
-        """Resolve repo, create worktree, return its path."""
+        """Resolve repo, create worktree, return its path.
+
+        Given *parent*, the worktree is ``{parent}/{name}``, where the name is
+        the one the prompts call the repository by.
+        """
         try:
             resolved = await self._resolve(
                 repo_path=repo_path,
@@ -70,7 +76,11 @@ class GitWorktreeProvider:
             await self._git.validate_repo(resolved)
 
             workspace_id = generate_workspace_id()
-            wt_path = _worktree_path(workspace_id)
+            wt_path = (
+                _worktree_path(workspace_id)
+                if parent is None
+                else str(Path(parent) / repo_display(repo_url or resolved)[0])
+            )
             await self._git.create_worktree(
                 resolved,
                 ref,

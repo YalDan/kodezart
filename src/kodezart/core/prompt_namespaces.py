@@ -377,8 +377,8 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
         [
             {
                 "url": repo.url,
-                "name": _repo_display(repo.url)[0],
-                "slug": _repo_display(repo.url)[1],
+                "name": repo_display(repo.url)[0],
+                "slug": repo_display(repo.url)[1],
                 "trunk": repo.trunk,
                 # Empty is a named absence (founder ruling 2026-09-01):
                 # the repository's own CI defines its gate, and the
@@ -427,7 +427,7 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
     return bindings
 
 
-def _repo_display(url: str) -> tuple[str, str]:
+def repo_display(url: str) -> tuple[str, str]:
     """``(name, slug)`` — the short and owner/name forms of a repository URL."""
     trimmed = url.rstrip("/")
     if trimmed.endswith(".git"):
