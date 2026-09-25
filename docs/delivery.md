@@ -3,9 +3,20 @@
 `build_workflow_engine` composes `AuthoredDeliveryCoordinator` around the shared
 fire graph. The authored HTTP path creates the PR, watches checks, routes a
 reproduced work defect through the existing remediation entry, and emits its
-existing terminal event. The scope path has its own walker and its own native
-lane delivery, described in [running a scope](running-a-scope.md); it shares
-this fire graph and no part of the authored coordinator.
+existing terminal event.
+
+The scope path runs inside the same coordinator. Its fire graph is the third
+composition `RalphWorkflowEngine` compiles in `chains/ralph_workflow.py`: an
+engine given `ScopeStages` holds `_build_scope_graph` (groom, prep, the loop,
+the merge, the board's "is it done" answer, the review) in place of the
+authored graph. `composition/engine.py` builds a forge arm and a forge-less arm
+of it behind the scope entry (`services/scope_entry.py`). On a scope run the
+coordinator opens one pull request per declared repository the deliverable
+branch gained commits in, each against that repository's trunk, and watches
+the checks of every one of them: the run's checks fail when any repository's
+fail, with the first red repository's class. See
+[the two workflows side by side](workflows-v02-v03.md) and
+[running a scope](running-a-scope.md).
 
 The accepted and stalled PR-opening nodes use the same watch route. The existing
 acceptance/outcome classifier retains `stalled_pr_opened` when checks recover;
