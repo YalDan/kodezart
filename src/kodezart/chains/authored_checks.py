@@ -125,8 +125,8 @@ class AuthoredChecks:
     ) -> _Watched:
         """The checks of every repository the branch gained commits in, as one.
 
-        Failed when any repository failed, and a work defect in any of them
-        is the run's to fix; each summary is prefixed with its repository.
+        Failed when any repository failed, with the first red repository's
+        class; each summary is prefixed with its repository.
         """
         watched = [
             (
@@ -147,19 +147,19 @@ class AuthoredChecks:
             )
         ]
         passes = [checks.passed for _, checks in watched]
-        reds = [
-            checks.red_class for _, checks in watched if checks.red_class is not None
-        ]
         return _Watched(
             passed=False if False in passes else (True if True in passes else None),
             summary="\n".join(
                 f"{repo_display(repository.url)[0]}: {checks.summary}"
                 for repository, checks in watched
             ),
-            red_class=(
-                CheckRedClass.WORK_DEFECT
-                if CheckRedClass.WORK_DEFECT in reds
-                else next(iter(reds), None)
+            red_class=next(
+                (
+                    checks.red_class
+                    for _, checks in watched
+                    if checks.red_class is not None
+                ),
+                None,
             ),
             run_absent=any(checks.run_absent for _, checks in watched),
         )
