@@ -778,11 +778,11 @@ conformance checks cover body changes, unchanged replays and metadata-only
 writes. An unreadable or invalid revision refuses at the actual read; no
 consumer substitutes an empty digest or treats it as live.
 
-The paragraphs from here to the role table describe the older cascade owner,
-`services/organize_owner.py`: its admission sessions, its gap arithmetic and
-its leased write-back. That owner stays in the tree and is constructible
-through `build_organize_owner`, and it is wired nowhere; the owner the stages
-run today is described under the role table below.
+The paragraphs from here to the organize table below describe the older
+cascade owner, `services/organize_owner.py`: its admission sessions, its gap
+arithmetic and its leased write-back. That owner stays in the tree and is
+constructible through `build_organize_owner`, and it is wired nowhere; the
+stages a scope run runs today are described after the organize table.
 
 Admission sessions return an `AdmissionJudgment`. The caller creates the
 `AdmissionResult` by attaching the body digest from the revision supplied to
@@ -820,76 +820,44 @@ declared runner environment can make, is the criteria author's judgement,
 under a prompt that carries the same declared environments, and the
 verifier's under the verify prompt.
 
-One organize table declares two stages, `ticket` and `criteria`, and the role
-table says that both run inside an approved scope run: approval admits every
-member to the first, whose shipped gate is the approval label itself, and the
-first stage's marker admits a member to the second. Nothing runs before
-approval: what a scope needs then is the grooming and fire-prep passes' work
-over the whole board, and a table declaring a `groom` row is refused at load.
-An owner runs exactly the rows it is given — a scope run's entry gives it the
-whole table — and no branch on mandate kind exists outside the role table: the
-binding the session prompt selects a stage's rubric by is the role's own
-`prompt_phase`.
+One organize table, `[[organize_mandates]]`, declares a `ticket` row and a
+`criteria` row, each with a gate label and a terminal marker. It still loads
+and is still validated: a declared table must hold both rows, a `groom` row is
+refused at load naming it, a row may gate on `scope_labels.approved` by that
+exact reference, and no row may mark with the approval label or reach it
+through an alias. The cascade owner above runs over it, and the tracker
+adapter reads the criteria row's marker when it reads a fire's subject
+(`criteria_stage_label_key` in `composition/tracker.py`). The scope run reads
+no row of it.
 
-The wired owner is `services/organize_session_owner.py`, built by
-`composition/organize.py::build_organize_session_owner` and run through the
-organizer the scope entry builds. It settles every row
-the same way. First the gate, read the cheap way: a `scope_labels` gate is one
-reading of the addressed scope and the containers above it (`scope_carries`),
-an `issue_labels` gate is read off the members' own labels in one scope read,
-and the row's side of approval is one approval reading per run. A closed gate
-costs nothing more. An open gate reads the scope once and lists the members
-that owe the row's marker and lack it: every member that is neither a
-criterion sub-issue, a tracker record nor an escalated member. If any does,
-the owner renders the `organize_session` prompt — the scope, the phase's
-rubric, the marker to add, the owed member keys, the fire-time rule and the
-labels the session may never touch — and runs ONE session through the agent
-runner: session type `organize_pass`, unattended, allowed tools the tracker
-server's own family (`mcp__<server>__*`), in the scheduled passes' working
-directory and never in a cloned repository. The session does the board work
-with the deployment's own tracker server, described to it from the tracker
-credential exactly as it is to the grooming and fire-prep sessions (never a
-login the host holds; without the credential a scope deployment refuses to
-boot), adds the marker to each member it satisfies, and escalates by adding
-the decision label. kodezart then reads
-the scope once more through the port and reports: every owed member carries
-the marker and the phase is complete, or one does not and the row halts with
-a stage-incomplete report naming it. No lease is taken, no marker is written
-by kodezart, no proof is kept and no verifier runs: the board the session
-left is the record, and one log event per phase (`organize_phase_settled`)
-says what was read, whether a session opened and what it reported.
+A scope run's two stages are `ScopeStages` in `chains/scope_stages.py`: the
+`groom` and `prep` nodes of `RalphWorkflowEngine._build_scope_graph`. Each
+renders the `organize_session` prompt for one phase, ticket or criteria, and
+runs ONE session through the agent runner: session type `organize_pass`,
+unattended, no allowlist and no subagents, in the scheduled passes' working
+directory and never in a cloned repository. The session works the board with
+the tracker server its kind is given — the deployment's own server under the
+tracker key, or, with the host MCP opt-in on, the host's own — and what it
+writes there is the whole of what happens: kodezart takes no lease, writes no
+marker, keeps no record and runs no verifier. After its criteria session,
+`prep` asks the `scope_done` question and keeps each criterion sub-issue the
+board lists, with its Check, as the run's criteria; a board that lists none
+ends the run `criteria_infeasible`. There is no stage barrier and no marker
+roster: a run submitted again after a failure grooms and preps again from
+what the board holds.
 
 Measured 2026-09-24 (KOD-1239): the cascade owner cost about 5,900 tracker
 calls per settling round of the scratch scope and wrote its markers only at
 the end; one session with the tracker tools over the same scope took 8 tool
-calls and 45 seconds. That is why the stage is one session per phase and one
-read after it.
+calls and 45 seconds. That is why each stage is one session.
 
-The prompt says what the session is never to do: add or remove a scope
-label, move a workflow state, touch a member labelled `tracker`, or read a
-body's "Open question for the fire to rule on before it starts" as an open
-human choice — that question is the fire-time ruling's own. Escalation is the
-decision label and nothing else: an escalated member owes the marker, is not
-a work subject, and holds the stage until a person removes the label, so the
-next entry spends no session on it and halts naming it.
-
-Because approval admits a member to a run stage instead of ending it, a
-run-stage row may name `scope_labels.approved` as its gate by that exact
-reference. Such a gate reads the per-issue cascade, never the addressed
-scope's own labels. No row may use approval as a completion marker, and no
-row may reach it through an alias: nothing machine-written is approval.
-
-Each run stage ends on a barrier. Every member that owes the stage its marker
-— every member that is neither a criterion sub-issue nor a tracker record — must
-carry it before the next stage begins. A member that does not is named in a
-report-shaped halt carrying the stage, so the run ends with the halt its caller
-already knows and nothing else is spent on it. Workflow state decides none of
-this; removing the escalation label is what returns a member to the roster.
-
-The label is the record. A member already carrying a stage's marker is out of
-that stage's work roster, so a run re-entered from tracker facts alone works
-exactly what the labels leave — and a stage whose every member is already
-labelled completes with no session and no write.
+The prompt says what the session is never to do: add or remove a scope label,
+move a workflow state, touch a member labelled `tracker`, touch a criterion
+sub-issue outside the criteria phase, or read a body's "Open question for the
+fire to rule on before it starts" as an open human choice — that question is
+the fire-time ruling's own. Escalation is the decision label and nothing else:
+the session adds it to the member, writes the question on it, and leaves the
+member as it is.
 
 Setting the approval label is what starts a scope run. On the dispatch
 cadence the `scope_heartbeat` pass asks the scope scan, one short agent session
@@ -900,18 +868,12 @@ It makes no tracker write and remembers nothing between ticks: a finished node
 is left out of the scan, and the run's entry refuses a node that is not approved
 or already has a run going.
 
-One predicate answers whether a stage may act on a member now, and every gate
-read and approval read in the owner is that predicate or its approval half: a
-stage is admitted by approval and by its gate, and the round's declared set
-leaves out a member whose own approval reading says otherwise. The same
-predicate decides the work roster, the marker roster and every author write,
-so a member that was never admitted is never written to and an approval
-withdrawn mid-session refuses the write it was about to make. That reading
-precedes every write, so approval withdrawn during one of a stage's sessions
-refuses the write that follows and releases the round's declared set with it.
-No act of a run before approval is the whole of the boundary. Withdrawing
-approval during a run stops the next stage write while a lane already admitted
-finishes: exclusion is the approval label, not a liveness read (KOD-788).
+Approval is read once per run, at its entry. `ScopeEntry.admit`
+(`services/scope_entry.py`) refuses a scope that already has a live job, and
+then one that is not approved, before anything else is read. Nothing after the
+entry reads approval again: withdrawing it during a run stops no session, the
+cron's next scan leaves the node out, and a new run's entry would refuse it.
+No act of a run comes before approval (KOD-788).
 
 ## Workflow Pipeline
 
@@ -1326,11 +1288,9 @@ neither raises. `domain.stream_signals.lapse_undischarged` raises when the last
 account is a lapse, the criterion is still owed, and the lane is not ready on
 this tick. Nothing on the scope path takes a claim, so "nothing will re-derive
 it" is read through a proxy, and the proxy is exactly "not ready on this tick".
-Two things it does not tell apart follow from that. A ready lane the current
-walk invocation has rested — `services/scope_runtime.py` passes over the lanes
-in that invocation's own `rested` list — counts as re-derived, because the next
-invocation offers it again. And a ready lane that no walk runs at all is not
-distinguished from one a walk will run.
+What the proxy cannot tell follows from that. No walk re-derives lanes one by
+one any more: a scope run works its whole parent in one loop. So every ready
+lane counts as re-derived, whether or not a scope run is going.
 
 Two further limits of the criterion reading are stated rather than built.
 Nested member lanes: a member whose parent is also a member reads its account
@@ -1342,11 +1302,11 @@ in Todo after the inner lane took it back as a lapse, raises `TALLY_REGRESSED`
 on the outer lane. Presence is read per scope: a lane blocked in one scope and
 ready in another is observed as each scope reads it, so the scope that reads it
 blocked can raise `LAPSE_UNDISCHARGED` at its own address while the other
-scope's walk re-derives the lane.
+scope reads it ready and raises nothing.
 
 Both criterion signals raise with no bound. A criterion record is written only
 when what the address says differs from what the tick observed, where absence
-says not raised, so a healthy walk writes none; and it is never announced on
+says not raised, so a healthy lane writes none; and it is never announced on
 the stream, whose transitions are the lane's.
 
 `domain.stream_signals.composition_substituted` reads the lane's stream alone:
