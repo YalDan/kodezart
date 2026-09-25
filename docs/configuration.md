@@ -645,11 +645,13 @@ formatting for local development.
 ## Checkpointing
 
 LangGraph workflow state can be checkpointed for resumability. What a configured
-checkpointer reaches is the authored HTTP workflow, the ticket generator and the
-job service's run-state reader. The scope path compiles and runs no graph that
-holds one: where a lane stands is its own tracker record, read again before every
-fire, so a scope deployment leaves this unset and needs no database. Configure
-via `KODEZART_CHECKPOINT_URL`:
+checkpointer reaches is the authored HTTP workflow, the ticket generator, the
+scope run and the job service's run-state reader. `build_workflow_engine`
+(`composition/engine.py`) compiles every delivery arm, the scope arms included,
+with the one configured saver, and a run's checkpoints are keyed by its job id.
+Nothing resumes a scope run from them: a run the cron submits again is a new job
+with a new id, and it starts over from the board. A scope deployment can leave
+this unset. Configure via `KODEZART_CHECKPOINT_URL`:
 
 | Value               | Behavior                                                    |
 | ------------------- | ----------------------------------------------------------- |
@@ -879,15 +881,15 @@ the scope scan which approved nodes inside the declared teams are not finished
 and submits each one as a scope run, skipping one with a live run and one whose
 repository the operation does not declare.
 
-When those bindings are configured, set both
 `KODEZART_ORGANIZE__MAX_ADMISSION_ROUNDS` and
-`KODEZART_ORGANIZE__MAX_CONVERGENCE_ROUNDS` to positive integers. Neither bound
-has a default. The optional `KODEZART_ORGANIZE` JSON container accepts the same
-`max_admission_rounds` and `max_convergence_rounds` fields, and nothing else:
-a cadence field there is refused at load, because the organize stages are no
-scheduled pass. Retired flat Organize bound spellings remain rejected. Each
-scope run resolves the configured repository trunk to a fresh immutable remote
-commit before its stages open a session.
+`KODEZART_ORGANIZE__MAX_CONVERGENCE_ROUNDS` are read only by the older cascade
+organize owner, which `build_organize_owner` (`composition/organize.py`) can
+construct and nothing wires; a scope run reads neither. Neither bound has a
+default, and each must be a positive integer when set. The optional
+`KODEZART_ORGANIZE` JSON container accepts the same `max_admission_rounds` and
+`max_convergence_rounds` fields, and nothing else: a cadence field there is
+refused at load, because the organize stages are no scheduled pass. Retired flat
+Organize bound spellings remain rejected.
 
 ## Tracker write verification
 
@@ -902,7 +904,11 @@ The retired flat `write_back_max_verify_rounds` field and its uppercase
 `KODEZART_` environment spelling are refused; migrate to the nested spelling.
 Deployments without a configured tracker-writing owner can leave the section
 absent. A configured owner with no verification budget refuses at startup. The
-field has no default, and a scope run needs it.
+field has no default. A configured audit requires it (`composition/audit.py`),
+and the tracker-native composition's writers are built only with it
+(`_native_writes` in `composition/engine.py`). A scope run reads none of it: its
+sessions write the board themselves, and the loop builds no tracker writer on a
+scope run (`chains/fire_implementation.py`).
 
 
 ## Native Audit scheduling
