@@ -9,6 +9,11 @@ Agent SDK.
 
 ## Key Features
 
+- **Self-running from the board**: a cron runs every scope a person approved
+  on the tracker, and the board is the single source of truth for what a run
+  builds and what is done
+- **One pull request per repository that gained commits**, each against that
+  repository's trunk, with the checks watched in every one; nothing is merged
 - **Iterative code generation** with automated acceptance-criteria evaluation
 - **Ticket generation loop** with drafter/reviewer pattern using independent
   Claude sessions
@@ -22,7 +27,48 @@ Agent SDK.
 - **Structured output** via JSON schema for branch names, commit messages,
   tickets, and evaluations
 
+## The self-running workflow
+
+A person applies the approval label to an initiative, project, milestone or
+issue on the tracker. From there, in six lines:
+
+1. The cron sees an approved scope with no run going and launches the
+   workflow on it.
+2. The workflow gets the parent, which holds everything.
+3. Groom and prep it.
+4. The loop implements it and updates the board as it goes.
+5. A review checks the board: is every criterion done? If not, repeat.
+6. Review, open a pull request per repository that gained commits, and watch
+   the checks.
+
+Nothing merges. A run ends at pull requests a person decides about.
+
+```mermaid
+graph LR
+    A[resolve_visibility] --> B[groom]
+    B --> C[prep]
+    C --> D[run_ralph_loop]
+    D --> E[merge_to_feature]
+    E --> F[scope_done]
+    F --> G[review_against_ticket]
+    G --> H[open_pr]
+    H --> I[monitor_ci]
+    F -->|issues still open| R[remediate]
+    G -->|review failed| R
+    R --> D
+    I -->|work-defect red| S[delivery_remediation]
+    S --> D
+```
+
+Each back edge is taken only while `KODEZART_REMEDIATION_MAX_ROUNDS` allows.
+[docs/deploying.md](docs/deploying.md) sets it up,
+[docs/workflows-v02-v03.md](docs/workflows-v02-v03.md) walks both graphs node
+by node, and [docs/running-a-scope.md](docs/running-a-scope.md) covers the
+cron.
+
 ## Architecture Overview
+
+### The v0.2 request-driven pipeline, still served unchanged
 
 ```mermaid
 graph LR
@@ -33,13 +79,11 @@ graph LR
     E --> F[review_against_ticket]
 ```
 
-The request-driven pipeline generates a feature branch, drafts and reviews an
-implementation ticket, derives testable acceptance criteria, runs an iterative
-execute/evaluate loop (the Ralph loop), merges the loop branch into the feature
-branch, reviews it, and opens a pull request. A scope run replaces the branch,
-ticket and criteria steps with groom and prep on the board, and asks the board
-whether everything is done before the review; see
-[docs/workflows-v02-v03.md](docs/workflows-v02-v03.md).
+A request to `POST /api/v1/agent/workflow` or `/fire` without a scope
+generates a feature branch, drafts and reviews an implementation ticket,
+derives testable acceptance criteria, runs an iterative execute/evaluate loop
+(the Ralph loop), merges the loop branch into the feature branch, reviews it,
+and opens a pull request.
 
 See [docs/architecture.md](docs/architecture.md) for the full architecture
 guide including the Ralph loop, ticket generation loop, and workspace isolation
