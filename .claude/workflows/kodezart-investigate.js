@@ -18,10 +18,10 @@ const EVIDENCE = {
 const input = typeof args === 'string' ? JSON.parse(args) : (args ?? {})
 
 // A question is a string, or { question, effort } when the caller calibrates
-// the agent's effort to its difficulty; medium is the engine's default.
+// that agent's effort; with no effort given the agent inherits the session's.
 const asItem = type => entry => typeof entry === 'string'
-  ? { q: entry, type, effort: 'medium' }
-  : { q: entry.question, type, effort: entry.effort ?? 'medium' }
+  ? { q: entry, type }
+  : { q: entry.question, type, effort: entry.effort }
 const items = (input.repo_questions ?? []).map(asItem('explorer'))
   .concat((input.external_claims ?? []).map(asItem('doc-verifier')))
 
