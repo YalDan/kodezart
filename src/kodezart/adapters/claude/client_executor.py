@@ -64,16 +64,18 @@ from kodezart.types.domain.subagents import (
     SessionPolicy,
 )
 
-#: The task type a Workflow tool launch runs as. The harness answers the
-#: launch at once and hands the workflow's report to the session in a later
-#: turn, so a session that launched one is not over at its first result.
-_WORKFLOW_TASK_TYPE: Final = "local_workflow"
+#: The task types a session's fan-out runs as: a Workflow tool launch and a
+#: background subagent. The harness answers the launch at once and hands the
+#: task's report to the session in a later turn, so a session that launched
+#: one is not over at its first result. A background shell command is not
+#: among them: it may be a watch that never ends.
+_FAN_OUT_TASK_TYPES: Final = frozenset({"local_workflow", "local_agent"})
 
 
 def _track_workflows(message: Message, running: set[str]) -> None:
-    """Keep *running* to the workflows this session launched and has not seen end."""
+    """Keep *running* to the fan-out tasks this session launched and not seen end."""
     if isinstance(message, TaskStartedMessage):
-        if message.task_type == _WORKFLOW_TASK_TYPE:
+        if message.task_type in _FAN_OUT_TASK_TYPES:
             running.add(message.task_id)
     elif isinstance(message, TaskNotificationMessage | TaskUpdatedMessage):
         if message.status in TERMINAL_TASK_STATUSES:
