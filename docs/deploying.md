@@ -99,7 +99,7 @@ What each table does for the scope workflow:
 | `[records.fire_prep]`, `[records.grooming]`, `[records.fire]` | Where each run kind writes its log row: `system = "knowledge"` (Notion) or `system = "tracker"` (a Linear document). | The run is not recorded, and each run logs `run_record_destination_undeclared`. |
 | `[knowledge]` | The knowledge map: `run_logs`, `memories`, `personas`, `notes`, plus any other key a prompt addresses. | Sessions get no map. With a knowledge grant set, boot refuses with `PromptRenderError` naming the missing map keys. |
 | `[documents]` | Documents a prompt set can name. A populated table must carry `checkpoint`; boot creates a tracker-side document the operation owns if it is missing. | Nothing: the shipped `anthropic_v5` prompts name no document. |
-| `[[organize_scopes]]`, `[[organize_mandates]]` | Read by the supervisor tick and the audit only. | Nothing in the scope workflow reads them. Declaring `[[organize_scopes]]` makes boot also require the marker prefixes those two passes use. |
+| `[[organize_scopes]]`, `[[organize_mandates]]` | `[[organize_scopes]]` is read by the supervisor tick and the audit, and requires `[[organize_mandates]]`. The mandate rows are read by the older cascade owner, which is wired nowhere, and by the tracker adapter's fire-subject read. | Nothing in the scope workflow reads them. Declaring `[[organize_scopes]]` makes boot also require the marker prefixes the supervisor tick uses. |
 
 Boot splits the tables by who owns the value. Labels (`[queue_states]`,
 `[scope_labels]`, `[issue_labels]`) and `[documents]` are the operation's own:
@@ -342,9 +342,11 @@ Watch these events. Anything logged at `"level": "error"` needs a look.
 | `run_record_written`, `run_record_verified`, `run_record_write_failed` | A run's log row was written, found already written by its session, or refused. |
 | `scheduled_pass_failed`, `scheduled_pass_timed_out` | A tick raised or ran out of time. The next tick runs on schedule. |
 
+The groom, prep and implementation sessions are not drained, so they log no
+`stream_drained` line. Follow them on the job's event stream:
 `GET /api/v1/jobs/{jobId}` answers a run's state and outcome, and
-`GET /api/v1/jobs/{jobId}/stream` replays its event stream (see
-[api.md](api.md)).
+`GET /api/v1/jobs/{jobId}/stream` replays its events (see [api.md](api.md)).
+The event buffer is released 15 minutes after the job ends by default.
 
 ## 8. Costs measured in the closed beta
 
@@ -366,7 +368,7 @@ quiet board.
 
 | What happens | What you see | What the next tick does |
 | --- | --- | --- |
-| A board session's opening frame does not report the tracker server `connected` | The session raises `TrackerServerNotConnectedError`. Inside a run the graph retries the step (`KODEZART_RETRY_MAX_ATTEMPTS`, default 3); then `job_failed` with outcome `engine_error`. In the cron's own scan the tick fails with `scheduled_pass_failed`. | The cron scans again. If the node is still approved and unfinished and no job for it is live, it submits a new run. |
+| A board session's opening frame does not report the tracker server `connected` | The session raises `TrackerServerNotConnectedError`. Inside a run the graph retries the step (`KODEZART_RETRY_MAX_ATTEMPTS`, default 3); then `job_failed`, and `job_finished` with outcome `engine_error`. In the cron's own scan the tick fails with `scheduled_pass_failed`. | The cron scans again. If the node is still approved and unfinished and no job for it is live, it submits a new run. |
 | A rate-limit rejection outlasts the step's retries | Each retry first waits the provider's retry-after or `KODEZART_RETRY_RATE_LIMIT_FLOOR_SECONDS` (default 60). Then `job_failed`. A board question whose session is rejected ends `agent_question_unanswered`: an unanswered prep question ends the run `criteria_infeasible`, and an unanswered post-merge question counts as "not finished". | The same resubmission. The cron has no cooldown; `KODEZART_DISPATCH_RATE_LIMIT_COOLDOWN_SECONDS` applies only to the per-issue dispatch passes. |
 | The run passes `KODEZART_QUEUE__RUN_TIMEOUT_SECONDS` | `job_timed_out`, outcome `job_timed_out`. | The same resubmission. |
 | A tick passes its pass timeout | `scheduled_pass_timed_out`. | The next tick runs on schedule. |
