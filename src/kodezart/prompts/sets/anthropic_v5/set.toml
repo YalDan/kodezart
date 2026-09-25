@@ -350,16 +350,17 @@ keys = ["implementation", "fix"]
 [session_roles.utility]
 effort = "max"
 skills = []
-keys = ["branch_name", "commit_message", "pr_description", "knowledge_map", "fire_record", "native_writer_contract", "mutation_survival", "organize_spec_rubric"]
+keys = ["branch_name", "commit_message", "knowledge_map", "fire_record", "native_writer_contract", "mutation_survival", "organize_spec_rubric"]
 # The rubric key is on this roster because a rubric opens no session:
 # its text is rendered into another role's mandate_rubric block, where a
 # reasoning-depth instruction or a skills header would be data the judging
 # role reads as its standard. The effort declared here is never served.
 
-# One short structured board question each, at the floor by the owner's
-# ruling of 2026-09-24, on the engine KODEZART_AGENT__SESSION_MODELS pins
-# the key to; no skills and no depth block, so each prefix caches.
+# One short structured answer each, at the floor by the owner's rulings of
+# 2026-09-24 (the three board questions) and 2026-09-25 (the pull-request
+# description), on the engine KODEZART_AGENT__SESSION_MODELS pins the key
+# to; no skills and no depth block, so each prefix caches.
 [session_roles.question]
 effort = "low"
 skills = []
-keys = ["pass_gate", "scope_scan", "scope_done"]
+keys = ["pass_gate", "scope_scan", "scope_done", "pr_description"]
