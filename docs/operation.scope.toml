@@ -1,18 +1,20 @@
 # The smallest operation config that runs a scope.
 #
 # Copy this file, change the names to your workspace's own, and read
-# docs/running-a-scope.md beside it. It is loaded and walked by the test
-# suite, so every member below is one a scope run actually reaches.
+# docs/running-a-scope.md and docs/deploying.md beside it. The test suite loads
+# it and boots a deployment from it, so every table below is one that boot or a
+# scope run actually reads.
 #
 # Every comment says what stops working without the member it stands over.
 # What an absent member costs is paid at the point of need and never at load:
 # the refusal names the member and what it stops.
 #
-# [[organize_scopes]] is the one scope table: declaring it schedules the
-# observation tick and a configured audit and switches nothing else off. Whether any pass runs is
-# its cadence pair in the environment; where it works is the one team and the
-# one repository below. There is no [run_event_states] table here and no
-# [queue_states] table: neither is read on this path.
+# There is no [run_event_states] table and no [queue_states] table here, and no
+# [[principals]]: the cron and the scope run read none of them. The fire-prep
+# and grooming passes do. Their prompts name the five queue labels and the
+# approver, so with this file as it is, leave their cadence pairs unset; to run
+# them, uncomment the two blocks at the end, which are the shape
+# docs/operation.example.toml uses.
 
 # Human-readable name of the operation these settings describe.
 operation_name = "example-scope-operation"
@@ -25,27 +27,29 @@ workspace = "example-workspace"
 # person by accident.
 agent_identities = ["@example-agent", "example-agent"]
 
-# One board. A scope run needs it declared: a criterion the walk takes back
-# is resolved through its team, and the workflow states below are that team's.
+# One board: the boundary the cron's scan reads. Boot resolves the team by its
+# name and refuses one it cannot find; without a team the scan has no board
+# and cannot render.
 [teams.primary]
 name = "Example team"
 key = "EXA"
 
-# Scope admission. With the table declared, all three members are required at
-# load. With no table at all, the first scoped read cannot resolve approval and
-# refuses naming scope_labels.approved. The grooming and fire-prep passes work
-# a scope carrying triage and set proposed on it once every member is groomed
-# and fire-ready; applying the approved label to the project is the one human
-# act in a run, and it is what the first stage below gates on.
+# Scope admission. The cron is scheduled only when this table is declared, and
+# a declared table must carry all three members. Applying the approved label
+# to an initiative, project, milestone or issue is the one human act in a run:
+# the cron's scan lists it, and the run's entry refuses a node that does not
+# carry it. The grooming and fire-prep passes work a scope carrying triage and
+# set proposed on it once every member is groomed and fire-ready.
 [scope_labels]
 triage = "scope:triage"
 proposed = "scope:proposed"
 approved = "scope:approved"
 
-# Issue classifications. The first scoped read requires criterion, decision
-# and tracker and names whichever is absent; the two stage markers are the
-# ones the mandate rows below reference, and a lane cannot fire until it
-# carries the criteria mandate's terminal marker.
+# Issue classifications. A run's groom and prep sessions name criterion and
+# decision in their prompt, and the run fails at its groom step naming
+# issue_labels.decision without them. tracker marks a record issue that is
+# neither work nor counted when the scan asks whether a node is finished. The
+# two organize markers are the ones the mandate rows below reference.
 [issue_labels]
 criterion = "criterion"
 decision = "decision"
@@ -53,11 +57,11 @@ tracker = "tracker"
 body = "organize:body-complete"
 criteria = "organize:criteria-complete"
 
-# The two organize stages of an approved scope run, in order. The first gates
-# on the scope's approval itself; the second on the label the first leaves
-# behind, so the table is the whole progression: an approved scope's lanes
-# are given bodies, then criteria. Declaring the table requires both stages,
-# and a row of any other kind is refused at load.
+# The organize table. The scope run does not read it: its groom and prep stages
+# are one session each over the whole parent. The table is read by the older
+# cascade organize owner, which nothing wires, and by the tracker adapter's
+# fire-subject read, and [[organize_scopes]] below requires it. Declaring the
+# table requires both rows, and a row of any other kind is refused at load.
 [[organize_mandates]]
 kind = "ticket"
 gate_label_key = "scope_labels.approved"
@@ -72,9 +76,11 @@ rubric_prompt_key = "organize_spec_rubric"
 admission_prompt_key = "organize_assess"
 terminal_marker_key = "issue_labels.criteria"
 
-# The one scope table, read by the observation tick that records each lane's
-# alarm. Bound to exactly one declared repository; change the key to your own
-# project's.
+# The scope rows the supervisor tick and a configured audit read; the cron
+# reads no row. Declaring a row makes boot require the marker prefixes the
+# supervisor tick uses, and the tick itself runs only when its own cadence
+# pair is set. Bound to exactly one declared repository; change the key to your
+# own project's.
 # No report_issue_key: this deployment configures no audit, so there is nowhere
 # a verified summary would be reported. A deployment that configures one adds
 # that member to every row here.
@@ -82,10 +88,9 @@ terminal_marker_key = "issue_labels.criteria"
 scope = { kind = "project", key = "example-scratch-project" }
 repo_url = "https://example.invalid/example-org/example-repo"
 
-# The team's own state names. With the table declared, an absent done is
-# refused at load. With no table at all, the first criterion cross-off refuses
-# after a session and a commit, which is the most expensive absent member on
-# this path.
+# The team's own state names. Boot resolves them on the team and refuses one it
+# cannot find. The grooming prompt names in_progress and in_review, and the
+# per-issue dispatch moves a fired issue through them.
 [workflow_states]
 in_progress = "In Progress"
 in_review = "In Review"
@@ -93,42 +98,31 @@ done = "Done"
 
 # Stable tracker identities. Preserve these prefixes when adopting a tracker
 # that already carries recorded work: changing one addresses a different
-# marker. An absent purpose is refused at its point of use — the walk resolves
-# run_state and run_event together before it records a lane, and re-reads the
-# lane record under run_state when it re-enters.
-# Boot checks this table against every purpose a pass it schedules can ask
-# for, and refuses naming every missing key at once (KOD-1235).
+# marker. Boot checks this table against every purpose a pass it wires can ask
+# for and refuses naming every missing key at once. Declaring [[organize_scopes]]
+# wires the supervisor tick's purposes; a forge token wires the per-issue
+# dispatch passes' purposes (base_spec, claim, repository, run_outcome,
+# work_ref).
 [marker_prefixes]
 run_outcome = "kodezart-run-outcome"
 run_state = "kodezart-run-state"
 run_event = "kodezart-run-event"
-# Every leased write is arbitrated by this fenced block; a lease cannot be
-# released without it.
 claim = "kodezart-claim"
-# A lane's base is resolved from the work refs recorded under this prefix.
 work_ref = "kodezart-workref"
-# The per-issue dispatch pass, scheduled wherever a forge token and the dispatch
-# cadence pair are set, records each fire's base under this prefix.
 base_spec = "kodezart-basespec"
-# The organize owner's split creation reads this before it writes a split, and
-# refuses naming marker_prefixes['issue_identity'] without it.
 issue_identity = "kodezart-issue"
-# A lane's fire writes back what it amended and records what it answered, so a
-# walk refuses at its first execution step without these two.
 amendment = "kodezart-amendment"
 ruling = "kodezart-ruling"
 escalation = "kodezart-escalation"
 decision = "kodezart-decision"
 audit = "kodezart-audit"
-# The audit pass routes a lane whose team is bound to no repository by the
-# repository recorded under this prefix, so a configured audit asks for it.
+# A team bound to no repository, beside several declared ones, has each
+# node's repository read off a marker under this prefix by the cron's scan.
 repository = "kodezart-repo"
-# The observation tick this file schedules records each lane's run-shape alarm
-# under this prefix, and refuses that lane by name without it.
 run_alarm = "kodezart-run-alarm"
 
-# Exactly one repository, and the request's repo_url must match it: a scoped
-# request naming any other repository is refused before the first read.
+# The repository the work goes to. A scope run checks out every declared
+# repository, and the cron skips a node whose repository is not one of them.
 [[repos]]
 url = "https://example.invalid/example-org/example-repo"
 trunk = "main"
@@ -136,3 +130,20 @@ trunk = "main"
 [[repos.checks]]
 name = "check"
 command = "make check"
+
+# To run the fire-prep and grooming passes, uncomment both blocks below, in the
+# shape docs/operation.example.toml uses, and change the names to your own.
+# Boot resolves the principal against the workspace's users and creates any
+# missing queue label.
+#
+# [[principals]]
+# tracker_user = "example-approver"
+# roles = ["approver", "principal", "assignee"]
+# handle = "@example-approver"
+#
+# [queue_states]
+# triage = "queue:triage"
+# proposed = "queue:proposed"
+# approved = "queue:approved"
+# done = "queue:done"
+# decision = "queue:decision"
