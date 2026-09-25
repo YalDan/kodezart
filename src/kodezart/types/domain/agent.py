@@ -780,7 +780,10 @@ class ScopeScanNode(CamelCaseModel):
     )
     key: str = Field(
         min_length=1,
-        description="A project's, initiative's or milestone's id, or an issue's key.",
+        description=(
+            "An issue's identifier, or a project's, initiative's or milestone's "
+            "uuid, never its display identifier."
+        ),
     )
     repository: str | None = Field(
         description=(
