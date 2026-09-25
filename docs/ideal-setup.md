@@ -79,6 +79,15 @@ on, they use the Linear server registered in the host's Claude Code
 configuration, under the host's login (`adapters/mcp/mapping.py`). No other
 session kind is given the tracker by kodezart.
 
+With the opt-in on, register the host's Linear MCP server under the name
+`KODEZART_TRACKER__SERVER_NAME` holds (default `linear`). While a tracker key
+is set, every board session checks its opening frame for a server of that name
+reported `connected`, and fails with `TrackerServerNotConnectedError` when it is
+missing or not connected (`adapters/claude/client_executor.py`). A host server
+registered under any other name therefore fails every board session: the
+cron's scan, the intake passes and their gate question, and a scope run's
+groom, prep and implementation.
+
 ### Without Linear
 
 With **no operation file** (`KODEZART_OPERATION_CONFIG` unset), boot logs
