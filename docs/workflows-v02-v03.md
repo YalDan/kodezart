@@ -132,6 +132,12 @@ The session kind decides which MCP servers a session is given
 ones kodezart gives the tracker server. On a v0.2 run the implementation
 session is a `ticket_fire` session, which it does not.
 
+The loop evaluator runs in plan mode on a v0.2 run. On a scope run it runs in
+the run's own permission mode, so it can install dependencies and run the
+repositories' own checks. Its checkouts are detached and never pushed: of the
+agent service's calls only `stream_workflow`, the implementation session's,
+persists (`services/agent_service.py`).
+
 ### What stays on the board, and where the run's own state is
 
 A scope run keeps no tracker record of its own. `FireImplementation` hands the

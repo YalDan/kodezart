@@ -790,7 +790,14 @@ class RalphLoop:
                             repo_path=ctx.repo_path,
                             repo_url=ctx.repo_url,
                             branch=evaluation_ref,
-                            permission_mode=EVAL_PERMISSION_MODE,
+                            # A scope run's evaluator runs in the run's own mode,
+                            # so it can install and run the repositories' checks;
+                            # its checkout is detached and never pushed.
+                            permission_mode=(
+                                EVAL_PERMISSION_MODE
+                                if ctx.scope is None
+                                else ctx.permission_mode
+                            ),
                             allowed_tools=ToolPreset.EVALUATION,
                             skills=skills,
                             session_type=SessionType.TICKET_FIRE,
