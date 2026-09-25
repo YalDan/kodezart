@@ -27,6 +27,7 @@ from kodezart.core.protocols import AfterPublish, NativeWriteGuard
 from kodezart.types.domain.agent import AgentEvent, ResultEvent
 from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.gating import RepoVisibility
+from kodezart.types.domain.operation import RepoEntry
 from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.session import PermissionMode, SessionType
 from kodezart.types.domain.skills import SkillsSelection
@@ -147,6 +148,7 @@ class RecordingRunner:
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
         cache_key: str | None = None,
+        repositories: Sequence[RepoEntry] = (),
     ) -> AsyncGenerator[AgentEvent, None]:
         """Record the dispatch and stream the configured answer, if any."""
         self._record(agents, "stream", session_policy, prompt, skills)
@@ -194,6 +196,7 @@ class RecordingRunner:
         cache_key: str | None = None,
         native_guard: NativeWriteGuard | None = None,
         after_publish: AfterPublish | None = None,
+        repositories: Sequence[RepoEntry] = (),
     ) -> AsyncGenerator[AgentEvent, None]:
         """Record the dispatch and stream nothing."""
         self._record(agents, "stream_workflow", session_policy, prompt, skills)

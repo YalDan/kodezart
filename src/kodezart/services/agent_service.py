@@ -1,6 +1,8 @@
 """Agent service — orchestrates agent execution as SSE event streams."""
 
+import shutil
 import sys
+import tempfile
 from collections.abc import AsyncGenerator, Sequence
 
 from kodezart.core.error_egress import build_error_event
@@ -9,19 +11,23 @@ from kodezart.core.protocols import (
     AfterPublish,
     AgentExecutor,
     ChangePersister,
+    GitService,
     NativeWriteGuard,
+    RepoCache,
     WorkspaceProvider,
 )
 from kodezart.domain.agent import generate_workspace_id
 from kodezart.domain.amendment import NativeWriteRefusalError
 from kodezart.domain.errors import WorkspaceError
 from kodezart.domain.git_url import resolve_repo_url
+from kodezart.services.gained_commits import gained_commits
 from kodezart.services.native_execution import NativeExecution, NativeExecutionRequest
 from kodezart.types.domain.agent import (
     AgentEvent,
     ResultEvent,
 )
 from kodezart.types.domain.gating import RepoVisibility
+from kodezart.types.domain.operation import RepoEntry
 from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.session import AllowedTools, PermissionMode, SessionType
 from kodezart.types.domain.skills import SkillsSelection
@@ -45,11 +51,15 @@ class AgentService:
         workspace: WorkspaceProvider,
         git_base_url: str,
         persister: ChangePersister | None = None,
+        git: GitService | None = None,
+        cache: RepoCache | None = None,
     ) -> None:
         self._executor: AgentExecutor = executor
         self._workspace: WorkspaceProvider = workspace
         self._persister: ChangePersister | None = persister
         self._git_base_url: str = git_base_url
+        self._git = git
+        self._cache = cache
         self._log: BoundLogger = get_logger(__name__)
 
     async def stream(
@@ -69,6 +79,7 @@ class AgentService:
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
         cache_key: str | None = None,
+        repositories: Sequence[RepoEntry] = (),
     ) -> AsyncGenerator[AgentEvent, None]:
         """Execute a one-shot agent query with automatic workspace acquire/release."""
         if output_format is not None:
@@ -92,6 +103,7 @@ class AgentService:
             session_id=session_id,
             output_format=output_format,
             cache_key=cache_key,
+            repositories=repositories,
         ):
             yield event
 
@@ -147,6 +159,7 @@ class AgentService:
         cache_key: str | None = None,
         native_guard: NativeWriteGuard | None = None,
         after_publish: AfterPublish | None = None,
+        repositories: Sequence[RepoEntry] = (),
     ) -> AsyncGenerator[AgentEvent, None]:
         """Workflow mode: acquire, execute, persist, release."""
         effective_branch = branch_name or ""
@@ -170,6 +183,7 @@ class AgentService:
             cache_key=cache_key,
             native_guard=native_guard,
             after_publish=after_publish,
+            repositories=repositories,
         ):
             if isinstance(event, ResultEvent):
                 event = event.model_copy(
@@ -200,6 +214,7 @@ class AgentService:
         cache_key: str | None = None,
         native_guard: NativeWriteGuard | None = None,
         after_publish: AfterPublish | None = None,
+        repositories: Sequence[RepoEntry] = (),
     ) -> AsyncGenerator[AgentEvent, None]:
         if repo_url is not None:
             repo_url = resolve_repo_url(repo_url, self._git_base_url)
@@ -243,6 +258,29 @@ class AgentService:
                 ),
             )
             async for event in execution.stream():
+                yield event
+            return
+
+        if repositories:
+            async for event in self._run_in_repositories(
+                prompt=prompt,
+                repositories=repositories,
+                ref=ref,
+                branch_name=branch_name,
+                create_branch=create_branch,
+                permission_mode=permission_mode,
+                allowed_tools=allowed_tools,
+                skills=skills,
+                session_type=session_type,
+                run_identity=run_identity,
+                agents=agents,
+                session_policy=session_policy,
+                visibility=visibility,
+                session_id=session_id,
+                output_format=output_format,
+                persist_branch=persist_branch,
+                cache_key=cache_key,
+            ):
                 yield event
             return
 
@@ -315,6 +353,133 @@ class AgentService:
             try:
                 await self._workspace.release(workspace_path)
             except Exception as cleanup_exc:
+                await self._log.awarning(
+                    "workspace_cleanup_failed",
+                    error=str(cleanup_exc),
+                )
+
+    async def _run_in_repositories(
+        self,
+        *,
+        prompt: str,
+        repositories: Sequence[RepoEntry],
+        ref: str,
+        branch_name: str | None,
+        create_branch: bool,
+        permission_mode: PermissionMode,
+        allowed_tools: AllowedTools,
+        skills: SkillsSelection,
+        session_type: SessionType,
+        run_identity: RunIdentity | None,
+        agents: Sequence[AgentDefinition],
+        session_policy: SessionPolicy,
+        visibility: RepoVisibility,
+        session_id: str | None,
+        output_format: dict[str, object] | None,
+        persist_branch: str | None,
+        cache_key: str | None,
+    ) -> AsyncGenerator[AgentEvent, None]:
+        """One session over a checkout of every repository, side by side.
+
+        Each repository stands at *ref* where its clone holds commits there
+        beyond its trunk, and at its trunk otherwise; the session runs once,
+        in the directory that holds them all. Only a checkout whose HEAD
+        moved during the session is persisted, because the persister pushes
+        an untouched branch as well, at its trunk's tip.
+        """
+        if self._git is None or self._cache is None:
+            raise WorkspaceError(
+                "A session over several repositories needs git and the clone cache"
+            )
+        git = self._git
+        at_ref = {
+            each.repository.url
+            for each in await gained_commits(
+                git=git,
+                cache=self._cache,
+                repositories=repositories,
+                branch=ref,
+                cache_key=cache_key,
+            )
+        }
+        parent = tempfile.mkdtemp(prefix="kodezart-")
+        acquired: list[str] = []
+        try:
+            try:
+                for repository in repositories:
+                    acquired.append(
+                        await self._workspace.acquire(
+                            repo_url=repository.url,
+                            ref=ref if repository.url in at_ref else repository.trunk,
+                            branch_name=branch_name,
+                            create_branch=create_branch,
+                            cache_key=cache_key,
+                            parent=parent,
+                        )
+                    )
+            except WorkspaceError as exc:
+                await self._log.aexception(
+                    "agent_service_workspace_acquire_failed",
+                    error=str(exc),
+                    error_kind=type(exc).__name__,
+                    exc_info=sys.exc_info(),
+                )
+                yield build_error_event(exc)
+                return
+            heads = {path: await git.current_sha(path) for path in acquired}
+            buffered_result: ResultEvent | None = None
+            async for event in self.stream_in_workspace(
+                prompt=prompt,
+                workspace_path=parent,
+                permission_mode=permission_mode,
+                allowed_tools=allowed_tools,
+                skills=skills,
+                session_type=session_type,
+                run_identity=run_identity,
+                agents=agents,
+                session_policy=session_policy,
+                session_id=session_id,
+                output_format=output_format,
+            ):
+                if isinstance(event, ResultEvent):
+                    buffered_result = event
+                else:
+                    yield event
+
+            if persist_branch and self._persister and buffered_result:
+                backup_ref_id_prefix = (session_id or generate_workspace_id())[:8]
+                for path, before in heads.items():
+                    if await git.current_sha(path) == before:
+                        continue
+                    persist_result = await self._persister.persist(
+                        workspace_path=path,
+                        branch=persist_branch,
+                        executor=self._executor,
+                        backup_ref_id_prefix=backup_ref_id_prefix,
+                        skills=skills,
+                        visibility=visibility,
+                    )
+                    if persist_result:
+                        buffered_result = buffered_result.model_copy(
+                            update={
+                                "commit_sha": persist_result.commit_sha,
+                                "branch": persist_branch,
+                            },
+                        )
+            if buffered_result:
+                yield buffered_result
+        finally:
+            for path in acquired:
+                try:
+                    await self._workspace.release(path)
+                except Exception as cleanup_exc:
+                    await self._log.awarning(
+                        "workspace_cleanup_failed",
+                        error=str(cleanup_exc),
+                    )
+            try:
+                shutil.rmtree(parent)
+            except OSError as cleanup_exc:
                 await self._log.awarning(
                     "workspace_cleanup_failed",
                     error=str(cleanup_exc),

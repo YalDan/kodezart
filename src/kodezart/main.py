@@ -173,6 +173,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             workspace=stack.workspace,
             persister=stack.persister,
             git_base_url=config.git.base_url,
+            git=stack.git,
+            cache=stack.cache,
         )
         app.state.agent_service = agent_service
 

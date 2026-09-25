@@ -46,6 +46,7 @@ from kodezart.types.domain.operation import (
     LifecycleStage,
     QueueState,
     RecordDestination,
+    RepoEntry,
     ScopeLabel,
 )
 from kodezart.types.domain.organize_graph import GraphChange, IssueGraphSnapshot
@@ -2370,8 +2371,13 @@ class AgentRunner(Protocol):
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
         cache_key: str | None = None,
+        repositories: Sequence[RepoEntry] = (),
     ) -> AsyncIterator[AgentEvent]:
-        """One-shot agent query with workspace lifecycle."""
+        """One-shot agent query with workspace lifecycle.
+
+        Given *repositories*, the session runs once over a checkout of each,
+        side by side, instead of over the one *repo_path*/*repo_url* names.
+        """
         ...
 
     def stream_workflow(
@@ -2395,12 +2401,16 @@ class AgentRunner(Protocol):
         cache_key: str | None = None,
         native_guard: "NativeWriteGuard | None" = None,
         after_publish: AfterPublish | None = None,
+        repositories: Sequence[RepoEntry] = (),
     ) -> AsyncIterator[AgentEvent]:
         """Workflow mode with branch creation and persistence.
 
         On the native arm *after_publish* is required and runs inside the
         persisting phase: the commit and what it is recorded as are one
         operation, not two steps a caller may perform separately.
+
+        Given *repositories*, the branch is worked on in a checkout of each,
+        and persisted in every checkout the session committed in.
         """
         ...
 

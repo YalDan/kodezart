@@ -149,6 +149,7 @@ from kodezart.types.domain.operation import (
     LifecycleStage,
     QueueState,
     RecordDestination,
+    RepoEntry,
     ScopeLabel,
 )
 from kodezart.types.domain.organize_graph import GraphChange, IssueGraphSnapshot
@@ -1338,6 +1339,7 @@ class FakeAgentRunner:
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
         cache_key: str | None = None,
+        repositories: Sequence[RepoEntry] = (),
     ) -> AsyncGenerator[AgentEvent, None]:
         self.calls.append(
             {
@@ -1373,6 +1375,7 @@ class FakeAgentRunner:
         cache_key: str | None = None,
         native_guard: NativeWriteGuard | None = None,
         after_publish: AfterPublish | None = None,
+        repositories: Sequence[RepoEntry] = (),
     ) -> AsyncGenerator[AgentEvent, None]:
         self.calls.append(
             {
