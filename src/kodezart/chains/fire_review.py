@@ -153,7 +153,13 @@ class FireReview:
                     repo_path=ctx.repo_path,
                     repo_url=ctx.repo_url,
                     branch=state["feature_branch"],
-                    permission_mode=EVAL_PERMISSION_MODE,
+                    # A scope run's review runs in the run's own mode, like
+                    # its evaluator, so it can run the repositories' checks.
+                    permission_mode=(
+                        EVAL_PERMISSION_MODE
+                        if ctx.scope is None
+                        else ctx.permission_mode
+                    ),
                     allowed_tools=ToolPreset.EVALUATION,
                     skills=self._prompts.session_skills(
                         PromptKey.POST_MERGE_REVIEW, self._skills
