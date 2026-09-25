@@ -11,11 +11,7 @@ from pathlib import Path
 
 from kodezart.adapters.no_forge_delivery import NoForgeDeliveryProbe
 from kodezart.composition.audit import build_audit_pass, verify_audit_configuration
-from kodezart.composition.organize import (
-    build_scope_heartbeat,
-    verify_organize_configuration,
-    verify_organize_session_tools,
-)
+from kodezart.composition.organize import build_scope_heartbeat, scope_heartbeat_wires
 from kodezart.composition.records import RECORD_KIND_BY_PASS, run_report
 from kodezart.composition.supervisor import build_supervisor_pass
 from kodezart.composition.tracker import DialledTracker
@@ -46,6 +42,7 @@ from kodezart.core.protocols import (
 )
 from kodezart.domain.git_url import is_forge_less_origin
 from kodezart.domain.lane_alarms import OBSERVED_ALARMS
+from kodezart.domain.prompt_variables import scope_variables
 from kodezart.domain.run_alarm_table import ALARM_TABLE, require_alarm_table
 from kodezart.services.base_resolver import BaseResolver
 from kodezart.services.claim_heartbeat import ClaimHeartbeat
@@ -73,6 +70,7 @@ from kodezart.types.domain.operation import (
 )
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run_records import RunIdentity, RunOutcome
+from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
 
@@ -80,10 +78,9 @@ from kodezart.types.domain.skills import SkillsSelection
 #: meant, and prefixing the repository where one instance is.
 _DISPATCH_NAME = "dispatch"
 
-#: What the standing-scope heartbeat is called.  One instance for the whole
-#: operation, because it iterates the declared bindings itself: the scopes
-#: are not a per-repository roster and a pass per repository would ask the
-#: same approval question once per binding that repository happens to hold.
+#: What the scope heartbeat is called.  One instance for the whole operation,
+#: because one scan reads every declared team's board: a pass per repository
+#: would ask the same question once per repository.
 _HEARTBEAT_NAME = "scope_heartbeat"
 
 
@@ -280,11 +277,11 @@ def absent_roster(operation: OperationConfig) -> tuple[str, ...]:
 
 
 def runs_scope_flow(operation: OperationConfig) -> bool:
-    """Whether this operation declares scopes the scope flow works on.
+    """Whether this operation declares scope rows for the supervisor and the audit.
 
-    A declared scope turns the scope flow ON: the standing scopes' heartbeat,
-    the supervisor and the audit read the same rows. It
-    turns nothing else off. Whether any other job runs is its cadence pair
+    A declared row turns those two ON, and it turns nothing else off. The
+    heartbeat reads no row: it asks the board which approved scopes are not
+    finished. Whether any other job runs is its cadence pair
     (KOD-1238); where it works is the declared teams and repositories, a team
     narrowed by the projects it names. Until 2026-09-24 this predicate also
     withheld the two session passes and the dispatcher, a rule the owner never
@@ -322,9 +319,8 @@ def scope_passes_wire(
 ) -> bool:
     """Whether the scope passes wire here: a dialled tracker and declared scopes.
 
-    Two passes stand or fall on this one answer — the standing scopes'
-    heartbeat and the supervisor tick — because both read the same declared
-    rows.
+    The supervisor tick stands or falls on this answer, because it reads the
+    declared rows.
     """
     return tracker_present and operation is not None and runs_scope_flow(operation)
 
@@ -906,17 +902,14 @@ async def verify_pass_preflight(
     The order is the cost order: the configuration answers are already in
     hand, the gate probe is a round trip, and the renders are local.
 
-    The render half applies to exactly the passes that will WIRE, and to
-    the gate question they ask first.  An operation with no roster schedules
-    none of them (see :func:`build_prompt_passes`), and rendering a template
-    it will never send would refuse a boot over a hole nothing reaches.
+    The render half applies to exactly the passes that will WIRE, to the
+    gate question they ask first, and to the heartbeat's scan and the done
+    question each run it starts asks.  An operation with no roster schedules
+    none of the prompt passes (see :func:`build_prompt_passes`), and rendering
+    a template it will never send would refuse a boot over a hole nothing
+    reaches.
     """
     require_alarm_table()
-    # Called for its refusals, which are the point: a partial Organize
-    # configuration must not reach a scheduler. Its answer is read nowhere
-    # here, because which templates render is decided by the wiring predicate.
-    verify_organize_configuration(config=config, operation=operation, tracker=tracker)
-    verify_organize_session_tools(config=config, operation=operation, tracker=tracker)
     # Before the audit check, which refuses its own three prefixes one at a
     # time: here a missing audit prefix is named beside every other one.
     _verify_marker_prefixes(
@@ -932,6 +925,17 @@ async def verify_pass_preflight(
         tracker=tracker,
         github_api=github_api,
     )
+    if (
+        operation is not None
+        and scope_heartbeat_wires(operation, tracker_present=tracker is not None)
+        and config.pass_cadence("dispatch") is not None
+    ):
+        _assert_renders(key=PromptKey.SCOPE_SCAN, prompts=prompts, bindings={})
+        _assert_renders(
+            key=PromptKey.SCOPE_DONE,
+            prompts=prompts,
+            bindings=scope_variables(ScopeRef(kind=ScopeKind.PROJECT, key="boot")),
+        )
     if operation is None or not session_passes_wire(operation):
         return
     now = datetime.now(UTC)
@@ -1110,15 +1114,18 @@ async def build_dispatch_runtime(
                 recorder=recorder,
             ),
         )
-        # The standing scopes' own pass, on the dispatch cadence beside the
-        # per-issue dispatch passes, and with no report: it opens no session,
-        # so a tick of it is not a run that could be recorded.
+        # The scope heartbeat, on the dispatch cadence beside the per-issue
+        # dispatch passes, ticking at boot like the intake passes, and with no
+        # report: it writes no record, so a tick of it is no run to record.
         heartbeat = build_scope_heartbeat(
             config=config,
             operation=operation,
-            tracker=None if dialled is None else dialled.tracker,
+            tracker_present=dialled is not None,
             queue=queue,
             registry=registry,
+            runner=runner,
+            prompts=prompts,
+            skills=skills,
         )
         beat = config.pass_cadence("dispatch")
         if heartbeat is not None and beat is None:
@@ -1130,6 +1137,7 @@ async def build_dispatch_runtime(
                     interval_seconds=beat.interval_seconds,
                     timeout_seconds=beat.timeout_seconds,
                     run=heartbeat.run,
+                    tick_at_boot=True,
                 )
             )
     else:

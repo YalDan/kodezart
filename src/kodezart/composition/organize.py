@@ -1,15 +1,13 @@
 """Construct the Organize cascade owner, which stays constructible and is wired
-nowhere, the checks on the declared organize configuration, and the heartbeat."""
+nowhere, and the scope heartbeat."""
 
 from collections.abc import Sequence
-from typing import Final
+from pathlib import Path
 
 from kodezart.chains.organize import OrganizeAdmission
 from kodezart.chains.organize_author import OrganizeAuthor
-from kodezart.chains.scope_walker import read_scope_ready
 from kodezart.chains.write_back_verifier import FreshWriteBackJudge
 from kodezart.config.app import AppConfig
-from kodezart.core.errors import OrganizeTrackerCapabilityError
 from kodezart.core.protocols import (
     AgentRunner,
     GitService,
@@ -20,13 +18,14 @@ from kodezart.core.protocols import (
     TrackerPort,
     WorkspaceProvider,
 )
+from kodezart.services.agent_question import ask
 from kodezart.services.organize_context import OrganizeContextReader
 from kodezart.services.organize_owner import OrganizeOwner
 from kodezart.services.scope_heartbeat import ScopeHeartbeat
+from kodezart.types.domain.agent import ScopeScanOutput
 from kodezart.types.domain.operation import OperationConfig, OperationMemberAbsentError
 from kodezart.types.domain.organize import ResolvedMandateSpec
-from kodezart.types.domain.scope import ScopeRef
-from kodezart.types.domain.scope_ready import ScopeReadySet
+from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
 
@@ -95,118 +94,53 @@ def build_organize_owner(
     )
 
 
-def verify_organize_configuration(
-    *,
-    config: AppConfig,
-    operation: OperationConfig | None,
-    tracker: TrackerPort | None,
-) -> bool:
-    """Validate the declared owner before a queue or scheduler starts."""
-    if config.organize is None and (operation is None or not operation.organize_scopes):
-        return False
-    if operation is None:
-        raise OperationMemberAbsentError(
-            missing="operation", stops="configured Organize scheduling"
-        )
-    for present, missing in (
-        (bool(operation.organize_scopes), "organize_scopes"),
-        (bool(operation.organize_mandates), "organize_mandates"),
-        (config.organize is not None, "organize"),
-        (config.write_back is not None, "write_back"),
-        (tracker is not None, "tracker"),
-    ):
-        if not present:
-            raise OperationMemberAbsentError(
-                missing=missing, stops="configured Organize scheduling"
-            )
-    return True
+def scope_heartbeat_wires(operation: OperationConfig, *, tracker_present: bool) -> bool:
+    """Whether the heartbeat wires: a dialled tracker and approval labels to scan for.
 
-
-#: Where the tracker credential is read from, named in the refusal below
-#: because it is the one setting an operator has to set.
-TRACKER_CREDENTIAL_SETTING: Final[str] = "KODEZART_TRACKER__TOKEN"
-
-
-def verify_organize_session_tools(
-    *,
-    config: AppConfig,
-    operation: OperationConfig | None,
-    tracker: TrackerPort | None,
-) -> None:
-    """Refuse to boot when the organize stage sessions would hold no tracker tools.
-
-    Each organize stage is one agent session that reads and writes the board
-    through the deployment's own tracker server, described to it from the
-    tracker credential the way it is described to the grooming and fire-prep
-    sessions: every session that touches the tracker runs on kodezart's own
-    connection, never on a login the host holds. Without the credential no
-    server is described, so every scope run the heartbeat submits would
-    start a session that cannot read the scope or label a member and halts
-    stage-incomplete, each at a whole session's cost.
-
-    Asked on the predicate the heartbeat is wired on, the one
-    :func:`verify_organize_configuration` answers. A deployment that declares
-    no organize scope runs no organize session, and refusing its boot would
-    hold it hostage to a setting nothing it schedules reads.
+    Named once: the wiring builds on it, and so does the preflight that
+    renders the scan and the done question at boot.
     """
-    if not verify_organize_configuration(
-        config=config, operation=operation, tracker=tracker
-    ):
-        return
-    if config.tracker.token is not None:
-        return
-    raise OrganizeTrackerCapabilityError(
-        setting=TRACKER_CREDENTIAL_SETTING,
-        stops=(
-            "the organize stages run over the declared organize_scopes, "
-            "and the organize session cannot reach the tracker: it works the "
-            "board through the deployment's own tracker server, which is "
-            "described to it from this credential, and without it a session "
-            "is given none"
-        ),
-    )
+    return tracker_present and bool(operation.scope_labels)
 
 
 def build_scope_heartbeat(
     *,
     config: AppConfig,
     operation: OperationConfig,
-    tracker: TrackerPort | None,
+    tracker_present: bool,
     queue: JobQueue,
     registry: JobRegistry,
+    runner: AgentRunner,
+    prompts: PromptSetProvider,
+    skills: SkillsSelection,
 ) -> ScopeHeartbeat | None:
-    """Absent means no standing scope is declared; partial config refuses.
+    """The heartbeat over *operation*'s board, or ``None`` where it does not wire.
 
-    The same predicate the run's own stages are built on, so a deployment
-    gets the heartbeat and the stages over the declared rows or neither. The
-    heartbeat itself needs nothing an owner needs: the three reads an
-    approval question takes, one readiness reading, and the queue this
-    process submits onto.
-
-    The readiness reading is passed as the one CALL the pass makes rather
-    than as the port it is made over, the way the walk's lane and probe
-    selections are: the pass asks "what does this scope read as now" and
-    depends on nothing else about the tracker.
+    Its scan is the shared question on the scope_scan key, asked in the
+    scheduled passes' working directory, which is no cloned repository; the
+    session reads the board through the tracker server its kind is given. What
+    the heartbeat holds besides is the two ports it submits through and each
+    declared repository's trunk.
     """
-    if not verify_organize_configuration(
-        config=config, operation=operation, tracker=tracker
-    ):
+    if not scope_heartbeat_wires(operation, tracker_present=tracker_present):
         return None
-    if tracker is None:
-        raise OperationMemberAbsentError(
-            missing="tracker", stops="configured Organize scheduling"
-        )
-    reader: TrackerPort = tracker
+    working_dir = Path(config.scheduled_pass_working_dir).expanduser()
+    working_dir.mkdir(parents=True, exist_ok=True)
 
-    async def ready_for(ref: ScopeRef) -> ScopeReadySet:
-        return await read_scope_ready(ref=ref, tracker=reader)
+    async def scan() -> ScopeScanOutput | None:
+        return await ask(
+            runner=runner,
+            prompts=prompts,
+            skills=skills,
+            workspace_path=str(working_dir),
+            key=PromptKey.SCOPE_SCAN,
+            bindings={},
+            answer=ScopeScanOutput,
+        )
 
     return ScopeHeartbeat(
-        approvals=tracker,
-        ready_for=ready_for,
-        queue=queue,
+        ask=scan,
         registry=registry,
-        bindings=operation.organize_scopes,
+        queue=queue,
         trunks={repo.url: repo.trunk for repo in operation.repos},
-        lane=config.dispatch_lane,
     )

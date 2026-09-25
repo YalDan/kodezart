@@ -127,16 +127,13 @@ def declared(*, scopes):
 #: the raw copy carries registers the tick. That is the one copy the heartbeat
 #: is built from, so a tick over the other copy would be this deployment
 #: observing rows nothing else here works.
-#: A declared roster without a tracker is now a partial organize configuration
-#: rather than a quiet absence, so that case refuses at preflight and names the
-#: member; it never reaches the arm at all.
 #: The dispatch case keeps its id and its probe: a declared roster adds the
 #: heartbeat to the schedule and takes nothing out of it, so the dispatch pass
 #: stands there beside it (2026-09-24).
 WIRINGS = {
     "declared_with_tracker": ((SCOPE,), (SCOPE,), None, False),
     "declared_with_tracker_and_dispatch": ((SCOPE,), (SCOPE,), None, True),
-    "declared_without_tracker": ((SCOPE,), None, "tracker", False),
+    "declared_without_tracker": ((SCOPE,), None, (False, True), False),
     "undeclared": ((), (), (True, False), False),
     "reconciled_declares": ((), (SCOPE,), (True, False), False),
     "only_raw_declares": ((SCOPE,), (), None, False),
@@ -168,10 +165,9 @@ async def test_the_pass_registers_only_with_declared_scopes_and_a_dialled_tracke
     """The roster and the dialled tracker are the whole gate, and both are named.
 
     A deployment that declares scopes and dials a tracker registers exactly one
-    tick; no tracker is a partial organize configuration and refuses at
-    preflight naming the member, and no roster registers none and says so in the
-    boot log, so an operator reads the reason rather than deducing it from a
-    schedule with no supervisor in it.
+    tick; no tracker or no roster registers none and says so in the boot log, so
+    an operator reads the reason rather than deducing it from a schedule with no
+    supervisor in it.
 
     The roster read is the copy handed in, which is the copy the heartbeat is
     built from. Two of the cases below make the two copies
@@ -206,15 +202,6 @@ async def test_the_pass_registers_only_with_declared_scopes_and_a_dialled_tracke
             supervisor_pass_timeout_seconds=TIMEOUT,
         )
 
-    if absent == "tracker":
-        # The roster is declared and nothing is dialled, so this deployment
-        # never reaches the arm: preflight refuses the partial organize
-        # configuration and names the member that is missing.
-        with pytest.raises(OperationMemberAbsentError) as refused:
-            await boot(tmp_path, raw=raw_scopes, reconciled_roster=reconciled_scopes)
-        assert refused.value.missing == "tracker"
-        return
-
     with structlog.testing.capture_logs() as logs:
         runtime = await boot(
             tmp_path, raw=raw_scopes, reconciled_roster=reconciled_scopes
@@ -240,14 +227,15 @@ async def test_the_pass_registers_only_with_declared_scopes_and_a_dialled_tracke
         assert unwired[0]["scopes_declared"] is scopes_declared
 
     # Every other pass is as it was: the arm adds one registration and edits no
-    # other. A declared roster adds the heartbeat, registered before the
-    # observation arm runs, and switches no session pass off: each of those
-    # runs on its own cadence pair, set here. The dispatch cadence drives the
-    # heartbeat and the per-issue dispatch pass alike.
+    # other. A declared roster switches no session pass off: each of those runs
+    # on its own cadence pair, set here. The dispatch cadence drives the
+    # heartbeat and the per-issue dispatch pass alike, and the heartbeat reads
+    # no row: it wires wherever a tracker is dialled, roster or none.
     session_passes = {PromptKey.FIRE_PREP_PASS.value, PromptKey.GROOMING_PASS.value}
     per_issue = session_passes | ({f"dispatch:{REPO}"} if dispatching else set())
-    scope_passes = {HEARTBEAT_PASS}
-    expected = (per_issue | scope_passes) if raw_scopes else per_issue
+    expected = per_issue | (
+        {HEARTBEAT_PASS} if reconciled_scopes is not None else set()
+    )
     assert {entry.name for entry in registered} - {"supervisor"} == expected
 
     # "As before" is the same deployment declaring no roster at all, held to the
@@ -261,7 +249,7 @@ async def test_the_pass_registers_only_with_declared_scopes_and_a_dialled_tracke
             reconciled_roster=None if reconciled_scopes is None else (),
         )
 
-    assert {entry.name for entry in as_before.scheduler.passes} == per_issue
+    assert {entry.name for entry in as_before.scheduler.passes} == expected
 
 
 #: The per-issue dispatch gate with issue activity left out, so any probe of
@@ -310,16 +298,15 @@ async def test_the_supervisors_scans_are_probed_exactly_when_its_tick_registers(
     """
     raw_scopes, reconciled_scopes, absent, dispatching = WIRINGS[wiring]
     if reconciled_scopes is None:
-        # Nothing is dialled, so nothing can be probed and no tick registers:
-        # preflight refuses the partial organize configuration first.
-        with pytest.raises(OperationMemberAbsentError):
-            await _boot_gated(
-                tmp_path,
-                raw=raw_scopes,
-                reconciled_roster=None,
-                dispatching=dispatching,
-                tracker=None,
-            )
+        # Nothing is dialled, so nothing can be probed and no tick registers.
+        unprobed = await _boot_gated(
+            tmp_path,
+            raw=raw_scopes,
+            reconciled_roster=None,
+            dispatching=dispatching,
+            tracker=None,
+        )
+        assert [e for e in unprobed.scheduler.passes if e.name == "supervisor"] == []
         return
 
     def board_for(scan_refusals):

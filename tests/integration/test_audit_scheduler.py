@@ -471,10 +471,14 @@ async def test_actual_main_lifespan_registers_and_executes_audit(
         assert any(
             row.body.startswith("[configured-audit-record:") for row in server.comments
         )
-        # The intake passes tick at boot beside the audit, each opening its
-        # own session; the audit's is the one structured call, and one only.
+        # The intake passes and the scope heartbeat tick at boot beside the
+        # audit, each opening its own session; besides the heartbeat's scan,
+        # the audit's is the one structured call, and one only.
         structured = [
-            call for call in executor.calls if call["output_format"] is not None
+            call
+            for call in executor.calls
+            if call["output_format"] is not None
+            and call["output_format"]["schema"]["title"] != "ScopeScanOutput"
         ]
         assert len(structured) == 1
         assert structured[0]["output_format"]["schema"]["title"] == "WriteBackFinding"

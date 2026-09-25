@@ -30,6 +30,7 @@ from kodezart.composition.passes import (
 from kodezart.composition.records import RECORD_KIND_BY_PASS
 from kodezart.composition.tracker import DialledTracker
 from kodezart.config.app import AppConfig
+from kodezart.core.constants import DEFAULT_LANE
 from kodezart.core.errors import (
     PassGateCapabilityError,
     PassKnowledgeCapabilityError,
@@ -41,7 +42,12 @@ from kodezart.services import pass_scheduler as pass_scheduler_module
 from kodezart.services.pass_scheduler import PassScheduler, ScheduledPass
 from kodezart.services.prompt_pass import gate_render_bindings, pass_render_bindings
 from kodezart.services.run_recorder import RunRecorder
-from kodezart.types.domain.agent import PASS_GATE_SCHEMA
+from kodezart.types.domain.agent import (
+    PASS_GATE_SCHEMA,
+    ResultEvent,
+    ScopeScanNode,
+    ScopeScanOutput,
+)
 from kodezart.types.domain.dispatch import PassRun, PassSignal
 from kodezart.types.domain.operation import (
     DocumentSystem,
@@ -526,22 +532,43 @@ async def test_the_boot_seam_registers_the_prompt_passes(tmp_path: Path) -> None
 async def test_declared_standing_scopes_register_the_heartbeat_on_the_dispatch_cadence(
     tmp_path: Path,
 ) -> None:
-    """The standing scopes' own pass, beside the grooming pass.
+    """The scope heartbeat, beside the grooming pass.
 
     One registration for the whole operation, on the cadence the dispatch
-    scans already run on, and with no report: it opens no session, so a tick
-    of it is not a run anything could record. The grooming pass is still
-    there once — it works the whole board before approval, the heartbeat
-    submits what approval admits — and the cadence is read off the
+    scans already run on, ticking at boot, and with no report: it writes no
+    record, so a tick of it is not a run anything could record. The grooming
+    pass is still there once — it works the whole board before approval, the
+    heartbeat submits what approval admits — and the cadence is read off the
     configuration rather than spelled here.
     """
     config = _config(tmp_path, **STANDING_SCOPE_SETTINGS)
     operation = standing_scope_operation()
+    repo_url = operation.repos[0].url
+    scan = ScopeScanOutput(
+        scopes=[
+            ScopeScanNode(
+                kind=STANDING_SCOPE.kind,
+                key=STANDING_SCOPE.key,
+                repository=repo_url,
+                why="approved, with an open issue below it",
+            )
+        ],
+        reason="one approved project is not finished",
+    )
+    answer = ResultEvent(
+        subtype="success",
+        duration_ms=1,
+        duration_api_ms=1,
+        is_error=False,
+        num_turns=1,
+        session_id="scan-session",
+        structured_output=scan.model_dump(mode="json", by_alias=True),
+    )
     queue = FakeJobQueue()
     runtime = await _runtime(
         tmp_path,
         tracker=approving_board(),
-        runner=FakeAgentRunner(events=[]),
+        runner=FakeAgentRunner(events=[answer]),
         operation=operation,
         queue=queue,
         **STANDING_SCOPE_SETTINGS,
@@ -554,47 +581,41 @@ async def test_declared_standing_scopes_register_the_heartbeat_on_the_dispatch_c
     assert heartbeat.interval_seconds == config.dispatch_pass_interval_seconds
     assert heartbeat.timeout_seconds == config.dispatch_pass_timeout_seconds
     assert heartbeat.report is None
+    assert heartbeat.tick_at_boot is True
     assert registered.count(HEARTBEAT_PASS) == 1
     assert registered.count(PromptKey.GROOMING_PASS.value) == 1
 
     # The REGISTERED callable, ticked: what the scheduler would reach is the
     # heartbeat's own scheduled run, answering in the vocabulary a scheduled
-    # pass answers in and submitting the declared row onto the queue this
-    # boot wired. A registration carrying some other callable — an idle one,
-    # or the tick, whose answer is a report rather than a run — passes every
-    # assertion above and fails here.
-    (row,) = operation.organize_scopes
+    # pass answers in and submitting the node the scan lists onto the queue
+    # this boot wired, where POST /fire submits too. A registration carrying
+    # some other callable passes every assertion above and fails here.
     assert await heartbeat.run(FIXTURE_EPOCH) is PassRun.RAN
     ((lane, request),) = queue.submissions
-    assert lane == config.dispatch_lane
-    assert request.scope == row.scope == STANDING_SCOPE
-    assert request.repo_url == row.repo_url
-    # And the pass is the same instance across ticks: its own memory of the
-    # job it submitted is what keeps the second tick from starting a second
-    # run of one scope.
+    assert lane == DEFAULT_LANE
+    assert request.scope == STANDING_SCOPE
+    assert request.repo_url == repo_url
+    # The scan lists the same node again, and the registry holds its run as
+    # live: the second tick submits nothing beside it.
     assert await heartbeat.run(FIXTURE_EPOCH) is PassRun.SKIPPED
     assert len(queue.submissions) == 1
 
 
-async def test_an_operation_with_no_standing_scope_registers_no_heartbeat(
+async def test_an_operation_with_no_scope_labels_registers_no_heartbeat(
     tmp_path: Path,
 ) -> None:
-    """Non-vacuity for the registration above: the rows are what wire it.
+    """Non-vacuity for the registration above: the approval labels wire it.
 
-    The same deployment over the same owner bounds, with the standing rows
-    removed, schedules no heartbeat — which is why the exact pass-set
-    assertions in this module stay as they are.
+    The same deployment over an operation that declares no scope labels
+    schedules no heartbeat: its scan would have no approval to look for.
     """
+    fields = example_config().model_dump()
+    fields["scope_labels"] = {}
     runtime = await _runtime(
         tmp_path,
         tracker=FakeTrackerPort(),
         runner=FakeAgentRunner(events=[]),
-        operation=standing_scope_operation(scopes=False),
-        **{
-            key: value
-            for key, value in STANDING_SCOPE_SETTINGS.items()
-            if key != "organize"
-        },
+        operation=OperationConfig.model_validate(fields),
     )
 
     assert {entry.name for entry in runtime.scheduler.passes} == {
@@ -746,7 +767,13 @@ async def test_the_prompt_passes_put_no_signal_in_the_probe(
     runner = FakeAgentRunner(events=[])
 
     runtime = await _runtime(
-        tmp_path, tracker=tracker, runner=runner, http={"debug": debug}
+        tmp_path,
+        tracker=tracker,
+        runner=runner,
+        http={"debug": debug},
+        # Unset, so the heartbeat that pair would schedule is not here either.
+        dispatch_pass_interval_seconds=None,
+        dispatch_pass_timeout_seconds=None,
     )
 
     assert tracker.capability_probes == []
@@ -1000,6 +1027,10 @@ async def test_with_no_cadence_set_a_per_issue_deployment_schedules_nothing(
     assert runtime.lifecycle is None
     assert _not_configured(logs) == {
         "dispatch": [
+            "KODEZART_DISPATCH_PASS_INTERVAL_SECONDS",
+            "KODEZART_DISPATCH_PASS_TIMEOUT_SECONDS",
+        ],
+        HEARTBEAT_PASS: [
             "KODEZART_DISPATCH_PASS_INTERVAL_SECONDS",
             "KODEZART_DISPATCH_PASS_TIMEOUT_SECONDS",
         ],
@@ -1447,6 +1478,9 @@ async def test_a_deployment_with_no_store_wires_both_passes_and_records_nothing(
         operation=operation,
         prompt_set=V5_SET,
         **UNGRANTED,
+        # Unset: the heartbeat that pair would schedule records nothing.
+        dispatch_pass_interval_seconds=None,
+        dispatch_pass_timeout_seconds=None,
     )
 
     assert {entry.name for entry in runtime.scheduler.passes} == {

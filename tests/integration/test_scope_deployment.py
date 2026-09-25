@@ -16,6 +16,7 @@ from kodezart.domain.run_alarm_record import MARKER_PURPOSE
 from kodezart.main import create_app, lifespan
 from kodezart.services.scope_approval import scope_approved
 from kodezart.services.tracker_boot import owned_mappings
+from kodezart.types.domain.agent import ScopeScanOutput
 from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.operation import ScopeLabel
 from kodezart.types.domain.organize import OrganizeLabelNamespace, split_label_key
@@ -326,7 +327,9 @@ async def test_a_scope_deployment_boots_from_the_shipped_files_and_fires_nothing
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """The acceptance preamble, with nothing substituted but the transport.
+    """The acceptance preamble, with nothing substituted but the transport and
+    the heartbeat's scan, which is an agent session and answers here that
+    nothing is approved yet.
 
     A deployment configured from the shipped file and the page's own environment
     block boots, reconciles its mappings into the team, schedules the passes that
@@ -369,6 +372,11 @@ async def test_a_scope_deployment_boots_from_the_shipped_files_and_fires_nothing
         "kodezart.composition.tracker.make_mcp_tool_caller",
         lambda **_: server,
     )
+
+    async def nothing_approved(**_: object) -> ScopeScanOutput:
+        return ScopeScanOutput(scopes=[], reason="nothing is approved yet")
+
+    monkeypatch.setattr("kodezart.composition.organize.ask", nothing_approved)
 
     app = create_app()
     async with lifespan(app):

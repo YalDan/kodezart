@@ -132,5 +132,5 @@ These fields have native typed consumers rather than template placeholders. The 
 
 | Field | Consumer |
 | --- | --- |
-| organize_scopes | composition/organize.py::build_scope_heartbeat, composition/audit.py::build_audit_pass, composition/supervisor.py::build_supervisor_pass |
+| organize_scopes | composition/audit.py::build_audit_pass, composition/supervisor.py::build_supervisor_pass |
 | workflow_states.done | adapters/linear/tracker.py::set_workflow_state |
