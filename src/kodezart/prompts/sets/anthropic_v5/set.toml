@@ -342,14 +342,8 @@ keys = [
     "fire_time_ruling",
 ]
 
-# The workhorse role runs at medium, the engine's default. The Opus 5.5
-# prompting guide measures medium at or above Opus 5's high on agentic
-# coding, in fewer steps and tokens, and reserves xhigh and max for work
-# with a measured quality gain (owner ruling of 2026-09-25). Every subagent
-# a session dispatches inherits this level unless a workflow call sets its
-# own, so the fan-out contract below names the levels a question may ask for.
 [session_roles.implementation]
-effort = "medium"
+effort = "max"
 skills = ["code-review"]
 keys = ["implementation", "fix"]
 

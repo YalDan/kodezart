@@ -123,7 +123,7 @@ The session kind decides which MCP servers a session is given
 | The cron's scan | `scope_scan` | `scheduled_pass` | question, low |
 | `groom`, `prep` | `organize_session` | `organize_pass` | generative, max |
 | `prep`, `scope_done` question | `scope_done` | `scheduled_pass` | question, low |
-| Loop implementation | `implementation` | `organize_pass` | implementation, medium |
+| Loop implementation | `implementation` | `organize_pass` | implementation, max |
 | Loop evaluation | `evaluation` | `ticket_fire` | evaluative, max |
 | `review_against_ticket` | `post_merge_review` | `ticket_fire` | evaluative, max |
 | Pull request description | `pr_description` | `ticket_fire` | question, low |

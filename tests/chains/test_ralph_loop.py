@@ -1948,8 +1948,7 @@ async def test_each_dispatch_of_one_run_carries_the_effort_its_role_declares() -
     generative = efforts["stream_workflow"]
     assert isinstance(evaluative, SessionEffort)
     assert isinstance(generative, SessionEffort)
-    assert evaluative is SessionEffort.MAX
-    assert generative is SessionEffort.MEDIUM
+    assert evaluative is generative is SessionEffort.MAX
 
     assert provider.session_policy(PromptKey.EVALUATION).effort is evaluative
 
