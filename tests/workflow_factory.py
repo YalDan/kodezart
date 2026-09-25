@@ -169,6 +169,8 @@ def make_authored_workflow(
             artifact_persister=artifact_persister,
             ref_publisher=ref_publisher,
             remediation_max_rounds=remediation_max_rounds,
+            git=git,
+            cache=cache,
         ),
         checks=AuthoredChecks(
             ci_monitor=ci_monitor,
@@ -176,5 +178,7 @@ def make_authored_workflow(
             repositories=repositories,
             max_concurrent_watches=max_concurrent_watches,
             red_rerun_max_attempts=red_rerun_max_attempts,
+            git=git,
+            cache=cache,
         ),
     )

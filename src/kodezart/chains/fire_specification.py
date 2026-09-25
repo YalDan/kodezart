@@ -1,6 +1,7 @@
 """Author the branch, ticket and feasible acceptance criteria."""
 
 import uuid
+from collections.abc import Sequence
 from typing import Final
 
 from langchain_core.runnables import RunnableConfig
@@ -39,6 +40,7 @@ from kodezart.domain.ticket import format_fire_spec
 from kodezart.domain.workflow_state import (
     current_fire_spec,
 )
+from kodezart.services.gained_commits import scope_repositories
 from kodezart.types.domain.agent import (
     BRANCH_NAME_SCHEMA,
     CRITERIA_VALIDATION_SCHEMA,
@@ -61,6 +63,7 @@ from kodezart.types.domain.gating import (
     RepoVisibility,
     WriterShape,
 )
+from kodezart.types.domain.operation import RepoEntry
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.session import SessionType, ToolPreset
 from kodezart.types.domain.skills import SkillsSelection
@@ -97,7 +100,9 @@ class FireSpecification:
         visibility_resolver: RepoVisibilityResolver | None,
         criteria_max_regeneration_rounds: int,
         fan_in_max_attempts: int,
+        repositories: Sequence[RepoEntry] = (),
     ) -> None:
+        self._repositories = tuple(repositories)
         self._service = service
         self._ticket_generator = ticket_generator
         self._prompts = prompts
@@ -118,6 +123,10 @@ class FireSpecification:
         Fail-closed with no exemption: a resolution failure, a deployment
         with no forge client, and a local-only run all yield UNKNOWN, which
         takes the public path with the gate engaged.
+
+        A scope run writes to every declared repository, so it is private
+        only when each of them is: otherwise the first one that is not
+        private is what every gated write is held to.
         """
         _ = state  # required by LangGraph but unused in this node
         ctx = ExecutionContext.from_configurable(config)
@@ -125,8 +134,17 @@ class FireSpecification:
 
         visibility = RepoVisibility.UNKNOWN
         if self._visibility_resolver is not None and ctx.repo_url is not None:
-            visibility = await self._visibility_resolver.resolve_visibility(
-                repo_url=ctx.repo_url,
+            urls = [
+                repository.url
+                for repository in scope_repositories(ctx.scope, self._repositories)
+            ] or [ctx.repo_url]
+            resolved = [
+                await self._visibility_resolver.resolve_visibility(repo_url=url)
+                for url in urls
+            ]
+            visibility = next(
+                (seen for seen in resolved if seen is not RepoVisibility.PRIVATE),
+                RepoVisibility.PRIVATE,
             )
 
         await self._log.ainfo(

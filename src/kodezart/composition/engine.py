@@ -349,6 +349,7 @@ def build_workflow_engine(
             retry_initial_interval=config.retry_initial_interval,
             delay_floor_for=delay_floor_for,
             fan_in_max_attempts=config.fan_in_max_attempts,
+            repositories=repositories,
         )
 
     authored_loop = loop(checkpointer)
@@ -370,6 +371,7 @@ def build_workflow_engine(
         service=agent_service,
         prompts=prompts,
         skills=skills,
+        repositories=repositories,
     )
 
     def fire(
@@ -398,6 +400,7 @@ def build_workflow_engine(
                 visibility_resolver=forge,
                 criteria_max_regeneration_rounds=config.criteria_max_regeneration_rounds,
                 fan_in_max_attempts=config.fan_in_max_attempts,
+                repositories=repositories,
             ),
             implementation=FireImplementation(
                 criteria_reader=criteria,
@@ -412,6 +415,7 @@ def build_workflow_engine(
                 cache=cache,
                 git_remote=config.git.remote,
                 ref_publisher=ref_publisher if forge is not None else None,
+                repositories=repositories,
             ),
             review=FireReview(
                 criteria_reader=criteria,
@@ -421,6 +425,7 @@ def build_workflow_engine(
                 git=git,
                 cache=cache,
                 fan_in_max_attempts=config.fan_in_max_attempts,
+                repositories=repositories,
             ),
             remediation=FireRemediation(
                 remediator=remediator,
@@ -449,6 +454,9 @@ def build_workflow_engine(
                 artifact_persister=artifact_persister,
                 ref_publisher=ref_publisher,
                 remediation_max_rounds=config.remediation_max_rounds,
+                git=git,
+                cache=cache,
+                repositories=repositories,
             ),
             checks=AuthoredChecks(
                 ci_monitor=forge,
@@ -456,6 +464,8 @@ def build_workflow_engine(
                 repositories=repositories,
                 max_concurrent_watches=config.delivery_max_concurrent_watches,
                 red_rerun_max_attempts=config.delivery_red_rerun_max_attempts,
+                git=git,
+                cache=cache,
             ),
         )
 

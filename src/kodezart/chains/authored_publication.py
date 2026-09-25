@@ -1,5 +1,7 @@
 """Publish authored pull requests and bounded failure comments."""
 
+from collections.abc import Sequence
+
 from langchain_core.runnables import RunnableConfig
 from langgraph.config import get_stream_writer
 
@@ -12,10 +14,12 @@ from kodezart.core.outbound_write import gated_write
 from kodezart.core.protocols import (
     AgentRunner,
     ArtifactPersister,
+    GitService,
     OutboundContentGate,
     PRCreator,
     PromptSetProvider,
     RefPublisher,
+    RepoCache,
 )
 from kodezart.core.stream_drain import drain
 from kodezart.domain.errors import (
@@ -33,6 +37,7 @@ from kodezart.domain.workflow_state import (
     current_fire_spec,
     validated_criteria,
 )
+from kodezart.services.gained_commits import gained_commits, scope_repositories
 from kodezart.types.domain.agent import (
     PR_DESCRIPTION_SCHEMA,
     PRDescriptionOutput,
@@ -43,6 +48,7 @@ from kodezart.types.domain.gating import (
     OutboundDestination,
     WriterShape,
 )
+from kodezart.types.domain.operation import RepoEntry
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
@@ -66,6 +72,9 @@ class AuthoredPublication:
         artifact_persister: ArtifactPersister | None,
         ref_publisher: RefPublisher | None,
         remediation_max_rounds: int,
+        git: GitService,
+        cache: RepoCache,
+        repositories: Sequence[RepoEntry] = (),
     ) -> None:
         self._service = service
         self._prompts = prompts
@@ -75,12 +84,43 @@ class AuthoredPublication:
         self._artifact_persister = artifact_persister
         self._ref_publisher = ref_publisher
         self._remediation_max_rounds = remediation_max_rounds
+        self._git = git
+        self._cache = cache
+        self._repositories = tuple(repositories)
         self._log: BoundLogger = get_logger("kodezart.chains.ralph_workflow")
 
     @property
     def available(self) -> bool:
         """Whether this origin has a PR writer."""
         return self._pr_creator is not None
+
+    async def _heads(
+        self,
+        state: AuthoredWorkflowState,
+        ctx: ExecutionContext,
+        *,
+        repo_url: str,
+        head_sha: str,
+    ) -> list[tuple[str, str, str]]:
+        """Each repository, base and head sha the deliverable branch is opened in.
+
+        A scope run opens a pull request in every repository the branch
+        gained commits in, each against that repository's trunk; any other
+        run opens its one.
+        """
+        repositories = scope_repositories(ctx.scope, self._repositories)
+        if not repositories:
+            return [(repo_url, ctx.base_branch, head_sha)]
+        return [
+            (each.repository.url, each.repository.trunk, each.head_sha)
+            for each in await gained_commits(
+                git=self._git,
+                cache=self._cache,
+                repositories=repositories,
+                branch=state["feature_branch"],
+                cache_key=ctx.cache_key,
+            )
+        ]
 
     async def open_stalled_pr(
         self,
@@ -101,53 +141,58 @@ class AuthoredPublication:
         if trajectory is None or best_sha is None or head_sha is None:
             raise RuntimeError("Stalled delivery requires its published best head")
         spec = current_fire_spec(state)
-        pr_url, pr_number = await self._pr_creator.create_pr(
-            repo_url=repo_url,
-            title=await gated_write(
+        title = await gated_write(
+            gate=self._gate,
+            log=self._log,
+            content=stall_pr_title(fire_spec_title(spec)),
+            visibility=state["repo_visibility"],
+            shape=WriterShape.PROSE,
+            destination=OutboundDestination.PR_TITLE,
+            content_class=ContentClass.AUTHORED,
+            aggregates=(),
+        )
+        body = require_tracker_issue(
+            await gated_write(
                 gate=self._gate,
                 log=self._log,
-                content=stall_pr_title(fire_spec_title(spec)),
+                content=append_tracker_issue(
+                    stall_pr_body(
+                        trajectory,
+                        validated_criteria(state),
+                        landed_commit=best_sha,
+                    ),
+                    state["issue_key"],
+                ),
                 visibility=state["repo_visibility"],
                 shape=WriterShape.PROSE,
-                destination=OutboundDestination.PR_TITLE,
+                destination=OutboundDestination.PR_BODY,
                 content_class=ContentClass.AUTHORED,
                 aggregates=(),
             ),
-            body=require_tracker_issue(
-                await gated_write(
-                    gate=self._gate,
-                    log=self._log,
-                    content=append_tracker_issue(
-                        stall_pr_body(
-                            trajectory,
-                            validated_criteria(state),
-                            landed_commit=best_sha,
-                        ),
-                        state["issue_key"],
-                    ),
-                    visibility=state["repo_visibility"],
-                    shape=WriterShape.PROSE,
-                    destination=OutboundDestination.PR_BODY,
-                    content_class=ContentClass.AUTHORED,
-                    aggregates=(),
-                ),
-                state["issue_key"],
-            ),
-            head=head,
-            base=ctx.base_branch,
+            state["issue_key"],
         )
-        writer(
-            WorkflowPREvent(
-                pr_url=pr_url,
-                pr_number=pr_number,
-                feature_branch=head,
-                base_branch=ctx.base_branch,
-                feature_tip_sha=head_sha,
-                # The acceptance gate rejected this branch: the pull request
-                # asks a human to read a stall, it does not deliver the issue.
-                delivered=False,
+        opened: list[tuple[str, int]] = []
+        for url, base, sha in await self._heads(
+            state, ctx, repo_url=repo_url, head_sha=head_sha
+        ):
+            pr_url, pr_number = await self._pr_creator.create_pr(
+                repo_url=url, title=title, body=body, head=head, base=base
             )
-        )
+            writer(
+                WorkflowPREvent(
+                    pr_url=pr_url,
+                    pr_number=pr_number,
+                    feature_branch=head,
+                    base_branch=base,
+                    feature_tip_sha=sha,
+                    # The acceptance gate rejected this branch: the pull
+                    # request asks a human to read a stall, it does not
+                    # deliver the issue.
+                    delivered=False,
+                )
+            )
+            opened.append((pr_url, pr_number))
+        pr_url, pr_number = opened[0]
         return {"pr_url": pr_url, "pr_number": pr_number}
 
     async def open_pr(
@@ -176,7 +221,9 @@ class AuthoredPublication:
             msg = "open_pr requires feature_tip_sha to be set."
             raise RuntimeError(msg)
 
-        if self._artifact_persister is not None:
+        # A scope run writes no artifacts, and its deliverable branch need
+        # not exist in the repository the run was addressed with.
+        if self._artifact_persister is not None and ctx.scope is None:
             await self._artifact_persister.clean(
                 repo_path=ctx.repo_path,
                 repo_url=ctx.repo_url,
@@ -233,47 +280,54 @@ class AuthoredPublication:
             state["issue_key"],
         )
 
-        pr_url, pr_number = await pr_creator.create_pr(
-            repo_url=repo_url,
-            title=await gated_write(
+        title = await gated_write(
+            gate=self._gate,
+            log=self._log,
+            content=pr_output.title,
+            visibility=state["repo_visibility"],
+            shape=WriterShape.PROSE,
+            destination=OutboundDestination.PR_TITLE,
+            content_class=ContentClass.AUTHORED,
+            aggregates=(),
+        )
+        gated_body = require_tracker_issue(
+            await gated_write(
                 gate=self._gate,
                 log=self._log,
-                content=pr_output.title,
+                content=body,
                 visibility=state["repo_visibility"],
                 shape=WriterShape.PROSE,
-                destination=OutboundDestination.PR_TITLE,
+                destination=OutboundDestination.PR_BODY,
                 content_class=ContentClass.AUTHORED,
                 aggregates=(),
             ),
-            body=require_tracker_issue(
-                await gated_write(
-                    gate=self._gate,
-                    log=self._log,
-                    content=body,
-                    visibility=state["repo_visibility"],
-                    shape=WriterShape.PROSE,
-                    destination=OutboundDestination.PR_BODY,
-                    content_class=ContentClass.AUTHORED,
-                    aggregates=(),
-                ),
-                state["issue_key"],
-            ),
-            head=state["feature_branch"],
-            base=ctx.base_branch,
+            state["issue_key"],
         )
-
-        writer(
-            WorkflowPREvent(
-                pr_url=pr_url,
-                pr_number=pr_number,
-                feature_branch=state["feature_branch"],
-                base_branch=ctx.base_branch,
-                feature_tip_sha=feature_tip_sha,
-                # The accepted path: this branch is what the run delivered.
-                delivered=True,
+        opened: list[tuple[str, int]] = []
+        for url, base, sha in await self._heads(
+            state, ctx, repo_url=repo_url, head_sha=feature_tip_sha
+        ):
+            pr_url, pr_number = await pr_creator.create_pr(
+                repo_url=url,
+                title=title,
+                body=gated_body,
+                head=state["feature_branch"],
+                base=base,
             )
-        )
+            writer(
+                WorkflowPREvent(
+                    pr_url=pr_url,
+                    pr_number=pr_number,
+                    feature_branch=state["feature_branch"],
+                    base_branch=base,
+                    feature_tip_sha=sha,
+                    # The accepted path: this branch is what the run delivered.
+                    delivered=True,
+                )
+            )
+            opened.append((pr_url, pr_number))
 
+        pr_url, pr_number = opened[0]
         return {"pr_url": pr_url, "pr_number": pr_number}
 
     async def comment_failure(
@@ -308,6 +362,18 @@ class AuthoredPublication:
         if pr_number is None:
             msg = "comment_failure requires pr_number but state['pr_number'] is None"
             raise RuntimeError(msg)
+        repositories = scope_repositories(ctx.scope, self._repositories)
+        if repositories:
+            # The pull request the state names is the first one opened: in the
+            # first repository the deliverable branch gained commits in.
+            gained = await gained_commits(
+                git=self._git,
+                cache=self._cache,
+                repositories=repositories,
+                branch=state["feature_branch"],
+                cache_key=ctx.cache_key,
+            )
+            repo_url = gained[0].repository.url
 
         comment_parts = [
             "## kodezart: remediation budget exhausted\n",

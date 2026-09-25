@@ -1,5 +1,7 @@
 """Consolidate the implemented branch and retain or clean its backups."""
 
+from collections.abc import Sequence
+
 from langchain_core.runnables import RunnableConfig
 from langgraph.config import get_stream_writer
 
@@ -15,11 +17,16 @@ from kodezart.domain.accept_gate import (
 )
 from kodezart.domain.agent import best_iteration_ref
 from kodezart.domain.trajectory import landable_commit
+from kodezart.services.gained_commits import gained_commits, scope_repositories
 from kodezart.types.domain.agent import (
     WorkflowCompleteEvent,
     WorkflowConsolidationEvent,
 )
-from kodezart.types.domain.consolidation import ConsolidationStatus
+from kodezart.types.domain.consolidation import (
+    ConsolidationOutcome,
+    ConsolidationStatus,
+)
+from kodezart.types.domain.operation import RepoEntry
 from kodezart.types.domain.workflow import (
     ExecutionContext,
     WorkflowState,
@@ -47,12 +54,14 @@ class FireConsolidation:
         cache: RepoCache,
         git_remote: str,
         ref_publisher: RefPublisher | None,
+        repositories: Sequence[RepoEntry] = (),
     ) -> None:
         self._merger = merger
         self._git = git
         self._cache = cache
         self._git_remote = git_remote
         self._ref_publisher = ref_publisher
+        self._repositories = tuple(repositories)
         self._log: BoundLogger = get_logger("kodezart.chains.ralph_workflow")
 
     async def repo_dir(self, config: RunnableConfig) -> str:
@@ -110,6 +119,10 @@ class FireConsolidation:
                 exit_state["best_iteration_sha"] = best
                 exit_state["best_iteration_branch"] = state["ralph_branch"]
             return exit_state
+
+        repositories = scope_repositories(ctx.scope, self._repositories)
+        if repositories:
+            return await self._merge_each(state, ctx, repositories)
 
         outcome = await self._merger.consolidate(
             repo_path=ctx.repo_path,
@@ -192,6 +205,10 @@ class FireConsolidation:
         if self._ref_publisher is None or ctx.repo_url is None:
             return {}
 
+        repositories = scope_repositories(ctx.scope, self._repositories)
+        if repositories:
+            return await self._land_each(state, ctx, repositories)
+
         best_ref = best_iteration_ref(state["feature_branch"])
         await self._ref_publisher.publish(
             repo_path=ctx.repo_path,
@@ -226,6 +243,121 @@ class FireConsolidation:
 
         return {"feature_branch": head, "feature_tip_sha": head_sha}
 
+    async def _merge_each(
+        self,
+        state: WorkflowState,
+        ctx: ExecutionContext,
+        repositories: Sequence[RepoEntry],
+    ) -> dict[str, object]:
+        """Consolidate the loop branch in every repository it gained commits in.
+
+        Each repository merges onto its own trunk. The run merged when every
+        one of them did; its tip and review endpoints are the first
+        repository's, which is what the steps after this one read.
+        """
+        outcomes = await self._consolidate_each(state, ctx, repositories)
+        if not outcomes:
+            msg = (
+                f"{state['ralph_branch']!r} was accepted with no commits in any "
+                "declared repository"
+            )
+            raise RuntimeError(msg)
+        first_repository, first = outcomes[0]
+        diverged = [
+            repository.url
+            for repository, outcome in outcomes
+            if outcome.status is ConsolidationStatus.DIVERGENT
+        ]
+        if diverged:
+            return {
+                "merged": False,
+                "merge_error": (
+                    f"ralph diverged from feature in {', '.join(diverged)}: "
+                    f"{state['ralph_branch']} ⇄ {state['feature_branch']}"
+                ),
+                "feature_tip_sha": first.feature_tip_sha,
+                "review_base_sha": None,
+                "review_head_sha": None,
+            }
+        clone = await self._cache.ensure_available(first_repository.url, ctx.cache_key)
+        base_tip = await self._git.remote_branch_sha(
+            clone, self._git_remote, first_repository.trunk
+        )
+        if base_tip is None:
+            msg = (
+                f"Base branch {first_repository.trunk!r} not found on "
+                f"{self._git_remote} after successful consolidation"
+            )
+            raise RuntimeError(msg)
+        return {
+            "merged": True,
+            "merge_error": None,
+            "feature_tip_sha": first.feature_tip_sha,
+            "review_base_sha": base_tip,
+            "review_head_sha": first.feature_tip_sha,
+            "work_base_ref": state["feature_branch"],
+        }
+
+    async def _land_each(
+        self,
+        state: WorkflowState,
+        ctx: ExecutionContext,
+        repositories: Sequence[RepoEntry],
+    ) -> dict[str, object]:
+        """Publish the loop branch as the deliverable wherever it gained commits.
+
+        No best commit is chosen across repositories: each repository's loop
+        branch is consolidated onto its own trunk as it stands.
+        """
+        outcomes = await self._consolidate_each(state, ctx, repositories)
+        landed = [
+            outcome.feature_tip_sha
+            for _, outcome in outcomes
+            if outcome.status is not ConsolidationStatus.DIVERGENT
+        ]
+        return {"feature_tip_sha": landed[0]} if landed else {}
+
+    async def _consolidate_each(
+        self,
+        state: WorkflowState,
+        ctx: ExecutionContext,
+        repositories: Sequence[RepoEntry],
+    ) -> list[tuple[RepoEntry, ConsolidationOutcome]]:
+        """Consolidate the loop branch onto the deliverable, per repository."""
+        writer = get_stream_writer()
+        outcomes: list[tuple[RepoEntry, ConsolidationOutcome]] = []
+        for each in await gained_commits(
+            git=self._git,
+            cache=self._cache,
+            repositories=repositories,
+            branch=state["ralph_branch"],
+            cache_key=ctx.cache_key,
+        ):
+            outcome = await self._merger.consolidate(
+                repo_path=None,
+                repo_url=each.repository.url,
+                base_branch=each.repository.trunk,
+                feature_branch=state["feature_branch"],
+                source_branch=state["ralph_branch"],
+                cache_key=ctx.cache_key,
+            )
+            writer(
+                WorkflowConsolidationEvent(
+                    status=outcome.status,
+                    feature_branch=state["feature_branch"],
+                    source_branch=state["ralph_branch"],
+                    feature_tip_sha=outcome.feature_tip_sha,
+                )
+            )
+            if outcome.status is ConsolidationStatus.SOURCE_MISSING:
+                msg = (
+                    f"consolidate returned SOURCE_MISSING for "
+                    f"{state['ralph_branch']!r} in {each.repository.url}"
+                )
+                raise RuntimeError(msg)
+            outcomes.append((each.repository, outcome))
+        return outcomes
+
     async def cleanup_backups(
         self,
         terminal: WorkflowCompleteEvent,
@@ -237,12 +369,17 @@ class FireConsolidation:
                 "backup_cleanup_starting",
                 prefix=terminal.feature_branch,
             )
-            await self._merger.cleanup_backup_branches(
-                repo_path=ctx.repo_path,
-                repo_url=ctx.repo_url,
-                prefix=terminal.feature_branch,
-                cache_key=ctx.cache_key,
-            )
+            origins: list[tuple[str | None, str | None]] = [
+                (None, repository.url)
+                for repository in scope_repositories(ctx.scope, self._repositories)
+            ] or [(ctx.repo_path, ctx.repo_url)]
+            for repo_path, repo_url in origins:
+                await self._merger.cleanup_backup_branches(
+                    repo_path=repo_path,
+                    repo_url=repo_url,
+                    prefix=terminal.feature_branch,
+                    cache_key=ctx.cache_key,
+                )
         else:
             await self._log.adebug(
                 "backup_cleanup_skipped",

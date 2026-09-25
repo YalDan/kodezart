@@ -62,6 +62,11 @@ from kodezart.domain.prompt_variables import (
 from kodezart.domain.thread_id import ralph_thread_id
 from kodezart.domain.trajectory import fold_trajectory
 from kodezart.services.audit_sessions import judge_in_workspace
+from kodezart.services.gained_commits import (
+    folded,
+    gained_commits,
+    scope_repositories,
+)
 from kodezart.services.git_observations import read_workspace_head
 from kodezart.services.mutation_survival import MutationSurvivalReader
 from kodezart.services.native_amendments import NativeAmendments
@@ -98,6 +103,7 @@ from kodezart.types.domain.fire_spec import TrackerSpec
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.grading import IterationGrade
 from kodezart.types.domain.node_session import NodeInvocation
+from kodezart.types.domain.operation import RepoEntry
 from kodezart.types.domain.persist import PersistResult
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.ralph_outcome import (
@@ -151,9 +157,11 @@ class RalphLoop:
         lapse_escalations: LaneLapseEscalator | None = None,
         mutation: MutationSurvivalReader | None = None,
         node_sessions: NodeSessionRecorder | None = None,
+        repositories: Sequence[RepoEntry] = (),
     ) -> None:
         self._service = service
         self._node_sessions = node_sessions
+        self._repositories = tuple(repositories)
         self._criteria_reader = criteria_reader
         self._amendments = amendments
         self._source = source
@@ -449,6 +457,7 @@ class RalphLoop:
             cache_key=ctx.cache_key,
             native_guard=native_guard,
             after_publish=after_publish,
+            repositories=scope_repositories(ctx.scope, self._repositories),
         ):
             if isinstance(event, NativeAmendmentEvent):
                 reports = [*reports, event.report]
@@ -611,10 +620,25 @@ class RalphLoop:
             else None
         )
         evaluation_ref = native_ref if native_ref is not None else ctx.ralph_branch
-        changeset = await self._git.diff_summary(
-            cwd=cwd,
-            base_ref=ctx.base_branch,
-            head_ref=evaluation_ref,
+        # A scope run reads what the loop branch holds in every repository
+        # it committed in, each against that repository's own trunk.
+        repositories = scope_repositories(ctx.scope, self._repositories)
+        changeset = (
+            folded(
+                await gained_commits(
+                    git=self._git,
+                    cache=self._cache,
+                    repositories=repositories,
+                    branch=ctx.ralph_branch,
+                    cache_key=ctx.cache_key,
+                )
+            )
+            if repositories
+            else await self._git.diff_summary(
+                cwd=cwd,
+                base_ref=ctx.base_branch,
+                head_ref=evaluation_ref,
+            )
         )
 
         # The graph can retry this node after it already opened a session.
@@ -781,6 +805,7 @@ class RalphLoop:
                                 "schema": ACCEPTANCE_CRITERIA_SCHEMA,
                             },
                             cache_key=ctx.cache_key,
+                            repositories=repositories,
                         ),
                         site="ralph_evaluator",
                         observe=observe,

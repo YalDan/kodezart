@@ -8,7 +8,7 @@ the validation gate un-bypassable — there is no second criteria path to
 remember to route through, because there is no second path.
 """
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 
 from kodezart.chains.criteria import current_native_criteria, held_roster
 from kodezart.core.constants import EVAL_PERMISSION_MODE
@@ -19,6 +19,7 @@ from kodezart.core.stream_drain import drain
 from kodezart.domain.prompt_variables import tracker_checks_section
 from kodezart.domain.remediation import done_work_summary
 from kodezart.domain.ticket import format_fire_spec
+from kodezart.services.gained_commits import scope_repositories
 from kodezart.types.domain.agent import (
     REMEDIATION_SCHEMA,
     TICKET_DRAFT_SCHEMA,
@@ -27,6 +28,7 @@ from kodezart.types.domain.agent import (
     WorkflowRemediationEvent,
 )
 from kodezart.types.domain.fire_spec import TrackerSpec
+from kodezart.types.domain.operation import RepoEntry
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.remediation import RemediationPlan
 from kodezart.types.domain.run_records import RunIdentity
@@ -54,9 +56,11 @@ class RemediationChain:
         prompts: PromptSetProvider,
         skills: SkillsSelection,
         criteria_reader: FireCriteriaReader | None = None,
+        repositories: Sequence[RepoEntry] = (),
     ) -> None:
         self._service: AgentRunner = service
         self._criteria_reader = criteria_reader
+        self._repositories = tuple(repositories)
         self._prompts: PromptSetProvider = prompts
         self._skills: SkillsSelection = skills
         self._log: BoundLogger = get_logger(__name__)
@@ -110,6 +114,7 @@ class RemediationChain:
                     "schema": REMEDIATION_SCHEMA if native else TICKET_DRAFT_SCHEMA,
                 },
                 cache_key=cache_key,
+                repositories=scope_repositories(scope, self._repositories),
             ),
             site="remediation_ticket",
         )

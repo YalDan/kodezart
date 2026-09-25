@@ -1,5 +1,7 @@
 """Judge the consolidated changes against the validated criteria."""
 
+from collections.abc import Sequence
+
 from langchain_core.runnables import RunnableConfig
 from langgraph.config import get_stream_writer
 
@@ -35,6 +37,11 @@ from kodezart.domain.workflow_state import (
     recorded_native_roster,
     validated_criteria,
 )
+from kodezart.services.gained_commits import (
+    folded,
+    gained_commits,
+    scope_repositories,
+)
 from kodezart.types.domain.agent import (
     ACCEPTANCE_CRITERIA_SCHEMA,
     AcceptanceCriteriaOutput,
@@ -43,6 +50,7 @@ from kodezart.types.domain.agent import (
 from kodezart.types.domain.criteria import FanInReport
 from kodezart.types.domain.fire_spec import TrackerSpec
 from kodezart.types.domain.grading import IterationGrade
+from kodezart.types.domain.operation import RepoEntry
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.session import SessionType, ToolPreset
 from kodezart.types.domain.skills import SkillsSelection
@@ -66,6 +74,7 @@ class FireReview:
         cache: RepoCache,
         fan_in_max_attempts: int,
         criteria_reader: FireCriteriaReader | None = None,
+        repositories: Sequence[RepoEntry] = (),
     ) -> None:
         self._service = service
         self._criteria_reader = criteria_reader
@@ -74,6 +83,7 @@ class FireReview:
         self._git = git
         self._cache = cache
         self._fan_in_max_attempts = fan_in_max_attempts
+        self._repositories = tuple(repositories)
         self._log: BoundLogger = get_logger("kodezart.chains.ralph_workflow")
 
     async def review_against_ticket(
@@ -99,10 +109,25 @@ class FireReview:
         ctx = ExecutionContext.from_configurable(config)
         writer = get_stream_writer()
         cwd = await resolve_workflow_cwd(ctx, self._cache)
-        changeset = await self._git.diff_summary(
-            cwd=cwd,
-            base_ref=review_base_sha,
-            head_ref=review_head_sha,
+        # A scope run reviews what the deliverable branch holds in every
+        # repository it gained commits in, each against its own trunk.
+        repositories = scope_repositories(ctx.scope, self._repositories)
+        changeset = (
+            folded(
+                await gained_commits(
+                    git=self._git,
+                    cache=self._cache,
+                    repositories=repositories,
+                    branch=state["feature_branch"],
+                    cache_key=ctx.cache_key,
+                )
+            )
+            if repositories
+            else await self._git.diff_summary(
+                cwd=cwd,
+                base_ref=review_base_sha,
+                head_ref=review_head_sha,
+            )
         )
 
         async def review() -> IterationGrade:
@@ -144,6 +169,7 @@ class FireReview:
                         "schema": ACCEPTANCE_CRITERIA_SCHEMA,
                     },
                     cache_key=ctx.cache_key,
+                    repositories=repositories,
                 ),
                 site="post_merge_review",
             )
