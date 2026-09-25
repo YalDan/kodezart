@@ -379,17 +379,15 @@ async def test_a_scope_deployment_boots_from_the_shipped_files_and_fires_nothing
         assert set(reconciled[0]["created"]) == {
             ref.describe() for ref in owned_mappings(loaded)
         }
-        # The page's environment sets the dispatch and supervisor pairs, no
-        # session-pass pair, and the scope workflow: the heartbeat runs on the
-        # dispatch pair, the per-issue dispatch pass is named as not selected,
-        # and the two session passes are named as unset. Boot knows no pass
-        # named organize: the stages run inside the run the heartbeat submits.
+        # The page's environment sets the dispatch and supervisor pairs and no
+        # session-pass pair: the per-issue dispatch pass and the heartbeat both
+        # run on the dispatch pair, and the two session passes are named as
+        # unset. Boot knows no pass named organize: the stages run inside the
+        # run the heartbeat submits.
         assert [entry.name for entry in app.state.pass_scheduler.passes] == [
+            f"dispatch:{loaded.repos[0].url}",
             "supervisor",
             HEARTBEAT_PASS,
-        ]
-        assert [e["name"] for e in logged(events, "scheduled_pass_not_selected")] == [
-            "dispatch"
         ]
         assert {
             entry["name"] for entry in logged(events, "scheduled_pass_not_configured")

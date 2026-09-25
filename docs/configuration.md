@@ -170,14 +170,7 @@ its interval and its timeout are both set. Unset, the pass is not scheduled, and
 boot logs `scheduled_pass_not_configured` naming the pass and the two settings
 that would schedule it; `pass_scheduler_started` lists only the passes that are
 scheduled. Setting one half of a pair without the other refuses at load, naming
-both. The dispatch pair drives one of two workflows, and
-`KODEZART_DISPATCH_WORKFLOW` says which: `fire` (the default) schedules the
-per-issue dispatch passes, `scope` schedules the standing scopes' heartbeat, and
-boot names the other with `scheduled_pass_not_selected`. The setting also
-reaches the intake prompts as the `fire_dispatch` / `fire_dispatch_absent` pair:
-under `fire` the fire-prep pass stages issues to the queue as v0.2 does; under
-`scope` it stages no fire and sets no queue label, it grooms triage into the
-hierarchy and proposes the node, since nothing fires an issue in that workflow.
+both.
 Fire preparation and grooming run their first tick at boot; every other pass
 runs its first tick one interval after boot.
 
@@ -279,7 +272,6 @@ which was missing in the boot log.
 | `KODEZART_CONTENT_AUDIT_WORKING_DIR` | `str` | `/tmp/kodezart-content-audit` |  | Working directory the audit session runs in. Deliberately not the cloned target repository: an auditor whose working directory is attacker-writable is not an auditor. |
 | `KODEZART_DISPATCH_HOLDER` | `str` | `kodezart` | min length 1 | Identity this deployment holds atomic claims under. Names the PROCESS, not the tracker account: two deployments sharing one workspace must carry different values or they cannot race. Fire claims only: no write lease is held under it or composed from it. |
 | `KODEZART_DISPATCH_LANE` | `str` | `tracker` |  | Fire-queue lane tracker-originated dispatches are enqueued on. |
-| `KODEZART_DISPATCH_WORKFLOW` | `DispatchWorkflow` | `fire` | `fire` or `scope` | Which workflow the dispatch cadence drives. `fire`, the default, schedules the v0.2 per-issue dispatch passes, one per repository, each claiming a queue-approved issue into a v0.2 fire; `scope` schedules the v0.3 standing scopes' heartbeat instead, which submits each approved `organize_scopes` row as a scope run. One of the two runs on the dispatch cadence pair and boot names the other with `scheduled_pass_not_selected`. An operation that does not set it runs as v0.2 did. |
 | `KODEZART_DISPATCH_RATE_LIMIT_COOLDOWN_SECONDS` | `float` | `1800.0` | >= 60.0, <= 86400.0 | Seconds the dispatch lane fires nothing after a run dies on a provider rate-limit rejection. The limit belongs to the account, not to the issue, so the next-ranked candidate would meet it unchanged: measured 2026-09-01, a run that died at 17:57 on a rejection was re-fired whole four minutes later. Lifted by the clock alone — nothing on the board clears a rate limit — and the lower bound keeps a cooldown longer than the tick that would otherwise re-fire. |
 | `KODEZART_DISPATCH_PASS_INTERVAL_SECONDS` | `float \| None` | none | >= 10.0, <= 3600.0 | Seconds between approved-fire dispatch passes, and the standing scopes' heartbeat's cadence. Dispatch is single-winner-per-pass, so throughput IS the interval: the upper bound is what stops a loaded queue sitting idle for a working day. Set together with its timeout. Unset: the pass is not scheduled, and neither is the heartbeat. |
 | `KODEZART_DISPATCH_PASS_TIMEOUT_SECONDS` | `float \| None` | none | >= 10.0, <= 3600.0 | Seconds one dispatch or heartbeat tick may take before it is abandoned. The tick is deterministic and model-free — a paged tracker scan, a claim, and the git plumbing that builds a base — so it belongs inside its own cadence. On expiry the tick is cancelled and reported as timed out; the loop keeps its cadence and the next tick runs. The upper bound is the dispatch interval's own, so a budget can never outlast the slowest cadence that interval admits. Set together with its interval. Unset: the pass is not scheduled. |
@@ -884,10 +876,9 @@ asks for exactly the gate signals and the templates of the passes it schedules.
 is the grooming and fire-prep passes' to work, over the whole board like every
 other issue, and it is submitted as a scope run by the `scope_heartbeat` pass
 once it carries `scope_labels.approved`. That
-pass is the dispatch cadence's other workflow: `KODEZART_DISPATCH_WORKFLOW=scope`
-schedules it on the dispatch pass's knobs —
+pass runs on the dispatch pass's knobs —
 `KODEZART_DISPATCH_PASS_INTERVAL_SECONDS` and
-`KODEZART_DISPATCH_PASS_TIMEOUT_SECONDS` — in place of the per-issue dispatch
+`KODEZART_DISPATCH_PASS_TIMEOUT_SECONDS` — beside the per-issue dispatch
 passes, and it submits onto `KODEZART_DISPATCH_LANE`. It opens no
 session and writes nothing to the tracker. A row that is not approved is
 reported as unapproved and never submitted; a row whose run is live on any lane

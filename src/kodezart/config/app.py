@@ -23,7 +23,7 @@ from kodezart.config.logging import LoggingSettings
 from kodezart.config.organize import OrganizeSettings
 from kodezart.config.tracker import TrackerSettings
 from kodezart.config.write_back import WriteBackSettings
-from kodezart.types.domain.dispatch import DispatchWorkflow, PassSignal
+from kodezart.types.domain.dispatch import PassSignal
 from kodezart.types.domain.ticket_review import (
     DEFAULT_MAX_REVIEWS,
     TicketReviewMode,
@@ -132,6 +132,7 @@ class AppConfig(BaseSettings):
                 "union_check_cleanup_poll_interval_seconds",
                 "fire_prep_pass_gate_signals",
                 "grooming_pass_gate_signals",
+                "dispatch_workflow",
                 "git_remote",
                 "git_base_url",
                 "clone_cache_dir",
@@ -665,19 +666,6 @@ class AppConfig(BaseSettings):
     dispatch_lane: str = Field(
         default="tracker",
         description="Fire-queue lane tracker-originated dispatches are enqueued on.",
-    )
-    dispatch_workflow: DispatchWorkflow = Field(
-        default=DispatchWorkflow.FIRE,
-        description=(
-            "Which workflow the dispatch cadence drives. fire, the default, "
-            "schedules the v0.2 per-issue dispatch passes, one per repository, "
-            "each claiming a queue-approved issue into a v0.2 fire; scope "
-            "schedules the v0.3 standing scopes' heartbeat instead, which "
-            "submits each approved organize_scopes row as a scope run. One of "
-            "the two runs on the dispatch cadence pair and boot names the "
-            "other as not selected. An operation that does not set it runs "
-            "as v0.2 did."
-        ),
     )
     dispatch_holder: str = Field(
         default="kodezart",

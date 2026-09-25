@@ -242,13 +242,12 @@ async def test_the_pass_registers_only_with_declared_scopes_and_a_dialled_tracke
     # Every other pass is as it was: the arm adds one registration and edits no
     # other. A declared roster adds the heartbeat, registered before the
     # observation arm runs, and switches no session pass off: each of those
-    # runs on its own cadence pair, set here. The standing scope settings
-    # select the scope workflow, so the dispatch cadence drives the heartbeat
-    # there and the per-issue dispatch pass in the other set.
+    # runs on its own cadence pair, set here. The dispatch cadence drives the
+    # heartbeat and the per-issue dispatch pass alike.
     session_passes = {PromptKey.FIRE_PREP_PASS.value, PromptKey.GROOMING_PASS.value}
     per_issue = session_passes | ({f"dispatch:{REPO}"} if dispatching else set())
     scope_passes = {HEARTBEAT_PASS}
-    expected = (session_passes | scope_passes) if raw_scopes else per_issue
+    expected = (per_issue | scope_passes) if raw_scopes else per_issue
     assert {entry.name for entry in registered} - {"supervisor"} == expected
 
     # "As before" is the same deployment declaring no roster at all, held to the

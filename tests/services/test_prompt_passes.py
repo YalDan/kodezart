@@ -26,7 +26,6 @@ from kodezart.composition.passes import (
     build_dispatch_runtime,
     build_prompt_passes,
     verify_pass_preflight,
-    wired_marker_purposes,
 )
 from kodezart.composition.records import RECORD_KIND_BY_PASS
 from kodezart.composition.tracker import DialledTracker
@@ -43,7 +42,7 @@ from kodezart.services.pass_scheduler import PassScheduler, ScheduledPass
 from kodezart.services.prompt_pass import gate_render_bindings, pass_render_bindings
 from kodezart.services.run_recorder import RunRecorder
 from kodezart.types.domain.agent import PASS_GATE_SCHEMA
-from kodezart.types.domain.dispatch import DispatchWorkflow, PassRun, PassSignal
+from kodezart.types.domain.dispatch import PassRun, PassSignal
 from kodezart.types.domain.operation import (
     DocumentSystem,
     OperationConfig,
@@ -274,7 +273,6 @@ ORGANIZE_BOUNDS: dict[str, object] = {
 #: run's stages require and the dispatch cadence driving the heartbeat, so
 #: what the schedule holds is decided by the declared rows alone.
 STANDING_SCOPE_SETTINGS: dict[str, object] = {
-    "dispatch_workflow": DispatchWorkflow.SCOPE,
     "organize": ORGANIZE_BOUNDS,
     "write_back": {"max_verify_rounds": 2},
 }
@@ -1026,8 +1024,8 @@ async def test_with_no_cadence_set_a_scope_deployment_schedules_nothing(
     """Every pass is named the same way: the scope passes and the session passes.
 
     A declared scope switches nothing off (2026-09-24): the two session passes
-    would run here on their cadence pairs, so unset they are named too. The
-    scope workflow is selected, so the heartbeat is the dispatch job named.
+    would run here on their cadence pairs, so unset they are named too, and
+    so is the heartbeat, which runs on the dispatch pair.
     """
     with structlog.testing.capture_logs() as logs:
         runtime = await _runtime(
@@ -1036,7 +1034,6 @@ async def test_with_no_cadence_set_a_scope_deployment_schedules_nothing(
             runner=FakeAgentRunner(events=[]),
             operation=standing_scope_operation(),
             organize=ORGANIZE_BOUNDS,
-            dispatch_workflow=DispatchWorkflow.SCOPE,
             write_back=STANDING_SCOPE_SETTINGS["write_back"],
             dispatch_pass_interval_seconds=None,
             dispatch_pass_timeout_seconds=None,
@@ -1653,105 +1650,6 @@ class TestTheClauseAndTheRunnerNameOneRow:
 
         assert result is RunRecordResult.WRITTEN
         assert log.titles == [other, self._record().title()]
-
-
-# ---------------------------------------------------------------------------
-# The dispatch cadence drives one of two workflows, and one setting says which
-# (KOD-846 clause 4).
-# ---------------------------------------------------------------------------
-
-
-def _not_selected(logs: Sequence[Mapping[str, object]]) -> dict[str, object]:
-    """Each dispatch job boot named as not selected, and the value that left it out."""
-    return {
-        str(entry["name"]): (entry["setting"], entry["selected"])
-        for entry in logs
-        if entry["event"] == "scheduled_pass_not_selected"
-    }
-
-
-def test_the_dispatch_workflow_ships_as_the_v02_fire(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Unset, the dispatcher does what v0.2 did; the setting is read by its name."""
-    assert AppConfig(_env_file=None).dispatch_workflow is DispatchWorkflow.FIRE
-    monkeypatch.setenv("KODEZART_DISPATCH_WORKFLOW", "scope")
-    assert AppConfig(_env_file=None).dispatch_workflow is DispatchWorkflow.SCOPE
-
-
-async def test_fire_schedules_the_dispatch_passes_and_names_the_heartbeat(
-    tmp_path: Path,
-) -> None:
-    """The default over a scope deployment: per-issue dispatch, no heartbeat.
-
-    Every premise of both jobs holds — a tracker, a probe, declared scopes and
-    the dispatch pair — and the setting alone decides: the dispatch passes and
-    their lifecycle watcher are built, the heartbeat is named as not selected,
-    with the setting and the value that left it out.
-    """
-    with structlog.testing.capture_logs() as logs:
-        runtime = await _runtime(
-            tmp_path,
-            tracker=approving_board(),
-            runner=FakeAgentRunner(events=[]),
-            github_api=FakeDeliveryProbe(),
-            operation=standing_scope_operation(),
-            **{**STANDING_SCOPE_SETTINGS, "dispatch_workflow": DispatchWorkflow.FIRE},
-        )
-
-    names = [entry.name for entry in runtime.scheduler.passes]
-    assert [name for name in names if name.startswith(f"{_DISPATCH_NAME}:")]
-    assert HEARTBEAT_PASS not in names
-    assert runtime.lifecycle is not None
-    assert _not_selected(logs) == {
-        HEARTBEAT_PASS: ("KODEZART_DISPATCH_WORKFLOW", "fire"),
-    }
-
-
-async def test_scope_schedules_the_heartbeat_and_names_the_dispatch_passes(
-    tmp_path: Path,
-) -> None:
-    """Selected, the heartbeat runs on the dispatch pair and no board is scanned."""
-    with structlog.testing.capture_logs() as logs:
-        runtime = await _runtime(
-            tmp_path,
-            tracker=approving_board(),
-            runner=FakeAgentRunner(events=[]),
-            github_api=FakeDeliveryProbe(),
-            operation=standing_scope_operation(),
-            **STANDING_SCOPE_SETTINGS,
-        )
-
-    names = [entry.name for entry in runtime.scheduler.passes]
-    assert HEARTBEAT_PASS in names
-    assert not [name for name in names if name.startswith(f"{_DISPATCH_NAME}:")]
-    assert runtime.lifecycle is None
-    assert _not_selected(logs) == {
-        _DISPATCH_NAME: ("KODEZART_DISPATCH_WORKFLOW", "scope"),
-    }
-    heartbeat = next(entry for entry in names if entry == HEARTBEAT_PASS)
-    assert heartbeat == HEARTBEAT_PASS
-
-
-def test_the_dispatch_family_asks_for_its_prefixes_only_when_it_is_selected(
-    tmp_path: Path,
-) -> None:
-    """A marker only the per-issue dispatch writes is not demanded under scope."""
-    operation = standing_scope_operation()
-    wanted = {
-        workflow: wired_marker_purposes(
-            config=_config(
-                tmp_path, **{**STANDING_SCOPE_SETTINGS, "dispatch_workflow": workflow}
-            ),
-            operation=operation,
-            tracker_present=True,
-            delivery_present=True,
-        )
-        for workflow in DispatchWorkflow
-    }
-    assert "base_spec" in wanted[DispatchWorkflow.FIRE]
-    assert "base_spec" not in wanted[DispatchWorkflow.SCOPE]
-    assert wanted[DispatchWorkflow.SCOPE] < wanted[DispatchWorkflow.FIRE]
 
 
 async def test_the_intake_passes_tick_at_boot_and_the_dispatcher_does_not(

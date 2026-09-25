@@ -34,6 +34,9 @@ def _from_source(source, field, value, tmp_path, monkeypatch):
         # question, and a signal list for it is a setting nothing reads.
         "fire_prep_pass_gate_signals",
         "grooming_pass_gate_signals",
+        # The v0.2 dispatcher and the scope cron both run on the dispatch
+        # cadence pair; there is no switch between them any more.
+        "dispatch_workflow",
     ],
 )
 @pytest.mark.parametrize("source", ["init", "env", "dotenv", "secret"])

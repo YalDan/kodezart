@@ -63,7 +63,7 @@ from kodezart.services.prompt_pass import (
 from kodezart.services.run_recorder import RunRecorder
 from kodezart.services.supervisor_pass import SUPERVISOR_TICK_NAME
 from kodezart.services.tracker_lifecycle import TrackerLifecycleWriter
-from kodezart.types.domain.dispatch import DispatchWorkflow, PassSignal, SelfWriteLedger
+from kodezart.types.domain.dispatch import PassSignal, SelfWriteLedger
 from kodezart.types.domain.operation import (
     DocumentSystem,
     OperationConfig,
@@ -242,28 +242,6 @@ def prompt_pass_schedule(config: AppConfig) -> dict[PromptKey, _PromptPassRow]:
     return rows
 
 
-#: The one setting that says which workflow the dispatch cadence drives.
-DISPATCH_WORKFLOW_SETTING = "KODEZART_DISPATCH_WORKFLOW"
-
-
-async def _log_not_selected(
-    log: BoundLogger, *, name: str, selected: DispatchWorkflow
-) -> None:
-    """Name the dispatch job the workflow setting leaves unscheduled.
-
-    The dispatch cadence drives one of two jobs — the per-issue dispatch
-    passes or the standing scopes' heartbeat — and the setting picks which.
-    The other is named here with the setting and its value, so an operator
-    asking "why is the heartbeat not running?" reads the answer.
-    """
-    await log.ainfo(
-        "scheduled_pass_not_selected",
-        name=name,
-        setting=DISPATCH_WORKFLOW_SETTING,
-        selected=selected.value,
-    )
-
-
 async def _log_not_configured(
     log: BoundLogger, *, name: str, cadence: CadenceName
 ) -> None:
@@ -425,13 +403,10 @@ def wired_marker_purposes(
     families: list[str] = []
     if scope_passes_wire(operation, tracker_present=tracker_present):
         families.append("scope")
-    if (
-        dispatch_passes_wire(
-            operation,
-            tracker_present=tracker_present,
-            delivery_present=delivery_present,
-        )
-        and config.dispatch_workflow is DispatchWorkflow.FIRE
+    if dispatch_passes_wire(
+        operation,
+        tracker_present=tracker_present,
+        delivery_present=delivery_present,
     ):
         families.append("dispatch")
     if config.audit is not None and tracker_present:
@@ -764,7 +739,6 @@ async def _verify_wired_gates(
     # predicate first and the cadence after it.
     if (
         github_api is not None
-        and config.dispatch_workflow is DispatchWorkflow.FIRE
         and any(operation.teams_scanned_by(repo.url) for repo in operation.repos)
         and config.pass_cadence("dispatch") is not None
     ):
@@ -1014,10 +988,9 @@ async def build_dispatch_runtime(
     beside a live port skipped every dispatch pass and ran every prompt
     pass ungated, and the log said the tracker was present.
     """
-    # Four states, none silent: no tracker, no operation config, no delivery
-    # probe to answer "is this issue already delivered?", or a dispatch
-    # workflow setting that drives the heartbeat instead — and the passes do
-    # not run, named, never inferred from an empty schedule. After the
+    # Three states, none silent: no tracker, no operation config, or no
+    # delivery probe to answer "is this issue already delivered?" — and the
+    # passes do not run, named, never inferred from an empty schedule. After the
     # predicate, the cadence: a pass that would wire and whose interval is
     # unset is not scheduled, and is named as such.
     built: DispatchPasses | None = None
@@ -1033,10 +1006,6 @@ async def build_dispatch_runtime(
             tracker_present=dialled is not None,
             operation_config_present=operation is not None,
             delivery_probe_present=github_api is not None,
-        )
-    elif config.dispatch_workflow is not DispatchWorkflow.FIRE:
-        await _log_not_selected(
-            log, name=_DISPATCH_NAME, selected=config.dispatch_workflow
         )
     elif config.pass_cadence("dispatch") is None:
         await _log_not_configured(log, name=_DISPATCH_NAME, cadence="dispatch")
@@ -1141,11 +1110,9 @@ async def build_dispatch_runtime(
                 recorder=recorder,
             ),
         )
-        # The standing scopes' own pass: a deployment that declares the rows
-        # gets the submission of what approval admits when the dispatch
-        # workflow setting selects it.  On the dispatch cadence, because it is
-        # that cadence's other workflow, and with no report: it opens no
-        # session, so a tick of it is not a run that could be recorded.
+        # The standing scopes' own pass, on the dispatch cadence beside the
+        # per-issue dispatch passes, and with no report: it opens no session,
+        # so a tick of it is not a run that could be recorded.
         heartbeat = build_scope_heartbeat(
             config=config,
             operation=operation,
@@ -1154,14 +1121,7 @@ async def build_dispatch_runtime(
             registry=registry,
         )
         beat = config.pass_cadence("dispatch")
-        if (
-            heartbeat is not None
-            and config.dispatch_workflow is not DispatchWorkflow.SCOPE
-        ):
-            await _log_not_selected(
-                log, name=_HEARTBEAT_NAME, selected=config.dispatch_workflow
-            )
-        elif heartbeat is not None and beat is None:
+        if heartbeat is not None and beat is None:
             await _log_not_configured(log, name=_HEARTBEAT_NAME, cadence="dispatch")
         elif heartbeat is not None and beat is not None:
             scheduled.append(

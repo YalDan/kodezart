@@ -108,15 +108,7 @@ export KODEZART_DISPATCH_PASS_INTERVAL_SECONDS=300
 export KODEZART_DISPATCH_PASS_TIMEOUT_SECONDS=240
 export KODEZART_SUPERVISOR_PASS_INTERVAL_SECONDS=300
 export KODEZART_SUPERVISOR_PASS_TIMEOUT_SECONDS=120
-export KODEZART_DISPATCH_WORKFLOW=scope
 ```
-
-`KODEZART_DISPATCH_WORKFLOW=scope` points the dispatch cadence at the standing
-scopes' heartbeat: the approved rows are submitted as scope runs, and the v0.2
-per-issue dispatch passes are not scheduled. Leave it at its default, `fire`,
-and the same pair drives the per-issue passes over the declared team's board
-instead, with the heartbeat left out; either way boot names the one it left out
-with `scheduled_pass_not_selected`.
 
 The tracker credential is what lets the organize stages' sessions reach the
 tracker: each stage is one agent session that works the board with the
@@ -179,8 +171,8 @@ limit well above the longest walk you expect, not above one CI wait.
 - `pass_scheduler_started` — the scheduler is running, naming each pass it
   carries and that pass's interval. With the environment above that is the
   observation tick and the standing scopes' heartbeat — each one whose cadence
-  pair is set; the per-issue dispatch pass is named by
-  `scheduled_pass_not_selected`, and the fire-prep and grooming passes by
+  pair is set, beside the per-issue dispatch pass on the same pair; the
+  fire-prep and grooming passes are named by
   `scheduled_pass_not_configured` until their pairs are. No pass named
   organize appears anywhere: boot knows none. The fire-prep and grooming
   passes, when their pairs are set, run their first tick at boot; every other

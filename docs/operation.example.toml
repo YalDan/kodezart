@@ -36,9 +36,9 @@ organize_mandates = []
 # row that omits it.
 # Who reads these rows: the scope_heartbeat pass submits each one as a scope
 # run once it carries scope_labels.approved, on the dispatch cadence and lane
-# when KODEZART_DISPATCH_WORKFLOW=scope selects it over the per-issue dispatch
-# passes, writing nothing to the tracker; the observation tick reads each
-# row's scope where a tracker is dialled; and the audit collects each row
+# beside the per-issue dispatch passes, writing nothing to the tracker; the
+# observation tick reads each row's scope where a tracker is dialled; and the
+# audit collects each row
 # where audit settings are configured. No cadence has a default: a pass whose
 # interval is unset is not scheduled, and boot names it with
 # scheduled_pass_not_configured. Before approval a scope is the grooming and

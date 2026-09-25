@@ -11,14 +11,10 @@ concerns.
 
 ### Changed
 
-- The fire-prep and grooming prompts (`anthropic_v5`) render their v0.2 fire
-  staging (single frozen fires to the queue's proposed label) only under
-  `KODEZART_DISPATCH_WORKFLOW=fire`; under `scope` they groom triage into the
-  hierarchy and propose the node, and stage nothing, because no dispatcher fires
-  an issue in that workflow. Both carry a standing rule: the simplest solution,
-  verified; scopes pushed to a decision; a decision asked for in one short
-  comment with options, a lean and a table or diagram when shape is the
-  question.
+- The fire-prep and grooming prompts (`anthropic_v5`) carry a standing rule:
+  the simplest solution, verified; scopes pushed to a decision; a decision asked
+  for in one short comment with options, a lean and a table or diagram when
+  shape is the question.
 - The fire-prep and grooming passes decide whether to run by asking an agent.
   Before every tick but the first after boot, the pass opens one short
   session of its own kind (`PromptKey.PASS_GATE`, template `pass_gate.md` in
@@ -52,6 +48,9 @@ concerns.
 
 ### Removed
 
+- `KODEZART_DISPATCH_WORKFLOW`, refused at boot from every source: the v0.2
+  per-issue dispatch passes and the standing scopes' heartbeat both run on the
+  dispatch cadence pair, and `scheduled_pass_not_selected` is no longer emitted.
 - `KODEZART_FIRE_PREP_PASS_GATE_SIGNALS` and
   `KODEZART_GROOMING_PASS_GATE_SIGNALS`, refused at boot from every source.
   `PassGate` and `PassGateReader` remain for the dispatch pass alone; the

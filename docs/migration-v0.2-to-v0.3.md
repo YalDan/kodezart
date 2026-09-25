@@ -269,8 +269,7 @@ the exception is limited to what such a file can carry:
   empty, it is taken exactly as written, and a purpose it leaves out is refused
   at boot when a pass this deployment schedules can ask for it, and otherwise
   where it is read or written. The five purposes above cover what boot asks of
-  the per-issue dispatcher left at its default workflow, `fire`
-  (`KODEZART_DISPATCH_WORKFLOW`). The scope path's own purposes (`run_state`,
+  the per-issue dispatcher. The scope path's own purposes (`run_state`,
   `run_event` and the rest) are never supplied; a deployment that walks scopes,
   or configures the audit, declares its table.
 - **A `records.fire` destination that declares neither `columns` nor
