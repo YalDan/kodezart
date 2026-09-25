@@ -787,8 +787,9 @@ class ScopeScanNode(CamelCaseModel):
     )
     repository: str | None = Field(
         description=(
-            "The url of the repository its work goes to, exactly as declared; "
-            "null when its team's line names none."
+            "The url of the declared repository its work goes to, or the one "
+            "holding most of it when it spans several; null only when nothing "
+            "on the node tells."
         ),
     )
     why: str = Field(
