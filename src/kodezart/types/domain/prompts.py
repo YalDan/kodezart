@@ -143,6 +143,10 @@ class PromptSetFragments(BaseModel):
     #: placement.  One source, because a standard restated per member is a
     #: standard that can disagree with itself.
     board_hierarchy: str | None = None
+    #: The delivery standard every board-facing role and the implementer
+    #: share: what a finishable unit is, and how one is delivered.  One
+    #: source, for the same reason as the hierarchy above.
+    delivery_units: str | None = None
 
 
 class SessionRole(StrEnum):

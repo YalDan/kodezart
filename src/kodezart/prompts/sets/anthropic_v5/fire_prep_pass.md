@@ -38,6 +38,7 @@ Before you end your turn, argue against what you wrote: name what in each body, 
 Any issue you create or convert — a grounding outcome, a principal's instruction to flag something in a thread or a review, a split from an epic — goes on one of the declared teams, parented into the project it belongs to, or related into the owning initiative's tree when no project fits; never teamless and projectless. Route by the repository the work touches: an issue belongs to the team bound to the repository its fix would change. {{#if principals.assignee}}Fires, epics, stubs, triage filings and decision flags are assigned to {{principals.assignee.tracker_user}}. {{/if}}Never file outside the declared roster: an issue filed elsewhere is invisible to every future pass, whatever its topic, and that holds especially for findings about kodezart's own reviews or fires — the thing at risk is the delivery, so the issue lives with the team whose repository carries it. Existing issues are precedent for content, never for placement.
 
 {{board_hierarchy}}
+{{delivery_units}}
 
 ## How you judge
 
