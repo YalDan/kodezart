@@ -20,7 +20,7 @@ watches its checks.
 | Repositories | The one the request names. | Every repository the operation declares, checked out side by side in one working directory. |
 | Where the ticket comes from | Generated in the graph: `generate_branch`, `generate_ticket`. | The board. The `groom` node runs one session that completes the bodies below the parent. |
 | Where the criteria come from | Generated and checked in the graph: `generate_criteria`, `validate_criteria`. | The board. The `prep` node runs one session that creates the criterion sub-issues, then asks the board for them; their Checks are the run's criteria. |
-| Who moves the board | Over HTTP, nothing. For a fire the dispatch pass started, the process moves that one issue to its in-progress state when the run starts and to its in-review state when a pull request opens, and comments the outcome on it. | The implementation session: each item moves Todo to In Progress to In Review to Done as it works. kodezart itself writes nothing to the board during a scope run. |
+| Who moves the board | Over HTTP, nothing. For a fire the dispatch pass started, the process moves that one issue to its in-progress state when the run starts and to its in-review state when a pull request opens, and comments the outcome on it. | The implementation session: each item moves Todo to In Progress to In Review to Done as it works. After every evaluation the run itself writes the evaluator's rulings: a comment on each criterion whose ruling changed, a failed criterion in In Review or Done moved back to In Progress, and an iteration summary on the parent. |
 | The loop's exit | The evaluator grades every criterion; the loop ends when all pass, or at the iteration cap or a plateau. | The same, and then the board is asked whether every issue below the parent is completed or canceled (`scope_done`). If not, a remediation round goes back into the loop while rounds remain. |
 | The review | `review_against_ticket` over the merged diff. | The same node, reached only after `scope_done` says everything is finished. |
 | The pull request | One, against the requested base branch. | One per repository the deliverable branch gained commits in, each against that repository's trunk. |
@@ -141,11 +141,15 @@ persists (`services/agent_service.py`).
 ### What stays on the board, and where the run's own state is
 
 A scope run keeps no tracker record of its own. `FireImplementation` hands the
-loop no tracker spec on a scope run (`chains/fire_implementation.py`), so none
-of the loop's tracker writers runs (`chains/ralph_loop.py`). Everything on the
-board after a run is what its sessions wrote there. A run that is submitted
-again after a failure starts from each trunk with new branches and reads the
-board as the earlier run left it.
+loop no tracker spec on a scope run (`chains/fire_implementation.py`), so the
+loop writes no commit record and no cross-off (`chains/ralph_loop.py`).
+Everything on the board after a run is what its sessions wrote there, plus the
+evaluator's rulings the loop writes after each evaluation
+(`services/evaluator_rulings.py`). The summary is a status update on an
+initiative or project and a comment on an issue. A ruling write that fails is
+logged (`ruling_record_failed`) and never fails the iteration. A run that is
+submitted again after a failure starts from each trunk with new branches and
+reads the board as the earlier run left it.
 
 ## Around both graphs: delivery
 

@@ -38,6 +38,7 @@ from kodezart.core.protocols import (
     PromptSetProvider,
     RefPublisher,
     RepoCache,
+    ScopeStatusWriter,
     TrackerPort,
     WorkflowEngine,
     WorkspaceProvider,
@@ -46,6 +47,7 @@ from kodezart.core.retry import DelayFloor
 from kodezart.domain.errors import RateLimitError, ScopedExecutionUnavailableError
 from kodezart.domain.git_url import is_forge_less_origin
 from kodezart.services.agent_service import AgentService
+from kodezart.services.evaluator_rulings import EvaluatorRulingWriter
 from kodezart.services.fire_time_rulings import FireTimeRulings
 from kodezart.services.lane_lapse_escalation import LaneLapseEscalations
 from kodezart.services.lane_state_writer import TrackerLaneStateWriter
@@ -220,6 +222,7 @@ def build_workflow_engine(
     scope_tracker: TrackerPort | None = None,
     scope_registry: JobRegistry | None = None,
     operation: OperationConfig | None = None,
+    scope_status: ScopeStatusWriter | None = None,
 ) -> OriginRoutedWorkflowEngine:
     """The engine, with the loops and the remediation component it runs.
 
@@ -297,6 +300,16 @@ def build_workflow_engine(
         if scope_tracker is not None and operation is not None
         else None
     )
+    # Only a scope run writes through it; the loop asks the run's scope.
+    evaluator_rulings = (
+        EvaluatorRulingWriter(
+            tracker=scope_tracker, operation=operation, status=scope_status
+        )
+        if scope_tracker is not None
+        and operation is not None
+        and scope_status is not None
+        else None
+    )
     # One reader for every lane of this deployment: it holds no run state —
     # the roster, the grade, the question and the tree all arrive per call —
     # so every engine this composition compiles can share the one object.
@@ -350,6 +363,7 @@ def build_workflow_engine(
             delay_floor_for=delay_floor_for,
             fan_in_max_attempts=config.fan_in_max_attempts,
             repositories=repositories,
+            evaluator_rulings=evaluator_rulings,
         )
 
     authored_loop = loop(checkpointer)

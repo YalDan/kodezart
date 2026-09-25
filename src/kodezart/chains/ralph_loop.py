@@ -62,6 +62,7 @@ from kodezart.domain.prompt_variables import (
 from kodezart.domain.thread_id import ralph_thread_id
 from kodezart.domain.trajectory import fold_trajectory
 from kodezart.services.audit_sessions import judge_in_workspace
+from kodezart.services.evaluator_rulings import EvaluatorRulingWriter
 from kodezart.services.gained_commits import (
     folded,
     gained_commits,
@@ -158,8 +159,10 @@ class RalphLoop:
         mutation: MutationSurvivalReader | None = None,
         node_sessions: NodeSessionRecorder | None = None,
         repositories: Sequence[RepoEntry] = (),
+        evaluator_rulings: EvaluatorRulingWriter | None = None,
     ) -> None:
         self._service = service
+        self._evaluator_rulings = evaluator_rulings
         self._node_sessions = node_sessions
         self._repositories = tuple(repositories)
         self._criteria_reader = criteria_reader
@@ -989,6 +992,20 @@ class RalphLoop:
             criteria_results=grade.results,
             sherlock_flags=grade.sherlock_flags,
         )
+        if ctx.scope is not None and self._evaluator_rulings is not None:
+            # The board carries each ruling; the last evaluation's is the
+            # one the outcome holds, so the comparison reads no tracker.
+            previous = state["outcome"]
+            await self._evaluator_rulings.record(
+                scope=ctx.scope,
+                iteration=state["iteration"],
+                previous=(
+                    previous.event.evaluation
+                    if isinstance(previous, EvaluatedRalphOutcome)
+                    else None
+                ),
+                current=reconciled,
+            )
         records = [
             *state["iteration_records"],
             IterationRecord(
