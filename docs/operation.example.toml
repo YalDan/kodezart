@@ -34,19 +34,16 @@ organize_mandates = []
 # issue that scope's verified audit summary is reported on — omit it where the
 # deployment configures no audit, and a configured audit refuses by name on a
 # row that omits it.
-# Who reads these rows: the scope_heartbeat pass submits each one as a scope
-# run once it carries scope_labels.approved, on the dispatch cadence and lane
-# beside the per-issue dispatch passes, writing nothing to the tracker; the
-# observation tick reads each row's scope where a tracker is dialled; and the
-# audit collects each row
-# where audit settings are configured. No cadence has a default: a pass whose
+# Who reads these rows: the observation tick reads each row's scope where a
+# tracker is dialled, and the audit collects each row where audit settings are
+# configured. No cadence has a default: a pass whose
 # interval is unset is not scheduled, and boot names it with
 # scheduled_pass_not_configured. Before approval a scope is the grooming and
 # fire-prep passes' work, over the whole board like every other issue.
 # Declaring a row switches nothing off: the dispatch pass, the fire-prep and
 # grooming session passes and the lifecycle watcher are scheduled on their own
 # premises, each pass's cadence pair among them, scopes or no scopes. Empty
-# declares no standing scope and schedules none of the three passes above.
+# declares no standing scope and schedules neither pass above.
 organize_scopes = []
 
 # Identities the agent posts under, in the order the pass templates address

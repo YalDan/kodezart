@@ -171,8 +171,8 @@ boot logs `scheduled_pass_not_configured` naming the pass and the two settings
 that would schedule it; `pass_scheduler_started` lists only the passes that are
 scheduled. Setting one half of a pair without the other refuses at load, naming
 both.
-Fire preparation and grooming run their first tick at boot; every other pass
-runs its first tick one interval after boot.
+Fire preparation, grooming and the standing scopes' heartbeat run their first
+tick at boot; every other pass runs its first tick one interval after boot.
 
 Escalation ageing uses recorded run progress. The implementation defaults
 allow five lane commits after a question is raised, or ten walker ticks after
@@ -274,7 +274,7 @@ which was missing in the boot log.
 | `KODEZART_DISPATCH_LANE` | `str` | `tracker` |  | Fire-queue lane tracker-originated dispatches are enqueued on. |
 | `KODEZART_DISPATCH_RATE_LIMIT_COOLDOWN_SECONDS` | `float` | `1800.0` | >= 60.0, <= 86400.0 | Seconds the dispatch lane fires nothing after a run dies on a provider rate-limit rejection. The limit belongs to the account, not to the issue, so the next-ranked candidate would meet it unchanged: measured 2026-09-01, a run that died at 17:57 on a rejection was re-fired whole four minutes later. Lifted by the clock alone — nothing on the board clears a rate limit — and the lower bound keeps a cooldown longer than the tick that would otherwise re-fire. |
 | `KODEZART_DISPATCH_PASS_INTERVAL_SECONDS` | `float \| None` | none | >= 10.0, <= 3600.0 | Seconds between approved-fire dispatch passes, and the standing scopes' heartbeat's cadence. Dispatch is single-winner-per-pass, so throughput IS the interval: the upper bound is what stops a loaded queue sitting idle for a working day. Set together with its timeout. Unset: the pass is not scheduled, and neither is the heartbeat. |
-| `KODEZART_DISPATCH_PASS_TIMEOUT_SECONDS` | `float \| None` | none | >= 10.0, <= 3600.0 | Seconds one dispatch or heartbeat tick may take before it is abandoned. The tick is deterministic and model-free — a paged tracker scan, a claim, and the git plumbing that builds a base — so it belongs inside its own cadence. On expiry the tick is cancelled and reported as timed out; the loop keeps its cadence and the next tick runs. The upper bound is the dispatch interval's own, so a budget can never outlast the slowest cadence that interval admits. Set together with its interval. Unset: the pass is not scheduled. |
+| `KODEZART_DISPATCH_PASS_TIMEOUT_SECONDS` | `float \| None` | none | >= 10.0, <= 3600.0 | Seconds one dispatch or heartbeat tick may take before it is abandoned. A dispatch tick is deterministic and model-free — a paged tracker scan, a claim, and the git plumbing that builds a base — so it belongs inside its own cadence. On expiry the tick is cancelled and reported as timed out; the loop keeps its cadence and the next tick runs. The upper bound is the dispatch interval's own, so a budget can never outlast the slowest cadence that interval admits. Set together with its interval. Unset: the pass is not scheduled. |
 | `KODEZART_FIRE_PREP_PASS_INTERVAL_SECONDS` | `float \| None` | none | >= 60.0, <= 86400.0 | Seconds between fire-preparation pass sessions. The interval IS the latency a newly filed issue waits before anything prepares it, so it is the operator's answer to how stale the queue may get. Set together with its timeout. Unset: the pass is not scheduled. |
 | `KODEZART_FIRE_PREP_PASS_TIMEOUT_SECONDS` | `float \| None` | none | >= 60.0, <= 86400.0 | Seconds one fire-preparation tick may take before it is abandoned. The tick is a whole unattended session over the board. On expiry the session is cancelled and reported as timed out; the loop continues. Set together with its interval. Unset: the pass is not scheduled. |
 | `KODEZART_GROOMING_PASS_INTERVAL_SECONDS` | `float \| None` | none | >= 60.0, <= 86400.0 | Seconds between grooming pass sessions. Grooming verifies the whole tree against the real code by building it, so one run costs far more than one preparation and buys a report rather than a queued unit of work. Set together with its timeout. Unset: the pass is not scheduled. |
@@ -466,9 +466,8 @@ tracker server: the same URL, server identity and `KODEZART_TRACKER__TOKEN`
 the tracker client dials, so their board reads and writes carry this
 deployment's key and count against its budget (KOD-846). Every session that
 touches the tracker runs on that connection and never on a login the host
-holds. Without a credential no server is described, and a deployment that
-declares `[[organize_scopes]]` refuses to boot naming the credential
-(`OrganizeTrackerCapabilityError`). No other session kind receives it.
+holds. Without a credential no server is described. No other session kind
+receives it.
 
 ## The knowledge-server grant
 
@@ -848,9 +847,9 @@ secrets. A file secret named `KODEZART_LOGGING` holds a JSON object with `level`
 
 `[[organize_scopes]]` is the operation's one scope table: a deployment declares
 each scope there once, and every pass that works scope by scope is composed from
-those rows — the `scope_heartbeat` pass over the whole row, the observation
-tick over the row's scope where a tracker is dialled, and the audit over the
-row and its report destination where audit settings are set.
+those rows — the observation tick over the row's scope where a tracker is
+dialled, and the audit over the row and its report destination where audit
+settings are set.
 
 The native Organize owner requires explicit `[[organize_scopes]]` rows, each with
 `scope = { kind = "issue", key = "<native key>" }` (or another supported scope
@@ -872,21 +871,13 @@ runs them over the declared teams' boards beside the scope passes; one that
 leaves a pair unset gets `scheduled_pass_not_configured` naming that pass. Boot
 asks for exactly the gate signals and the templates of the passes it schedules.
 
-`[[organize_scopes]]` rows are the standing scopes: before approval each one
-is the grooming and fire-prep passes' to work, over the whole board like every
-other issue, and it is submitted as a scope run by the `scope_heartbeat` pass
-once it carries `scope_labels.approved`. That
-pass runs on the dispatch pass's knobs —
+The `scope_heartbeat` pass reads no row. On the dispatch pass's knobs —
 `KODEZART_DISPATCH_PASS_INTERVAL_SECONDS` and
 `KODEZART_DISPATCH_PASS_TIMEOUT_SECONDS` — beside the per-issue dispatch
-passes, and it submits onto `KODEZART_DISPATCH_LANE`. It opens no
-session and writes nothing to the tracker. A row that is not approved is
-reported as unapproved and never submitted; a row whose run is live on any lane
-is not submitted again; a row whose last run in this process ended with every
-lane done rests until its members move; a restarted process submits every
-approved row on its first tick, and that walk posts no status update the project
-already carries.
-Declaring no row schedules no heartbeat.
+passes, wherever a tracker is dialled and `[scope_labels]` is declared, it asks
+the scope scan which approved nodes inside the declared teams are not finished
+and submits each one as a scope run, skipping one with a live run and one whose
+repository the operation does not declare.
 
 When those bindings are configured, set both
 `KODEZART_ORGANIZE__MAX_ADMISSION_ROUNDS` and
@@ -894,10 +885,9 @@ When those bindings are configured, set both
 has a default. The optional `KODEZART_ORGANIZE` JSON container accepts the same
 `max_admission_rounds` and `max_convergence_rounds` fields, and nothing else:
 a cadence field there is refused at load, because the organize stages are no
-scheduled pass. Partial owner configuration refuses scheduling. Retired flat
-Organize bound spellings remain rejected. Each scope run resolves the
-configured repository trunk to a fresh immutable remote commit before its
-stages open a session.
+scheduled pass. Retired flat Organize bound spellings remain rejected. Each
+scope run resolves the configured repository trunk to a fresh immutable remote
+commit before its stages open a session.
 
 ## Tracker write verification
 

@@ -8,9 +8,8 @@
 # What an absent member costs is paid at the point of need and never at load:
 # the refusal names the member and what it stops.
 #
-# [[organize_scopes]] is the one scope table: declaring it schedules the scope
-# passes (the standing scopes' heartbeat, the observation tick and a
-# configured audit) and switches nothing else off. Whether any pass runs is
+# [[organize_scopes]] is the one scope table: declaring it schedules the
+# observation tick and a configured audit and switches nothing else off. Whether any pass runs is
 # its cadence pair in the environment; where it works is the one team and the
 # one repository below. There is no [run_event_states] table here and no
 # [queue_states] table: neither is read on this path.
@@ -73,11 +72,9 @@ rubric_prompt_key = "organize_spec_rubric"
 admission_prompt_key = "organize_assess"
 terminal_marker_key = "issue_labels.criteria"
 
-# The one scope table. This row is submitted by the scope_heartbeat pass once
-# it carries the approved label, staged and walked by that run, and read by the
-# observation tick that records each lane's alarm. Bound to exactly one declared
-# repository; change the key to your own project's. Declaring organize_mandates
-# without a row here is a partial organize configuration and is refused at boot.
+# The one scope table, read by the observation tick that records each lane's
+# alarm. Bound to exactly one declared repository; change the key to your own
+# project's.
 # No report_issue_key: this deployment configures no audit, so there is nowhere
 # a verified summary would be reported. A deployment that configures one adds
 # that member to every row here.

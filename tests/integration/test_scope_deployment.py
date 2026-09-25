@@ -332,11 +332,10 @@ async def test_a_scope_deployment_boots_from_the_shipped_files_and_fires_nothing
     nothing is approved yet.
 
     A deployment configured from the shipped file and the page's own environment
-    block boots, reconciles its mappings into the team, schedules the passes that
-    read its one scope table — the observation tick that watches each lane's run
-    shape and the standing scopes' heartbeat — beside the
-    per-issue dispatch pass the same environment's dispatch pair and forge token
-    schedule, holds no checkpointer, and writes no label onto any issue. Its first
+    block boots, reconciles its mappings into the team, schedules the standing
+    scopes' heartbeat beside the per-issue dispatch pass the same environment's
+    dispatch pair and forge token schedule, holds no checkpointer, and writes no
+    label onto any issue. Its first
     scoped run is refused by type before a member is read, because nobody has
     approved the project yet, and it leaves the board untouched.
 
@@ -387,14 +386,13 @@ async def test_a_scope_deployment_boots_from_the_shipped_files_and_fires_nothing
         assert set(reconciled[0]["created"]) == {
             ref.describe() for ref in owned_mappings(loaded)
         }
-        # The page's environment sets the dispatch and supervisor pairs and no
-        # session-pass pair: the per-issue dispatch pass and the heartbeat both
-        # run on the dispatch pair, and the two session passes are named as
-        # unset. Boot knows no pass named organize: the stages run inside the
-        # run the heartbeat submits.
+        # The page's environment sets the dispatch pair and no other: the
+        # per-issue dispatch pass and the heartbeat both run on it, and the
+        # supervisor and the two session passes are named as unset. Boot knows
+        # no pass named organize: the stages run inside the run the heartbeat
+        # submits.
         assert [entry.name for entry in app.state.pass_scheduler.passes] == [
             f"dispatch:{loaded.repos[0].url}",
-            "supervisor",
             HEARTBEAT_PASS,
         ]
         assert {
@@ -402,6 +400,7 @@ async def test_a_scope_deployment_boots_from_the_shipped_files_and_fires_nothing
         } == {
             PromptKey.FIRE_PREP_PASS.value,
             PromptKey.GROOMING_PASS.value,
+            "supervisor",
             "audit",
         }
         # The observation tick records each lane's alarm under a configured

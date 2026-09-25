@@ -38,9 +38,8 @@ All cross-layer dependencies point inward through protocols defined in
 (`main.py` `lifespan()`).
 Dialling the tracker consults no run-event table; a declared one is checked when
 the operation file loads. An operation that declares `[[organize_scopes]]`
-schedules the passes that read that one table — the scope heartbeat, the
-observation tick where a tracker is dialled and the audit where one is
-configured — beside the per-issue machine: the dispatch pass, the two
+schedules the passes that read that one table — the observation tick where a
+tracker is dialled and the audit where one is configured — beside the per-issue machine: the dispatch pass, the two
 prompt passes and the lifecycle watcher are built on their own premises, each
 pass's cadence pair among them, whether or not scopes are declared.
 Each prompt pass (`services/prompt_pass.py`) asks a gate question before every
@@ -892,23 +891,14 @@ that stage's work roster, so a run re-entered from tracker facts alone works
 exactly what the labels leave — and a stage whose every member is already
 labelled completes with no session and no write.
 
-Setting the approval label is what starts a scope run. The `scope_heartbeat`
-pass reads each `[[organize_scopes]]` row on the dispatch cadence and submits a
-scope run for every row that is approved and has no live job, onto the
-configured dispatch lane. It opens no session, takes no surface lease and makes
-no tracker write: applying the label is somebody else's act and this pass only
-observes it. Liveness is the record store's answer for the scope on every lane,
-so a run submitted over HTTP is live to the pass and no second walk of that
-scope is submitted beside it. Its report names every declared row as submitted,
-live, converged, unapproved or failed, so "nobody has approved this scope yet"
-is an answer read off the tick rather than inferred from silence. What it
-remembers about a row is this process's own, keyed by the scope, and so is the
-queue it submits onto — which is why a record store that has forgotten a job is
-not read as a run still walking. A row whose last run in this process ended with
-every lane done is not submitted again while its reading is the same, and an
-added member, a criterion moved out of Done or a change of approval re-arms it;
-a restarted process walks a converged row once on its first tick, and that walk
-posts no second status update.
+Setting the approval label is what starts a scope run. On the dispatch
+cadence the `scope_heartbeat` pass asks the scope scan, one short agent session
+over the board, which approved nodes inside the declared teams are not finished,
+and submits a scope run for each one the record store holds no live job for and
+whose repository the operation declares, onto the queue `POST /fire` submits to.
+It makes no tracker write and remembers nothing between ticks: a finished node
+is left out of the scan, and the run's entry refuses a node that is not approved
+or already has a run going.
 
 One predicate answers whether a stage may act on a member now, and every gate
 read and approval read in the owner is that predicate or its approval half: a

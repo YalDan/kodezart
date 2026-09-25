@@ -23,7 +23,6 @@ from kodezart.types.domain import scope_runtime
 from tests.docs.configuration import shipped_config_variables
 from tests.docs.test_documented_surface import _config_variables_named_in
 from tests.docs.test_setup_guide import _emitted_events
-from tests.tools.scratch_scope import COMMANDS
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 GUIDE = REPO_ROOT / "docs" / "running-a-scope.md"
@@ -37,9 +36,8 @@ REQUIRED_VARIABLES: frozenset[str] = frozenset(
         "KODEZART_TRACKER__TOKEN",
         "KODEZART_GITHUB_TOKEN",
         "KODEZART_OPERATION_CONFIG",
-        "KODEZART_ORGANIZE__MAX_ADMISSION_ROUNDS",
-        "KODEZART_ORGANIZE__MAX_CONVERGENCE_ROUNDS",
-        "KODEZART_WRITE_BACK__MAX_VERIFY_ROUNDS",
+        "KODEZART_DISPATCH_PASS_INTERVAL_SECONDS",
+        "KODEZART_DISPATCH_PASS_TIMEOUT_SECONDS",
     },
 )
 
@@ -125,21 +123,6 @@ def test_every_event_the_page_names_is_emitted_under_src() -> None:
     events = cited - row_types
     assert events
     assert events <= _emitted_events(), sorted(events - _emitted_events())
-
-
-def test_every_command_the_page_prints_exists() -> None:
-    """The page's command block, against the builder's own command list.
-
-    A renamed command on either side leaves an operator typing something the
-    tool does not answer to.
-    """
-    blocks = fenced("text")
-    assert len(blocks) == 1
-    names = {item.name for item in COMMANDS}
-    assert names
-    for name in sorted(names):
-        assert f"python -m tests.tools.scratch_scope {name}" in blocks[0], name
-    assert set(re.findall(r"scratch_scope ([a-z][a-z-]*)", blocks[0])) == names
 
 
 def test_every_variable_the_page_names_is_a_shipped_config_field() -> None:

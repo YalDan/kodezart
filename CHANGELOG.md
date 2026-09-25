@@ -11,6 +11,15 @@ concerns.
 
 ### Changed
 
+- The standing scopes' heartbeat (`services/scope_heartbeat.py`) asks the
+  `scope_scan` question once a tick and submits each approved, unfinished node
+  it lists as a scope run, as `POST /api/v1/agent/fire` submits one. It skips a
+  node with a live run (`scope_heartbeat_scope_live`) or a repository the
+  operation does not declare (`scope_heartbeat_repository_undeclared`), logs
+  `scope_heartbeat_scanned` and `scope_heartbeat_run_submitted`, and remembers
+  nothing between ticks. It reads no `[[organize_scopes]]` row: it is scheduled
+  wherever a tracker is dialled, `[scope_labels]` is declared and the dispatch
+  pair is set, and it ticks at boot.
 - The fire-prep and grooming prompts (`anthropic_v5`) carry a standing rule:
   the simplest solution, verified; scopes pushed to a decision; a decision asked
   for in one short comment with options, a lean and a table or diagram when
@@ -51,6 +60,9 @@ concerns.
 - `KODEZART_DISPATCH_WORKFLOW`, refused at boot from every source: the v0.2
   per-issue dispatch passes and the standing scopes' heartbeat both run on the
   dispatch cadence pair, and `scheduled_pass_not_selected` is no longer emitted.
+- `OrganizeTrackerCapabilityError`, and the boot refusal of
+  `[[organize_scopes]]` rows without `[organize]`, `[write_back]` or a tracker:
+  no scheduled pass reads them any more.
 - `KODEZART_FIRE_PREP_PASS_GATE_SIGNALS` and
   `KODEZART_GROOMING_PASS_GATE_SIGNALS`, refused at boot from every source.
   `PassGate` and `PassGateReader` remain for the dispatch pass alone; the
