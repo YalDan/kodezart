@@ -1,0 +1,413 @@
+"""What one lane's observation leaves at each of its addresses.
+
+The composition is pure: the lane's run state, the records already on its
+carrier and its event stream go in, and the records to write come out. Each
+case writes out the one fact it turns on; everything else is the same lane
+with the same two criteria.
+"""
+
+from datetime import UTC, datetime
+
+import pytest
+
+from kodezart.domain.lane_alarms import (
+    OBSERVED_ALARMS,
+    Finished,
+    Ready,
+    Waiting,
+    alarm_event_due,
+    lane_alarm_records,
+    next_alarm_record,
+    stored_alarm,
+)
+from kodezart.domain.run_event_stream import LaneRunEvent
+from kodezart.types.domain.node_session import NodeInvocation, NodeSessionKey
+from kodezart.types.domain.operation import RunKind
+from kodezart.types.domain.run_alarm import (
+    AlarmSignal,
+    CriterionSubject,
+    LaneSubject,
+)
+from kodezart.types.domain.run_event import RunEventKind
+from kodezart.types.domain.run_records import RunIdentity
+from tests.domain.test_tally_record import (
+    FIRST,
+    HEAD,
+    HOLDER,
+    LANE,
+    SCOPE_KEY,
+    SECOND,
+    criterion,
+    lane_record,
+)
+
+BOUND = 1
+GRADED = "graded-at"
+
+CROSSED_OFF = RunEventKind.ISSUE_CROSSED_OFF
+REFUTED = RunEventKind.CRITERION_REFUTED
+LAPSED = RunEventKind.CRITERION_LAPSED
+
+
+def said(kind, member, *, lane=LANE.lane_key):
+    """One account the lane posted about *member* on its own stream."""
+    return LaneRunEvent(kind=kind, lane_key=lane, subject_key=member, graded_sha=GRADED)
+
+
+def compose(*, standing, criteria, events=(), stored=(), commits=()):
+    return lane_alarm_records(
+        scope_key=SCOPE_KEY,
+        lane_key=LANE.lane_key,
+        standing=standing,
+        criteria=criteria,
+        record=lane_record(commits=commits),
+        stored=stored,
+        events=events,
+        max_commits_without_closure=BOUND,
+        raised_by=HOLDER,
+    )
+
+
+def at(member, *, parent=LANE.lane_key):
+    return CriterionSubject(
+        scope_key=SCOPE_KEY,
+        issue_id=parent,
+        member_id=member,
+        lane_key=LANE.lane_key,
+    )
+
+
+#: The first criterion finished by the lane and then moved back to Todo by
+#: something else; the second still owed and never accounted for.
+MOVED_BACK = (criterion(FIRST), criterion(SECOND))
+#: The same two, and the lane's own account of the first.
+FINISHED_FIRST = (said(CROSSED_OFF, FIRST),)
+
+
+def test_the_observation_folds_exactly_the_lane_and_criterion_signals():
+    assert OBSERVED_ALARMS == {
+        AlarmSignal.TALLY_UNMOVED,
+        AlarmSignal.TALLY_REGRESSED,
+        AlarmSignal.LAPSE_UNDISCHARGED,
+        AlarmSignal.COMPOSITION_SUBSTITUTED,
+    }
+
+
+def test_a_quiet_criterion_with_no_stored_record_writes_nothing():
+    """A criterion the lane finished and that is still Done: nothing to say.
+
+    Written anyway, a healthy walk would leave one record per finished
+    criterion per tick, and the quiet run would not be quiet.
+    """
+    records = compose(
+        standing=Ready(roster=(criterion(FIRST, closed=True),), gap=()),
+        criteria=(criterion(FIRST, closed=True),),
+        events=FINISHED_FIRST,
+    )
+
+    assert records == ()
+
+
+def test_a_criterion_moved_back_without_an_account_is_one_regression_record():
+    records = compose(
+        standing=Ready(roster=MOVED_BACK, gap=MOVED_BACK),
+        criteria=MOVED_BACK,
+        events=FINISHED_FIRST,
+    )
+
+    assert [(r.subject, r.signal) for r in records] == [
+        (at(FIRST), AlarmSignal.TALLY_REGRESSED)
+    ]
+    assert records[0].bound is None
+    assert records[0].raised_at_sha == HEAD
+
+
+def test_a_refutation_of_another_member_does_not_quiet_this_one():
+    """Each criterion is read by the lane's account of IT, not of its neighbour.
+
+    The lane crossed off both criteria and then refuted the second; the first
+    stands back in Todo with nothing said about it since. Read with the
+    second's refutation as its own last word, the first would be quiet.
+    """
+    records = compose(
+        standing=Ready(roster=MOVED_BACK, gap=MOVED_BACK),
+        criteria=MOVED_BACK,
+        events=(
+            said(CROSSED_OFF, FIRST),
+            said(CROSSED_OFF, SECOND),
+            said(REFUTED, SECOND),
+        ),
+    )
+
+    assert [(r.subject, r.signal) for r in records] == [
+        (at(FIRST), AlarmSignal.TALLY_REGRESSED)
+    ]
+
+
+def test_a_raise_and_its_clear_rewrite_the_one_record():
+    """Once raised, the address says so; once it ends, it says that once."""
+    raised = compose(
+        standing=Ready(roster=MOVED_BACK, gap=MOVED_BACK),
+        criteria=MOVED_BACK,
+        events=FINISHED_FIRST,
+    )
+    refuted = (*FINISHED_FIRST, said(REFUTED, FIRST))
+
+    cleared = compose(
+        standing=Ready(roster=MOVED_BACK, gap=MOVED_BACK),
+        criteria=MOVED_BACK,
+        events=refuted,
+        stored=raised,
+    )
+
+    assert [(r.subject, r.signal) for r in cleared] == [
+        (at(FIRST), AlarmSignal.TALLY_REGRESSED)
+    ]
+    assert next_alarm_record(stored=cleared[0], observed=cleared[0]) is None
+    # And having said it, the address says nothing more.
+    assert (
+        compose(
+            standing=Ready(roster=MOVED_BACK, gap=MOVED_BACK),
+            criteria=MOVED_BACK,
+            events=refuted,
+            stored=cleared,
+        )
+        == ()
+    )
+
+
+def test_a_standing_raise_is_not_rewritten():
+    raised = compose(
+        standing=Ready(roster=MOVED_BACK, gap=MOVED_BACK),
+        criteria=MOVED_BACK,
+        events=FINISHED_FIRST,
+    )
+
+    again = compose(
+        standing=Ready(roster=MOVED_BACK, gap=MOVED_BACK),
+        criteria=MOVED_BACK,
+        events=FINISHED_FIRST,
+        stored=raised,
+    )
+
+    assert again == ()
+
+
+@pytest.mark.parametrize(
+    "review", [False, True], ids=["back in Todo", "held in review"]
+)
+def test_a_waiting_lane_composes_no_tally_record_and_still_reads_its_lapses(review):
+    """Blocked or unapproved: its clock is not measured, its stream is read.
+
+    The same lane read as ready would raise its tally — more commits than the
+    bound, nothing closed — so the absence of a tally record is the standing,
+    not the board. And the lapse it announced is undischarged because nothing
+    is going to run it, whether the lapse left the criterion back in Todo or
+    held in review: both are open, and neither is re-derived.
+    """
+    criteria = (criterion(FIRST, review=review), criterion(SECOND))
+    lapsed = (said(CROSSED_OFF, FIRST), said(LAPSED, FIRST))
+    stalled = ("sha-one", "sha-two")
+    ready = compose(
+        standing=Ready(roster=criteria, gap=criteria),
+        criteria=criteria,
+        events=lapsed,
+        commits=stalled,
+    )
+    assert AlarmSignal.TALLY_UNMOVED in {r.signal for r in ready}
+
+    records = compose(
+        standing=Waiting(), criteria=criteria, events=lapsed, commits=stalled
+    )
+
+    assert [(r.subject, r.signal) for r in records] == [
+        (at(FIRST), AlarmSignal.LAPSE_UNDISCHARGED)
+    ]
+
+
+def test_the_same_lapse_on_a_ready_lane_writes_nothing():
+    records = compose(
+        standing=Ready(roster=MOVED_BACK, gap=MOVED_BACK),
+        criteria=MOVED_BACK,
+        events=(said(CROSSED_OFF, FIRST), said(LAPSED, FIRST)),
+    )
+
+    assert records == ()
+
+
+def test_a_lapse_under_a_deliverable_child_is_keyed_to_its_parent_and_its_lane():
+    under = criterion(FIRST, parent="LANE-1/deliverable")
+
+    records = compose(
+        standing=Waiting(),
+        criteria=(under, criterion(SECOND)),
+        events=(said(LAPSED, FIRST),),
+    )
+
+    assert [r.subject for r in records] == [at(FIRST, parent="LANE-1/deliverable")]
+
+
+def test_a_descendant_criterions_lapse_on_a_ready_lane_is_discharged_by_that_lane():
+    """The lane re-derives, so a lapse under its deliverable child is owed to it.
+
+    The twin of the waiting case above on a ready lane. The criterion's parent
+    is the deliverable child, which fires nothing; the lane above it is the one
+    the walk runs, so its readiness discharges the lapse.
+    """
+    criteria = (criterion(FIRST, parent="LANE-1/deliverable"), criterion(SECOND))
+
+    records = compose(
+        standing=Ready(roster=criteria, gap=criteria),
+        criteria=criteria,
+        events=(said(CROSSED_OFF, FIRST), said(LAPSED, FIRST)),
+    )
+
+    assert records == ()
+
+
+def test_a_finished_lane_is_read_with_no_roster_and_no_gap():
+    """A finished lane with a raised tally is cleared, as it was before."""
+    stalled = ("sha-one", "sha-two")
+    raised = compose(
+        standing=Ready(roster=MOVED_BACK, gap=MOVED_BACK),
+        criteria=MOVED_BACK,
+        commits=stalled,
+    )
+    [tally] = raised
+    done = (criterion(FIRST, closed=True), criterion(SECOND, closed=True))
+
+    cleared = compose(
+        standing=Finished(), criteria=done, stored=raised, commits=stalled
+    )
+
+    assert [(r.subject, r.signal) for r in cleared] == [
+        (tally.subject, AlarmSignal.TALLY_UNMOVED)
+    ]
+    assert cleared[0].bound is None
+
+
+def test_a_criterion_the_scope_read_does_not_carry_is_skipped():
+    """Its state cannot be read, so nothing is written and nothing refuses."""
+    records = compose(
+        standing=Waiting(),
+        criteria=(criterion(SECOND),),
+        events=(said(LAPSED, FIRST),),
+    )
+
+    assert records == ()
+
+
+def test_an_entry_keyed_to_a_criterion_that_is_not_an_account_observes_nothing():
+    """Membership is read off the lane's ACCOUNTS, not off any keyed entry.
+
+    A lane's stream carries other kinds keyed to a member; only crossing a
+    criterion off, refuting it or finding its grading lapsed says the lane
+    graded it, so nothing else puts a criterion under this lane's watch.
+    """
+    records = compose(
+        standing=Waiting(),
+        criteria=MOVED_BACK,
+        events=(said(RunEventKind.RUN_ALARM_RAISED, FIRST),),
+    )
+
+    assert records == ()
+
+
+def test_stored_alarm_reads_one_address_out_of_the_listing():
+    regressed = compose(
+        standing=Ready(roster=MOVED_BACK, gap=MOVED_BACK),
+        criteria=MOVED_BACK,
+        events=FINISHED_FIRST,
+    )
+
+    assert (
+        stored_alarm(regressed, subject=at(FIRST), signal=AlarmSignal.TALLY_REGRESSED)
+        == regressed[0]
+    )
+    assert (
+        stored_alarm(
+            regressed, subject=at(FIRST), signal=AlarmSignal.LAPSE_UNDISCHARGED
+        )
+        is None
+    )
+    assert (
+        stored_alarm(regressed, subject=at(SECOND), signal=AlarmSignal.TALLY_REGRESSED)
+        is None
+    )
+
+
+def test_only_a_lane_subject_record_owes_an_event():
+    """One event per lane transition, never one per criterion."""
+    [regression] = compose(
+        standing=Ready(roster=MOVED_BACK, gap=MOVED_BACK),
+        criteria=MOVED_BACK,
+        events=FINISHED_FIRST,
+    )
+    assert not isinstance(regression.subject, LaneSubject)
+
+    with pytest.raises(ValueError, match="keyed to a lane"):
+        alarm_event_due(record=regression, events=())
+
+
+def opening(session_id, *, key="evaluation-1"):
+    """One node-session opening on the lane's stream, as its writer posts it."""
+    return LaneRunEvent(
+        kind=RunEventKind.NODE_SESSION_STARTED,
+        lane_key=LANE.lane_key,
+        subject_key=NodeSessionKey(
+            invocation=NodeInvocation(
+                run=RunIdentity(
+                    kind=RunKind.FIRE,
+                    name=LANE.lane_key,
+                    started_at=datetime(2026, 1, 1, tzinfo=UTC),
+                ),
+                node_key="evaluation",
+                invocation_key=key,
+                declared_sessions=1,
+            ),
+            session_id=session_id,
+        ).model_dump_json(by_alias=True),
+    )
+
+
+def test_a_substituted_node_is_one_lane_record_at_every_standing_and_is_announced():
+    """Read off the stream alone, so a waiting lane is read for it too.
+
+    Written once, and then left: the openings cannot be taken back, so the
+    raise stands and a second tick over the same stream writes nothing. It
+    is a lane-subject record, so its transition is announced on the stream.
+    """
+    twice = (opening("session-a"), opening("session-b"))
+
+    for standing in (
+        Ready(roster=MOVED_BACK, gap=MOVED_BACK),
+        Waiting(),
+        Finished(),
+    ):
+        records = compose(standing=standing, criteria=MOVED_BACK, events=twice)
+        assert [(r.subject, r.signal) for r in records] == [
+            (LANE, AlarmSignal.COMPOSITION_SUBSTITUTED)
+        ], standing
+        assert (
+            compose(
+                standing=standing, criteria=MOVED_BACK, events=twice, stored=records
+            )
+            == ()
+        ), standing
+
+    due = alarm_event_due(record=records[0], events=twice)
+    assert due is not None
+    assert (due.kind, due.subject_key) == (
+        RunEventKind.RUN_ALARM_RAISED,
+        AlarmSignal.COMPOSITION_SUBSTITUTED.value,
+    )
+
+
+def test_one_opening_per_invocation_writes_nothing():
+    records = compose(
+        standing=Waiting(),
+        criteria=MOVED_BACK,
+        events=(opening("session-a"), opening("session-b", key="evaluation-2")),
+    )
+
+    assert records == ()

@@ -12,7 +12,7 @@ permanently failing pass indistinguishable from a quiet board, which is
 the state this whole lane exists to make legible — and a one-line summary
 is that same problem one step along: the first live run crash-looped for
 half an hour on a ``ValueError`` whose event named neither the call site
-nor the collaborator that raised it (KOD-145).
+nor the collaborator that raised it.
 
 A pass that never returns is the third state, and it is named separately.
 Every tick is bounded by the budget its own pass carries, and the bound
@@ -25,7 +25,7 @@ it stops returning at all.
 
 A tick that RAN and a tick its gate skipped are the fourth distinction,
 and the pass itself is what draws it: the run record obligation belongs to
-runs, and a skipped tick is not one (KOD-176).
+runs, and a skipped tick is not one.
 """
 
 import asyncio
@@ -62,20 +62,26 @@ class ScheduledPass:
     timeout_seconds: float
     #: The tick itself, taking the instant its run BEGAN and saying whether
     #: it ran: a pass whose gate found nothing opened no session, so it
-    #: produced no run for this scheduler to report on (KOD-176).
+    #: produced no run for this scheduler to report on.
     #:
     #: The stamp is the scheduler's half of the run's identity, and it is
     #: the same value the report is given.  A tick that could not be told
     #: when it began could not prescribe the title its own record will be
     #: found by, so a session's row and the runner's spelled one run two
-    #: ways (KOD-290).
+    #: ways.
     run: Callable[[datetime], Awaitable[PassRun]]
     #: Where this pass's outcome is reported after every tick, or ``None``
     #: for a pass that records nowhere BY DESIGN — the dispatch scans,
     #: whose outcome is the fire they start.  The two judgment passes are
     #: wired with a report by composition; a recording failure is its own
-    #: loud event and never breaks the cadence (KOD-170).
+    #: loud event and never breaks the cadence.
     report: RunReport | None = None
+    #: Whether the first tick runs at boot rather than one interval later.
+    #: The intake passes carry it (owner, 2026-09-24): a configured pass is
+    #: triggered when the process comes up, so a restart never leaves the
+    #: board unread for a whole cadence. Every other pass keeps sleeping its
+    #: interval first.
+    tick_at_boot: bool = False
 
 
 class PassScheduler:
@@ -132,7 +138,13 @@ class PassScheduler:
         await self._log.ainfo("pass_scheduler_stopped")
 
     async def _drive(self, entry: ScheduledPass) -> None:
-        """Sleep the pass's own interval, run one tick, repeat until cancelled."""
+        """Run one tick, then sleep the pass's own interval and tick, until cancelled.
+
+        A pass marked ``tick_at_boot`` runs its first tick before any sleep;
+        every other pass waits one interval first.
+        """
+        if entry.tick_at_boot:
+            await self._tick(entry)
         while True:
             await self._sleep(entry.interval_seconds)
             await self._tick(entry)
@@ -153,7 +165,7 @@ class PassScheduler:
         A tick whose gate found nothing is the fourth, and it REPORTS
         NOWHERE.  A run record asserts that a run happened; a skipped tick
         opened no session, so a row backfilled for it is a phantom run in
-        the very log the next window reads to decide what to do (KOD-176).
+        the very log the next window reads to decide what to do.
         The skip is named in its own event, under the pass's own name, so
         a quiet board stays as legible as a busy one.
         """
@@ -180,9 +192,9 @@ class PassScheduler:
             # The exception goes to the CHAIN, which renders its frames
             # under the one key every other logged exception uses.  It was
             # formatted here instead, under a ``traceback`` key of this
-            # module's own (KOD-145) — which appeared exactly once, as
+            # module's own — which appeared exactly once, as
             # that ruling required, but appeared somewhere a consumer
-            # filtering on the chain's key never looked (KOD-250).
+            # filtering on the chain's key never looked.
             duration = loop.time() - started
             await self._log.aerror(
                 "scheduled_pass_failed",
@@ -222,14 +234,13 @@ class PassScheduler:
         separate error rather than a reclassification of the tick: the
         pass did what it did, and "the record could not be written" is a
         fact about the record path, reported under its own name so a
-        broken destination cannot silently starve the next window
-        (KOD-170).
+        broken destination cannot silently starve the next window.
 
         The event is the same field set the fire's producer emits, and it
         comes off the failure rather than out of this module: which kind
         was owed a row, which destination, whose system, and which class
         of failure it was — a dead session and a refused row have
-        different remedies and the measured boot named neither (KOD-177).
+        different remedies and the measured boot named neither.
 
         A report hop that fails with anything else is a defect in the
         record path's own wiring rather than a destination refusing, and

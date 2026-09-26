@@ -9,7 +9,10 @@ never loaded is a claim, not a floor.
 
 from pathlib import Path
 
-from kodezart.adapters.toml_operation_config import load_operation_config
+from kodezart.adapters.toml_operation_config import (
+    V02_MARKER_PREFIXES,
+    load_operation_config,
+)
 from kodezart.core.prompt_namespaces import bindings_for
 from kodezart.types.domain.operation import OperationConfig
 
@@ -33,12 +36,21 @@ def test_the_minimal_fixture_declares_nothing_beyond_the_floor() -> None:
 
     A "minimal" fixture that quietly carries a principal or a queue map
     stops demonstrating that the floor boots, which is the whole claim.
+    The floor declares no ``[marker_prefixes]`` table, so, as for any v0.2
+    file, the loader supplies the markers v0.2 wrote (KOD-903).
     """
     config = minimal_fixture()
     scalars = {"operation_name", "workspace"}
-    for field in set(OperationConfig.model_fields) - scalars - {"private_surface"}:
+    loader_supplied = {"marker_prefixes"}
+    for field in (
+        set(OperationConfig.model_fields)
+        - scalars
+        - {"private_surface"}
+        - loader_supplied
+    ):
         assert len(getattr(config, field)) == 0, field
     assert config.private_surface is None
+    assert config.marker_prefixes == V02_MARKER_PREFIXES
 
 
 def test_the_minimal_fixture_yields_a_boot_ready_binding_namespace() -> None:
@@ -58,3 +70,4 @@ def test_the_readme_points_a_new_operator_at_the_floor() -> None:
     readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
     assert "docs/operation.minimal.toml" in readme
     assert "docs/operation.example.toml" in readme
+    assert "docs/operation.scope.toml" in readme

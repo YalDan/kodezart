@@ -1,0 +1,2094 @@
+"""Code backend: shared identities, the cross-off model, events, vendor freedom.
+
+The static vendor check reads both invariant modules, every packaged module
+whose values they assert over, and the committed workspace the spec backend
+reads.  The roster of selectable adapters is the one place a vendor may be
+named, so it is the only exemption.
+
+The cross-off model is checked here against the packaged value it names:
+its two enums verbatim, the paths a path-bound class must carry, the class a
+verdict falls back to, the stickiness of that class per criterion identity,
+and the absence of a boolean verdict anywhere in the graded-sha partition.
+"""
+
+import ast
+import dataclasses
+import importlib
+import inspect
+import pkgutil
+import re
+import tomllib
+from collections import Counter
+from collections.abc import Mapping
+from enum import Enum, StrEnum
+from functools import cache
+from inspect import signature
+from pathlib import Path
+from types import MappingProxyType
+from typing import Literal, get_args
+
+import pytest
+from pydantic import BaseModel, ValidationError, create_model
+
+from kodezart.core.protocols import TrackerPort
+from kodezart.domain.base_scope import scope_base
+from kodezart.domain.base_staleness import is_base_stale
+from kodezart.domain.errors import StaleBaseError
+from kodezart.domain.lapse import GradedState, graded_state
+from kodezart.types.base import CamelCaseModel
+from kodezart.types.domain.audit import AuditVerdict
+from kodezart.types.domain.branch import BaseInput, BaseSpec
+from kodezart.types.domain.consolidation import ChangesetDigest
+from kodezart.types.domain.criterion_evidence import CriterionEvidence
+from kodezart.types.domain.criterion_lifecycle import (
+    PATH_BOUND_CLASSES,
+    CriterionCrossOff,
+    CrossOffState,
+    RederivationClass,
+    StickyClassError,
+    UndemonstratedReason,
+    held_rederivation_classes,
+)
+from kodezart.types.domain.criterion_ref import CriterionRef
+from kodezart.types.domain.operation import OperationConfig
+from kodezart.types.domain.run_event import (
+    RUN_EVENT_PUBLISHERS,
+    RunEventEffect,
+    RunEventKind,
+    RunEventPublisher,
+    RunEventTableError,
+)
+from kodezart.types.domain.tracker import TrackerBackend
+from tests.identity_guards import (
+    RULING_ADDRESS_NAMES,
+    construction_sites,
+    invalid_ruling_fields,
+    value_holders,
+)
+from tests.model_members import ModelWorkspace
+
+REPO_ROOT = Path(__file__).parents[2]
+SOURCE_ROOT = REPO_ROOT / "src" / "kodezart"
+CODE = "code"
+SPEC = "spec"
+INVARIANT_MODULES = {
+    CODE: Path(__file__),
+    SPEC: REPO_ROOT / "tests" / "spec" / "test_model_agreement.py",
+}
+VENDOR_ROSTER = SOURCE_ROOT / "types" / "domain" / "tracker.py"
+VENDOR_TERMS = tuple(sorted(backend.value for backend in TrackerBackend))
+#: The value whose holders the lane record's own vendor scan is derived from.
+RECORD_IDENTITY = "LaneRunState"
+_WORD = re.compile(r"[A-Z]+(?![a-z])|[A-Z][a-z0-9]*|[a-z0-9]+")
+IDENTITY_OWNERS = {
+    "CriterionRef": "domain/fire_spec.py",
+    "RulingId": "domain/agent.py",
+}
+#: Where a value the spec backend holds came from: the tracker port a
+#: port-returning fixture or a port-annotated parameter handed over, or the
+#: workspace one of the module's own fixtures built.
+PORT_ORIGIN = "port"
+WORKSPACE_ORIGIN = "workspace"
+PORT_TYPE = TrackerPort.__name__
+BACKEND = CODE
+#: Every cross-member invariant of the model, with the packaged module whose
+#: code it checks. ``None`` says the code does not exist yet, which routes the
+#: invariant onto the spec backend now rather than deferring it.
+MODEL_INVARIANTS = {
+    "criterion address minting": "kodezart.domain.fire_spec",
+    "ruling address minting": "kodezart.domain.agent",
+    "run event vocabulary": "kodezart.types.domain.run_event",
+    "run event state table": "kodezart.types.domain.operation",
+    "vendor freedom": "kodezart.types.domain.tracker",
+    "graded sha lapse reading": "kodezart.domain.lapse",
+    "base staleness lapse": "kodezart.domain.base_staleness",
+    "cross-lane pointer resolution": None,
+    "model value naming": None,
+}
+#: A model this suite owns, kept disjoint from the roster above so a case
+#: about an invariant the roster stops naming survives the roster's edits.
+DEFERRED_INVARIANT = "an invariant whose code is not written yet"
+BUILT_INVARIANT = "an invariant whose code exists"
+ABSENT_MODULE = "kodezart.domain.not_yet_built"
+FIXTURE_MODEL = {
+    DEFERRED_INVARIANT: None,
+    BUILT_INVARIANT: "kodezart.types.domain.run_event",
+}
+#: The invariants this backend runs, each with the test that runs it.
+INVARIANTS = {
+    "criterion address minting": "test_identity_invariant_uses_the_actual_code_backend",
+    "ruling address minting": "test_identity_invariant_uses_the_actual_code_backend",
+    "run event vocabulary": "test_run_event_invariant_uses_the_actual_code_backend",
+    "run event state table": "test_run_event_invariant_uses_the_actual_code_backend",
+    "vendor freedom": "test_the_invariant_modules_and_their_values_name_no_vendor",
+    "graded sha lapse reading": (
+        "test_a_grading_behind_head_counts_or_lapses_by_what_its_own_paths_did"
+    ),
+    "base staleness lapse": (
+        "test_a_stale_recorded_base_lapses_the_gradings_a_live_base_leaves_counted"
+    ),
+}
+
+
+def vendor_terms(text: str) -> tuple[str, ...]:
+    """Vendor names a text carries, in any casing or word separation."""
+    words = {word.casefold() for word in _WORD.findall(text)}
+    return tuple(term for term in VENDOR_TERMS if term in words)
+
+
+def vendor_violations(sources: dict[str, str]) -> dict[str, tuple[str, ...]]:
+    return {
+        name: terms
+        for name, text in sorted(sources.items())
+        if (terms := vendor_terms(text))
+    }
+
+
+def _module_path(name: str) -> Path | None:
+    """The packaged file a dotted name addresses, or nothing."""
+    parts = name.split(".")
+    if parts[0] != SOURCE_ROOT.name or len(parts) < 2:
+        return None
+    module = SOURCE_ROOT.joinpath(*parts[1:])
+    for candidate in (module.with_suffix(".py"), module / "__init__.py"):
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def first_party_modules(source: str) -> tuple[Path, ...]:
+    """Every packaged module an invariant reads its asserted values from."""
+    found = set()
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.ImportFrom):
+            names = (
+                []
+                if node.level
+                else [
+                    node.module or "",
+                    *(f"{node.module}.{alias.name}" for alias in node.names),
+                ]
+            )
+        elif isinstance(node, ast.Import):
+            names = [alias.name for alias in node.names]
+        else:
+            continue
+        found.update(path for name in names if (path := _module_path(name)))
+    return tuple(sorted(found))
+
+
+def reachable_modules(seeds) -> set[Path]:
+    """Every packaged module the seeds read a value from, however deep.
+
+    A value an invariant asserts over is composed of the values ITS module
+    imports, so the scanned set is the closure and not the first hop.
+    """
+    reached = set(seeds)
+    frontier = set(seeds)
+    while frontier:
+        found = {
+            module
+            for path in frontier
+            for module in first_party_modules(path.read_text())
+        }
+        frontier = found - reached
+        reached |= frontier
+    return reached
+
+
+def invariant_sources() -> dict[str, str]:
+    """The scanned set, read from the tree rather than transcribed."""
+    paths = reachable_modules(INVARIANT_MODULES.values())
+    paths.update(
+        path
+        for path in (INVARIANT_MODULES[SPEC].parent / "fixtures").iterdir()
+        if path.is_file()
+    )
+    return {
+        path.relative_to(REPO_ROOT).as_posix(): path.read_text()
+        for path in sorted(paths)
+        if path != VENDOR_ROSTER
+    }
+
+
+@cache
+def record_sources() -> Mapping[str, str]:
+    """Every packaged module that can hold the lane record, derived, not listed.
+
+    The lane record's own domain modules are outside the invariant closure —
+    that closure is what the invariant test modules import, and a lane's
+    domain module is imported by neither — so a vendor spelling in one of
+    them reds nothing there. The holder walk answers the question the Check
+    asks instead: which modules can hold this value at all. It reaches the
+    port file and this lane's domain modules in one derived set, and it is
+    grown as a fixed point over the tree, so nothing is transcribed here.
+
+    The breadth that follows from deriving it is intended, not accidental: the
+    answer spans ``composition/``, ``chains/``, ``services/`` and ``types/``
+    as well as the port file and this lane's domain modules, because a caller
+    handed the value back holds it. A red naming a holder outside ``domain/``
+    is therefore this guard working — that module can carry the record, so it
+    may name no vendor either — and not the scan reaching too far.
+
+    Cached because one call parses the whole packaged tree, and the injected
+    case below is parametrized over every member of the answer. The mapping
+    is read-only: a caller that injects a spelling copies it first.
+    """
+    sources = {
+        path.relative_to(REPO_ROOT).as_posix(): path.read_text()
+        for path in sorted(SOURCE_ROOT.rglob("*.py"))
+    }
+    holders = value_holders(sources, identity=RECORD_IDENTITY)
+    return MappingProxyType({name: sources[name] for name in sorted(holders)})
+
+
+def port_surface() -> frozenset[str]:
+    """What the tracker port itself offers, read off the protocol."""
+    return frozenset(name for name in dir(TrackerPort) if not name.startswith("_"))
+
+
+def workspace_handles() -> frozenset[str]:
+    """What the workspace holds: its declared fields, each a value past the port."""
+    return frozenset(field.name for field in dataclasses.fields(ModelWorkspace))
+
+
+def workspace_actions() -> frozenset[str]:
+    """What the workspace does: the methods it declares."""
+    return frozenset(
+        name
+        for name, value in vars(ModelWorkspace).items()
+        if inspect.isfunction(value) and not name.startswith("_")
+    )
+
+
+def _is_fixture(decorator) -> bool:
+    target = decorator.func if isinstance(decorator, ast.Call) else decorator
+    return (isinstance(target, ast.Attribute) and target.attr == "fixture") or (
+        isinstance(target, ast.Name) and target.id == "fixture"
+    )
+
+
+def _functions(tree) -> list:
+    return [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    ]
+
+
+def _fixture_origins(tree) -> dict[str, str]:
+    """Each fixture a module defines, and what it hands whoever asks for it.
+
+    A fixture that declares the port as its return type hands out the port;
+    every other one hands out the workspace it was built from.
+    """
+    return {
+        node.name: (
+            PORT_ORIGIN
+            if node.returns is not None and ast.unparse(node.returns) == PORT_TYPE
+            else WORKSPACE_ORIGIN
+        )
+        for node in _functions(tree)
+        if any(_is_fixture(decorator) for decorator in node.decorator_list)
+    }
+
+
+def _port_analysis(source: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """What a module reads off the port, and every read it makes past it.
+
+    The receiver's spelling is never consulted: a value is the port because a
+    port-returning fixture or a port-annotated parameter handed it over, and
+    it is a workspace because a fixture of this module did.  A workspace is
+    read by calling the actions it declares, its methods.  Its fields are
+    handles on what lies past the port: the one fixture that returns the port
+    is the only place a handle is taken, and it takes exactly one.  An
+    attribute the workspace declares neither way is named, never ignored.
+    """
+    tree = ast.parse(source)
+    parents = {
+        id(child): parent
+        for parent in ast.walk(tree)
+        for child in ast.iter_child_nodes(parent)
+    }
+
+    def scope_of(node) -> tuple[str, ...]:
+        scope = []
+        while id(node) in parents:
+            node = parents[id(node)]
+            if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+                scope.append(node.name)
+        return tuple(reversed(scope))
+
+    def qualified(name: str, scope: tuple[str, ...]) -> str:
+        return ".".join((*scope, name))
+
+    fixtures = _fixture_origins(tree)
+    port_fixtures = {name for name, origin in fixtures.items() if origin == PORT_ORIGIN}
+    module_functions = {
+        node.name: node
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    origins: dict[str, str] = {}
+
+    def lookup(name: str, scope: tuple[str, ...]) -> str | None:
+        for length in range(len(scope), -1, -1):
+            origin = origins.get(qualified(name, scope[:length]))
+            if origin is not None:
+                return origin
+        return None
+
+    def derive(node, scope: tuple[str, ...]) -> str | None:
+        if isinstance(node, ast.Await):
+            return derive(node.value, scope)
+        if isinstance(node, ast.Name):
+            return lookup(node.id, scope)
+        if isinstance(node, (ast.Attribute, ast.Call)):
+            inner = node.value if isinstance(node, ast.Attribute) else node.func
+            return (
+                WORKSPACE_ORIGIN if derive(inner, scope) == WORKSPACE_ORIGIN else None
+            )
+        return None
+
+    def parameters(node) -> list:
+        return [*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs]
+
+    for node in _functions(tree):
+        inner = (*scope_of(node), node.name)
+        for parameter in parameters(node):
+            declared = (
+                PORT_ORIGIN
+                if parameter.annotation is not None
+                and ast.unparse(parameter.annotation) == PORT_TYPE
+                else fixtures.get(parameter.arg)
+            )
+            if declared is not None:
+                origins[qualified(parameter.arg, inner)] = declared
+
+    changed = True
+    while changed:
+        previous = dict(origins)
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Assign, ast.AnnAssign)) and node.value is not None:
+                origin = derive(node.value, scope_of(node))
+                targets = (
+                    node.targets if isinstance(node, ast.Assign) else [node.target]
+                )
+                for target in targets:
+                    if origin is not None and isinstance(target, ast.Name):
+                        origins.setdefault(
+                            qualified(target.id, scope_of(target)), origin
+                        )
+            elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+                target_function = module_functions.get(node.func.id)
+                if target_function is None:
+                    continue
+                scope = scope_of(node)
+                inner = (*scope_of(target_function), target_function.name)
+                declared = parameters(target_function)
+                handed = [
+                    (parameter.arg, argument)
+                    for parameter, argument in zip(
+                        [*target_function.args.posonlyargs, *target_function.args.args],
+                        node.args,
+                        strict=False,
+                    )
+                ]
+                names = {parameter.arg for parameter in declared}
+                handed.extend(
+                    (keyword.arg, keyword.value)
+                    for keyword in node.keywords
+                    if keyword.arg in names
+                )
+                for name, argument in handed:
+                    origin = derive(argument, scope)
+                    if origin is not None:
+                        origins.setdefault(qualified(name, inner), origin)
+        changed = origins != previous
+
+    surface = port_surface()
+    handles_declared = workspace_handles()
+    actions_declared = workspace_actions()
+    workspace_type = ModelWorkspace.__name__
+    attributes: set[str] = set()
+    failures: list[str] = []
+    handles: Counter[str] = Counter()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Attribute):
+            continue
+        scope = scope_of(node)
+        origin = derive(node.value, scope)
+        if origin == PORT_ORIGIN:
+            attributes.add(node.attr)
+            if node.attr not in surface:
+                failures.append(f"{ast.unparse(node)}: not on the {PORT_TYPE} surface")
+        elif origin == WORKSPACE_ORIGIN:
+            enclosing = scope[-1] if scope else ""
+            if node.attr in handles_declared:
+                if enclosing in port_fixtures:
+                    handles[enclosing] += 1
+                else:
+                    failures.append(
+                        f"{ast.unparse(node)}: reaches past the {PORT_TYPE}"
+                    )
+            elif node.attr not in actions_declared:
+                failures.append(
+                    f"{ast.unparse(node)}: not a member {workspace_type} declares"
+                )
+    for name in sorted(port_fixtures):
+        if handles[name] != 1:
+            failures.append(
+                f"{name}: takes {handles[name]} handles off the workspace, not one"
+            )
+    return tuple(sorted(attributes)), tuple(sorted(set(failures)))
+
+
+def port_attributes(source: str) -> tuple[str, ...]:
+    """Every attribute a module reads off the tracker port handed to it."""
+    return _port_analysis(source)[0]
+
+
+def port_reaches(source: str) -> tuple[str, ...]:
+    """Every read a module makes past the tracker port handed to it."""
+    return _port_analysis(source)[1]
+
+
+def _literal(node, constants, seen=frozenset()):
+    """Fold a module constant without importing or executing the module."""
+    if isinstance(node, ast.Name):
+        if node.id in seen:
+            raise AssertionError(f"constant {node.id} is defined in terms of itself")
+        return _literal(constants[node.id], constants, seen | {node.id})
+    return ast.literal_eval(node)
+
+
+def declared_invariants(module: Path) -> tuple[str, dict[str, str]]:
+    """A module's declared backend and the test it runs each invariant by."""
+    tree = ast.parse(module.read_text())
+    constants = {
+        target.id: node.value
+        for node in tree.body
+        if isinstance(node, ast.Assign)
+        for target in node.targets
+        if isinstance(target, ast.Name)
+    }
+    runners = _literal(constants["INVARIANTS"], constants)
+    defined = {
+        node.name
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name.startswith("test_")
+    }
+    missing = sorted(set(runners.values()) - defined)
+    if missing:
+        raise AssertionError(f"{module.name} runs no test named {missing}")
+    return _literal(constants["BACKEND"], constants), runners
+
+
+def backend_for(invariant: str, model: dict[str, str | None]) -> str:
+    """An invariant whose packaged code exists runs on the code backend; one
+    whose code does not yet exist runs on the spec backend, never nowhere."""
+    declared = model[invariant]
+    return CODE if declared and _module_path(declared) else SPEC
+
+
+def routing_failures(
+    model: dict[str, str | None], declarations: dict[str, dict[str, str]]
+) -> tuple[str, ...]:
+    """Every invariant no backend runs, or that the wrong backend runs.
+
+    The model is an argument rather than this module's roster, so a case
+    about an invariant the roster stops naming is still a case this suite
+    can state: dropping an entry cannot drop its own guard with it.
+    """
+    failures = []
+    for invariant in sorted(model):
+        routed = backend_for(invariant, model)
+        running = sorted(
+            backend for backend, runners in declarations.items() if invariant in runners
+        )
+        if running != [routed]:
+            failures.append(
+                f"{invariant}: routed to the {routed} backend, run by "
+                f"{' and '.join(running) or 'no backend'}"
+            )
+    for backend, runners in sorted(declarations.items()):
+        for invariant in sorted(set(runners) - set(model)):
+            failures.append(
+                f"{invariant}: the {backend} backend runs an invariant the "
+                "model does not declare"
+            )
+    return tuple(failures)
+
+
+def actual_declarations() -> dict[str, dict[str, str]]:
+    return {
+        backend: declared_invariants(module)[1]
+        for backend, module in INVARIANT_MODULES.items()
+    }
+
+
+@pytest.mark.parametrize("backend", sorted(INVARIANT_MODULES))
+def test_each_module_declares_the_backend_it_is_registered_under(backend):
+    assert declared_invariants(INVARIANT_MODULES[backend])[0] == backend
+
+
+def fixture_declarations() -> dict[str, dict[str, str]]:
+    """Both backends running the fixture model, each invariant on its own."""
+    return {
+        CODE: {BUILT_INVARIANT: "test_runs_the_built_invariant"},
+        SPEC: {DEFERRED_INVARIANT: "test_runs_the_deferred_invariant"},
+    }
+
+
+def test_every_invariant_runs_on_the_backend_its_code_routes_it_to():
+    assert routing_failures(MODEL_INVARIANTS, actual_declarations()) == ()
+
+
+def test_an_invariant_whose_code_does_not_exist_runs_on_the_spec_backend_now():
+    codeless = {name for name, code in MODEL_INVARIANTS.items() if code is None}
+    assert codeless
+    assert all(backend_for(name, MODEL_INVARIANTS) == SPEC for name in codeless)
+    assert codeless <= set(declared_invariants(INVARIANT_MODULES[SPEC])[1])
+
+
+def test_a_declared_module_that_does_not_exist_routes_to_the_spec_backend():
+    assert _module_path(ABSENT_MODULE) is None
+    invented = "an invariant naming a module nothing built"
+    assert backend_for(invented, {invented: ABSENT_MODULE}) == SPEC
+
+
+def test_the_fixture_model_routes_each_of_its_invariants_to_one_backend():
+    assert _module_path(FIXTURE_MODEL[BUILT_INVARIANT]) is not None
+    assert FIXTURE_MODEL[DEFERRED_INVARIANT] is None
+    assert backend_for(BUILT_INVARIANT, FIXTURE_MODEL) == CODE
+    assert backend_for(DEFERRED_INVARIANT, FIXTURE_MODEL) == SPEC
+    assert routing_failures(FIXTURE_MODEL, fixture_declarations()) == ()
+
+
+@pytest.mark.parametrize("dropped", sorted(FIXTURE_MODEL))
+def test_an_invariant_running_on_neither_backend_fails(dropped):
+    declarations = fixture_declarations()
+    for runners in declarations.values():
+        runners.pop(dropped, None)
+    failures = routing_failures(FIXTURE_MODEL, declarations)
+    assert len(failures) == 1
+    assert dropped in failures[0] and "no backend" in failures[0]
+
+
+def test_the_neither_backend_case_is_not_drawn_from_the_roster_it_guards():
+    """A roster edit cannot take this suite's own guard case with it."""
+    running = {
+        name
+        for module in INVARIANT_MODULES.values()
+        for name in declared_invariants(module)[1]
+    }
+    assert not set(FIXTURE_MODEL) & (set(MODEL_INVARIANTS) | running)
+
+
+def test_a_codeless_invariant_moved_onto_the_code_backend_fails():
+    declarations = fixture_declarations()
+    declarations[CODE][DEFERRED_INVARIANT] = declarations[SPEC].pop(DEFERRED_INVARIANT)
+    failures = routing_failures(FIXTURE_MODEL, declarations)
+    assert len(failures) == 1
+    assert (
+        DEFERRED_INVARIANT in failures[0]
+        and f"routed to the {SPEC} backend" in failures[0]
+    )
+
+
+def test_a_built_invariant_moved_onto_the_spec_backend_fails():
+    declarations = fixture_declarations()
+    declarations[SPEC][BUILT_INVARIANT] = declarations[CODE].pop(BUILT_INVARIANT)
+    failures = routing_failures(FIXTURE_MODEL, declarations)
+    assert len(failures) == 1
+    assert (
+        BUILT_INVARIANT in failures[0]
+        and f"routed to the {CODE} backend" in failures[0]
+    )
+
+
+def test_an_invariant_both_backends_run_fails():
+    declarations = fixture_declarations()
+    declarations[SPEC][BUILT_INVARIANT] = "test_runs_it_a_second_time"
+    failures = routing_failures(FIXTURE_MODEL, declarations)
+    assert len(failures) == 1
+    assert f"{CODE} and {SPEC}" in failures[0]
+
+
+def test_a_backend_running_an_undeclared_invariant_fails():
+    declarations = fixture_declarations()
+    declarations[CODE]["an invariant the model does not name"] = "test_runs_it"
+    failures = routing_failures(FIXTURE_MODEL, declarations)
+    assert len(failures) == 1 and "the model does not declare" in failures[0]
+
+
+@pytest.mark.parametrize("dropped", sorted(MODEL_INVARIANTS))
+def test_a_declared_invariant_its_backend_stops_running_is_named(dropped):
+    declarations = {
+        backend: {name: test for name, test in runners.items() if name != dropped}
+        for backend, runners in actual_declarations().items()
+    }
+    failures = routing_failures(MODEL_INVARIANTS, declarations)
+    assert len(failures) == 1
+    assert dropped in failures[0] and "no backend" in failures[0]
+
+
+def test_a_declared_runner_must_be_a_test_defined_in_that_module(tmp_path):
+    module = tmp_path / "test_another_backend.py"
+    header = 'CODE = "code"\nBACKEND = CODE\n'
+    module.write_text(f'{header}INVARIANTS = {{"an invariant": "test_absent"}}\n')
+    with pytest.raises(AssertionError, match="test_absent"):
+        declared_invariants(module)
+    module.write_text(
+        f'{header}INVARIANTS = {{"an invariant": "test_present"}}\n'
+        "def test_present():\n    pass\n"
+    )
+    assert declared_invariants(module) == (CODE, {"an invariant": "test_present"})
+
+
+def test_a_backend_constant_defined_in_terms_of_itself_refuses(tmp_path):
+    module = tmp_path / "test_circular_backend.py"
+    module.write_text("BACKEND = OTHER\nOTHER = BACKEND\nINVARIANTS = {}\n")
+    with pytest.raises(AssertionError, match="defined in terms of itself"):
+        declared_invariants(module)
+
+
+def test_the_invariant_modules_and_their_values_name_no_vendor():
+    assert vendor_violations(invariant_sources()) == {}
+
+
+def test_the_scanned_set_is_closed_under_the_values_those_values_read():
+    sources = invariant_sources()
+    direct = set()
+    for backend, module in INVARIANT_MODULES.items():
+        assert module.relative_to(REPO_ROOT).as_posix() in sources, backend
+        direct.update(first_party_modules(module.read_text()))
+    for name in sources:
+        path = REPO_ROOT / name
+        if path.suffix != ".py":
+            continue
+        for reached in first_party_modules(path.read_text()):
+            if reached != VENDOR_ROSTER:
+                assert reached.relative_to(REPO_ROOT).as_posix() in sources, name
+    first_hop = {
+        path.relative_to(REPO_ROOT).as_posix()
+        for path in (*INVARIANT_MODULES.values(), *direct)
+    }
+    assert (
+        set(sources)
+        - first_hop
+        - {name for name in sources if not name.endswith(".py")}
+    )
+    assert any(name.endswith(".json") for name in sources)
+    for name, text in sources.items():
+        assert (REPO_ROOT / name).read_text() == text
+
+
+@pytest.mark.parametrize("scanned", sorted(invariant_sources()))
+def test_a_vendor_term_injected_into_any_scanned_source_is_reported(scanned):
+    sources = invariant_sources()
+    sources[scanned] += f"\n{VENDOR_TERMS[0].capitalize()}Client\n"
+    assert vendor_violations(sources) == {scanned: VENDOR_TERMS}
+
+
+@pytest.mark.parametrize(
+    "spelling",
+    [
+        "{title}McpTracker",
+        "{lower}.app",
+        "from adapters import {upper}",
+        "{lower}_client",
+        "{upper}-CLIENT",
+        "tracker.{title}()",
+    ],
+)
+def test_a_vendor_name_is_found_however_it_is_written(spelling):
+    """The guard never spells a vendor itself; it renders the declared roster."""
+    term = VENDOR_TERMS[0]
+    rendered = spelling.format(title=term.capitalize(), lower=term, upper=term.upper())
+    assert vendor_terms(rendered) == VENDOR_TERMS
+
+
+@pytest.mark.parametrize(
+    "innocent",
+    [
+        "nonlinear",
+        "linearity",
+        "collinear",
+        "linea",
+        # The Check's last sentence, asserted rather than left to a green scan:
+        # the label vocabulary the record's own surface carries is domain
+        # vocabulary, so the guard must name none of it.
+        "issue_labels read_scope_labels criterion",
+    ],
+)
+def test_a_longer_word_is_not_a_vendor_name(innocent):
+    assert vendor_terms(innocent) == ()
+
+
+def test_every_module_holding_the_lane_record_names_no_vendor():
+    """The lane record's own holders carry no vendor spelling either (KOD-701)."""
+    assert vendor_violations(dict(record_sources())) == {}
+
+
+def test_the_holder_scan_reaches_the_port_file_and_this_lane_domain_modules():
+    """Both halves the Check names are the walk's own answer, not a list.
+
+    The port file is where the record's tracker vocabulary is declared, and
+    the lane's domain modules are where the value is composed and read back.
+    Both halves are read off the tree here instead of transcribed, and their
+    size is asserted, so an assertion that stopped naming one reds. The scan
+    is then asserted EQUAL to the walk over the whole packaged tree, not a
+    superset of a few paths: a derivation replaced by transcribed paths, or
+    one that stopped reaching a holder nothing else covers, reds here.
+    """
+    walked = value_holders(
+        {
+            path.relative_to(REPO_ROOT).as_posix(): path.read_text()
+            for path in sorted(SOURCE_ROOT.rglob("*.py"))
+        },
+        identity=RECORD_IDENTITY,
+    )
+    halves = {
+        (SOURCE_ROOT / "core" / "protocols.py").relative_to(REPO_ROOT).as_posix(),
+        *(
+            path.relative_to(REPO_ROOT).as_posix()
+            for path in (SOURCE_ROOT / "domain").glob("lane_*.py")
+        ),
+    }
+    # The port file, the record's own module, the entry read, and the lane's
+    # alarm composition, which measures its clock off the record's head.
+    assert len(halves) == 4
+    assert set(record_sources()) == set(walked)
+    assert halves <= set(record_sources())
+
+
+@pytest.mark.parametrize("scanned", sorted(record_sources()))
+def test_a_vendor_term_injected_into_a_holder_of_the_record_is_reported(scanned):
+    sources = dict(record_sources())
+    sources[scanned] += f"\n{VENDOR_TERMS[0].capitalize()}Client\n"
+    assert vendor_violations(sources) == {scanned: VENDOR_TERMS}
+
+
+def test_only_the_selectable_backend_roster_may_name_a_vendor():
+    assert vendor_terms(VENDOR_ROSTER.read_text()) == VENDOR_TERMS
+    assert VENDOR_ROSTER.relative_to(REPO_ROOT).as_posix() not in invariant_sources()
+    # The record's own scan is a second scan, never a second exemption: the
+    # roster stays the one place a vendor may be named, so it must be absent
+    # from this set rather than filtered out of it. Absence alone reads the
+    # same as exemption to the membership assertion, so the derivation is read
+    # too: it writes no filter naming the roster at all.
+    assert VENDOR_ROSTER.relative_to(REPO_ROOT).as_posix() not in record_sources()
+    assert "VENDOR_ROSTER" not in inspect.getsource(record_sources)
+
+
+@pytest.mark.parametrize(
+    "statement,found",
+    [
+        ("from kodezart.core.protocols import TrackerPort", ("core/protocols.py",)),
+        ("import kodezart.core.protocols", ("core/protocols.py",)),
+        ("from kodezart import core", ("core/__init__.py",)),
+        ("from tests.fakes import FakeTrackerPort", ()),
+        ("from . import sibling", ()),
+        ("import kodezart", ()),
+    ],
+)
+def test_only_packaged_imports_are_read_as_asserted_values(statement, found):
+    assert first_party_modules(statement) == tuple(SOURCE_ROOT / name for name in found)
+
+
+def spec_shaped_module(body: str) -> str:
+    """A module in the spec backend's shape, around one probed read.
+
+    The port fixture is deliberately not spelled ``tracker``: what marks a
+    value as the port is the type it declares, never its name.
+    """
+    return (
+        "import pytest\n"
+        "from kodezart.core.protocols import TrackerPort\n\n\n"
+        "@pytest.fixture(params=['native', 'fake'])\n"
+        "async def workspace(request):\n"
+        "    return await model_workspace(request.param)\n\n\n"
+        "@pytest.fixture\n"
+        f"def handle(workspace) -> {PORT_TYPE}:\n"
+        "    return workspace.tracker\n\n\n"
+        "async def test_reads(handle, workspace, monkeypatch):\n"
+        + "".join(f"    {line}\n" for line in body.splitlines())
+    )
+
+
+def test_the_spec_backend_reads_member_bodies_through_the_tracker_port_alone():
+    source = INVARIANT_MODULES[SPEC].read_text()
+    used = set(port_attributes(source))
+    assert used
+    assert used <= port_surface()
+    assert port_reaches(source) == ()
+
+
+@pytest.mark.parametrize(
+    "reach",
+    [
+        "await workspace.native.read_planning_issue(issue_key='k')",
+        "vendor = workspace.native\nawait vendor.read_planning_issue(issue_key='k')",
+        "workspace.native.caller.call_tool('get_issue')",
+        "port = workspace.tracker\nawait port.caller.call_tool('x')",
+        "adapter = workspace.native\nadapter.caller.call_tool('x')",
+        "same = workspace\nsame.native.caller.call_tool('x')",
+        "await handle.caller.call_tool('x')",
+        "await workspace.server.list_issues()",
+        "async def editing():\n    return workspace.native",
+        "await workspace.native().read_planning_issue(issue_key='k')",
+        "workspace.server()",
+        "await workspace.seed([]).native",
+    ],
+)
+def test_a_reach_past_the_port_is_named_however_the_handle_is_spelled(reach):
+    assert port_reaches(spec_shaped_module(reach)) != ()
+
+
+def test_an_attribute_the_workspace_does_not_declare_is_named_not_ignored():
+    assert port_reaches(spec_shaped_module("workspace.client")) == (
+        "workspace.client: not a member ModelWorkspace declares",
+    )
+
+
+@pytest.mark.parametrize(
+    ("source", "named"),
+    [
+        pytest.param(
+            spec_shaped_module("workspace.server()"),
+            (f"workspace.server: reaches past the {PORT_TYPE}",),
+            id="method-spelled field",
+        ),
+        pytest.param(
+            spec_shaped_module(
+                "await workspace.native().read_planning_issue(issue_key='k')"
+            ),
+            (
+                "workspace.native().read_planning_issue: "
+                "not a member ModelWorkspace declares",
+                f"workspace.native: reaches past the {PORT_TYPE}",
+            ),
+            id="method-spelled chain",
+        ),
+        pytest.param(
+            spec_shaped_module("await handle.read_criteria(issue_key='k')")
+            + "\n\n@pytest.fixture\n"
+            + "def other(workspace):\n    return workspace.native\n",
+            (f"workspace.native: reaches past the {PORT_TYPE}",),
+            id="non-port fixture",
+        ),
+    ],
+)
+def test_a_handle_taken_outside_the_port_fixture_is_named_as_a_reach(source, named):
+    """A field is a handle where the port fixture takes it, a reach anywhere else.
+
+    The name of the failure is the assertion: a read spelled as a call reaches
+    past the port just as a plain attribute read does, and a chain names the
+    one true line for each of its attributes.
+    """
+    assert port_reaches(source) == named
+
+
+@pytest.mark.parametrize(
+    "read",
+    [
+        "await workspace.seed([])",
+        "workspace.read_only()",
+        "await workspace.put(None)",
+        "await handle.read_criteria(issue_key='k')",
+        "monkeypatch.setattr(handle, 'read_planning_issue', None)",
+        "original = handle.read_planning_issue\nawait original(issue_key='k')",
+        "async def editing():\n    await workspace.seed([])",
+    ],
+)
+def test_declared_workspace_actions_and_port_reads_are_not_reaches(read):
+    assert port_reaches(spec_shaped_module(read)) == ()
+
+
+def test_a_port_fixture_taking_a_second_handle_off_the_workspace_is_named():
+    source = spec_shaped_module("await handle.read_criteria(issue_key='k')")
+    assert port_reaches(source) == ()
+    assert (
+        port_reaches(
+            source.replace(
+                "    return workspace.tracker",
+                "    workspace.native.caller.call_tool('x')\n"
+                "    return workspace.tracker",
+            )
+        )
+        != ()
+    )
+
+
+def test_an_action_called_inside_the_port_fixture_is_not_a_second_handle():
+    """A handle is a field taken off the workspace; calling an action takes none."""
+    source = spec_shaped_module("await handle.read_criteria(issue_key='k')")
+    assert (
+        port_reaches(
+            source.replace(
+                "    return workspace.tracker",
+                "    workspace.read_only()\n    return workspace.tracker",
+            )
+        )
+        == ()
+    )
+
+
+def test_a_port_fixture_taking_no_handle_off_the_workspace_is_named():
+    source = spec_shaped_module("await handle.read_criteria(issue_key='k')")
+    assert port_reaches(
+        source.replace("    return workspace.tracker", "    return None")
+    ) == ("handle: takes 0 handles off the workspace, not one",)
+
+
+def test_the_workspace_declares_the_port_as_a_field_and_its_reads_as_methods():
+    """The classifier reads the workspace's own declaration, not a transcript."""
+    handles = workspace_handles()
+    actions = workspace_actions()
+    assert "tracker" in handles
+    assert actions
+    assert actions.isdisjoint(handles)
+    assert not any(name.startswith("_") for name in actions)
+
+
+@pytest.mark.parametrize("spelling", ["tracker", "anything", "vendor"])
+def test_the_port_is_recognised_by_its_declared_type_not_its_name(spelling):
+    source = (
+        "from kodezart.core.protocols import TrackerPort\n\n\n"
+        f"async def read({spelling}: {PORT_TYPE}):\n"
+        f"    await {spelling}.read_criteria(issue_key='k')\n"
+        f"    return {spelling}.caller\n"
+    )
+    assert port_attributes(source) == ("caller", "read_criteria")
+    assert port_reaches(source) == (
+        f"{spelling}.caller: not on the {PORT_TYPE} surface",
+    )
+
+
+def test_the_port_handed_to_a_helper_is_followed_into_it():
+    source = spec_shaped_module("await consume(handle)")
+    assert port_reaches(source) == ()
+    assert (
+        port_reaches(
+            source + "\n\nasync def consume(anything):\n    return anything.caller\n"
+        )
+        != ()
+    )
+
+
+def test_a_module_reading_nothing_through_the_port_names_no_attribute():
+    assert port_attributes(spec_shaped_module("assert True")) == ()
+
+
+def identity_violations(sources: dict[str, str]) -> tuple[str, ...]:
+    failures = []
+    for identity, owner in IDENTITY_OWNERS.items():
+        sites = [
+            (path, line)
+            for path, source in sources.items()
+            for line in construction_sites(source, identity=identity)
+        ]
+        if len(sites) != 1 or sites[0][0] != owner:
+            failures.append(
+                f"{identity}: expected one construction in {owner}; {sites}"
+            )
+    for path, source in sources.items():
+        if path.startswith("types/"):
+            for line in invalid_ruling_fields(source):
+                failures.append(f"{path}:{line}: ruling address lacks RulingId")
+    return tuple(failures)
+
+
+def test_identity_invariant_uses_the_actual_code_backend():
+    sources = {
+        path.relative_to(SOURCE_ROOT).as_posix(): path.read_text()
+        for path in SOURCE_ROOT.rglob("*.py")
+    }
+    assert identity_violations(sources) == ()
+
+
+@pytest.mark.parametrize("identity", IDENTITY_OWNERS)
+@pytest.mark.parametrize(
+    "extra",
+    [
+        "{identity}('another')",
+        "from somewhere import {identity} as Key\nKey('another')",
+        "namespace.{identity}('another')",
+        "construct = namespace.{identity}\ncopy = construct\ncopy('another')",
+        "from somewhere import {identity} as Key\n"
+        "construct: object = Key\nconstruct('another')",
+        "def function(value={identity}('another')):\n    return value",
+        "@decorate({identity}('another'))\ndef function():\n    pass",
+    ],
+)
+def test_a_second_explicit_construction_fails_the_same_invariant(identity, extra):
+    sources = {
+        owner: f"{name}('native-key')" for name, owner in IDENTITY_OWNERS.items()
+    }
+    assert identity_violations(sources) == ()
+    sources["another.py"] = extra.format(identity=identity)
+    failures = identity_violations(sources)
+    assert len(failures) == 1
+    assert identity in failures[0] and "another.py" in failures[0]
+
+
+@pytest.mark.parametrize(
+    "annotation",
+    [
+        "str",
+        '"str | None"',
+        "tuple[str, ...]",
+        "bool",
+        "int",
+        "object",
+        "Any",
+        "RulingId | str",
+        "Annotated[str, 'RulingId']",
+        "Text",
+        '"Text"',
+        "CycleA",
+    ],
+)
+def test_a_model_cannot_replace_a_ruling_address_with_text_or_another_type(annotation):
+    sources = {
+        owner: f"{name}('native-key')" for name, owner in IDENTITY_OWNERS.items()
+    }
+    sources["types/domain/record.py"] = (
+        "Text = str\nCycleA = CycleB\nCycleB = CycleA\n"
+        f"class Record:\n    ruling_id: {annotation}\n"
+    )
+    failures = identity_violations(sources)
+    assert len(failures) == 1
+    assert "types/domain/record.py" in failures[0] and "RulingId" in failures[0]
+
+
+@pytest.mark.parametrize(
+    "annotation",
+    [
+        "RulingId",
+        '"RulingId | None"',
+        'tuple["RulingId", ...]',
+        "frozenset[RulingId]",
+        "Annotated[RulingId, 'str']",
+        "Alias",
+        '"Alias"',
+        "namespace.RulingId",
+    ],
+)
+def test_typed_ruling_addresses_preserve_aliases_and_annotation_metadata(annotation):
+    source = (
+        "from somewhere import RulingId as Key\nAlias = Key\n"
+        f"class Record:\n    ruling_ref: {annotation}\n"
+    )
+    assert invalid_ruling_fields(source) == ()
+
+
+def test_identity_mentions_and_annotations_do_not_construct_addresses():
+    source = """
+from somewhere import CriterionRef
+"RulingId('a quotation')"
+class Record:
+    criterion: CriterionRef
+    ruling_id: RulingId
+"""
+    for identity in IDENTITY_OWNERS:
+        assert construction_sites(source, identity=identity) == ()
+
+
+@pytest.mark.parametrize(
+    "replacement",
+    ["RulingId = str", "from builtins import str as RulingId"],
+)
+def test_rebinding_the_identity_name_to_text_does_not_keep_the_address_typed(
+    replacement,
+):
+    assert invalid_ruling_fields(
+        f"{replacement}\nclass Record:\n    ruling_id: RulingId"
+    )
+
+
+@pytest.mark.parametrize("identity", IDENTITY_OWNERS)
+def test_moving_the_only_construction_to_another_owner_fails(identity):
+    sources = {
+        owner: f"{name}('native-key')" for name, owner in IDENTITY_OWNERS.items()
+    }
+    sources["another.py"] = sources.pop(IDENTITY_OWNERS[identity])
+    failures = identity_violations(sources)
+    assert len(failures) == 1 and identity in failures[0]
+
+
+@pytest.mark.parametrize("declaration", ["RulingId = str", "RulingId: TypeAlias = str"])
+def test_qualified_shadow_cannot_make_text_an_identity(declaration):
+    source = (
+        f"class Types:\n    {declaration}\n"
+        "class BadRecord:\n    ruling_id: Types.RulingId\n"
+        "class GoodRecord:\n    ruling_id: RulingId\n"
+    )
+    assert invalid_ruling_fields(source) == (4,)
+    assert (
+        invalid_ruling_fields(
+            "import somewhere as namespace\nclass Record:\n"
+            "    ruling_id: namespace.RulingId"
+        )
+        == ()
+    )
+
+
+def test_the_ruling_address_names_are_the_five_the_guard_carries():
+    """The set's membership, stated once, because the arms below derive from it.
+
+    Deriving the arms from the set is what makes a sixth name arrive with an arm
+    of its own instead of silently uncovered.  It also means REMOVING a name
+    removes its arm, so a shrinking set would report nothing at all: four arms
+    would collect where five did, and nothing would be red.  This is the
+    assertion that reds instead.
+
+    Tying the set to the landed models was the other candidate and is refused on
+    purpose: `AmendmentRecord.id` and `RulingProtectedTestRef.source_ref` also
+    carry a ruling id, and a guard that reported any field named `id` annotated
+    as a bare string would report most of the tree.  Deriving from the models
+    would therefore need a list of names to ignore, which is the hand-listed
+    surface this set exists to avoid.
+    """
+    assert RULING_ADDRESS_NAMES == frozenset(
+        {"ruling_id", "ruling_ids", "ruling_ref", "ruling_refs", "supersedes"},
+    )
+
+
+@pytest.mark.parametrize("field", sorted(RULING_ADDRESS_NAMES))
+def test_every_ruling_address_name_refuses_a_bare_string_annotation(field):
+    """Each name in the guard's set is a name the guard actually acts on.
+
+    Over real `src/` the entries are indistinguishable from one another: every
+    field is already typed, so removing a name from the set changes nothing
+    observable and a guard entry that does nothing reads exactly like one that
+    works. Fed a crafted record per name, the entry has to report — which is
+    what makes a later untyped field under `types/` a failure rather than a
+    silent pass.
+    """
+    assert invalid_ruling_fields(f"class Record:\n    {field}: str") == (2,)
+    assert invalid_ruling_fields(f"class Record:\n    {field}: RulingId") == ()
+
+
+def test_aliasing_a_local_namespace_preserves_its_untyped_address_refusal():
+    assert invalid_ruling_fields(
+        "class Types:\n    RulingId = str\n"
+        "Alias = Types\nclass Record:\n    ruling_id: Alias.RulingId"
+    ) == (5,)
+
+
+@pytest.fixture
+def deployed_event_table():
+    """The code backend reads the shipped table, not a copied invariant roster."""
+    example = SOURCE_ROOT.parents[1] / "docs" / "operation.example.toml"
+    return OperationConfig.model_validate(tomllib.loads(example.read_text()))
+
+
+def test_run_event_invariant_uses_the_actual_code_backend(deployed_event_table):
+    vocabulary = {event.value for event in RunEventKind}
+    assert set(deployed_event_table.run_event_states) == vocabulary
+    assert {event.value for event in RUN_EVENT_PUBLISHERS} == vocabulary
+    deployed_event_table.require_run_event_table()
+
+
+@pytest.mark.parametrize("posted", tuple(RUN_EVENT_PUBLISHERS))
+def test_posted_event_missing_row_fails_and_restoring_it_passes(
+    deployed_event_table, posted
+):
+    effect = deployed_event_table.run_event_states.pop(posted.value)
+    with pytest.raises(RunEventTableError) as failure:
+        deployed_event_table.require_run_event_table()
+    assert failure.value.failures == (
+        f"run_event_states is missing event {posted.value!r}",
+    )
+    deployed_event_table.run_event_states[posted.value] = effect
+    deployed_event_table.require_run_event_table()
+
+
+def test_table_only_event_fails_the_other_side_of_the_same_invariant(
+    deployed_event_table,
+):
+    deployed_event_table.run_event_states["invented_event"] = (
+        RunEventEffect.NO_TRANSITION
+    )
+    with pytest.raises(RunEventTableError) as failure:
+        deployed_event_table.require_run_event_table()
+    assert failure.value.failures == (
+        "run_event_states names undeclared event 'invented_event'",
+    )
+    del deployed_event_table.run_event_states["invented_event"]
+    deployed_event_table.require_run_event_table()
+
+
+def test_a_posting_declaration_outside_the_vocabulary_is_named(
+    deployed_event_table, monkeypatch
+):
+    class ExtraPostedEvent(StrEnum):
+        UNKNOWN = "unregistered_posted_event"
+
+    monkeypatch.setitem(
+        RUN_EVENT_PUBLISHERS, ExtraPostedEvent.UNKNOWN, RunEventPublisher.RAISER
+    )
+    with pytest.raises(RunEventTableError) as failure:
+        deployed_event_table.require_run_event_table()
+    assert failure.value.failures == (
+        "run-event notification partition names undeclared event "
+        "'unregistered_posted_event'",
+    )
+
+
+def test_the_deployed_event_table_names_no_vendor_state(deployed_event_table):
+    table = "\n".join(
+        f"{event} {effect}"
+        for event, effect in sorted(deployed_event_table.run_event_states.items())
+    )
+    assert vendor_violations({"run_event_states": table}) == {}
+
+
+DOMAIN_PACKAGE = "kodezart.types.domain"
+GRADED_SHA_FIELD = "graded_sha"
+GRADED_SHA = "4f2c7a1b9e0d3c5a8f6b2d4e7c9a1b3d5f7e9c0a"
+
+
+def _annotation_leaves(annotation) -> list[object]:
+    """The annotation and every type argument nested inside it."""
+    leaves: list[object] = [annotation]
+    for argument in get_args(annotation):
+        leaves.extend(_annotation_leaves(argument))
+    return leaves
+
+
+def _nested_records(annotation) -> list[type[BaseModel]]:
+    return [
+        leaf
+        for leaf in _annotation_leaves(annotation)
+        if isinstance(leaf, type) and issubclass(leaf, BaseModel)
+    ]
+
+
+def carries_graded_sha(
+    record: type[BaseModel], seen: frozenset[type[BaseModel]] = frozenset()
+) -> bool:
+    """Whether a record reaches a graded sha through its own fields."""
+    for name, field in record.model_fields.items():
+        if name == GRADED_SHA_FIELD:
+            return True
+        if any(
+            nested not in seen and carries_graded_sha(nested, seen | {record})
+            for nested in _nested_records(field.annotation)
+        ):
+            return True
+    return False
+
+
+def fields_reaching(record: type[BaseModel], leaf: object) -> tuple[str, ...]:
+    """The fields of a record whose annotation reaches ``leaf`` at any depth."""
+    return tuple(
+        name
+        for name, info in record.model_fields.items()
+        if any(found is leaf for found in _annotation_leaves(info.annotation))
+    )
+
+
+def enums_reached(record: type[BaseModel]) -> tuple[type[Enum], ...]:
+    """Every enum class the record's own fields reach, sorted by class name.
+
+    Unfolds typing arguments exactly as ``fields_reaching`` does and no
+    further: an enum reached through a sub-model field is that record's own
+    declaration, not this one's.  Sorted by name rather than by field order,
+    so adding a field ahead of another is not a difference this reports.
+    """
+    reached = {
+        leaf
+        for info in record.model_fields.values()
+        for leaf in _annotation_leaves(info.annotation)
+        if isinstance(leaf, type) and issubclass(leaf, Enum)
+    }
+    return tuple(sorted(reached, key=lambda enum: enum.__name__))
+
+
+def boolean_verdicts(records: dict[str, type[BaseModel]]) -> tuple[str, ...]:
+    """Every boolean-annotated field on a record that carries a graded sha.
+
+    A boolean carried inside a sub-model field of a record is not unfolded by
+    this ban, because ``fields_reaching`` unfolds typing arguments only: a
+    stated blind spot of the ban, not a closed one (KOD-592).
+    """
+    return tuple(
+        f"{name}.{field}"
+        for name, record in sorted(records.items())
+        if carries_graded_sha(record)
+        for field in fields_reaching(record, bool)
+    )
+
+
+def _is_enum(annotation: object) -> bool:
+    return isinstance(annotation, type) and issubclass(annotation, Enum)
+
+
+def verdict_enum_fields(
+    records: dict[str, type[BaseModel]],
+) -> tuple[tuple[str, object], ...]:
+    """Every enum-annotated field of a record that carries a graded sha.
+
+    The mirror of the ban beside it: that one reports a partition member's
+    boolean fields, this one reports the fields whose own top-level
+    annotation is itself an Enum class, and both read the partition off the
+    tree through ``carries_graded_sha``.  Nothing inside the annotation is
+    unfolded.  A field is recognised by the type it names and never by its
+    own name, so a verdict widened to ``str`` leaves this table rather than
+    staying in it under a name the table kept; a verdict widened to ``Enum
+    | None`` leaves it, because a union is not an Enum class; and a
+    ``Literal`` of enum members leaves it, because a narrowed verdict is not
+    the enum.
+
+    Blind spot, stated where the ban beside it states its own (KOD-592): an
+    enum inside a sub-model field is not unfolded, so a verdict carried only
+    through a sub-model is outside this table and outside the widened
+    reading below.
+    """
+    return tuple(
+        (f"{name}.{field}", info.annotation)
+        for name, record in sorted(records.items())
+        if carries_graded_sha(record)
+        for field, info in sorted(record.model_fields.items())
+        if _is_enum(info.annotation)
+    )
+
+
+def widened_verdict_fields(
+    records: dict[str, type[BaseModel]], names: frozenset[str]
+) -> tuple[tuple[str, object], ...]:
+    """A partition member's verdict field annotated as no enum class.
+
+    A field is a verdict here in either of two ways.  By name: *names* is
+    derived from the table above rather than written down, so a record
+    joining the partition with ``verdict: str`` is reported although the
+    table above does not hold it.  By annotation: a field whose annotation
+    reaches, through ``fields_reaching``, an enum the table over *records*
+    holds, without being that enum, so ``prior_verdict: AuditVerdict |
+    None`` is reported under a name no table row carries.
+
+    A member of such an enum counts as the enum itself, so a verdict
+    narrowed to ``Literal[AuditVerdict.HOLDS]`` under a new name is reported
+    too.
+
+    Blind spot: a verdict carried under a new name with an annotation that
+    reaches no enum of the table (``outcome: str``) is not seen.
+    """
+    enums = {annotation for _, annotation in verdict_enum_fields(records)}
+    return tuple(
+        (f"{name}.{field}", info.annotation)
+        for name, record in sorted(records.items())
+        if carries_graded_sha(record)
+        for field, info in sorted(record.model_fields.items())
+        if not _is_enum(info.annotation)
+        and (field in names or _reaches_a_table_enum(info.annotation, enums))
+    )
+
+
+def _reaches_a_table_enum(annotation: object, enums: set[type[Enum]]) -> bool:
+    """Whether an annotation reaches one of *enums* or one of its members."""
+    return any(
+        found is enum or isinstance(found, enum)
+        for enum in enums
+        for found in _annotation_leaves(annotation)
+    )
+
+
+def satisfaction_carriers(records: dict[str, type[BaseModel]]) -> tuple[str, ...]:
+    """Every record that addresses a criterion and carries its satisfaction.
+
+    A record is a carrier when one field reaches ``CriterionRef`` and one
+    reaches ``CrossOffState``, each anywhere in its annotation: a carrier is
+    recognised by the two types it names, never by a field's name.
+    """
+    return tuple(
+        name
+        for name, record in sorted(records.items())
+        if fields_reaching(record, CriterionRef)
+        and fields_reaching(record, CrossOffState)
+    )
+
+
+def domain_records() -> dict[str, type[BaseModel]]:
+    """Every record the domain value package defines, read from the tree."""
+    package = importlib.import_module(DOMAIN_PACKAGE)
+    records = {}
+    for module_info in pkgutil.iter_modules(package.__path__):
+        module = importlib.import_module(f"{DOMAIN_PACKAGE}.{module_info.name}")
+        for value in vars(module).values():
+            if (
+                isinstance(value, type)
+                and issubclass(value, BaseModel)
+                and value.__module__ == module.__name__
+            ):
+                records[f"{module_info.name}.{value.__name__}"] = value
+    return records
+
+
+class _RingHead(CamelCaseModel):
+    """A record whose graded sha is reachable only through a cycle."""
+
+    peer: "_RingTail | None" = None
+
+
+class _RingTail(CamelCaseModel):
+    peer: _RingHead | None = None
+    graded_sha: str = GRADED_SHA
+
+
+_RingHead.model_rebuild()
+
+
+def cross_off(**overrides) -> CriterionCrossOff:
+    fields = {
+        "criterion": "criterion/alpha",
+        "state": CrossOffState.passed,
+        "evidence": CriterionEvidence(
+            graded_sha=GRADED_SHA,
+            test="tests/domain/test_criterion_lifecycle.py::test_a_cross_off",
+        ),
+    }
+    return CriterionCrossOff(**(fields | overrides))
+
+
+def test_the_re_derivation_class_and_cross_off_state_members_are_exactly_these():
+    assert [(member.name, member.value) for member in RederivationClass] == [
+        ("cheap", "cheap"),
+        ("expensive", "expensive"),
+        ("observed", "observed"),
+    ]
+    assert [(member.name, member.value) for member in CrossOffState] == [
+        ("passed", "passed"),
+        ("failed", "failed"),
+        ("lapsed", "lapsed"),
+        ("undemonstrated", "undemonstrated"),
+    ]
+    assert PATH_BOUND_CLASSES == {
+        RederivationClass.expensive,
+        RederivationClass.observed,
+    }
+
+
+def test_the_undemonstrated_reason_members_are_exactly_these():
+    assert [(member.name, member.value) for member in UndemonstratedReason] == [
+        ("workspace_not_the_graded_sha", "workspace_not_the_graded_sha"),
+        ("check_survived_mutation", "check_survived_mutation"),
+        ("satisfied_at_base", "satisfied_at_base"),
+        ("base_reading_unsettled", "base_reading_unsettled"),
+    ]
+
+
+@pytest.mark.parametrize(
+    "state",
+    [CrossOffState.passed, CrossOffState.failed, CrossOffState.lapsed],
+)
+def test_a_reason_is_named_for_exactly_the_undemonstrated_state(state):
+    """Both directions: the state that has no verdict names its reading.
+
+    A reason on a state that HAS a verdict would say two things about one
+    criterion, and the undemonstrated state without one would say the
+    grading proved nothing without saying which reading came back empty.
+    """
+    with pytest.raises(ValidationError, match="names the reading that failed"):
+        cross_off(state=CrossOffState.undemonstrated)
+    with pytest.raises(ValidationError, match="names the reading that failed"):
+        cross_off(
+            state=state,
+            undemonstrated_reason=(UndemonstratedReason.workspace_not_the_graded_sha),
+        )
+    for reason in UndemonstratedReason:
+        named = cross_off(
+            state=CrossOffState.undemonstrated, undemonstrated_reason=reason
+        )
+        assert named.undemonstrated_reason is reason
+
+
+@pytest.mark.parametrize(
+    "declared", [RederivationClass.expensive, RederivationClass.observed]
+)
+def test_a_path_bound_cross_off_refuses_empty_exercised_paths(declared):
+    with pytest.raises(ValidationError, match="path prefixes its grading exercised"):
+        cross_off(rederivation_class=declared)
+    named = cross_off(
+        rederivation_class=declared,
+        exercised_paths=("src/kodezart/domain/", "src/kodezart/adapters/"),
+    )
+    assert named.exercised_paths == (
+        "src/kodezart/domain/",
+        "src/kodezart/adapters/",
+    )
+
+
+@pytest.mark.parametrize(
+    ("blank", "refusal"),
+    [
+        ("", "string_too_short"),
+        (" ", "string_pattern_mismatch"),
+        ("\t", "string_pattern_mismatch"),
+    ],
+)
+def test_an_exercised_path_that_names_nothing_refuses(blank, refusal):
+    """Each case reaches the annotated path itself, and names the rule that
+    refused it: emptiness has its own rule, and a path of whitespace is
+    refused by the pattern alone.
+    """
+    with pytest.raises(ValidationError) as raised:
+        cross_off(
+            rederivation_class=RederivationClass.expensive, exercised_paths=(blank,)
+        )
+    assert [(error["type"], error["loc"]) for error in raised.value.errors()] == [
+        (refusal, ("exercised_paths", 0))
+    ]
+
+
+def test_a_cheap_cross_off_carries_no_exercised_paths_and_still_validates():
+    assert cross_off(rederivation_class=RederivationClass.cheap).exercised_paths == ()
+
+
+def test_a_verdict_carrying_no_class_resolves_to_the_cheap_class():
+    assert cross_off().rederivation_class is RederivationClass.cheap
+    validated = CriterionCrossOff.model_validate(
+        {
+            "criterion": "criterion/alpha",
+            "state": "passed",
+            "evidence": {"gradedSha": GRADED_SHA, "test": "tests/x.py::test_y"},
+        }
+    )
+    assert validated.rederivation_class is RederivationClass.cheap
+    assert validated.state is CrossOffState.passed
+    assert validated.evidence.graded_sha == GRADED_SHA
+
+
+def test_a_second_iteration_declaring_a_different_class_raises_the_sticky_error():
+    iterations = [
+        cross_off(
+            rederivation_class=RederivationClass.expensive, exercised_paths=("src/",)
+        ),
+        cross_off(
+            rederivation_class=RederivationClass.expensive, exercised_paths=("src/",)
+        ),
+        cross_off(rederivation_class=RederivationClass.cheap),
+    ]
+    with pytest.raises(StickyClassError) as raised:
+        held_rederivation_classes(iterations)
+    assert raised.value.criterion == "criterion/alpha"
+    assert raised.value.held is RederivationClass.expensive
+    assert raised.value.declared is RederivationClass.cheap
+    assert "criterion/alpha" in str(raised.value)
+
+
+def test_a_cheap_class_declared_expensive_later_raises_the_sticky_error():
+    iterations = [
+        cross_off(rederivation_class=RederivationClass.cheap),
+        cross_off(
+            rederivation_class=RederivationClass.expensive, exercised_paths=("src/",)
+        ),
+    ]
+    with pytest.raises(StickyClassError) as raised:
+        held_rederivation_classes(iterations)
+    assert raised.value.criterion == "criterion/alpha"
+    assert raised.value.held is RederivationClass.cheap
+    assert raised.value.declared is RederivationClass.expensive
+
+
+def test_each_identity_holds_its_own_class_across_interleaved_iterations():
+    held = held_rederivation_classes(
+        [
+            cross_off(criterion="criterion/alpha"),
+            cross_off(
+                criterion="criterion/beta",
+                rederivation_class=RederivationClass.expensive,
+                exercised_paths=("src/kodezart/adapters/",),
+            ),
+            cross_off(
+                criterion="criterion/gamma",
+                rederivation_class=RederivationClass.observed,
+                exercised_paths=("docs/",),
+            ),
+            cross_off(criterion="criterion/alpha"),
+            cross_off(
+                criterion="criterion/gamma",
+                rederivation_class=RederivationClass.observed,
+                exercised_paths=("docs/", "src/"),
+            ),
+            cross_off(
+                criterion="criterion/beta",
+                rederivation_class=RederivationClass.expensive,
+                exercised_paths=("tests/",),
+            ),
+        ]
+    )
+    assert held == {
+        "criterion/alpha": RederivationClass.cheap,
+        "criterion/beta": RederivationClass.expensive,
+        "criterion/gamma": RederivationClass.observed,
+    }
+
+
+def test_the_graded_sha_partition_carries_no_boolean_verdict():
+    records = domain_records()
+    partition = {name for name in records if carries_graded_sha(records[name])}
+    assert "criterion_lifecycle.CriterionCrossOff" in partition
+    assert "criterion_evidence.CriterionEvidence" in partition
+    assert "audit_evidence.AuditEvidenceObservation" in partition
+    assert "check_observation.ObservedChecks" not in partition
+    assert boolean_verdicts(records) == ()
+
+
+#: The enum-annotated fields of the graded-sha partition, written down: the
+#: assertion the tree is read against, and the source of the verdict names
+#: the controls below are parametrized over.
+VERDICT_ENUM_TABLE: tuple[tuple[str, object], ...] = (
+    ("audit_evidence.AuditEvidenceObservation.verdict", AuditVerdict),
+    ("audit_evidence.AuditRestampTrace.verdict", AuditVerdict),
+    ("audit_forge.AuditForgeObservation.verdict", AuditVerdict),
+    ("criterion_lifecycle.CriterionCrossOff.rederivation_class", RederivationClass),
+    ("criterion_lifecycle.CriterionCrossOff.state", CrossOffState),
+)
+TABLE_VERDICT_NAMES = sorted({site.rsplit(".", 1)[1] for site, _ in VERDICT_ENUM_TABLE})
+TABLE_VERDICT_ENUMS = sorted(
+    {annotation for _, annotation in VERDICT_ENUM_TABLE},
+    key=lambda enum: enum.__name__,
+)
+
+
+def verdict_names() -> frozenset[str]:
+    """The names a verdict is carried under, read off the partition itself."""
+    return frozenset(
+        site.rsplit(".", 1)[1] for site, _ in verdict_enum_fields(domain_records())
+    )
+
+
+def test_every_verdict_the_graded_sha_partition_carries_is_a_state_enum():
+    records = domain_records()
+    assert verdict_enum_fields(records) == VERDICT_ENUM_TABLE
+    names = verdict_names()
+    assert names == frozenset(TABLE_VERDICT_NAMES)
+    assert widened_verdict_fields(records, names) == ()
+
+
+@pytest.mark.parametrize("field", TABLE_VERDICT_NAMES)
+@pytest.mark.parametrize(
+    "annotation",
+    [
+        str,
+        int,
+        AuditVerdict | None,
+        Literal["holds", "refuted"],
+        Literal[AuditVerdict.HOLDS],
+    ],
+)
+def test_a_widened_verdict_beside_a_graded_sha_leaves_the_table_and_is_reported(
+    field, annotation
+):
+    probe = create_model(
+        "Probe",
+        __base__=CamelCaseModel,
+        evidence=(CriterionEvidence, ...),
+        **{field: (annotation, ...)},
+    )
+    records = {"probe.Probe": probe}
+    names = verdict_names()
+    assert verdict_enum_fields(records) == ()
+    assert widened_verdict_fields(records, names) == (
+        (f"probe.Probe.{field}", annotation),
+    )
+
+
+def test_the_table_enums_the_new_name_controls_run_over_are_read_off_the_table():
+    assert TABLE_VERDICT_ENUMS
+    assert AuditVerdict in TABLE_VERDICT_ENUMS
+    assert CrossOffState in TABLE_VERDICT_ENUMS
+    assert RederivationClass in TABLE_VERDICT_ENUMS
+
+
+@pytest.mark.parametrize("field", ["prior_verdict", "outcome"])
+@pytest.mark.parametrize("enum", TABLE_VERDICT_ENUMS, ids=lambda enum: enum.__name__)
+def test_a_widened_verdict_under_a_name_no_table_row_carries_is_reported(enum, field):
+    probe = create_model(
+        "Probe",
+        __base__=CamelCaseModel,
+        evidence=(CriterionEvidence, ...),
+        **{field: (enum | None, None)},
+    )
+    records = {**domain_records(), "probe.Probe": probe}
+    assert field not in verdict_names()
+    assert widened_verdict_fields(records, verdict_names()) == (
+        (f"probe.Probe.{field}", enum | None),
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "annotation"),
+    [
+        (
+            "prior_verdict",
+            Literal[AuditVerdict.HOLDS, AuditVerdict.REFUTED] | None,
+        ),
+        ("outcome", Literal[AuditVerdict.HOLDS]),
+    ],
+)
+def test_a_literal_of_table_enum_members_under_a_new_name_is_reported(
+    field, annotation
+):
+    probe = create_model(
+        "Probe",
+        __base__=CamelCaseModel,
+        evidence=(CriterionEvidence, ...),
+        **{field: (annotation, None)},
+    )
+    records = {**domain_records(), "probe.Probe": probe}
+    assert field not in verdict_names()
+    assert widened_verdict_fields(records, verdict_names()) == (
+        (f"probe.Probe.{field}", annotation),
+    )
+
+
+def test_an_enum_verdict_on_a_record_without_a_graded_sha_is_outside_the_partition():
+    probe = create_model("Probe", __base__=CamelCaseModel, verdict=(AuditVerdict, ...))
+    plain = create_model("Plain", __base__=CamelCaseModel, verdict=(str, ...))
+    records = {"probe.Probe": probe, "probe.Plain": plain}
+    assert verdict_enum_fields(records) == ()
+    assert widened_verdict_fields(records, verdict_names()) == ()
+
+
+def test_a_plain_field_that_is_not_a_verdict_is_not_reported():
+    probe = create_model(
+        "Probe",
+        __base__=CamelCaseModel,
+        evidence=(CriterionEvidence, ...),
+        note=(str, ...),
+    )
+    records = {"probe.Probe": probe}
+    names = verdict_names()
+    assert verdict_enum_fields(records) == ()
+    assert widened_verdict_fields(records, names) == ()
+
+
+@pytest.mark.parametrize("annotation", [bool, bool | None, tuple[bool, ...]])
+def test_a_boolean_verdict_beside_a_graded_sha_is_reported(annotation):
+    probe = create_model(
+        "Probe",
+        __base__=CamelCaseModel,
+        evidence=(CriterionEvidence, ...),
+        verdict=(annotation, ...),
+    )
+    assert boolean_verdicts({"probe.Probe": probe}) == ("probe.Probe.verdict",)
+
+
+def test_a_boolean_on_a_record_that_carries_no_graded_sha_is_not_reported():
+    probe = create_model("Probe", __base__=CamelCaseModel, verdict=(bool, ...))
+    assert boolean_verdicts({"probe.Probe": probe}) == ()
+
+
+def test_a_graded_sha_reached_through_a_record_cycle_is_still_found():
+    assert carries_graded_sha(_RingHead)
+    assert carries_graded_sha(_RingTail)
+    probe = create_model(
+        "Probe", __base__=CamelCaseModel, ring=(_RingHead, ...), verdict=(bool, ...)
+    )
+    assert boolean_verdicts({"probe.Probe": probe}) == ("probe.Probe.verdict",)
+
+
+#: The one record in the domain package that addresses a criterion and carries
+#: that criterion's satisfaction.
+SATISFACTION_CARRIER = "criterion_lifecycle.CriterionCrossOff"
+
+
+def test_the_domain_package_has_one_satisfaction_carrier_and_its_state_is_the_enum():
+    """One per-criterion satisfaction carrier in the domain package, and its
+    state field is the enum itself, not a widening of it.
+
+    The boolean ban beside this count is over records carrying a graded sha.
+    ``CriterionResult.passed`` in ``types/domain/agent.py`` is the evaluator's
+    raw output that ``cross_off_state`` turns into a ``CrossOffState``; it
+    carries no graded sha and addresses no ``CriterionRef``, so it is outside
+    both the ban and this count.
+    """
+    assert satisfaction_carriers(domain_records()) == (SATISFACTION_CARRIER,)
+    assert fields_reaching(CriterionCrossOff, CrossOffState) == ("state",)
+    assert CriterionCrossOff.model_fields["state"].annotation is CrossOffState
+
+
+#: Every enum a cross-off's own fields may reach, and why each belongs: the
+#: satisfaction state itself, what re-deriving the criterion costs, and which
+#: reading came back empty on the one state that carries no verdict.  A fourth
+#: enum here would be a second declaration of the same resolution beside the
+#: state field, whether or not it were named like one.
+CROSS_OFF_ENUMS = (CrossOffState, RederivationClass, UndemonstratedReason)
+
+
+def test_the_satisfaction_carrier_reaches_exactly_these_enums():
+    """The state field is the single declaring site, so no second enum joins it.
+
+    Derived from the model rather than from a list of field names: a field
+    added for an honest reason is reported only when it brings an enum the
+    carrier has no business declaring, and the reason it is reported is the
+    enum, which is the thing the single-declaring-site rule is about.  The
+    boolean ban beside this one closes the same gap for a ``bool``; neither
+    ban sees what the other does.
+    """
+    assert enums_reached(CriterionCrossOff) == CROSS_OFF_ENUMS
+
+
+@pytest.mark.parametrize(
+    ("fields", "carriers"),
+    [
+        pytest.param(
+            {"criterion": CriterionRef, "state": CrossOffState},
+            (SATISFACTION_CARRIER, "probe.Probe"),
+            id="both",
+        ),
+        pytest.param(
+            {"criteria": tuple[CriterionRef, ...], "state": CrossOffState | None},
+            (SATISFACTION_CARRIER, "probe.Probe"),
+            id="nested",
+        ),
+        pytest.param(
+            {
+                "criteria": tuple[CriterionRef | None, ...],
+                "state": dict[str, CrossOffState | None],
+            },
+            (SATISFACTION_CARRIER, "probe.Probe"),
+            id="nested twice",
+        ),
+        pytest.param(
+            {"criterion": CriterionRef}, (SATISFACTION_CARRIER,), id="address only"
+        ),
+        pytest.param(
+            {"state": CrossOffState}, (SATISFACTION_CARRIER,), id="state only"
+        ),
+        pytest.param(
+            {"criterion": str, "state": CrossOffState},
+            (SATISFACTION_CARRIER,),
+            id="plain address",
+        ),
+        pytest.param(
+            {"criterion": CriterionRef, "state": str},
+            (SATISFACTION_CARRIER,),
+            id="plain state",
+        ),
+    ],
+)
+def test_a_second_record_carrying_a_criterion_and_its_state_is_a_second_carrier(
+    fields, carriers
+):
+    probe = create_model(
+        "Probe",
+        __base__=CamelCaseModel,
+        **{name: (annotation, ...) for name, annotation in fields.items()},
+    )
+    assert (
+        satisfaction_carriers(
+            {SATISFACTION_CARRIER: CriterionCrossOff, "probe.Probe": probe}
+        )
+        == carriers
+    )
+
+
+# ---------------------------------------------------------------------------
+# The one lapse expression, discriminated by a two-armed fixture (KOD-596).
+# ---------------------------------------------------------------------------
+
+#: A head the graded sha of the cross-offs above sits behind.
+LATER_HEAD = "b" * 40
+EXERCISED = "src/kodezart/domain/"
+
+
+def moved(*paths: str) -> ChangesetDigest:
+    """The commit record's changed-path reading, as the rule takes it."""
+    return ChangesetDigest(
+        file_paths=list(paths),
+        commit_subjects=["a commit after the grading"],
+        commit_count=1,
+    )
+
+
+def standing_at(
+    *,
+    graded: CriterionCrossOff,
+    changeset: ChangesetDigest,
+    base_stale: bool = False,
+) -> GradedState:
+    """What *graded* is worth at ``LATER_HEAD``, asked of the one expression."""
+    return graded_state(
+        graded_sha=graded.evidence.graded_sha,
+        head_sha=LATER_HEAD,
+        rederivation_class=graded.rederivation_class,
+        exercised_paths=graded.exercised_paths,
+        changeset=changeset,
+        base_stale=base_stale,
+    )
+
+
+def test_a_grading_behind_head_counts_or_lapses_by_what_its_own_paths_did():
+    """Both arms over one graded criterion, in one fixture.
+
+    The criterion passed at a sha the head has since left behind. In the
+    first arm nothing it exercised moved, so its grading still stands and it
+    counts; in the second one of its own prefixes moved, so it does not. An
+    implementation keyed on the graded sha equalling the head answers the
+    same thing to both and the first arm reds; one that never lapses answers
+    the same thing to both and the second arm reds.
+
+    The changed paths come from the commit record between the two shas.
+    Nothing here runs a command or reads a tree: the rule is arithmetic over
+    values the caller already holds, which is what lets one expression serve
+    every record that carries a graded sha.
+    """
+    graded = cross_off(
+        rederivation_class=RederivationClass.expensive, exercised_paths=(EXERCISED,)
+    )
+    assert graded.evidence.graded_sha != LATER_HEAD
+
+    untouched = standing_at(graded=graded, changeset=moved("docs/architecture.md"))
+    touched = standing_at(graded=graded, changeset=moved(f"{EXERCISED}lapse.py"))
+
+    assert untouched is GradedState.counted
+    assert touched is GradedState.lapsed
+    assert untouched is not touched
+
+
+#: The base a lane was dispatched on: one blocker's deliverable, at one sha.
+RECORDED_BASE = BaseSpec(
+    inputs=(
+        BaseInput(
+            blocker_issue_id="criterion/blocker",
+            branch="feature/blocker",
+            sha="c" * 40,
+        ),
+    ),
+    base_branch="integration/lane",
+)
+#: The same base as the blockers imply it now, with that one input's sha
+#: advanced under the same base branch — the move a comparison of branch
+#: names cannot see.
+ADVANCED_SHA = "d" * 40
+
+
+def implied(*, advanced: bool) -> BaseSpec:
+    """The base the blockers imply now: the recorded one, or one input on."""
+    if not advanced:
+        # Equal but distinct, so equality is what decides and not identity.
+        return RECORDED_BASE.model_copy(deep=True)
+    return RECORDED_BASE.model_copy(
+        update={
+            "inputs": tuple(
+                item.model_copy(update={"sha": ADVANCED_SHA})
+                for item in RECORDED_BASE.inputs
+            )
+        }
+    )
+
+
+def lapse_readings(
+    *, graded: tuple[CriterionCrossOff, ...], implied_base: BaseSpec
+) -> set[GradedState]:
+    """What *graded* is worth when the blockers imply *implied_base* now.
+
+    The landed comparison is called once, here, and its answer is the only
+    base reading the rule is given — so the reading and the rule's verdict
+    are one chain and not two claims standing side by side. Substitute a
+    literal for that call and one of the fixture's two arms reds, because a
+    single literal cannot be both answers.
+    """
+    return {
+        standing_at(
+            graded=item,
+            changeset=moved("docs/architecture.md"),
+            base_stale=is_base_stale(RECORDED_BASE, implied_base),
+        )
+        for item in graded
+    }
+
+
+def test_a_stale_recorded_base_lapses_the_gradings_a_live_base_leaves_counted():
+    """Both arms over one pair of base specs, and one pair of graded criteria.
+
+    Two criteria are graded at a sha the head has since left behind, over one
+    prefix, one path-bound class each, and nothing they exercised has moved —
+    so what they are worth turns on the base alone. The base they were
+    dispatched on is recorded; the base their blockers imply is either that
+    same base — an equal but distinct value, so equality is what answers and
+    not identity — or that base with its one input's sha advanced under the
+    same base branch. That advance is the case a comparison of base BRANCH
+    names cannot see, which is why both arms are built from the landed
+    comparison itself and not from an equality restated here.
+
+    The two arms share one chain: the comparison's answer is what the lapse
+    rule is asked with. On a live recorded base every grading stays counted;
+    on a stale one every grading lapses, whatever its own prefixes did. A
+    comparison answering stale to any base change reds the live arm, and one
+    answering stale to none reds the stale arm, which is the pair the
+    fixture exists to make impossible to fake.
+
+    The same stale base is also a refusal at the scope surface, asserted
+    beside the readings: no verdict is computed against a base that has
+    moved, and the refusal carries the input that moved it. The count of
+    graded criteria is asserted too, so "every criterion" does not quietly
+    become one.
+    """
+    graded = (
+        cross_off(
+            criterion="criterion/alpha",
+            rederivation_class=RederivationClass.expensive,
+            exercised_paths=(EXERCISED,),
+        ),
+        cross_off(
+            criterion="criterion/beta",
+            rederivation_class=RederivationClass.observed,
+            exercised_paths=(EXERCISED,),
+        ),
+    )
+    assert len(graded) == 2
+    assert all(item.evidence.graded_sha != LATER_HEAD for item in graded)
+
+    live, stale = implied(advanced=False), implied(advanced=True)
+    assert live is not RECORDED_BASE
+    assert live == RECORDED_BASE
+    assert stale != RECORDED_BASE
+    assert stale.base_branch == RECORDED_BASE.base_branch
+
+    assert lapse_readings(graded=graded, implied_base=live) == {GradedState.counted}
+    assert lapse_readings(graded=graded, implied_base=stale) == {GradedState.lapsed}
+
+    # EVERY criterion graded on the old base, not only the ones behind head.
+    # A moved base is the blockers moving, which says nothing about this lane's
+    # own head, so a grading taken AT head is the case this clause is most
+    # about: read the other way round, the same-sha arm answers first and such a
+    # grading stays counted on a base that has gone.
+    at_head = graded[0].evidence.graded_sha
+    assert (
+        graded_state(
+            graded_sha=at_head,
+            head_sha=at_head,
+            rederivation_class=RederivationClass.expensive,
+            exercised_paths=(EXERCISED,),
+            changeset=moved("docs/architecture.md"),
+            base_stale=True,
+        )
+        is GradedState.lapsed
+    )
+
+    assert scope_base(RECORDED_BASE, live) == RECORDED_BASE.base_branch
+    with pytest.raises(StaleBaseError) as caught:
+        scope_base(RECORDED_BASE, stale)
+    assert caught.value.recorded_ref == RECORDED_BASE.base_branch
+    assert caught.value.implied_ref == stale.base_branch
+    assert caught.value.changed_inputs == [
+        f"criterion/blocker@feature/blocker:{'c' * 40}",
+        f"criterion/blocker@feature/blocker:{ADVANCED_SHA}",
+    ]
+
+    assert set(signature(graded_state).parameters) == {
+        "graded_sha",
+        "head_sha",
+        "rederivation_class",
+        "exercised_paths",
+        "changeset",
+        "base_stale",
+    }

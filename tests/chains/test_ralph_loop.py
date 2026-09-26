@@ -12,10 +12,11 @@ from typing import TypedDict
 import pytest
 from pydantic import ValidationError
 
+from kodezart.chains.authored_delivery import AuthoredDeliveryCoordinator
 from kodezart.chains.ralph_loop import RalphLoop
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.chains.ticket_generation import TicketGenerationLoop
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.protocols import AgentExecutor
 from kodezart.core.retry import DelayFloor
 from kodezart.domain.criteria_grading import grade_iteration
@@ -39,11 +40,16 @@ from kodezart.types.domain.branch import (
     WorkRefRole,
     trunk_base,
 )
-from kodezart.types.domain.criteria import CriterionVerdict, ValidatedCriterion
+from kodezart.types.domain.criteria import (
+    CriterionFeasibility,
+    CriterionVerdict,
+    ValidatedCriterion,
+)
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.persist import PersistResult, PersistSource
 from kodezart.types.domain.prompts import PromptKey
-from kodezart.types.domain.session import SessionType
+from kodezart.types.domain.run_records import RunIdentity
+from kodezart.types.domain.session import PermissionMode, SessionType
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.subagents import (
     NO_SUBAGENTS,
@@ -140,7 +146,7 @@ def _run_kwargs(
         # A first round cuts its branch from the base it is scoped
         # against; only a remediation round is handed a different ref.
         work_base_ref=work_base_ref if work_base_ref is not None else spec.base_branch,
-        permission_mode="bypassPermissions",
+        permission_mode=PermissionMode.UNATTENDED,
         allowed_tools=["Bash"],
         acceptance_criteria=acceptance_criteria or make_criteria("Tests pass"),
         cache_key="test-cache-key",
@@ -253,10 +259,11 @@ async def test_loop_second_iteration_succeeds() -> None:
             *,
             prompt: str,
             cwd: str,
-            permission_mode: str,
+            permission_mode: PermissionMode,
             allowed_tools: list[str],
             skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
             session_type: SessionType = FAKE_SESSION_TYPE,
+            run_identity: RunIdentity | None = None,
             agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
             session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
             session_id: str | None = None,
@@ -567,10 +574,11 @@ async def test_loop_re_evaluates_all_criteria_every_iteration(
             *,
             prompt: str,
             cwd: str,
-            permission_mode: str,
+            permission_mode: PermissionMode,
             allowed_tools: list[str],
             skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
             session_type: SessionType = FAKE_SESSION_TYPE,
+            run_identity: RunIdentity | None = None,
             agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
             session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
             session_id: str | None = None,
@@ -717,10 +725,11 @@ async def test_evaluate_node_emits_workflowiteration_with_per_iter_commit_sha(
             *,
             prompt: str,
             cwd: str,
-            permission_mode: str,
+            permission_mode: PermissionMode,
             allowed_tools: list[str],
             skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
             session_type: SessionType = FAKE_SESSION_TYPE,
+            run_identity: RunIdentity | None = None,
             agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
             session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
             session_id: str | None = None,
@@ -1008,7 +1017,7 @@ async def test_the_evaluation_prompt_states_each_criterion_verdict() -> None:
     _ = [e async for e in loop.run(**_run_kwargs(acceptance_criteria=criteria))]
 
     rendered = str(executor.calls[-1]["prompt"])
-    assert "AC-1 [hard_gate] [unverifiable]" in rendered
+    assert "AC-1 [unverifiable]" in rendered
     assert "[blocked on: a PostgreSQL server reachable from the runner]" in rendered
 
 
@@ -1036,10 +1045,11 @@ async def test_no_structured_output_raises_with_ralph_evaluator_raise_site() -> 
             *,
             prompt: str,
             cwd: str,
-            permission_mode: str,
+            permission_mode: PermissionMode,
             allowed_tools: list[str],
             skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
             session_type: SessionType = FAKE_SESSION_TYPE,
+            run_identity: RunIdentity | None = None,
             agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
             session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
             session_id: str | None = None,
@@ -1103,10 +1113,11 @@ class _ScriptedLoopExecutor:
         *,
         prompt: str,
         cwd: str,
-        permission_mode: str,
+        permission_mode: PermissionMode,
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
@@ -1597,6 +1608,42 @@ async def test_the_three_stops_stay_distinct_and_none_shadows_another() -> None:
     assert stalled[-1].iteration == 3 < 5
     assert stalled[-1].trajectory.plateaued is True
 
+    # A fourth arm of the cleared-gate stop: a criterion the sweep judged
+    # unverifiable takes no seat, so the two graded ones clear the gate on the
+    # first round, well below the ceiling, and the verdict is clamped to
+    # ship_with_flags rather than held open by the one demonstration that was
+    # never possible. The ungraded criterion is answered as passing, so the
+    # passed count of two shows its seat is not in the numerator either.
+    flagged_criteria = [
+        *_THREE_CRITERIA[:2],
+        _THREE_CRITERIA[2].model_copy(
+            update={
+                "feasibility": CriterionFeasibility(
+                    criterion_id=_THREE_CRITERIA[2].id,
+                    verdict=CriterionVerdict.unverifiable,
+                    missing_resource="network access for the demonstration",
+                )
+            }
+        ),
+    ]
+    flagged_loop = _make_loop(
+        executor=_ScriptedLoopExecutor(flagged_criteria, [[True, True, True]]),
+        max_iterations=5,
+    )
+    flagged = [
+        e
+        async for e in flagged_loop.run(
+            **_run_kwargs(acceptance_criteria=flagged_criteria)
+        )
+        if isinstance(e, WorkflowIterationEvent)
+    ]
+    assert flagged[-1].verdict is AcceptVerdict.ship_with_flags
+    assert flagged[-1].iteration == 1 < 5
+    assert flagged[-1].trajectory.plateaued is False
+    assert len(flagged[-1].evaluation.criteria_results) == 3
+    assert flagged[-1].trajectory.records[-1].passed_count == 2
+    assert flagged[-1].trajectory.records[-1].failing_criterion_ids == []
+
 
 # ---------------------------------------------------------------------------
 # KOD-91/AC-5, AC-6, AC-7 — the permutation guard in front of the grading
@@ -1649,10 +1696,11 @@ class _NonPermutationExecutor:
         *,
         prompt: str,
         cwd: str,
-        permission_mode: str,
+        permission_mode: PermissionMode,
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
@@ -1836,9 +1884,34 @@ def test_the_evaluate_dispatch_passes_an_empty_definition_set() -> None:
     ``tests/chains/test_dispatch_definitions.py``; this is its assertion
     on the module the criterion names.
     """
-    block = dispatch_block(chain_source("ralph_loop.py"), "ACCEPTANCE_CRITERIA_SCHEMA")
+    source = chain_source("ralph_loop.py")
+    block = dispatch_block(source, "ACCEPTANCE_CRITERIA_SCHEMA")
     assert "agents=NO_SUBAGENTS" in block
     assert "self._prompts.definitions()" not in block
+    # The module dispatches this schema once per arm — one into a workspace
+    # the node owns — so every such site is read, not only the first.
+    sites = evaluative_sites(source, "ACCEPTANCE_CRITERIA_SCHEMA")
+    assert len(sites) > 1
+    assert all("agents=NO_SUBAGENTS" in site for site in sites)
+    assert not any("self._prompts.definitions()" in site for site in sites)
+
+
+def evaluative_sites(source: str, schema_name: str) -> list[str]:
+    """Every dispatch in *source* whose output format names *schema_name*.
+
+    Derived by walking the schema's own occurrences rather than taking the
+    first, so an arm added beside an existing one is read too. Blind to a
+    dispatch that names its schema indirectly, which the module does not do
+    and which the first assertion above would still catch at the one site it
+    reads.
+    """
+    needle = f'"schema": {schema_name}'
+    sites: list[str] = []
+    cursor = 0
+    while (end := source.find(needle, cursor)) >= 0:
+        sites.append(source[source.rindex("self._service.stream", 0, end) : end])
+        cursor = end + len(needle)
+    return sites
 
 
 # ---------------------------------------------------------------------------
@@ -1849,14 +1922,14 @@ def test_the_evaluate_dispatch_passes_an_empty_definition_set() -> None:
 async def test_each_dispatch_of_one_run_carries_the_effort_its_role_declares() -> None:
     """Both tiers in a single run: implementation authors, evaluation grades.
 
-    The ralph loop dispatches both, so the relation the policy exists to
-    express — judgment strictly below authoring — is observable in one
-    run rather than inferred across two.
+    The ralph loop dispatches both, so the policy — every role at the top of
+    the ladder since the 2026-09-24 ruling — is observable in one run rather
+    than inferred across two.
     """
     from kodezart.types.domain.prompts import PromptKey, SessionRole
     from kodezart.types.domain.subagents import SessionEffort
     from tests.chains.test_dispatch_definitions import evaluator_dispatches, v5_provider
-    from tests.prompts.test_session_policy import rank, v5_metadata
+    from tests.prompts.test_session_policy import v5_metadata
 
     provider = v5_provider()
     runner = await evaluator_dispatches(provider)
@@ -1875,9 +1948,176 @@ async def test_each_dispatch_of_one_run_carries_the_effort_its_role_declares() -
     generative = efforts["stream_workflow"]
     assert isinstance(evaluative, SessionEffort)
     assert isinstance(generative, SessionEffort)
-    assert rank(evaluative) < rank(generative)
+    assert evaluative is generative is SessionEffort.MAX
 
     assert provider.session_policy(PromptKey.EVALUATION).effort is evaluative
+
+
+async def test_each_dispatch_of_one_run_carries_the_same_engineering_standard() -> None:
+    """The writer is graded on the standard it was given, in a single run.
+
+    One string, not two equal ones: the append the implementation dispatch
+    carries IS the append the evaluation dispatch carries, and it names
+    hexagonal and every reading of the standard. The standard travels on the
+    session policy, so no rendered body moves to deliver it.
+    """
+    from tests.chains.test_dispatch_definitions import evaluator_dispatches, v5_provider
+    from tests.prompts.test_v5_fragments import ENGINEERING_READINGS, prose
+
+    runner = await evaluator_dispatches(v5_provider())
+
+    appends = {
+        dispatch.method: dispatch.policy.system_prompt_append
+        for dispatch in runner.dispatches
+    }
+    assert set(appends) == {"stream_workflow", "stream"}
+
+    standard = appends["stream_workflow"]
+    assert standard is not None
+    assert appends["stream"] == standard
+    assert "hexagonal" in standard
+    for reading in ENGINEERING_READINGS:
+        assert reading in prose(standard)
+
+
+async def test_the_native_evaluation_arm_carries_the_same_engineering_standard() -> (
+    None
+):
+    """The other evaluation arm, which is the one a tracker subject grades on.
+
+    The node dispatches the grade twice over: against a branch when the
+    subject is authored, and into a workspace it owns when the subject is
+    tracker-native. The census above reads the first; this reads the second,
+    so an arm whose policy was mangled cannot hide behind the arm the
+    authored fixture happens to select.
+
+    Only the evaluate node is driven, in a graph of its own, because the
+    execute node ahead of it demands the whole native write path (its source
+    reader, its amendment owner and its lane writer) to reach an arm that is
+    chosen here by the tracker subject alone.
+    """
+    from langgraph.graph import END, START, StateGraph
+
+    from kodezart.core.errors import NoStructuredOutputError
+    from kodezart.types.domain.criteria import TrackerCriterion, TrackerCriterionSet
+    from kodezart.types.domain.fire_spec import TrackerSpec
+    from kodezart.types.domain.ralph_outcome import PendingRalphOutcome
+    from kodezart.types.domain.workflow import RalphLoopContext, RalphLoopState
+    from tests.chains.test_dispatch_definitions import (
+        RecordingRunner,
+        evaluator_dispatches,
+        v5_provider,
+    )
+    from tests.prompts.test_v5_fragments import ENGINEERING_READINGS, prose
+
+    #: The sha the graded branch and the graded workspace both stand at, so
+    #: the grade is demonstrated and the node takes no undemonstrated path.
+    graded_sha = "a" * 40
+    checks = TrackerCriterionSet(
+        criteria=[TrackerCriterion(id="KOD-884-1", text="Tests pass")],
+    )
+
+    class StandingChecks:
+        """Criteria reader double: the roster does not move under the node."""
+
+        async def read_current(
+            self,
+            *,
+            spec: TrackerSpec,
+            held: TrackerCriterionSet | None = None,
+        ) -> TrackerCriterionSet:
+            """Answer every read with the one roster this drive dispatched."""
+            return checks
+
+    class ResolvedHead:
+        """Git source double: one sha, for the branch and for the workspace."""
+
+        async def resolve_commit(self, *, cwd: str, ref: str) -> str:
+            """The complete sha *ref* names, which is the graded one here."""
+            return graded_sha
+
+    # One registry for both arms: the string the native arm records is
+    # compared with the string the writer was handed, not with the set read
+    # a second time.
+    provider = v5_provider()
+    authored = await evaluator_dispatches(provider)
+    standard = {
+        dispatch.method: dispatch.policy.system_prompt_append
+        for dispatch in authored.dispatches
+    }["stream_workflow"]
+    assert standard is not None
+
+    git = FakeGitService()
+    runner = RecordingRunner()
+    loop = RalphLoop(
+        runner,
+        max_iterations=1,
+        plateau_window=2,
+        git=git,
+        cache=FakeRepoCache(),
+        prompts=provider,
+        skills=SUPPRESS_ALL_SKILLS,
+        retry_max_attempts=1,
+        retry_initial_interval=1.0,
+        fan_in_max_attempts=1,
+        delay_floor_for=no_delay_floor,
+        criteria_reader=StandingChecks(),
+        source=ResolvedHead(),
+        workspace=FakeWorkspaceProvider(git=git),
+    )
+    spec = TrackerSpec(
+        subject="KOD-884",
+        body="fix it",
+        criteria=(),
+        read_at_version="read-once",
+    )
+    context = RalphLoopContext(
+        prompt=spec.body,
+        repo_path="/tmp/native-standard",
+        repo_url=None,
+        cache_key="native-standard",
+        surface_holder="native-standard",
+        base_spec=trunk_base("main"),
+        permission_mode=PermissionMode.UNATTENDED,
+        allowed_tools=["Bash"],
+        feature_branch="kodezart/test-12345678",
+        ralph_branch="kodezart/test-12345678-ralph-abcdef01",
+        work_base_ref="main",
+        acceptance_criteria=list(checks.criteria),
+        tracker_spec=spec,
+        repo_visibility=RepoVisibility.UNKNOWN,
+    )
+    graph = StateGraph(RalphLoopState)
+    graph.add_node("evaluate", loop._evaluate_node)
+    graph.add_edge(START, "evaluate")
+    graph.add_edge("evaluate", END)
+
+    # The recording runner answers a workspace dispatch with no result, so
+    # the node raises after it has dispatched — what it CARRIED is the
+    # subject, and the raise is the fixture's silence, not a verdict.
+    with pytest.raises(NoStructuredOutputError):
+        async for _event in graph.compile().astream(
+            {
+                "iteration": 1,
+                "verdict": AcceptVerdict.rejected,
+                "pending_failures": [],
+                "iteration_records": [],
+                "outcome": PendingRalphOutcome(),
+            },
+            config={"configurable": {**context.model_dump(), "thread_id": "native"}},
+            stream_mode="custom",
+        ):
+            pass
+
+    assert [dispatch.method for dispatch in runner.dispatches] == [
+        "stream_in_workspace",
+    ]
+    native = runner.dispatches[0].policy.system_prompt_append
+    assert native == standard
+    assert native is not None
+    assert "hexagonal" in native
+    for reading in ENGINEERING_READINGS:
+        assert reading in prose(native)
 
 
 async def test_a_legacy_run_carries_no_effort_at_any_dispatch() -> None:
@@ -1899,16 +2139,24 @@ def test_every_loop_requires_a_delay_floor_of_its_caller() -> None:
     """No default resolver on any of the three loops (KOD-282).
 
     Measured at ``6e98499``: ``delay_floor_for`` defaulted to ``None`` on
-    ``RalphLoop``, ``TicketGenerationLoop`` and ``RalphWorkflowEngine``, so
+    ``RalphLoop``, ``TicketGenerationLoop`` and ``AuthoredDeliveryCoordinator``, so
     an engine assembled without one silently retried a provider rate limit
     at the graph's own speed — the respawns KOD-174 measured, with the
     remedy wired but not reaching the object.  A caller that means "no
     floor" now has to pass a resolver saying so.
+
+    Fire owns the resolver after phase extraction. Authored delivery must
+    receive that same typed fire collaborator; its retrying nodes are checked
+    against ``self.fire.floor`` and ``self.fire.retry`` by the wiring guard.
     """
     for loop in (RalphLoop, TicketGenerationLoop, RalphWorkflowEngine):
         parameter = inspect.signature(loop.__init__).parameters["delay_floor_for"]
         assert parameter.default is inspect.Parameter.empty, loop.__name__
         assert parameter.kind is inspect.Parameter.KEYWORD_ONLY, loop.__name__
+    fire = inspect.signature(AuthoredDeliveryCoordinator.__init__).parameters["fire"]
+    assert fire.default is inspect.Parameter.empty
+    assert fire.kind is inspect.Parameter.KEYWORD_ONLY
+    assert fire.annotation is RalphWorkflowEngine
 
 
 # ---------------------------------------------------------------------------
@@ -1947,10 +2195,11 @@ class _RejectedThenEvaluatingExecutor:
         *,
         prompt: str,
         cwd: str,
-        permission_mode: str,
+        permission_mode: PermissionMode,
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,

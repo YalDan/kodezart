@@ -12,8 +12,11 @@ import tomllib
 from fnmatch import fnmatch
 from pathlib import Path
 
-from kodezart.adapters.linear_mcp_tracker import ACCEPTED_CREDENTIAL_SHAPE
+from kodezart.adapters.linear.tracker import ACCEPTED_CREDENTIAL_SHAPE
+from kodezart.config.agent import AgentSettings
 from kodezart.core import errors
+from kodezart.domain import errors as domain_errors
+from kodezart.types.domain import operation as operation_types
 from kodezart.types.domain.dispatch import DispatchOutcome
 from kodezart.types.domain.operation import (
     DocumentEntry,
@@ -23,6 +26,7 @@ from kodezart.types.domain.operation import (
     QueueState,
     RecordDestination,
 )
+from tests.docs.configuration import shipped_config_variables
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 README = REPO_ROOT / "README.md"
@@ -41,6 +45,10 @@ CITED_EVENTS: frozenset[str] = frozenset(
         "pass_scheduler_started",
         "pass_gate_delta",
         "dispatch_pass_completed",
+        "agent_question_asked",
+        "pass_gate_answered",
+        "agent_question_unanswered",
+        "scheduled_pass_skipped",
     },
 )
 
@@ -60,7 +68,7 @@ CITED_ERRORS: frozenset[str] = frozenset(
 #: does carry is checked against the shipped model by the test below.
 CITED_VARIABLES: frozenset[str] = frozenset(
     {
-        "KODEZART_TRACKER_TOKEN",
+        "KODEZART_TRACKER__TOKEN",
         "KODEZART_OPERATION_CONFIG",
         "KODEZART_GITHUB_TOKEN",
     },
@@ -170,11 +178,7 @@ def test_the_guide_states_the_credential_shape_boot_enforces() -> None:
     assert ACCEPTED_CREDENTIAL_SHAPE in _guide()
 
 
-def _shipped_variables() -> set[str]:
-    """Every environment name ``AppConfig`` actually reads."""
-    from kodezart.core.config import AppConfig
-
-    return {f"KODEZART_{name.upper()}" for name in AppConfig.model_fields}
+_shipped_variables = shipped_config_variables
 
 
 def test_every_variable_the_guide_sets_is_a_shipped_config_field() -> None:
@@ -367,3 +371,71 @@ def test_the_ignore_rules_are_anchored_so_the_examples_stay_tracked() -> None:
     for example in examples:
         assert Path(REPO_ROOT / example).is_file()
         assert not any(fnmatch(example, rule) for rule in patterns), example
+
+
+def test_the_guide_names_no_failure_class_that_does_not_exist() -> None:
+    """Every `*Error` in the setup section, not only the ones listed above.
+
+    `CITED_ERRORS` is a floor: it requires the classes an operator matches a
+    boot failure against to be named and to exist. It says nothing about a class
+    the section names and nobody listed — which is how a paragraph naming a
+    class that exists nowhere in the tree sat in this section unnoticed. Derived
+    from the section's own text, over the three modules a failure an operator
+    reads can come from.
+    """
+    modules = (errors, domain_errors, operation_types)
+    named = set(re.findall(r"\b([A-Z]\w+Error)\b", _guide()))
+    assert named >= CITED_ERRORS
+    unresolved = [
+        name
+        for name in sorted(named)
+        if not any(hasattr(module, name) for module in modules)
+    ]
+    assert unresolved == []
+
+
+#: The setting the guide's host-MCP paragraph is about, as an operator sets it.
+HOST_MCP_VARIABLE = "KODEZART_AGENT__DANGEROUSLY_ALLOW_HOST_MCP"
+
+
+def _host_mcp_measurement() -> list[str]:
+    """The sentences from the host-MCP switch to the warning boot logs for it."""
+    text = " ".join(_guide().split())
+    start = text.index(f"`{HOST_MCP_VARIABLE}=true`")
+    end = text.index("Boot logs `host_mcp_allowed_dangerously`", start)
+    return re.split(r"(?<=\.)\s+", text[start:end].strip())
+
+
+def test_each_half_of_the_host_mcp_measurement_names_the_state_it_measured() -> None:
+    """Flag off and flag on, each said as such, with what a session gets in it.
+
+    "With it off" once meant the guard in one half of the measurement and
+    "with it on" meant the flag in the other, so the two halves read as one
+    state described twice, and against each other. Each half now names the
+    flag's state and the guard's, and says what a session is given: the
+    servers this process describes and nothing of the host's, or the host's
+    own servers and a cloned repository's. The shipped default it claims is
+    read off the settings model.
+    """
+    assert HOST_MCP_VARIABLE in shipped_config_variables()
+    assert AgentSettings.model_fields["dangerously_allow_host_mcp"].default is False
+    sentences = _host_mcp_measurement()
+    off = [
+        sentence
+        for sentence in sentences
+        if "with the flag off (the shipped default, the guard on)" in sentence
+    ]
+    on = [
+        sentence
+        for sentence in sentences
+        if sentence.startswith("With the flag on (the guard off)")
+    ]
+    assert len(off) == 1, sentences
+    assert len(on) == 1, sentences
+    assert "only what this process describes" in off[0]
+    assert "deployment's own tracker server" in off[0]
+    assert "nothing of the host's" in off[0]
+    assert "user-level Claude configuration" in on[0]
+    assert "`.mcp.json`" in on[0]
+    unnamed = [s for s in sentences if re.search(r"\bwith it (?:on|off)\b", s, re.I)]
+    assert unnamed == []

@@ -1,10 +1,9 @@
 """Configuration criteria — the fan-out cap, and the two flipped defaults.
 
-KOD-89-AC-5: every numeric constant in this project is an ``AppConfig``
-field with the ``KODEZART_`` prefix, so the cap is asserted the same way —
+The configured investigation cap is an ``AppConfig`` field with the
+``KODEZART_`` prefix, so the operator choice is asserted directly —
 it reads from the environment, it refuses values outside its declared range
-at construction, and the range itself is the one the fire-time ruling
-recorded.
+at construction, and it has a floor and no ceiling.
 
 KOD-93-AC-1: the two defaults the flip moved, read with a clean environment.
 A default is only a default when nothing else is speaking, which is what
@@ -15,21 +14,21 @@ make this suite agree with whatever is already configured.
 import pytest
 from pydantic import ValidationError
 
-from kodezart.core.config import AppConfig
+from kodezart.config.agent import AgentSettings
+from kodezart.config.app import AppConfig
 from kodezart.types.domain.ticket_review import TicketReviewMode
 
 ENV_NAME = "KODEZART_INVESTIGATION_CAP"
-#: Floor and ceiling per the KOD-89 fire-time ruling FR-3: the floor keeps
-#: the rendered spec coherent, the ceiling is twice the measured width of
-#: the prose protocol the set replaces.
+#: The floor keeps the rendered spec coherent; there is no ceiling.
 CAP_FLOOR = 1
-CAP_CEILING = 10
+#: A width far above any earlier ceiling, accepted because none is set.
+WIDE_CAP = 1000
 
 
 @pytest.mark.usefixtures("_pristine_environment")
-def test_the_cap_defaults_to_the_width_the_replaced_protocol_ran_at() -> None:
-    """Five: the count the prose dispatch protocol actually instructed."""
-    assert AppConfig().investigation_cap == 5
+def test_the_cap_defaults_to_eight() -> None:
+    """Eight agents per investigation unless the operator sets otherwise."""
+    assert AppConfig().investigation_cap == 8
 
 
 @pytest.mark.usefixtures("_pristine_environment")
@@ -42,7 +41,7 @@ def test_the_cap_is_read_from_the_prefixed_environment(
 
 
 @pytest.mark.usefixtures("_pristine_environment")
-@pytest.mark.parametrize("value", [CAP_FLOOR - 1, CAP_CEILING + 1, -3])
+@pytest.mark.parametrize("value", [CAP_FLOOR - 1, -3])
 def test_an_out_of_range_cap_raises_at_construction(
     monkeypatch: pytest.MonkeyPatch,
     value: int,
@@ -55,12 +54,12 @@ def test_an_out_of_range_cap_raises_at_construction(
 
 
 @pytest.mark.usefixtures("_pristine_environment")
-@pytest.mark.parametrize("value", [CAP_FLOOR, CAP_CEILING])
-def test_both_bounds_are_themselves_accepted(
+@pytest.mark.parametrize("value", [CAP_FLOOR, WIDE_CAP])
+def test_the_floor_and_a_wide_cap_are_accepted(
     monkeypatch: pytest.MonkeyPatch,
     value: int,
 ) -> None:
-    """Non-vacuity: the range is inclusive, so the edges are not failures."""
+    """Non-vacuity: the floor is inclusive, and no ceiling refuses a wide cap."""
     monkeypatch.setenv(ENV_NAME, str(value))
     assert AppConfig().investigation_cap == value
 
@@ -152,7 +151,7 @@ def test_an_unset_forge_token_is_the_absent_state_and_still_loads() -> None:
 @pytest.mark.usefixtures("_pristine_environment")
 def test_session_models_ships_empty_and_loads() -> None:
     """The default pins nothing: every key resolves exactly as before."""
-    assert AppConfig().session_models == {}
+    assert AppConfig().agent.session_models == {}
 
 
 @pytest.mark.usefixtures("_pristine_environment")
@@ -162,7 +161,7 @@ def test_a_key_outside_the_prompt_vocabulary_is_refused_naming_it(
     """The closed-vocabulary refusal: a typo becomes a one-line fix, never
     a table entry nothing ever reads."""
     monkeypatch.setenv(
-        "KODEZART_SESSION_MODELS",
+        "KODEZART_AGENT__SESSION_MODELS",
         '{"implemenation": "engine-a"}',
     )
 
@@ -179,11 +178,11 @@ def test_a_table_of_prompt_keys_loads_verbatim(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv(
-        "KODEZART_SESSION_MODELS",
+        "KODEZART_AGENT__SESSION_MODELS",
         '{"implementation": "engine-a", "fix": "engine-b"}',
     )
 
-    assert AppConfig().session_models == {
+    assert AppConfig().agent.session_models == {
         "implementation": "engine-a",
         "fix": "engine-b",
     }
@@ -201,24 +200,21 @@ def test_no_output_style_is_declared_by_default() -> None:
     A shipped value here would be kodezart picking a system prompt for
     every deployment that never asked for one.
     """
-    field = AppConfig.model_fields["claude_output_style"]
+    field = AgentSettings.model_fields["output_style"]
 
     assert field.annotation == str | None
-    assert AppConfig().claude_output_style is None
+    assert AppConfig().agent.output_style is None
 
 
 @pytest.mark.usefixtures("_pristine_environment")
 def test_a_declared_style_loads_verbatim(monkeypatch: pytest.MonkeyPatch) -> None:
     """The operation's value reaches the adapter as the operator typed it."""
-    monkeypatch.setenv("KODEZART_CLAUDE_OUTPUT_STYLE", "Concise")
+    monkeypatch.setenv("KODEZART_AGENT__OUTPUT_STYLE", "Concise")
 
-    assert AppConfig().claude_output_style == "Concise"
+    assert AppConfig().agent.output_style == "Concise"
 
 
-SSE_READ_FIELDS = (
-    "tracker_mcp_sse_read_timeout_seconds",
-    "knowledge_mcp_sse_read_timeout_seconds",
-)
+SSE_READ_FIELDS = ("sse_read_timeout_seconds",)
 #: The bounds the sibling timeouts are declared with, and the default the
 #: session ran on while the value came from a private vendor constant
 #: (KOD-299).
@@ -233,7 +229,7 @@ def test_the_stream_read_bound_defaults_to_what_the_session_ran_on(
     field: str,
 ) -> None:
     """Adopting the knob changes who owns the number, not the number."""
-    assert getattr(AppConfig(), field) == SSE_READ_DEFAULT
+    assert getattr(AppConfig().tracker, field) == SSE_READ_DEFAULT
 
 
 @pytest.mark.usefixtures("_pristine_environment")
@@ -242,9 +238,9 @@ def test_the_stream_read_bound_is_read_from_the_prefixed_environment(
     monkeypatch: pytest.MonkeyPatch,
     field: str,
 ) -> None:
-    monkeypatch.setenv(f"KODEZART_{field.upper()}", "450")
+    monkeypatch.setenv(f"KODEZART_TRACKER__{field.upper()}", "450")
 
-    assert getattr(AppConfig(), field) == 450.0
+    assert getattr(AppConfig().tracker, field) == 450.0
 
 
 @pytest.mark.usefixtures("_pristine_environment")
@@ -256,7 +252,7 @@ def test_a_stream_read_bound_outside_its_range_refuses_at_construction(
     value: float,
 ) -> None:
     """Out of range fails at boot, naming the field — never a silent clamp."""
-    monkeypatch.setenv(f"KODEZART_{field.upper()}", str(value))
+    monkeypatch.setenv(f"KODEZART_TRACKER__{field.upper()}", str(value))
 
     with pytest.raises(ValidationError) as excinfo:
         AppConfig()

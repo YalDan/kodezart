@@ -1,37 +1,65 @@
 """Protocol definitions — composition without inheritance."""
 
-from collections.abc import AsyncIterator, Mapping, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from typing import Protocol, runtime_checkable
 
 from kodezart.core.prompt_rendering import PromptTemplate
-from kodezart.types.domain.agent import AgentEvent
+from kodezart.domain.run_event_stream import LaneRunEvent
+from kodezart.types.domain.agent import AgentEvent, NodeSessionStartedEvent
+from kodezart.types.domain.amendment import (
+    AmendmentReport,
+    NativeWriterOutput,
+    NativeWriterStart,
+)
+from kodezart.types.domain.assertion_drift import GitSourceBlob
+from kodezart.types.domain.audit import TrackerArtifact
 from kodezart.types.domain.branch import BaseSpec, WorkRef
+from kodezart.types.domain.check_chain import CheckChainResult
+from kodezart.types.domain.check_observation import CIWatchResult
 from kodezart.types.domain.consolidation import (
     ChangesetDigest,
     ConsolidationOutcome,
 )
-from kodezart.types.domain.criteria import ValidatedCriterion
-from kodezart.types.domain.dispatch import PassSignal
+from kodezart.types.domain.criteria import (
+    ExecutionCriterion,
+    TrackerCriterion,
+    TrackerCriterionSet,
+)
+from kodezart.types.domain.criterion_lifecycle import CriterionCrossOff
+from kodezart.types.domain.dispatch import DispatchReport, PassSignal
+from kodezart.types.domain.escalation import EscalationResolution
+from kodezart.types.domain.fire_spec import TrackerSpec
 from kodezart.types.domain.gating import (
     ContentClass,
     GateDecision,
     OutboundDestination,
     RepoVisibility,
-    ScannerRouting,
     ScanResult,
+    TrackerAggregate,
     WriterShape,
 )
+from kodezart.types.domain.issue_identity import IssueIdentity
 from kodezart.types.domain.job import JobRecord
+from kodezart.types.domain.native_execution import NativeAuthoritySnapshot
 from kodezart.types.domain.operation import (
+    CheckStep,
     LifecycleStage,
     QueueState,
     RecordDestination,
+    RepoEntry,
+    ScopeLabel,
 )
+from kodezart.types.domain.organize_graph import GraphChange, IssueGraphSnapshot
 from kodezart.types.domain.persist import ArtifactPersistStatus, PersistResult
+from kodezart.types.domain.pr_state import PRState
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run import RunState
-from kodezart.types.domain.run_records import RunRecord
-from kodezart.types.domain.session import SessionType
+from kodezart.types.domain.run_alarm import RunAlarm
+from kodezart.types.domain.run_records import RunIdentity, RunOutcome, RunRecord
+from kodezart.types.domain.run_state import LaneBinding, LanePR, LaneRunState
+from kodezart.types.domain.scope import ScopeContainer, ScopeRef
+from kodezart.types.domain.self_writes import IssueMovementSnapshot
+from kodezart.types.domain.session import AllowedTools, PermissionMode, SessionType
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.subagents import (
     NO_SUBAGENTS,
@@ -39,9 +67,15 @@ from kodezart.types.domain.subagents import (
     AgentDefinition,
     SessionPolicy,
 )
+from kodezart.types.domain.surface import (
+    DescriptionWriteAuthority,
+    SurfaceLease,
+    SurfaceProvenance,
+    WritableSurface,
+    WriteRevalidation,
+)
 from kodezart.types.domain.tracker import (
     ClaimResult,
-    IssuePriority,
     IssueQuery,
     MappingOutcome,
     MappingRef,
@@ -49,10 +83,14 @@ from kodezart.types.domain.tracker import (
     TrackerAsset,
     TrackerComment,
     TrackerIssue,
+    TrackerIssueRevision,
+    TrackerIssueStateChange,
     TrackerReview,
 )
-from kodezart.types.domain.workflow import RemediationRequest
-from kodezart.types.requests.agent import WorkflowRequest
+from kodezart.types.domain.tracker_writes import DescriptionEditResult
+from kodezart.types.domain.workflow import RemediationRequest, WorkflowSubmission
+from kodezart.types.domain.workspace import GitWorktreeIdentity, WorkspaceSnapshot
+from kodezart.types.domain.write_back import WriteBackFinding
 
 
 @runtime_checkable
@@ -81,10 +119,43 @@ class LogEmitter(Protocol):
 
 
 @runtime_checkable
+class GitSourceReader(Protocol):
+    """Read pinned Git objects without checking out or running repository code."""
+
+    async def resolve_commit(self, *, cwd: str, ref: str) -> str:
+        """Resolve a commit-ish once to its complete immutable object identity."""
+        ...
+
+    async def read_source(
+        self, *, cwd: str, commit_sha: str, path: str
+    ) -> GitSourceBlob:
+        """Read exact regular-file bytes; missing/unsupported objects refuse."""
+        ...
+
+    async def find_source(
+        self, *, cwd: str, commit_sha: str, path: str
+    ) -> GitSourceBlob | None:
+        """Return None only for a successfully read, absent path at that commit."""
+        ...
+
+
+@runtime_checkable
 class GitService(Protocol):
-    """Git operations port — SubprocessGitService satisfies this."""
+    """Git operations port — SubprocessGitService satisfies this.
+
+    Unsuccessful command exits or invalid command responses raise the neutral
+    ``GitOperationError``; merge conflicts retain ``MergeConflictError``.
+    Unavailable local repository paths raise ``GitRepositoryError``; other
+    argument validation and process startup failures keep their own types.
+    """
 
     async def validate_repo(self, repo_path: str) -> None: ...
+
+    async def worktree_identity(
+        self, cwd: str, *, repository_path: str
+    ) -> GitWorktreeIdentity:
+        """Read actual Git/index/working content identity without mutating it."""
+        ...
 
     def is_repo(self, path: str) -> bool: ...
 
@@ -108,6 +179,10 @@ class GitService(Protocol):
     ) -> None: ...
 
     async def has_changes(self, cwd: str) -> bool: ...
+
+    async def has_replace_refs(self, cwd: str) -> bool:
+        """Whether native object replacement is configured for this repository."""
+        ...
 
     async def is_path_ignored(self, cwd: str, path: str) -> bool:
         """True iff *path* is excluded by the repository's ignore rules.
@@ -133,6 +208,12 @@ class GitService(Protocol):
         ...
 
     async def merge_branch(self, cwd: str, source_branch: str) -> None: ...
+
+    async def merge_scratch_head(
+        self, *, cwd: str, head_sha: str, author_name: str, author_email: str
+    ) -> None:
+        """Merge a pinned commit in a detached scratch tree, never a branch."""
+        ...
 
     async def current_sha(self, cwd: str) -> str: ...
 
@@ -170,6 +251,16 @@ class GitService(Protocol):
 
         Maps to ``git merge-base --is-ancestor`` (exit 0 → True,
         exit 1 → False, any other exit raises).
+        """
+        ...
+
+    async def has_object(self, cwd: str, object_sha: str) -> bool:
+        """True iff the repository at *cwd* holds the object *object_sha*.
+
+        Maps to ``git cat-file -e <object_sha>`` (exit 0 → True, exit 1 →
+        False, any other exit raises). Exit 1 answers only for a well-formed
+        full object name the repository does not know; a malformed name or an
+        unreadable repository exits otherwise and raises.
         """
         ...
 
@@ -252,10 +343,11 @@ class AgentExecutor(Protocol):
         *,
         prompt: str,
         cwd: str,
-        permission_mode: str,
-        allowed_tools: list[str],
+        permission_mode: PermissionMode,
+        allowed_tools: AllowedTools,
         skills: SkillsSelection,
         session_type: SessionType,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
@@ -290,12 +382,33 @@ class WorkspaceProvider(Protocol):
         branch_name: str | None = None,
         create_branch: bool = True,
         cache_key: str | None = None,
+        parent: str | None = None,
     ) -> str:
-        """Acquire an isolated workspace. Returns its path."""
+        """Acquire an isolated workspace. Returns its path.
+
+        Given *parent*, the workspace is the directory in it named for the
+        repository, so several repositories can stand side by side under one.
+        """
         ...
 
     async def release(self, workspace_path: str) -> None:
         """Release and clean up a previously acquired workspace."""
+        ...
+
+    async def capture(self, *, workspace_path: str, holder: str) -> WorkspaceSnapshot:
+        """Capture an owned acquisition and its actual current Git identity."""
+        ...
+
+    async def resume(
+        self,
+        *,
+        snapshot: WorkspaceSnapshot,
+        holder: str,
+        repo_path: str | None,
+        repo_url: str | None,
+        cache_key: str | None,
+    ) -> None:
+        """Validate original ownership/current facts before adopting a worktree."""
         ...
 
 
@@ -312,6 +425,8 @@ class ChangePersister(Protocol):
         backup_ref_id_prefix: str,
         skills: SkillsSelection,
         visibility: RepoVisibility,
+        before_commit: Callable[[], Awaitable[None]] | None = None,
+        before_publish: Callable[[str], Awaitable[None]] | None = None,
     ) -> PersistResult | None:
         """Commit and push changes. ``None`` if clean.
 
@@ -426,15 +541,87 @@ class PRCreator(Protocol):
 
 
 @runtime_checkable
+class ForgeQuery(Protocol):
+    """The forge's READ side: what already exists, and where to look at it.
+
+    Separate from ``PRCreator`` because it grants nothing.  A caller
+    asking "is there already a pull request for this head?" before opening
+    one needs no authority to open one, and a port that bundled the two
+    would hand the write to every caller that only wanted the answer.
+    """
+
+    async def open_pr_for_head(
+        self, *, repo_url: str, head: str
+    ) -> tuple[str, int] | None:
+        """The OPEN pull request on *head* — its web URL and number — or none.
+
+        ``None`` is an ANSWER and not a failure: the forge was asked and
+        reported nothing open on that head.  A read that could not be
+        made RAISES, because "nobody has opened one" and "we could not
+        find out" send a check-before-create caller to opposite branches,
+        and the second one arriving as the first opens a duplicate.
+
+        More than one open pull request on one head is the forge
+        contradicting the question it was asked, and it raises rather
+        than picking: a caller that skipped its own create because of an
+        arbitrary pick would attach its work to whichever came back first.
+        """
+        ...
+
+    def branch_web_url(self, *, repo_url: str, branch: str) -> str:
+        """The page a person opens to look at *branch* on this forge.
+
+        Composed by the adapter because the shape of that address belongs
+        to the forge: a caller assembling it would be a second statement
+        of one vendor's URL layout, free to disagree with the first.
+
+        This asks the forge nothing, so it is not a coroutine and it
+        never reports whether the branch exists — an address is not an
+        observation, and a caller must not read one as the other.
+        """
+        ...
+
+
+@runtime_checkable
+class PRStateReader(Protocol):
+    """Read one PR's native lifecycle without edit, close or merge authority."""
+
+    async def read_pr_state(self, *, repo_url: str, pr_number: int) -> PRState:
+        """Require exact addressed identity; failed or missing reads refuse."""
+        ...
+
+
+@runtime_checkable
 class CIMonitor(Protocol):
     """Polls CI status for a commit ref."""
+
+    async def rerun_checks(self, *, repo_url: str, ref: str) -> None:
+        """Request re-observation at the same SHA.
+
+        Subsequent waits on this monitor must observe
+        the requested attempt, never the completed checks preceding it.
+        An unsupported or incomplete rerun raises a domain error.
+        Each asynchronous task owns its rerun/read sequence; another task's
+        rerun must not replace its observation.
+        """
+        ...
+
+    async def checks_declared(self, *, repo_url: str) -> bool:
+        """Read whether checks are declared; failed reads never mean absent."""
+        ...
 
     async def wait_for_checks(
         self,
         *,
         repo_url: str,
         ref: str,
-    ) -> tuple[bool | None, str]: ...
+    ) -> CIWatchResult:
+        """Return one immutable observation, with no subsequent evidence reads.
+
+        Completed checks carry their commit, whole roster and failure subset.
+        Absent and incomplete watches are distinct from completed red checks.
+        """
+        ...
 
 
 @runtime_checkable
@@ -460,7 +647,7 @@ class DeliveryProbe(Protocol):
 #: What a tool call answers with.  A JSON object OR a JSON array: the MCP
 #: spec constrains a tool result to neither shape, and a measured server
 #: answered some of its tools with a bare array carrying no envelope at
-#: all (KOD-143).  Narrowing this to an object would put those payloads
+#: all.  Narrowing this to an object would put those payloads
 #: out of reach of every adapter above the transport.  WHICH server and
 #: which tool is an adapter's knowledge; this seam holds only the fact
 #: that both shapes are legal.
@@ -475,14 +662,16 @@ class RunRecordSink(Protocol):
     because WHERE a row lands is vendor knowledge — a data-source page on
     one backend, a document append on another — while WHAT is written is
     the domain's one line.  The recorder service routes by the declared
-    system and never learns either vendor's shape (KOD-170).
+    system and never learns either vendor's shape. Refusals leave the sink
+    as RunRecordWriteError, preserving the failure classification and
+    concrete cause. The recorder never retries an unanswered publication.
 
     Verification is part of the same vendor knowledge, and it is asked
     PER RUN: whether THIS run's row is there, never whether the
     destination has been written to lately.  "Any row since" made every
     run after the first in a window a duplicate of its neighbour — two
     unfinished fires swept at one shutdown produced one row, because the
-    first row answered for the second (KOD-288).
+    first row answered for the second.
     """
 
     async def holds_record(
@@ -548,7 +737,7 @@ class ManagedMcpToolCaller(McpToolCaller, Protocol):
         Silence means accepted.  A refused credential leaves as the typed
         credential error and anything else as the transport error, so boot
         can name a refusal — the status is legible here and not once a
-        session is being opened around it (KOD-268).
+        session is being opened around it.
         """
         ...
 
@@ -562,33 +751,252 @@ class ManagedMcpToolCaller(McpToolCaller, Protocol):
 
 
 @runtime_checkable
-class TrackerPort(Protocol):
-    """The whole capability surface the passes and the runner need.
+class TrackerCommentReader(Protocol):
+    """Read complete native comments without granting a writer."""
 
-    Vendor-neutral by construction: every parameter and every return type
-    is domain vocabulary.  Substitutability is total — an adapter
-    implements ALL of this or it is not an adapter.  There are no
-    capability flags and no feature detection, so no consumer ever
-    branches on which backend is configured.
+    async def list_comments(self, *, issue_key: str) -> Sequence[TrackerComment]:
+        """Every comment on the issue, oldest first."""
+        ...
+
+
+@runtime_checkable
+class TrackerCriteriaReader(Protocol):
+    """Read current native criterion families with their full source."""
+
+    async def read_criteria(self, *, issue_key: str) -> Sequence[TrackerIssue]:
+        """Read exactly the currently labelled direct criterion sub-issues.
+
+        Their own issue keys carry identity; full bodies and workflow states
+        carry specification and evidence. A successful empty read returns
+        an empty sequence. A failed or incomplete lookup raises; it never
+        becomes an empty answer. No parent-body syntax supplies membership.
+        """
+        ...
+
+
+@runtime_checkable
+class CriterionResolver(Protocol):
+    """Resolve one criterion identity to its own sub-issue, or refuse.
+
+    The narrow role a consumer that needs ONE criterion depends on. It carries
+    no family read, so a holder cannot search a roster itself; a consumer that
+    genuinely needs the whole family takes ``TrackerCriteriaReader`` instead.
     """
+
+    async def resolve_criterion(
+        self, *, issue_key: str, criterion_key: str
+    ) -> TrackerIssue:
+        """The one current sub-issue of *issue_key* whose own key is *criterion_key*.
+
+        Membership, identity and full source are one observation against a
+        fresh read. A key that resolves to no current sub-issue, to more than
+        one, or against an unreadable or ambiguous family raises
+        ``CriterionResolutionError``; it never becomes a null answer.
+        """
+
+
+@runtime_checkable
+class ModelMemberReader(TrackerCriteriaReader, Protocol):
+    """The marked model's membership: its members, and each member's criteria.
+
+    Composed from the criteria role rather than stated beside it, because a
+    model's extent is exactly those two reads: which issues carry the mark,
+    and which criterion sub-issues each of them owns. Narrowed out of the
+    port so a consumer resolving a model depends on no writer at all.
+    """
+
+    async def read_labeled_issues(
+        self, *, classification: str
+    ) -> Sequence[TrackerIssue]:
+        """Read every issue with a configured semantic label, including archived.
+
+        This is a complete, strict membership read, independent of queue state.
+        Missing configuration, incomplete pagination or contradictory membership
+        refuses instead of returning a truncated or filtered set.
+        """
+        ...
+
+
+@runtime_checkable
+class TrackerContextReader(Protocol):
+    """Read the documents referenced by a fire's issue."""
+
+    async def list_issue_assets(self, *, issue_key: str) -> Sequence[TrackerAsset]:
+        """Attachment and document metadata referenced by the issue."""
+        ...
+
+    async def read_document(self, *, document_key: str) -> str:
+        """The document's text content."""
+        ...
+
+
+@runtime_checkable
+class ContainerMetadataReader(Protocol):
+    """The container a scope ref names, read on its own.
+
+    Narrowed out of the port rather than added to it: a consumer asking
+    what a container is asks the tracker nothing else and writes nothing.
+    """
+
+    async def container_metadata(self, *, ref: ScopeRef) -> ScopeContainer:
+        """The container's ref, name, description, optional url and parent.
+
+        Milestone metadata carries no invented or containing-project URL.
+        An issue-kind ref raises a typed domain error: an issue is read
+        through ``read_issue``, never returned as an empty container.
+        """
+        ...
+
+
+@runtime_checkable
+class ExecutionApprovalReader(Protocol):
+    """Whether the configured approval covers this issue, and nothing else.
+
+    The one read an admission question makes. A holder of this role can
+    ask it and can write nothing whatever the answer is.
+    """
+
+    async def execution_approved(self, *, issue_key: str) -> bool:
+        """Resolve the configured scope approval label from current ancestry.
+
+        Check the issue and parent issues, then its own project and initiative
+        ancestry. Milestone members use their project approval. Label presence
+        decides; there is no approval-actor carrier. Every call reads again,
+        and missing or unreadable ancestry raises instead of returning false.
+        """
+        ...
+
+
+@runtime_checkable
+class IssueReader(Protocol):
+    """One issue, whole, for a consumer that reads it and writes nothing."""
+
+    async def read_issue(self, *, issue_key: str) -> TrackerIssue:
+        """The full issue — body, state, relations, parent, assignee."""
+        ...
+
+
+@runtime_checkable
+class PlanningIssueReader(Protocol):
+    """One issue with its complete dependency relations, or a refusal."""
+
+    async def read_planning_issue(self, *, issue_key: str) -> TrackerIssue:
+        """Read reported labels and full dependency relations; omission refuses."""
+        ...
+
+
+@runtime_checkable
+class IssueRevisionReader(Protocol):
+    """One issue and the digest of the body it was read from."""
+
+    async def read_issue_revision(self, *, issue_key: str) -> TrackerIssueRevision:
+        """Read one issue and its body digest from the same body snapshot.
+
+        Applies identically to issue bodies and criterion sub-issue bodies.
+        Repeated unchanged reads agree; body changes move the digest;
+        comments, labels, workflow state and UNCHANGED body replays do not.
+        An unavailable digest raises, never substitutes an empty or live one.
+        """
+        ...
+
+
+@runtime_checkable
+class IssueScanReader(Protocol):
+    """A board scan, for a consumer that selects issues and writes none of them."""
 
     async def scan_issues(self, *, query: IssueQuery) -> Sequence[TrackerIssue]:
         """Issues matching *query*, in backend order."""
         ...
 
-    async def scan_reviews(self, *, query: ReviewQuery) -> Sequence[TrackerReview]:
-        """Reviews matching *query*, newest first.
 
-        A separate call rather than a flag on :meth:`scan_issues` because
-        a review is a separate object class: no issue scan reaches one at
-        any page size, so a consumer asking "did anything move?" over
-        issues alone is answering a narrower question than it thinks.
+@runtime_checkable
+class ScopeFamilyReader(Protocol):
+    """The issues a scope resolves to, for a consumer that needs the family."""
 
-        Newest first is part of the contract, not an accident of a
-        backend: it is what lets a recency question be answered from one
-        page instead of walking the whole set.
+    async def scope_issues(self, *, ref: ScopeRef) -> Sequence[TrackerIssue]:
+        """All issues in the scope, with their relations and parent fields.
+
+        Container scopes resolve by membership; issue scopes resolve to
+        the issue and its descendant issues. No bounded scan substitutes
+        for the complete scope.
         """
         ...
+
+
+@runtime_checkable
+class StateHistoryReader(Protocol):
+    """When the issue entered the state it is in, with that same snapshot."""
+
+    async def read_issue_state_change(
+        self, *, issue_key: str
+    ) -> TrackerIssueStateChange:
+        """Read the current state-entry time with that same full issue snapshot.
+
+        Missing or inconsistent state history raises, never substitutes a
+        general update time, creation time, or a timestamp from another read.
+        This is read-only and acquires no write lease.
+        """
+        ...
+
+
+@runtime_checkable
+class EscalationResolutionReader(Protocol):
+    """Whether a decision record answers this escalation, and no write beside it."""
+
+    async def read_escalation_resolution(
+        self, *, issue_key: str, lane_key: str, escalation_key: str
+    ) -> EscalationResolution:
+        """Read whether a decision record directly addresses this escalation.
+
+        A resolved value carries the decision reference. Missing, unreadable
+        or ambiguous records raise ``EscalationReadError``; an unresolved
+        value requires a complete readable escalation with no answer.
+        """
+        ...
+
+
+@runtime_checkable
+class RecordedRepositoryReader(Protocol):
+    """The repository a staged fire recorded, for the consumer that routes on it."""
+
+    async def recorded_repository(self, *, issue_key: str) -> str | None:
+        """The target repository most recently recorded on *issue_key*.
+
+        Judgment records it when staging a fire on a team bound to no
+        repository; the deterministic dispatch reads it and refuses by
+        name when it is missing.  ``None`` means no route was
+        ever recorded — an exclusion the report names, never a claim by
+        whichever pass's tick arrives first.
+        """
+        ...
+
+
+@runtime_checkable
+class WriterIdentityReader(Protocol):
+    """Every spelling the backend attributes this adapter's writes under.
+
+    Read once at boot by the composition that refuses a credential no
+    declared identity answers to; nothing downstream holds this role.
+    """
+
+    async def writer_identity(self) -> frozenset[str]:
+        """Every spelling the backend attributes this adapter's writes under.
+
+        Both the account name and the mention handle, because a configured
+        identity may legitimately be either and user resolution already
+        matches the union of the two.
+
+        Read once at boot and compared against the operation's declared
+        agent identities. It is never a flag a consumer reads: a deployment
+        whose credential no declared agent identity answers to does not
+        serve, so nothing downstream branches on the answer.
+        """
+        ...
+
+
+@runtime_checkable
+class ScanCapabilityReader(Protocol):
+    """Which pass signals this credential holds no scope to scan for."""
 
     async def verify_scan_capability(
         self,
@@ -615,192 +1023,70 @@ class TrackerPort(Protocol):
         """
         ...
 
-    async def read_issue(self, *, issue_key: str) -> TrackerIssue:
-        """The full issue — body, state, relations, parent, assignee."""
-        ...
 
-    async def create_issue(
-        self,
-        *,
-        title: str,
-        body: str,
-        team_key: str,
-        priority: IssuePriority,
-    ) -> TrackerIssue:
-        """Create an issue on *team_key* and return it as stored."""
-        ...
+@runtime_checkable
+class SurfaceAuthorshipReader(Protocol):
+    """Whom the tracker records as the author of a body this port can replace.
 
-    async def update_issue(
-        self,
-        *,
-        issue_key: str,
-        title: str | None = None,
-        body: str | None = None,
-    ) -> TrackerIssue:
-        """Update the given fields; ``None`` leaves a field untouched."""
-        ...
+    Narrowed out of the port rather than added to it: the refusal built on
+    this read needs the attribution and no write at all (KOD-390).
+    """
 
-    async def set_workflow_state(
-        self,
-        *,
-        issue_key: str,
-        stage: LifecycleStage,
-    ) -> TrackerIssue:
-        """Move the issue to the state the configuration binds *stage* to."""
-        ...
+    async def read_surface_authorship(
+        self, *, surface: WritableSurface
+    ) -> SurfaceProvenance:
+        """Whom the tracker records as the author of the addressed body.
 
-    async def restore_workflow_state(
-        self,
-        *,
-        issue_key: str,
-        state_name: str,
-    ) -> TrackerIssue:
-        """Put the issue back in the state a reader found it in.
+        Answered from the backend's own attribution of that surface, never
+        from what the text looks like. A body the backend attributes to
+        this writer's account reads MACHINE_AUTHORED; anything else,
+        including a body it attributes to nobody, reads PRINCIPAL_AUTHORED.
 
-        The undo of ``set_workflow_state``, and the only write naming a
-        backend state directly.  It has to: the operation's mapping binds
-        three lifecycle stages, and the state a fire finds its issue in is
-        almost never one of them — a claimed issue comes from the backlog,
-        which the mapping never named and no ``LifecycleStage`` can
-        express.  ``state_name`` is not vendor vocabulary leaking inward:
-        it is the value this port already reports on every
-        ``TrackerIssue``, handed straight back.
+        Only the surfaces whose body this port can replace are answerable;
+        any other address raises before a read is issued, because an
+        authorship nothing can act on states a capability no caller has.
+
+        The answer also carries the distinct holders of the body writes
+        this port itself recorded, in the order the backend placed those
+        records. The surface's change stamp is never consulted: a stamp
+        moves for a label, a state or a comment as readily as for a body,
+        so it orders nothing and attributes nothing.
         """
         ...
 
-    async def set_queue_state(
-        self,
-        *,
-        issue_key: str,
-        state: QueueState,
-    ) -> TrackerIssue:
-        """Set the semantic queue state, replacing any other member."""
-        ...
 
-    async def post_comment(self, *, issue_key: str, body: str) -> TrackerComment:
-        """Post a comment and return it as stored."""
-        ...
+@runtime_checkable
+class ScopeReadPreflight(Protocol):
+    """The capability assertions a scope read makes before it reads anything.
 
-    async def list_comments(self, *, issue_key: str) -> Sequence[TrackerComment]:
-        """Every comment on the issue, oldest first."""
-        ...
+    Two declarations and no write: a consumer holding this refuses early
+    and changes nothing on the board by asking.
+    """
 
-    async def claim_issue(
-        self,
-        *,
-        issue_key: str,
-        holder: str,
-        lease_seconds: float,
-    ) -> ClaimResult:
-        """Attempt an exactly-once claim.
+    def require_scope_plan_reads(self) -> None:
+        """Require semantic criterion and decision reads before scope planning.
 
-        Concurrent claimants on one issue produce exactly one
-        ``GRANTED``; every other claimant observes ``LOST``.  Losing is a
-        value, never an exception.
+        Missing configuration or capability raises rather than projecting an
+        empty decision set. This declaration performs no tracker write.
         """
         ...
 
-    async def renew_claim(
-        self,
-        *,
-        issue_key: str,
-        holder: str,
-        lease_seconds: float,
-    ) -> ClaimResult | None:
-        """Extend a claim *holder* already holds, so it outlives its lease.
+    def require_issue_classification_reads(
+        self, *, additional_keys: frozenset[str] = frozenset()
+    ) -> None:
+        """Require semantic criterion, tracker and decision classification.
 
-        Returns the claim as it now stands — expiring no earlier than
-        *lease_seconds* from now — when *holder* holds a live claim on the
-        issue.  Returns ``None``, writing NOTHING, when it does not.
-
-        Renewal EXTENDS and never acquires.  A claim that has already
-        lapsed stays lapsed and the issue stays claimable: the lapse is how
-        a process that died mid-run hands its work back, and a renewal that
-        could resurrect one would take that recovery away.
+        Additional semantic keys name other required issue-label mappings.
+        Missing configuration refuses before a record issue can be mistaken
+        for a deliverable or an unmapped phase can appear open. This declaration
+        performs no tracker write.
         """
         ...
 
-    async def release_claim(self, *, issue_key: str, holder: str) -> None:
-        """Release a claim held by *holder*. A claim it does not hold is a no-op."""
-        ...
 
-    async def active_claim(self, *, issue_key: str) -> ClaimResult | None:
-        """The unexpired claim on the issue, or ``None`` when unclaimed.
-
-        ``expires_at`` is when the CLAIM lapses, not when any one write
-        that carried it does: a holder that renewed holds until the last of
-        its renewals runs out.
-        """
-        ...
-
-    async def list_issue_assets(self, *, issue_key: str) -> Sequence[TrackerAsset]:
-        """Attachment and document metadata referenced by the issue."""
-        ...
-
-    async def read_document(self, *, document_key: str) -> str:
-        """The document's text content."""
-        ...
-
-    async def record_work_ref(self, *, ref: WorkRef) -> None:
-        """Record *ref* against its issue; ``work_refs`` is the read.
-
-        At most one ``DELIVERABLE`` ref exists per issue: a second raises
-        ``DuplicateWorkRefError`` and is never a silent replacement.
-        Recording the same ref twice is idempotent.
-        """
-        ...
-
-    async def work_refs(self, *, issue_key: str) -> Sequence[WorkRef]:
-        """Every ref recorded against the issue, oldest first.
-
-        This is the read D2 requires: *which refs deliver issue X, in which
-        roles, at which shas* is answerable through the port, so no code
-        anywhere derives an issue identity, a role or a parent from a
-        branch name.
-        """
-        ...
-
-    async def record_base_spec(self, *, issue_key: str, spec: BaseSpec) -> None:
-        """Record the base *issue_key*'s lane was dispatched on.
-
-        KOD-67 R3: the spec is written THROUGH the port, on the dependent
-        issue.  Staleness compares a recorded spec against the one the
-        blockers imply now, and with nothing recorded there is nothing to
-        compare — the arithmetic would only ever compare a value with
-        itself.  Recording the same spec twice is idempotent; recording a
-        different one supersedes, because a lane dispatched again was
-        dispatched on the base of that dispatch.
-        """
-        ...
-
-    async def read_base_spec(self, *, issue_key: str) -> BaseSpec | None:
-        """The base most recently recorded for *issue_key*, or ``None``.
-
-        ``None`` means no dispatch ever recorded one — a first dispatch,
-        not a stale base.  The two are different states and no caller may
-        conflate them.
-        """
-        ...
-
-    async def recorded_repository(self, *, issue_key: str) -> str | None:
-        """The target repository most recently recorded on *issue_key*.
-
-        Judgment records it when staging a fire on a team bound to no
-        repository; the deterministic dispatch reads it and refuses by
-        name when it is missing (KOD-169).  ``None`` means no route was
-        ever recorded — an exclusion the report names, never a claim by
-        whichever pass's tick arrives first.
-        """
-        ...
-
-    async def initiative_identifiers(self, *, project_id: str) -> frozenset[str]:
-        """Every name and id of every initiative *project_id* belongs to.
-
-        Read for a team's declared scope: a scope entry may name an
-        initiative in either spelling, and issue placement only carries
-        the project (KOD-169).
-        """
-        ...
+@runtime_checkable
+class TrackerVocabulary(Protocol):
+    """The declared vocabulary resolved and instated: the boot consumer's two calls."""
 
     async def resolve_mappings(
         self,
@@ -826,6 +1112,1201 @@ class TrackerPort(Protocol):
         an existing definition raises ``TrackerEnsureConflictError`` and
         performs no write.  One outcome per ref, in the order given.
         """
+        ...
+
+
+@runtime_checkable
+class CriterionMintWriter(Protocol):
+    """The criterion mint, on a role of its own.
+
+    One member for the one consumer that mints criteria, so a holder of
+    this role creates criterion children and edits nothing (KOD-621).
+    """
+
+    async def create_criterion_if_absent(
+        self,
+        *,
+        parent_key: str,
+        title: str,
+        check: str,
+        do: str,
+        holder: str,
+        revalidate: WriteRevalidation | None = None,
+    ) -> TrackerIssue:
+        """Mint one Todo criterion under a held CRITERION_CHILD_SET surface.
+
+        Exact parent + current Check identifies a replay. Duplicate matches
+        refuse; an existing child is returned without rewriting any field.
+        New content has Check, Do and empty Evidence, configured criterion
+        classification and the team's unique unstarted state. Existing
+        child edits require their own CRITERION_SUB_ISSUE authority.
+        """
+        ...
+
+
+@runtime_checkable
+class DescriptionWriter(Protocol):
+    """The one body replacement the port offers, under its own precondition."""
+
+    async def edit_description(
+        self,
+        *,
+        target: str,
+        expected: str,
+        replacement: str,
+        authorization: DescriptionWriteAuthority | None = None,
+    ) -> DescriptionEditResult:
+        """Replace the complete expected description; state moves separately.
+
+        Exact desired bytes or identical expected/replacement return UNCHANGED.
+        Exact expected bytes return EDITED; any other current body raises
+        StaleWriteError with no write. Substrings do not identify the target.
+        Callers serialize writes; this is not an atomic compare-and-swap.
+
+        A replacement of a body the tracker attributes to a principal
+        raises ``PrincipalAuthoredSurfaceError`` before the mutation is
+        sent, leaving that body byte-identical. An anchor a caller read
+        off a principal's own text is not authority to replace it: what
+        the machine may rewrite is what the tracker records as its own.
+
+        Explicit authorization selects its own ISSUE_DESCRIPTION or
+        CRITERION_SUB_ISSUE grant. Reject a target mismatch before reads,
+        and repeat expected source and lease checks on every unsent retry.
+
+        No write on this port carries a body and a workflow state
+        together, and a backend offering to do both in one act is refused
+        rather than used: one act cannot be ordered and cannot be
+        half-undone, so a body that did not land the way its caller
+        asserted would have moved the state anyway and the issue would
+        read as reviewed carrying text nobody reviewed.  A caller needing
+        both issues two writes in one order — this one first, under its
+        precondition, and the transition only after it — so a refused
+        edit leaves the state where its reader found it.
+        """
+        ...
+
+
+@runtime_checkable
+class WorkflowStateWriter(Protocol):
+    """The configured lifecycle move, with no body write beside it."""
+
+    async def set_workflow_state(
+        self,
+        *,
+        issue_key: str,
+        stage: LifecycleStage,
+    ) -> TrackerIssue:
+        """Read first and move only if the configured state differs.
+
+        Moves state and NOTHING else.  A description written alongside a
+        transition would ride on the transition's success and never face
+        ``edit_description``'s precondition at all.
+        """
+        ...
+
+
+@runtime_checkable
+class StateRestorer(Protocol):
+    """The put-back: the issue returns to the state a reader found it in."""
+
+    async def restore_workflow_state(
+        self,
+        *,
+        issue_key: str,
+        state_name: str,
+    ) -> TrackerIssue:
+        """Put the issue back in the state a reader found it in.
+
+        The undo of ``set_workflow_state``, and the only write naming a
+        backend state directly.  It has to: the operation's mapping binds
+        three lifecycle stages, and the state a fire finds its issue in is
+        almost never one of them — a claimed issue comes from the backlog,
+        which the mapping never named and no ``LifecycleStage`` can
+        express.  ``state_name`` is not vendor vocabulary leaking inward:
+        it is the value this port already reports on every
+        ``TrackerIssue``, handed straight back.
+        """
+        ...
+
+
+@runtime_checkable
+class ClassificationWriter(Protocol):
+    """One configured classification added, for a consumer that marks issues."""
+
+    async def set_issue_classification(
+        self, *, issue_key: str, classification: str, holder: str | None = None
+    ) -> TrackerIssue:
+        """Add one configured semantic classification, reading before writing.
+
+        An already present value writes nothing. Unrelated classifications
+        and all workflow/queue state survive unchanged.
+        A supplied holder must retain this issue's ISSUE_LABEL_SET grant
+        after internal reads and on every known-unsent retry. Re-read its
+        actual classification outside the mutation retry before returning.
+
+        A classification the operation resolves to the scope admission
+        vocabulary's approved member raises ``ApprovalLabelWriteError``
+        before any backend request, whatever identity the write carries:
+        admission is the approver's act, and a run holding a label lease
+        holds no part of it.
+        """
+        ...
+
+
+@runtime_checkable
+class CommentRecordWriter(Protocol):
+    """The marker-keyed comment record, created or edited in place."""
+
+    async def upsert_comment(
+        self,
+        *,
+        target: str,
+        marker: str,
+        body: str,
+        holder: str | None = None,
+        expected: TrackerComment | None = None,
+    ) -> TrackerComment:
+        """Create or edit the issue comment with *marker* as its first line.
+
+        *body* is the content following that line. An identical replay
+        writes nothing. Several comments under the marker raise
+        ``DuplicateCommentMarkerError`` before any write. Callers compose
+        the marker and serialize concurrent writers to the same target.
+        A supplied ``holder`` must hold the marker surface live, else
+        ``SurfaceLeaseError`` carrying the surface and the observed current
+        holder. ``holder=None`` is the single-writer write: no lease is
+        consulted, and every other refusal on this call still applies.
+        When ``expected`` is supplied, re-read after authority waits and require
+        that exact native root comment/provenance and its expected or desired
+        body. Missing or changed records raise ``StaleCommentWriteError``;
+        absence never creates a replacement. This is not backend atomic CAS.
+        """
+        ...
+
+
+@runtime_checkable
+class LaneEventWriter(Protocol):
+    """The append to a lane's event stream, without the read beside it.
+
+    What it leaves out is the point: a holder of this role adds to the
+    history and cannot read what is already in it.
+    """
+
+    async def post_run_event(
+        self, *, issue_key: str, event: LaneRunEvent
+    ) -> LaneRunEvent:
+        """Append *event* to its lane's stream on *issue_key*, as posted.
+
+        Appending is the stream's only write.  An event already in it is
+        never rewritten and never removed, which is what lets the stream
+        be read as a history rather than as a set of current answers.
+
+        Two equal events are two events.  A repeat is a fact about the
+        run — the same thing happened twice — and collapsing it would
+        report a lane that stalled and retried as one that never did.
+        """
+        ...
+
+
+@runtime_checkable
+class ClaimHolder(Protocol):
+    """The two calls a holder makes about a claim it already holds.
+
+    No acquisition: a holder of this role extends and withdraws what it
+    took, and cannot take an issue from whoever holds one now.
+    """
+
+    async def renew_claim(
+        self,
+        *,
+        issue_key: str,
+        holder: str,
+        lease_seconds: float,
+    ) -> ClaimResult | None:
+        """Extend a claim *holder* already holds, so it outlives its lease.
+
+        Returns the claim as it now stands — expiring no earlier than
+        *lease_seconds* from now — when *holder* holds a live claim on the
+        issue.  Returns ``None``, extending nothing, when it does not; a
+        marker of *holder*'s own that has lapsed is taken back.
+
+        Renewal EXTENDS and never acquires.  A claim that has already
+        lapsed stays lapsed and the issue stays claimable: the lapse is how
+        a process that died mid-run hands its work back, and a renewal that
+        could resurrect one would take that recovery away — including a
+        renewal whose own write outlived the lease it was extending.
+        """
+        ...
+
+    async def release_claim(self, *, issue_key: str, holder: str) -> None:
+        """Release a claim held by *holder*. A claim it does not hold is a no-op."""
+        ...
+
+
+@runtime_checkable
+class TrackerScopeApprovalReader(
+    ContainerMetadataReader,
+    ExecutionApprovalReader,
+    Protocol,
+):
+    """Read approval the way it is granted: as a label on a node, cascading down.
+
+    The reads a scope-member question needs and nothing else, so a scope
+    run's entry, the pass that submits one and the organize owner's gate
+    depend on no writer and on no other read. The cascade and the container
+    it resolves through are the two roles this composes; the label on the
+    scope itself is its own.
+    """
+
+    async def read_scope_labels(self, *, ref: ScopeRef) -> frozenset[ScopeLabel]:
+        """Read configured labels on this exact scope, without approval cascade."""
+        ...
+
+
+@runtime_checkable
+class WorkRefReader(Protocol):
+    """The one read base resolution makes to find a blocker's branch.
+
+    Named for the base resolver (``services/base_resolver.py``) and the
+    delivery coordinator's refs, which take it alone; ``WorkRefRecorder``
+    composes it beside the record, and the aggregate composes it. On the
+    per-issue pass the tracker answers it, while the scope path serves the
+    same question from the lane's own run-state record (KOD-842).  Either
+    way the caller asks *which refs deliver issue X, in which roles, at
+    which shas* and derives nothing from a branch name.
+    """
+
+    async def work_refs(self, *, issue_key: str) -> Sequence[WorkRef]:
+        """Every ref recorded against the issue, oldest first.
+
+        This is the read D2 requires: *which refs deliver issue X, in which
+        roles, at which shas* is answerable through the port, so no code
+        anywhere derives an issue identity, a role or a parent from a
+        branch name. Recorded landing remains LANDED, NOT_LANDED or UNKNOWN;
+        an older record without that fact reads UNKNOWN, never NOT_LANDED.
+        """
+        ...
+
+
+@runtime_checkable
+class SurfaceLeaseTracker(Protocol):
+    """Exactly the lease calls one writing job's own lifetime makes.
+
+    Named for the run's and the model's surface leases
+    (``services/run_surface_lease.py``, ``services/model_surface_lease.py``):
+    the lease arbitrates and this names the three calls that ask it to, so a
+    writer holding this role can take a lease and can do nothing else with
+    it. The roles of the writers that also lease compose it, and so does the
+    aggregate.
+    """
+
+    async def acquire_surfaces(
+        self,
+        *,
+        surfaces: frozenset[WritableSurface],
+        holder: str,
+        lease_seconds: float,
+    ) -> SurfaceLease:
+        """Take the WHOLE set exclusively for *holder*, or take nothing.
+
+        Acquisition never blocks and never retries: on intersection with
+        another holder's live lease, or with another holder's bid in a race
+        the backend has not settled, it raises ``SurfaceContendedError``
+        naming that surface and its settled holder (``None`` for an
+        unsettled race), releases whatever it took, and holds nothing
+        afterwards. A surface *holder* itself holds live is
+        not contention — re-acquisition succeeds and re-times the whole
+        set — and an expired lease is free to anyone.
+
+        *holder* names the writer whose lifetime the lease follows: a run's
+        job id (``JobRecord.job_id``), or a scheduled pass's own identity for
+        a writer that is not a run. It is never the claim's process identity
+        (``dispatch_holder``) and never composed from it.
+        """
+        ...
+
+    async def renew_surfaces(
+        self,
+        *,
+        surfaces: frozenset[WritableSurface],
+        holder: str,
+        lease_seconds: float,
+    ) -> SurfaceLease | None:
+        """Extend a lease *holder* holds live on EVERY surface of the set.
+
+        Returns the lease as it now stands, expiring no earlier than
+        *lease_seconds* from now. Returns ``None``, extending nothing, when
+        *holder* does not hold every one of them live: renewal EXTENDS and
+        never acquires, so a lapsed lease stays lapsed and its surfaces stay
+        free. A standing hold of *holder*'s on only part of the set is no
+        hold, and the refusing renewal withdraws it, so *holder* is left
+        holding nothing of that set.
+        """
+        ...
+
+    async def release_surfaces(
+        self,
+        *,
+        surfaces: frozenset[WritableSurface],
+        holder: str,
+    ) -> None:
+        """Release the surfaces *holder* holds.
+
+        A surface it does not hold is a no-op, live or expired.
+        """
+        ...
+
+
+@runtime_checkable
+class LaneEventHistory(Protocol):
+    """The one read a grading's provenance needs, and no write beside it.
+
+    Named for the audit's evidence reading (``chains/audit_evidence.py``),
+    and composed by the run alarm's role and by the aggregate. What it leaves
+    out is the point: no append, so a holder of this role cannot add the
+    grading whose absence it is reading for.
+    """
+
+    async def lane_run_events(
+        self, *, issue_key: str, lane_key: str
+    ) -> Sequence[LaneRunEvent]:
+        """*lane_key*'s events on *issue_key*, in write order.
+
+        Exactly the events posted for that lane on that issue, ordered by
+        when the backend recorded each write.  A record edited in place
+        under its own marker is not one of them, and neither is a threaded
+        reply — a decision record among them — whatever it carries.
+
+        A successful read with nothing posted returns an empty sequence.
+        An unreadable or damaged entry raises: a stream answering with a
+        hole would report a history that never happened.
+        """
+        ...
+
+
+@runtime_checkable
+class CriterionReopener(Protocol):
+    """The one state move the audit makes.
+
+    Named for the audit's reopening (``services/audit_reopen.py``); the lane
+    state writer's role composes it too, and so does the aggregate.  The
+    audit is not the lane, so it does not take ``LaneStateTracker``, which is
+    bound to the lane state writer's calls.
+    """
+
+    async def reset_criterion_pending(
+        self, *, expected: TrackerIssue, holder: str | None = None
+    ) -> TrackerIssue:
+        """Reset only this expected native criterion under CRITERION_SUB_ISSUE.
+
+        Resolve the team's unique actual unstarted state. Re-read expected
+        identity/body/state and the current holder on each unsent retry;
+        a matching already-unstarted replay writes nothing. Read back the
+        state separately from the write attempt. No body or evidence is edited.
+        A supplied ``holder`` must hold the criterion surface live, else
+        ``SurfaceLeaseError``. ``holder=None`` is the single-writer write: no
+        lease is consulted, and every other refusal on this call still applies.
+        """
+        ...
+
+
+@runtime_checkable
+class WorkRefRecorder(WorkRefReader, Protocol):
+    """The ref record and the read beside it: what records a ref reads them back."""
+
+    async def record_work_ref(self, *, ref: WorkRef) -> None:
+        """Record *ref* against its issue; ``work_refs`` is the read.
+
+        At most one ``DELIVERABLE`` ref exists per issue: a second raises
+        ``DuplicateWorkRefError`` and is never a silent replacement.
+        Recording the same ref twice is idempotent.
+        """
+        ...
+
+
+@runtime_checkable
+class RunAlarmTracker(
+    LaneEventHistory,
+    LaneEventWriter,
+    SurfaceLeaseTracker,
+    Protocol,
+):
+    """Exactly the tracker calls an observation of a run's shape makes.
+
+    A role narrowed out of the port rather than a widening of it. What it
+    leaves out is the point: no workflow state, no queue state, no criterion
+    reset and no description edit, so a holder of this role cannot move a
+    run's state whatever it observes. It reads every record on one carrier,
+    rewrites one of them under its own lease, and appends to one lane's
+    stream.
+    """
+
+    async def read_run_alarms(self, *, issue_key: str) -> tuple[RunAlarm, ...]:
+        """Every record this purpose holds on *issue_key*, in one listing.
+
+        The whole carrier rather than one address: an observation reading a
+        record per signal and per member would list the issue's comments once
+        per address, and the addresses it holds are themselves something only
+        the listing can say. Damage at any of them is a typed refusal, as it
+        is for the one that was asked for.
+        """
+        ...
+
+    async def record_run_alarm(
+        self, *, issue_key: str, alarm: RunAlarm, holder: str
+    ) -> None:
+        """Upsert the complete (subject, signal) record under its live marker lease.
+
+        The explicit issue_key is the carrier, not an inferred subject lane.
+        The actual writing job holds this exact marker through settlement.
+        Equal replay writes nothing; damaged or duplicate addressed records
+        refuse, as do missing, expired or foreign holders.
+        """
+        ...
+
+
+@runtime_checkable
+class CriterionMinter(
+    CriterionMintWriter,
+    CriterionReopener,
+    SurfaceLeaseTracker,
+    Protocol,
+):
+    """Exactly the tracker calls one obligation mint makes.
+
+    A role narrowed out of the port rather than a widening of it: the lease
+    on one lane's criterion child set, the mint under it, and the move of a
+    child the mint answered with back to unstarted, under a lease on that
+    child's own surface. What it leaves out is the point: no other workflow
+    state and no description edit, so a holder of this role can add an
+    obligation to a lane, or reopen the one it names, and can change no
+    text the lane already carries.
+    ``TrackerPort`` satisfies it structurally.
+    """
+
+
+@runtime_checkable
+class LaneStateTracker(
+    CommentRecordWriter,
+    CriterionReopener,
+    DescriptionWriter,
+    IssueReader,
+    LaneEventWriter,
+    TrackerCommentReader,
+    WorkflowStateWriter,
+    Protocol,
+):
+    """Exactly the tracker calls the lane state writer makes.
+
+    A role composed of the narrow roles those calls belong to rather than
+    a second declaration of each: the writer states what it needs, and
+    ``TrackerPort`` satisfies this structurally without declaring one more
+    member.
+    """
+
+
+@runtime_checkable
+class SubjectCriteriaReader(
+    IssueReader,
+    TrackerCriteriaReader,
+    Protocol,
+):
+    """A subject and its criterion family: the two reads a terminal reading makes."""
+
+
+@runtime_checkable
+class ScopeMemberReader(
+    TrackerCriteriaReader,
+    ScopeFamilyReader,
+    Protocol,
+):
+    """The scope family and each member's criteria, which is what membership is."""
+
+
+@runtime_checkable
+class ScopePlanReader(
+    ScopeMemberReader,
+    PlanningIssueReader,
+    ScopeReadPreflight,
+    Protocol,
+):
+    """Everything a scope plan is read from, and no write anywhere in it."""
+
+
+@runtime_checkable
+class ScopeRosterReader(
+    ScopeFamilyReader,
+    PlanningIssueReader,
+    Protocol,
+):
+    """A scope's roster and each member's classification, read twice to agree."""
+
+
+@runtime_checkable
+class ScopeTallyReader(
+    ScopeRosterReader,
+    ScopeReadPreflight,
+    Protocol,
+):
+    """The roster a tally is counted over, behind the classification preflight.
+
+    Exactly what a scope's stage barrier is read from: its roster and each
+    member's stage markers. It names no event read and no write, so a holder
+    of it can observe a scope's stall from those and from nothing keyed to
+    the scope — there is no such thing for it to read.
+    """
+
+
+@runtime_checkable
+class ScopeReadyReader(
+    ScopePlanReader,
+    ExecutionApprovalReader,
+    Protocol,
+):
+    """The scope plan plus the approval an entry asks for, still without a write."""
+
+
+@runtime_checkable
+class FireSubjectReader(ScopeMemberReader, Protocol):
+    """The admitted subject of a fire, over the family it is measured against."""
+
+    async def read_fire_subject(self, *, issue_key: str) -> TrackerIssue:
+        """Capture the subject once, admitted to a fire, as the tracker reports it.
+
+        Require the subject's configured criteria phase marker and current
+        inherited execution approval, from the one hydration that answers
+        its key, text and version. Criterion membership is not read here:
+        the fire measures it over the subject's subtree. This read never
+        reruns an admission session; legal criterion-state policy remains a
+        separate entry requirement.
+        """
+        ...
+
+
+@runtime_checkable
+class OrganizeAuthorReader(
+    IssueRevisionReader,
+    TrackerCriteriaReader,
+    Protocol,
+):
+    """The criterion family and the body digests an authoring round reads."""
+
+
+@runtime_checkable
+class OrganizeContextTracker(
+    IssueReader,
+    TrackerCommentReader,
+    ScopeFamilyReader,
+    Protocol,
+):
+    """The issues, milestones and records an organize context is assembled from."""
+
+    async def project_milestones(
+        self, *, project_key: str
+    ) -> tuple[ScopeContainer, ...]:
+        """Read all native project milestones without selection policy."""
+        ...
+
+
+@runtime_checkable
+class PassGateReader(IssueScanReader, Protocol):
+    """The board and review scans a pass gate decides on, and no write at all."""
+
+    async def scan_reviews(self, *, query: ReviewQuery) -> Sequence[TrackerReview]:
+        """Reviews matching *query*, newest first.
+
+        A separate call rather than a flag on :meth:`scan_issues` because
+        a review is a separate object class: no issue scan reaches one at
+        any page size, so a consumer asking "did anything move?" over
+        issues alone is answering a narrower question than it thinks.
+
+        Newest first is part of the contract, not an accident of a
+        backend: it is what lets a recency question be answered from one
+        page instead of walking the whole set.
+        """
+        ...
+
+    async def read_issue_movement(self, *, issue_key: str) -> IssueMovementSnapshot:
+        """Stable native field projection and complete comments for receipt replay."""
+        ...
+
+
+@runtime_checkable
+class TrackerArtifactReader(
+    ContainerMetadataReader,
+    IssueReader,
+    PlanningIssueReader,
+    TrackerCommentReader,
+    TrackerCriteriaReader,
+    Protocol,
+):
+    """Every read a tracker artifact is assembled from, and no write beside them."""
+
+    async def read_issue_identity(self, *, issue_key: str) -> IssueIdentity | None:
+        """The issue's recorded deliverable identity, or no owned identity."""
+        ...
+
+    async def read_split_children(self, *, source_key: str) -> tuple[TrackerIssue, ...]:
+        """Read ordinary children with the source's unique split identities."""
+        ...
+
+
+@runtime_checkable
+class FireDispatchTracker(
+    ClaimHolder,
+    IssueReader,
+    IssueScanReader,
+    RecordedRepositoryReader,
+    Protocol,
+):
+    """The claim, the base and the staging facts one dispatch decision needs."""
+
+    async def claim_issue(
+        self,
+        *,
+        issue_key: str,
+        holder: str,
+        lease_seconds: float,
+    ) -> ClaimResult:
+        """Attempt an exactly-once claim.
+
+        Concurrent claimants on one issue produce exactly one
+        ``GRANTED``; every other claimant observes ``LOST``, or
+        ``CONTENDED`` where the backend settled no order between them and
+        nobody holds the issue. Neither is an exception: both are values
+        the caller routes on. ``current_holder`` names an OWNER and
+        nothing else, so it carries the winner under ``LOST`` and is
+        absent under ``CONTENDED``: a race nobody won has no owner to
+        name, and naming the party met would report a refused claimant as
+        holding the issue.
+
+        *holder* is the deployment's PROCESS identity, the value
+        ``config/app.py::dispatch_holder`` carries. It answers which
+        deployment may fire an issue; a surface lease's holder answers
+        which run may write a surface. Neither is derived from the other.
+        """
+        ...
+
+    async def active_claim(self, *, issue_key: str) -> ClaimResult | None:
+        """The unexpired claim on the issue, or ``None`` when unclaimed.
+
+        ``expires_at`` is when the CLAIM lapses, not when any one write
+        that carried it does: a holder that renewed holds until the last of
+        its renewals runs out.
+        """
+        ...
+
+    async def read_base_spec(self, *, issue_key: str) -> BaseSpec | None:
+        """The base most recently recorded for *issue_key*, or ``None``.
+
+        ``None`` means no dispatch ever recorded one — a first dispatch,
+        not a stale base.  The two are different states and no caller may
+        conflate them.
+        """
+        ...
+
+    async def record_base_spec(self, *, issue_key: str, spec: BaseSpec) -> None:
+        """Record the base *issue_key*'s lane was dispatched on.
+
+        The spec is written THROUGH the port, on the dependent
+        issue.  Staleness compares a recorded spec against the one the
+        blockers imply now, and with nothing recorded there is nothing to
+        compare — the arithmetic would only ever compare a value with
+        itself.  Recording the same spec twice is idempotent; recording a
+        different one supersedes, because a lane dispatched again was
+        dispatched on the base of that dispatch.
+        """
+        ...
+
+    async def initiative_identifiers(self, *, project_id: str) -> frozenset[str]:
+        """Every name and id of every initiative *project_id* belongs to.
+
+        Read for a team's declared scope: a scope entry may name an
+        initiative in either spelling, and issue placement only carries
+        the project.
+        """
+        ...
+
+
+@runtime_checkable
+class BaseResolutionTracker(WorkRefRecorder, IssueReader, Protocol):
+    """The issue read and the ref record base resolution works from."""
+
+
+@runtime_checkable
+class RequestRecordReader(
+    ScopeMemberReader,
+    IssueReader,
+    RecordedRepositoryReader,
+    StateHistoryReader,
+    TrackerCommentReader,
+    Protocol,
+):
+    """The comments, issues and routing an audit request is composed from."""
+
+
+@runtime_checkable
+class AuditCandidateReader(
+    ScopeMemberReader,
+    StateHistoryReader,
+    Protocol,
+):
+    """The state entry and the membership an audit candidate is selected on."""
+
+
+@runtime_checkable
+class LaneEscalationTracker(
+    ClassificationWriter,
+    CommentRecordWriter,
+    PlanningIssueReader,
+    ScopeReadPreflight,
+    SurfaceLeaseTracker,
+    Protocol,
+):
+    """The escalation record a lane writes, and the reads it is composed from."""
+
+
+@runtime_checkable
+class LaneLapseEscalationTracker(
+    LaneEscalationTracker,
+    TrackerArtifactReader,
+    Protocol,
+):
+    """The question a lapsed grading raises and the reads that verify it landed.
+
+    Named for the lane's lapse escalations
+    (``services/lane_lapse_escalation.py``), which hand the tracker to the
+    lane escalation writer and to the write-back verifier and call nothing on
+    it themselves.
+    """
+
+
+@runtime_checkable
+class AuditPublicationWriter(
+    CommentRecordWriter,
+    SurfaceLeaseTracker,
+    Protocol,
+):
+    """The record an audit publishes, under the lease that publication holds."""
+
+
+@runtime_checkable
+class EscalationSignalReader(
+    EscalationResolutionReader,
+    TrackerCommentReader,
+    Protocol,
+):
+    """The resolution and the records an escalation's ageing is observed from."""
+
+
+@runtime_checkable
+class RecordSignalReader(
+    TrackerCommentReader,
+    TrackerCriteriaReader,
+    Protocol,
+):
+    """The criterion family and the lane record a barren tick is observed from."""
+
+
+@runtime_checkable
+class OrganizeOwnerTracker(
+    LaneEscalationTracker,
+    TrackerArtifactReader,
+    TrackerScopeApprovalReader,
+    ClassificationWriter,
+    CriterionMintWriter,
+    DescriptionWriter,
+    IssueRevisionReader,
+    ScopeFamilyReader,
+    SurfaceLeaseTracker,
+    Protocol,
+):
+    """Everything the organize owner reads and every write it makes."""
+
+    async def create_split_if_absent(
+        self,
+        *,
+        source_key: str,
+        deliverable_key: str,
+        title: str,
+        body: str,
+        holder: str,
+        expected: tuple[IssueGraphSnapshot, ...],
+        revalidate: WriteRevalidation | None = None,
+    ) -> TrackerIssue:
+        """Create one ordinary unstarted child under ISSUE_SPLIT_SET authority.
+
+        Return a unique matching child unchanged; refuse duplicate or misplaced
+        identities. A declared parent creation surface grants no existing child edit.
+        """
+        ...
+
+    async def update_issue_graph(
+        self,
+        *,
+        issue_key: str,
+        expected: tuple[IssueGraphSnapshot, ...],
+        changes: tuple[GraphChange, ...],
+        holder: str,
+        revalidate: WriteRevalidation | None = None,
+    ) -> TrackerIssue:
+        """Apply explicit graph deltas under source and affected peer grants.
+
+        Re-read the supplied native snapshot after awaited ownership checks;
+        this is a refusal check, not an atomic backend compare-and-set.
+        """
+        ...
+
+
+@runtime_checkable
+class FireRulingTracker(
+    ScopeMemberReader,
+    SubjectCriteriaReader,
+    TrackerArtifactReader,
+    CommentRecordWriter,
+    SurfaceLeaseTracker,
+    Protocol,
+):
+    """The criterion reads and the record writes a ruling round makes."""
+
+
+@runtime_checkable
+class AmendmentWriteTracker(
+    LaneEscalationTracker,
+    ModelMemberReader,
+    TrackerArtifactReader,
+    CriterionReopener,
+    DescriptionWriter,
+    SurfaceLeaseTracker,
+    Protocol,
+):
+    """Every read the amendment write-back is composed from and every write it makes."""
+
+
+@runtime_checkable
+class NativeAmendmentTracker(
+    AmendmentWriteTracker,
+    ScopeMemberReader,
+    CriterionMinter,
+    Protocol,
+):
+    """The amendment writes plus the membership the native arm reads beside them.
+
+    It also hands the tracker to the weakened-assertion marks, whose one
+    obligation mint is the criterion minter's.
+    """
+
+
+@runtime_checkable
+class LifecycleStateWriter(
+    WorkRefRecorder,
+    CommentRecordWriter,
+    StateRestorer,
+    SurfaceLeaseTracker,
+    WorkflowStateWriter,
+    Protocol,
+):
+    """The writes the per-issue lifecycle makes on one issue, and nothing wider."""
+
+    async def set_queue_state(
+        self,
+        *,
+        issue_key: str,
+        state: QueueState,
+    ) -> TrackerIssue:
+        """Read first; replace other queue states only if they differ.
+
+        A state whose configured label is the scope admission vocabulary's
+        approved member raises ``ApprovalLabelWriteError`` before any backend
+        request: the queue vocabulary cannot express an approval, whatever
+        mapping the operation loaded with. The operation loader refuses such a
+        mapping; this refusal is the port's own and does not rely on it.
+        """
+        ...
+
+    async def post_comment(self, *, issue_key: str, body: str) -> TrackerComment:
+        """Post a comment and return it as stored."""
+        ...
+
+
+@runtime_checkable
+class TrackerPort(
+    FireSubjectReader,
+    LifecycleStateWriter,
+    WorkRefRecorder,
+    WorkRefReader,
+    OrganizeOwnerTracker,
+    TrackerArtifactReader,
+    TrackerScopeApprovalReader,
+    ClassificationWriter,
+    CommentRecordWriter,
+    StateRestorer,
+    ContainerMetadataReader,
+    FireDispatchTracker,
+    ClaimHolder,
+    ModelMemberReader,
+    OrganizeContextTracker,
+    IssueReader,
+    PlanningIssueReader,
+    ScopeReadPreflight,
+    TrackerCommentReader,
+    TrackerCriteriaReader,
+    ExecutionApprovalReader,
+    CriterionMintWriter,
+    DescriptionWriter,
+    IssueRevisionReader,
+    ScopeFamilyReader,
+    PassGateReader,
+    IssueScanReader,
+    RecordedRepositoryReader,
+    RunAlarmTracker,
+    LaneEventHistory,
+    LaneEventWriter,
+    SurfaceLeaseTracker,
+    WorkflowStateWriter,
+    CriterionReopener,
+    EscalationResolutionReader,
+    ScanCapabilityReader,
+    StateHistoryReader,
+    SurfaceAuthorshipReader,
+    TrackerContextReader,
+    TrackerVocabulary,
+    WriterIdentityReader,
+    Protocol,
+):
+    """The complete adapter surface selected by application composition.
+
+    Vendor-neutral by construction: every parameter and every return type
+    is domain vocabulary. Consumers depend on the roles whose members they
+    call; this is what composition holds and hands to them.
+    The selected adapter supplies the complete surface; consumers never
+    choose a weaker read based on backend feature detection.
+
+    Notification behavior: an issue body edit is expected to be silent,
+    while posting a comment is expected to notify its recipients. This
+    capability is unfalsifiable through the declared port: issue and
+    comment reads reveal stored content, but no read exposes recipient
+    notification events or their originating write. Falsifying the claim
+    would require a recipient notification-event read correlated with
+    the body edit or comment creation. This port carries no such read,
+    so neither write success nor content read-back proves notification
+    delivery or silence; this is not an executable boot check.
+
+    It declares no member of its own: every member belongs to the role its
+    consumer names, and this is the whole of them, composed once for the
+    composition that holds one adapter and hands it to role-typed
+    parameters. It names every role that declares a member as a base of its
+    own, most-derived first, so narrowing a consumer's role never takes a
+    member off the whole.
+    """
+
+
+@runtime_checkable
+class ScopeStatusWriter(Protocol):
+    """Post one point-in-time status update on a scope's container.
+
+    A role narrowed out of the port rather than a widening of it: the scope
+    terminal makes exactly this one write and states exactly it, so the
+    tracker port grows no member and the consumer depends on nothing wider
+    (KOD-829).  ``ref`` addresses the container; ``body`` is the whole
+    content, already derived and already gated by the caller.
+    """
+
+    async def post_status_update(self, *, ref: ScopeRef, body: str) -> None: ...
+
+
+@runtime_checkable
+class ScopeStatusReader(Protocol):
+    """Read the status updates a scope's container already carries.
+
+    One member, narrowed beside the writer rather than added to the port
+    (KOD-829): the scope terminal asks what is already there so that a
+    report equal to the newest one is not posted a second time, and no
+    other consumer asks the container anything. The answer is newest
+    first, and a container carrying none answers empty rather than
+    refusing.
+    """
+
+    async def status_update_bodies(self, *, ref: ScopeRef) -> Sequence[str]: ...
+
+
+@runtime_checkable
+class ScopeStatusUpdates(ScopeStatusReader, ScopeStatusWriter, Protocol):
+    """The container-status role whole: read what is there, post what should be.
+
+    One class serves both over the tracker's caller, and the terminal's own
+    collaborator is one surface it reads and then writes — so it depends on
+    this rather than on two parameters that could be given two objects.
+    """
+
+
+#: Called with the workspace a commit was made in and the receipt it
+#: returned, between the push and the completion of the persisting phase.
+AfterPublish = Callable[[str, PersistResult], Awaitable[None]]
+
+
+@runtime_checkable
+class LaneStateWriter(Protocol):
+    """The lane's own tracker writes; the committing loop needs nothing else."""
+
+    def require_writable(self, *, lane: LaneBinding) -> None:
+        """Refuse now whatever would refuse at the write, and read nothing.
+
+        Everything this answers is knowable from the binding and the
+        configuration: the two marker identities the lane writes under and
+        the address its branch is recorded at.  A caller asks before it
+        opens a session, so a lane that could not record its commit is
+        refused before there is a commit to record.
+        """
+        ...
+
+    async def record_commit(
+        self, *, lane: LaneBinding, workspace_path: str, receipt: PersistResult
+    ) -> LaneRunState:
+        """Record the commit *receipt* just pushed, as the lane's one record.
+
+        The record is the whole answer to "where is this lane now", so it
+        is rewritten in place under its own marker and never appended to.
+        """
+        ...
+
+    async def record_landing(
+        self, *, lane: LaneBinding, repo_path: str, landed_sha: str
+    ) -> LaneRunState | None:
+        """Record the landed best iteration as the lane's next commit act.
+
+        The stall landing puts the best iteration of the run on the
+        deliverable branch, and *landed_sha* is where that branch then
+        stands.  It is a commit act of this lane like any other, so it takes
+        a row of its own on the one record, and a re-entry reading the rows
+        resolves the landed work rather than the tip it was chosen over.
+
+        *repo_path* is only where the two shas of the changeset are read
+        from: the landing holds no workspace, so nothing here is observed
+        off a tree.  A lane with no record has nothing to re-enter from and
+        so nothing for the act to carry: the write is skipped and logged,
+        ``None`` is returned, and the delivery after it proceeds, since
+        refusing it would lose the landed work.  No first record is composed
+        out of a landing.
+        """
+        ...
+
+    async def record_pull_request(
+        self, *, lane_key: str, pr: LanePR, visibility: RepoVisibility
+    ) -> LaneRunState | None:
+        """Set *pr* on the lane's one record, editing that record in place.
+
+        Where a lane's delivery is retained is its record, so the step that
+        delivered writes it there. A lane with no record has nothing for the
+        pull request to ride on, and a delivery is no basis for composing a
+        first record: the write is skipped and logged, ``None`` is returned,
+        and the delivery completes. A pull request the record already carries
+        writes nothing.
+
+        *visibility* is the run's resolved visibility, the same one the
+        commit write gated that record body under: one record body asked one
+        question, so a body admitted when a commit recorded it is not refused
+        when a delivery edits it.
+        """
+        ...
+
+    async def write_cross_offs(
+        self,
+        *,
+        lane: LaneBinding,
+        dispatched: Sequence[TrackerCriterion],
+        cross_offs: Sequence[CriterionCrossOff],
+    ) -> None:
+        """Write the whole attempt's verdict onto the criterion sub-issues.
+
+        *cross_offs* answers *dispatched* one for one, in order: a verdict
+        is a reading of the roster it was graded against, and a partial
+        one is no reading of it. A criterion this attempt passed gets its
+        graded sha on its Evidence row and is then moved to
+        ``LifecycleStage.DONE``, in that order, and the lane's stream then
+        says it crossed that criterion off at that sha. A criterion whose
+        earlier grading has lapsed goes the other way — back to the team's
+        unstarted state, keeping the sha it was graded at with its pointer
+        saying that grading lapsed — and is announced as a lapse, under its
+        own kind, because a lapse is the criterion being owed again and not
+        the regression a refutation reports. A criterion this attempt read
+        nothing about is recorded on the lane's run-event stream, keyed to
+        that sub-issue and naming which reading failed.
+        Nothing else is written anywhere, least of all a parent's state or
+        the sub-issue of a criterion no verdict addresses.
+        """
+        ...
+
+
+@runtime_checkable
+class NodeSessionRecorder(Protocol):
+    """Put a node's observed session openings on its lane's stream, once each."""
+
+    async def record_node_sessions(
+        self, *, lane: LaneBinding, started: Sequence[NodeSessionStartedEvent]
+    ) -> None:
+        """Post one event per opening *started* holds that the stream lacks.
+
+        Keyed to the whole invocation and the session it opened, so a reader
+        can count what each invocation opened against what it declared, and
+        a repeat of the same opening posts nothing.
+        """
+        ...
+
+
+@runtime_checkable
+class WriteBackStep(Protocol):
+    """One writing step, as the verifier drives it.
+
+    The step owns its own write.  It already knows which surface it
+    addresses and under which precondition, and a verifier that re-derived
+    that would be a second statement of it, free to disagree.
+    """
+
+    @property
+    def surface(self) -> WritableSurface:
+        """The surface this step writes, and the one re-read after it."""
+        ...
+
+    async def write(self, *, finding: WriteBackFinding | None) -> None:
+        """Put this step's text on its surface.
+
+        ``None`` is the first round.  A repair round carries the previous
+        round's finding, so the step repairs what was actually found
+        rather than rewriting from scratch and re-introducing it.
+        """
+        ...
+
+
+@runtime_checkable
+class LaneLapseEscalator(Protocol):
+    """The question a lane raises when a grading it cannot re-derive lapses."""
+
+    async def raise_lapses(
+        self, *, lane: LaneBinding, lapsed: Sequence[CriterionCrossOff], head_sha: str
+    ) -> None:
+        """Raise one question per newly lapsed grading of *lapsed*.
+
+        One act, described only by values the committing loop already holds:
+        the lane it is grading for, the gradings that stopped standing at
+        this head, and the head they stopped standing at. Which occurrence
+        each question is addressed under, which lease it is written beneath
+        and how it is judged are the writer's business and not the loop's.
+        """
+        ...
+
+
+@runtime_checkable
+class WriteBackJudge(Protocol):
+    """Judge the artifact that landed, in a session that wrote none of it.
+
+    Fresh by construction: a judgment made inside the writing session
+    inherits that session's transcript, and a reader that already believes
+    the claim is not the reader this loop exists to consult.
+    """
+
+    async def judge(self, *, artifact: TrackerArtifact, ref: str) -> WriteBackFinding:
+        """Judge *artifact*'s claims against the repository at *ref*."""
         ...
 
 
@@ -880,17 +2361,23 @@ class AgentRunner(Protocol):
         repo_path: str | None = None,
         repo_url: str | None = None,
         branch: str | None = None,
-        permission_mode: str,
-        allowed_tools: list[str],
+        permission_mode: PermissionMode,
+        allowed_tools: AllowedTools,
         skills: SkillsSelection,
         session_type: SessionType,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
         cache_key: str | None = None,
+        repositories: Sequence[RepoEntry] = (),
     ) -> AsyncIterator[AgentEvent]:
-        """One-shot agent query with workspace lifecycle."""
+        """One-shot agent query with workspace lifecycle.
+
+        Given *repositories*, the session runs once over a checkout of each,
+        side by side, instead of over the one *repo_path*/*repo_url* names.
+        """
         ...
 
     def stream_workflow(
@@ -902,17 +2389,29 @@ class AgentRunner(Protocol):
         base_branch: str = "main",
         branch_name: str | None = None,
         ralph_branch: str | None = None,
-        permission_mode: str,
-        allowed_tools: list[str],
+        permission_mode: PermissionMode,
+        allowed_tools: AllowedTools,
         skills: SkillsSelection,
         session_type: SessionType,
+        run_identity: RunIdentity | None = None,
         visibility: RepoVisibility,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         create_branch: bool = True,
         cache_key: str | None = None,
+        native_guard: "NativeWriteGuard | None" = None,
+        after_publish: AfterPublish | None = None,
+        repositories: Sequence[RepoEntry] = (),
     ) -> AsyncIterator[AgentEvent]:
-        """Workflow mode with branch creation and persistence."""
+        """Workflow mode with branch creation and persistence.
+
+        On the native arm *after_publish* is required and runs inside the
+        persisting phase: the commit and what it is recorded as are one
+        operation, not two steps a caller may perform separately.
+
+        Given *repositories*, the branch is worked on in a checkout of each,
+        and persisted in every checkout the session committed in.
+        """
         ...
 
     def stream_in_workspace(
@@ -920,16 +2419,95 @@ class AgentRunner(Protocol):
         *,
         prompt: str,
         workspace_path: str,
-        permission_mode: str,
-        allowed_tools: list[str],
+        permission_mode: PermissionMode,
+        allowed_tools: AllowedTools,
         skills: SkillsSelection,
         session_type: SessionType,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncIterator[AgentEvent]:
         """Execute in a pre-acquired workspace (no lifecycle)."""
+        ...
+
+
+@runtime_checkable
+class NativeWriteGuard(Protocol):
+    """A native session's live semantic and source authority before commit."""
+
+    @property
+    def holder(self) -> str:
+        """The actual parent job supplied when this native guard was composed."""
+        ...
+
+    async def begin(self, *, workspace_path: str) -> NativeWriterStart:
+        """Read the actual starting HEAD and render the current ruling registry."""
+        ...
+
+    def snapshot(self) -> NativeAuthoritySnapshot:
+        """Capture original facts and only the writer's verified source changes."""
+        ...
+
+    def restore(self, *, snapshot: NativeAuthoritySnapshot) -> None:
+        """Take the authority a saved phase carries, reading no source.
+
+        A parent resuming a saved phase hands it to a new guard. The sources
+        are read at ``begin`` and before the harness publishes, not when a
+        phase is restored (KOD-1249).
+        """
+        ...
+
+    async def judge(
+        self,
+        *,
+        workspace_path: str,
+        start: NativeWriterStart,
+        output: NativeWriterOutput,
+    ) -> AmendmentReport:
+        """Independently reconcile actual writer claims before persistence."""
+        ...
+
+    async def require_publishable(
+        self,
+        *,
+        workspace_path: str,
+        start: NativeWriterStart,
+        authorized_commit_sha: str,
+    ) -> None:
+        """Recheck current authority against the harness's actual commit receipt."""
+        ...
+
+    async def require_unweakened(
+        self,
+        *,
+        workspace_path: str,
+        start: NativeWriterStart,
+        commit_sha: str,
+        report: AmendmentReport,
+    ) -> None:
+        """Refuse a commit that loses an assertion a pinned record designates.
+
+        The comparison runs between the writer's own starting HEAD and the
+        harness commit, over the designations the held records carry, less
+        those of a record this run amended. A loss leaves the obligation on
+        the lane as a criterion and refuses publication.
+        """
+        ...
+
+    async def require_unchanged_head(
+        self,
+        *,
+        workspace_path: str,
+        start: NativeWriterStart,
+    ) -> None:
+        """Check the writer left HEAD where it started, without tracker I/O.
+
+        Asked after the writer returns, before a failed writer's cleanup, and
+        by the harness's commit hook: the lane's authority is read at
+        ``begin`` and before the push, never before the commit (KOD-1249).
+        """
         ...
 
 
@@ -947,6 +2525,71 @@ class GitAuth(Protocol):
 
 
 @runtime_checkable
+class FireCriteriaReader(Protocol):
+    """Read current native obligations against the run's frozen subject spec.
+
+    This is a runtime dependency. Checkpoints carry the spec and criterion
+    data only; transport failures refuse instead of returning cached Checks.
+    """
+
+    async def read_current(
+        self, *, spec: TrackerSpec, held: TrackerCriterionSet | None = None
+    ) -> TrackerCriterionSet:
+        """Return one complete current Check snapshot or a typed refusal.
+
+        *held* is the roster the caller entered with. A criterion of that
+        roster the caller has since finished stays in the snapshot; one
+        finished before the caller entered is in no roster and stays out.
+        """
+        ...
+
+    async def owed_from(
+        self,
+        *,
+        spec: TrackerSpec,
+        criteria: Mapping[str, TrackerIssue],
+        held: TrackerCriterionSet,
+    ) -> TrackerCriterionSet:
+        """What :meth:`read_current` answers, from a reading the caller took.
+
+        *criteria* is every criterion sub-issue of one reading of the spec's
+        subtree, which a caller reading that subtree for its whole
+        membership anyway already holds (KOD-1249). Nothing is read here.
+        """
+        ...
+
+
+@runtime_checkable
+class FireCriteriaSource(FireCriteriaReader, Protocol):
+    """Enter a fire on one reading of its subject's subtree, then refresh it."""
+
+    async def read_entry(
+        self, *, issue_key: str, delivering: bool = False
+    ) -> tuple[TrackerSpec, TrackerCriterionSet]:
+        """Admit the subject, capture its spec, and answer the entry roster.
+
+        One reading of the subject's subtree serves both values, so the
+        emptiness that refuses a fire and the roster the loop starts on can
+        never be answers to two different questions. The captured spec names
+        every criterion sub-issue under the subject — its own children and,
+        recursively, its deliverable children's — and a subtree holding none
+        is a typed refusal here, before any roster is selected.
+
+        Without *delivering* the roster is the subtree's unstarted criteria,
+        and a subtree with none of those is a typed refusal. With it, the
+        reading a lane owing nothing enters on: it holds no unstarted
+        criterion for :meth:`read_current` to answer with, and what its
+        delivery stands on is instead that every criterion of its subtree
+        that counts is finished, which is what the cross-offs of its own
+        earlier work mean. A criterion the board Canceled or closed as a
+        Duplicate counts for nothing and refuses nothing (KOD-794). One
+        criterion still open, or a counting roster that comes out empty,
+        is a typed refusal here rather than a smaller roster downstream.
+        """
+        ...
+
+
+@runtime_checkable
 class QualityGate(Protocol):
     """Iterates agent work until acceptance criteria pass or max iterations.
 
@@ -954,6 +2597,15 @@ class QualityGate(Protocol):
     the first is where the loop's first iteration cuts its branch, the
     second is what the work is diffed against.  A round built on top of
     an earlier round's consolidated work has them name different refs.
+
+    ``resumed_head_sha`` is the third: the head the lane's record names,
+    which a CONTINUED branch must stand at before the loop works in it; a
+    branch cut from that head needs no comparison.
+    ``base_stale`` is what the entry read of the lane's recorded dispatch
+    base against the base resolving now: when it is true, every grading the
+    loop would carry from one iteration to the next lapses.
+    ``scope`` is the parent a scope run is addressed at, which its sessions
+    are told and its implementer works below on the board.
     """
 
     def run(
@@ -966,11 +2618,17 @@ class QualityGate(Protocol):
         ralph_branch: str,
         base_spec: BaseSpec,
         work_base_ref: str,
-        permission_mode: str,
-        allowed_tools: list[str],
-        acceptance_criteria: list[ValidatedCriterion],
+        resumed_head_sha: str | None = None,
+        base_stale: bool = False,
+        permission_mode: PermissionMode,
+        allowed_tools: AllowedTools,
+        acceptance_criteria: list[ExecutionCriterion],
+        tracker_spec: TrackerSpec | None = None,
         cache_key: str,
+        run_identity: RunIdentity | None = None,
+        surface_holder: str | None = None,
         repo_visibility: RepoVisibility,
+        scope: ScopeRef | None = None,
     ) -> AsyncIterator[AgentEvent]:
         """Iterate execute/evaluate until pass or max."""
         ...
@@ -987,6 +2645,7 @@ class TicketGenerator(Protocol):
         repo_path: str | None,
         repo_url: str | None,
         cache_key: str,
+        run_identity: RunIdentity | None = None,
         base_branch: str,
     ) -> AsyncIterator[AgentEvent]:
         """Draft/review loop until approved or max reviews."""
@@ -1009,8 +2668,14 @@ class Remediator(Protocol):
         repo_path: str | None,
         repo_url: str | None,
         cache_key: str,
+        run_identity: RunIdentity | None = None,
+        scope: ScopeRef | None = None,
     ) -> AsyncIterator[AgentEvent]:
-        """Draft the remediation ticket for one round."""
+        """Draft the remediation ticket for one round.
+
+        ``scope`` is the parent a scope run is addressed at; that run's
+        criteria are the ones on the request, and no roster is read here.
+        """
         ...
 
 
@@ -1022,19 +2687,56 @@ class WorkflowEngine(Protocol):
         self,
         *,
         prompt: str,
+        issue_key: str | None = None,
+        run_identity: RunIdentity | None = None,
         repo_path: str | None,
         repo_url: str | None,
         base_spec: BaseSpec,
+        scope: ScopeRef | None,
         implied_base: BaseSpec | None = None,
-        permission_mode: str,
-        allowed_tools: list[str],
+        permission_mode: PermissionMode,
+        allowed_tools: AllowedTools,
         cache_key: str,
     ) -> AsyncIterator[AgentEvent]:
         """Full pipeline: branch → ticket → criteria → loop → merge.
 
+        ``scope`` explicitly selects addressed input or the legacy prompt
+        workflow. An engine must consume an addressed scope or refuse it.
+        ``issue_key`` is the producer's optional tracker identity, carried
+        independently of the prompt and scope address.
         ``cache_key`` IS the LangGraph thread id, so the caller's job id
         addresses the run's checkpoints.
         """
+        ...
+
+
+@runtime_checkable
+class DispatchProducer(Protocol):
+    """Selects at most one issue per pass, and hears how its fire ended.
+
+    The seam between a scheduled tick and the arithmetic that decides what
+    goes next.  A tick composes a gate with a producer; it neither ranks a
+    board nor walks a scope, so the two producers that do are one port to
+    it rather than two branches inside it.
+
+    ``record_run_outcome`` is on the same port because the news travels
+    back the way the selection travelled out: the producer that started a
+    fire is the one that has to remember a failure, and a fan-out that had
+    to know which of them did would be a second copy of the routing the
+    passes already compute.
+    """
+
+    async def run_pass(self) -> DispatchReport:
+        """Run one selection pass and report exactly what it did."""
+        ...
+
+    async def record_run_outcome(
+        self,
+        issue_key: str,
+        outcome: RunOutcome,
+        failure_class: str | None,
+    ) -> None:
+        """Take the news that a fire on *issue_key* ended."""
         ...
 
 
@@ -1049,7 +2751,7 @@ class JobQueue(Protocol):
     persistence machinery stands behind it.
     """
 
-    async def submit(self, *, lane: str, request: WorkflowRequest) -> JobRecord:
+    async def submit(self, *, lane: str, request: WorkflowSubmission) -> JobRecord:
         """Enqueue *request* on *lane*. Raises ``QueueFullError`` at capacity."""
         ...
 
@@ -1064,6 +2766,15 @@ class JobRegistry(Protocol):
 
     async def get(self, *, job_id: str) -> JobRecord | None:
         """The job's current record, or ``None`` when unknown or evicted."""
+        ...
+
+    async def live_for_scope(self, *, scope: ScopeRef) -> Sequence[JobRecord]:
+        """Every job addressed at *scope* that is not TERMINAL, oldest first.
+
+        Whichever lane it was submitted on: two walks over one scope
+        contend over every lane of it, and the two submitters a deployment
+        has — an HTTP route and the scheduled pass — do not share a lane.
+        """
         ...
 
 
@@ -1159,25 +2870,8 @@ class RepoVisibilityResolver(Protocol):
 
 
 @runtime_checkable
-class ContentScanner(Protocol):
-    """Finds outbound-content findings in one payload.
-
-    ``async`` because a judgment scanner cannot answer behind a ``def``; a
-    scanner that needs no I/O conforms with an ``async def`` awaiting
-    nothing, which is the honest shape rather than a concession.
-
-    ``destination`` is an input because the same string can be unremarkable
-    on one surface and a leak on another — a verdict that depends on where
-    the payload is going cannot be computed from the payload alone.
-
-    Returns a :class:`ScanResult`: hits or a typed failure, never an
-    exception crossing the port and never ``None``.
-    """
-
-    @property
-    def routing(self) -> ScannerRouting:
-        """When this scanner must be consulted."""
-        ...
+class ContentJudgment(Protocol):
+    """Judge authored outbound text using an independent session."""
 
     async def scan(
         self,
@@ -1185,7 +2879,7 @@ class ContentScanner(Protocol):
         content: str,
         destination: OutboundDestination,
     ) -> ScanResult:
-        """Every finding, or the typed reason there is no answer."""
+        """Findings or the typed reason judgment could not complete."""
         ...
 
 
@@ -1201,6 +2895,7 @@ class OutboundContentGate(Protocol):
         shape: WriterShape,
         destination: OutboundDestination,
         content_class: ContentClass,
+        aggregates: tuple[TrackerAggregate, ...],
     ) -> GateDecision:
         """CLEAN / REDACTED / BLOCKED — never silently dropped or posted.
 
@@ -1208,5 +2903,21 @@ class OutboundContentGate(Protocol):
         writer is the only party that knows where its bytes came from, and a
         default would let a payload take the cheap path without anyone
         saying so.
+
+        ``aggregates`` are the tracker counts and rosters the caller is
+        about to render, declared from the typed values it rendered them
+        from.  It has no default for the same reason: a writer that renders
+        a tracker roster and says nothing about it would take the cheap path
+        without anyone saying so.  A writer holding no tracker count and no
+        tracker identity list states ``()``, the one spelling of nothing.
         """
         ...
+
+
+@runtime_checkable
+class CheckChainRunner(Protocol):
+    """Execute the declared ordered chain, retaining every step's output."""
+
+    async def run_chain(
+        self, *, cwd: str, steps: Sequence[CheckStep]
+    ) -> CheckChainResult: ...

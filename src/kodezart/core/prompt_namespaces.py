@@ -26,10 +26,19 @@ SET_FRAGMENT_NAMES: frozenset[str] = frozenset({"skills_reference"})
 # compares it against what the shipped templates actually reference.
 PER_CALL_VARIABLE_NAMES: frozenset[str] = frozenset(
     {
+        "tracker_criteria",
+        "swept_criteria",
         "task",
         "task_md",
         "task_description",
         "base_ref",
+        "base_sha",
+        "claim",
+        "pinned_rulings",
+        "judgment",
+        "prior",
+        "finding",
+        "preserve_subject",
         "validation_findings",
         "prior_prompt",
         "pending_failures",
@@ -54,9 +63,43 @@ PER_CALL_VARIABLE_NAMES: frozenset[str] = frozenset(
         "changeset_has_commits",
         "content",
         "destination",
+        "inspect_aggregates",
+        "inspect_privacy",
+        "roster_minimum",
         # The row title a scheduled pass's own record must carry: per call
         # because it spells the instant that run began (KOD-290).
         "record_title",
+        # The gate question a scheduled pass asks before a tick: which pass
+        # it is for and where its window starts, the two values that change
+        # from tick to tick and are rendered last so the prefix caches.
+        "pass_name",
+        "window_start",
+        "organize_context",
+        "mandate_rubric",
+        "issue_body",
+        "issue_key",
+        "linked_issue_bodies",
+        "refusal_evidence",
+        "defect_classes",
+        "criterion_issue_bodies",
+        "criterion_key",
+        "head_sha",
+        "graded_sha",
+        "check",
+        "written_artifact",
+        "audited_surfaces",
+        "refutation_evidence",
+        "defect_class",
+        "verification_goal",
+        # The organize session: the addressed scope's key and which kind of
+        # scope it is, and which phase's rubric the session runs.
+        "scope_key",
+        "scope_project",
+        "scope_issue",
+        "scope_initiative",
+        "scope_milestone",
+        "phase_ticket",
+        "phase_criteria",
     }
 )
 
@@ -87,7 +130,7 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
     Bare names for the two scalars, dotted namespaces for the mappings.
     Nothing here is a per-call value and nothing here is a fragment.
 
-    Every binding that can be absent — the eleven collections, the
+    Every binding that can be absent — the collections, the
     private-surface prose, a principal's forge handle, an unadopted
     document id, a gate step's dependency — is three-state: the value, or
     the paired absent marker, never a hole.
@@ -107,8 +150,8 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
     A collection a pass addresses SINGLY stays keyed, because a role or a
     position is what the template names: ``principals.approver``,
     ``principals.assignee`` and ``principals.1`` by role and position,
-    ``agent_identities.0`` and ``initiatives.1`` by position, and
-    ``documents``, ``records``, ``knowledge``, ``queue_states``,
+    ``agent_identities.0`` and ``principals.1`` by position, and
+    ``documents``, ``records``, ``knowledge``, ``queue_states``, ``scope_labels``,
     ``workflow_states`` and ``endpoints`` by their configured key.  A role,
     position or key the config does not declare is an unbound placeholder
     and the render refuses, naming it — the refusal at the point of need.
@@ -125,9 +168,49 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
     )
     _bind_absentable(
         bindings,
+        "scope_labels",
+        dict(config.scope_labels),
+        absent=not config.scope_labels,
+    )
+    _bind_absentable(
+        bindings,
+        "issue_labels",
+        dict(config.issue_labels),
+        absent=not config.issue_labels,
+    )
+    _bind_absentable(
+        bindings,
+        "organize_mandates",
+        [
+            {
+                "kind": phase.spec.kind.value,
+                "gate_label": phase.gate_label,
+                "terminal_marker": phase.terminal_marker,
+            }
+            for phase in config.resolve_organize_mandates()
+        ],
+        absent=not config.organize_mandates,
+    )
+    _bind_absentable(
+        bindings,
         "workflow_states",
         {stage.value: label for stage, label in config.workflow_states.items()},
         absent=not config.workflow_states,
+    )
+    _bind_absentable(
+        bindings,
+        "marker_prefixes",
+        dict(config.marker_prefixes),
+        absent=not config.marker_prefixes,
+    )
+    _bind_absentable(
+        bindings,
+        "run_event_states",
+        [
+            {"event": name, "effect": effect.value}
+            for name, effect in config.run_event_states.items()
+        ],
+        absent=not config.run_event_states,
     )
     # The roster a pass enumerates. ``repository`` splits three ways per
     # entry, exactly one marker non-``None``: bound to a declared url;
@@ -160,6 +243,9 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
         ],
         absent=not config.teams,
     )
+    # The dispatcher always fires issues (the v0.2 workflow), so the intake
+    # prompts always render their fire-staging routine.
+    bindings["fire_dispatch"] = True
     # Present exactly when some pass must RECORD routes: an unbound team
     # beside a real repository choice.  The fire-prep template renders its
     # marker-writing instruction under this pair, so a single-repository
@@ -196,7 +282,7 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
     # exactly the run kinds (refused otherwise at load, KOD-170), so every
     # kind binds the house pair — the declared destination, or the named
     # absence a pass renders its record-nothing arm from.  No whole-registry
-    # marker exists: an empty [records] table IS three named absences, and
+    # marker exists: an empty [records] table IS one named absence per run kind, and
     # the RunRecorder routes off the same declaration this binds.
     records_namespace: dict[str, object] = {}
     for kind in RunKind:
@@ -209,6 +295,9 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
                 "name": entry.name,
                 "id": entry.id,
                 "append_only": entry.append_only,
+                "columns": (
+                    None if entry.columns is None else entry.columns.model_dump()
+                ),
             }
         )
         records_namespace[f"{kind.value}_absent"] = True if entry is None else None
@@ -222,7 +311,7 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
     _bind_absentable(
         bindings,
         "private_surface",
-        config.private_surface,
+        None if config.private_surface is None else config.private_surface.description,
         absent=config.private_surface is None,
     )
     _bind_absentable(
@@ -230,22 +319,6 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
         "endpoints",
         dict(config.endpoints),
         absent=not config.endpoints,
-    )
-    # ``target_date`` is absent on a real initiative more often than not.
-    _bind_absentable(
-        bindings,
-        "initiatives",
-        {
-            str(index): {
-                "id": item.id,
-                "target_date": (
-                    None if item.target_date is None else item.target_date.isoformat()
-                ),
-                "target_date_absent": True if item.target_date is None else None,
-            }
-            for index, item in enumerate(config.initiatives)
-        },
-        absent=not config.initiatives,
     )
     # ``handle`` is the identifier a MENTION is recognised by and
     # ``tracker_user`` the display identity the tracker names the principal
@@ -304,8 +377,8 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
         [
             {
                 "url": repo.url,
-                "name": _repo_display(repo.url)[0],
-                "slug": _repo_display(repo.url)[1],
+                "name": repo_display(repo.url)[0],
+                "slug": repo_display(repo.url)[1],
                 "trunk": repo.trunk,
                 # Empty is a named absence (founder ruling 2026-09-01):
                 # the repository's own CI defines its gate, and the
@@ -327,6 +400,25 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
                     else None
                 ),
                 "checks_absent": None if repo.checks else True,
+                # The environment facts a repository declares about its
+                # runner, each declared available or declared unavailable;
+                # a repository declaring none says so.
+                "runner_environment": (
+                    [
+                        {
+                            "name": prerequisite.value,
+                            "available": True if available else None,
+                            "unavailable": None if available else True,
+                        }
+                        for prerequisite, available in sorted(
+                            repo.runner_environment.items(),
+                            key=lambda item: item[0].value,
+                        )
+                    ]
+                    if repo.runner_environment
+                    else None
+                ),
+                "runner_environment_absent": None if repo.runner_environment else True,
             }
             for repo in config.repos
         ],
@@ -335,7 +427,7 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
     return bindings
 
 
-def _repo_display(url: str) -> tuple[str, str]:
+def repo_display(url: str) -> tuple[str, str]:
     """``(name, slug)`` — the short and owner/name forms of a repository URL."""
     trimmed = url.rstrip("/")
     if trimmed.endswith(".git"):
@@ -367,5 +459,7 @@ def bindings_for(config: OperationConfig | None) -> Mapping[str, object]:
         assert_namespaces_disjoint(())
         return {}
     bindings = operation_bindings(config)
-    assert_namespaces_disjoint(sorted(bindings))
+    # Check declared roots too: a new configuration field must not collide
+    # even before its projection into operation_bindings is implemented.
+    assert_namespaces_disjoint(sorted(set(type(config).model_fields) | set(bindings)))
     return bindings

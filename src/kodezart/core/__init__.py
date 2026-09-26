@@ -1,1 +1,1 @@
-"""Core infrastructure: config, logging, protocols."""
+"""Core infrastructure: errors, logging, protocols."""

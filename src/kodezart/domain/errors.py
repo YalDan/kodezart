@@ -2,11 +2,599 @@
 
 from collections.abc import Sequence
 
-from kodezart.types.domain.gating import ScanFailureKind, ScanHit
+from kodezart.types.domain.gating import (
+    ObjectCount,
+    ScanFailureKind,
+    ScanHit,
+    TrackerAggregate,
+)
+from kodezart.types.domain.organize_owner import OrganizeReport
+from kodezart.types.domain.scope import ScopeRef
+from kodezart.types.domain.surface import WritableSurface
+
+
+class IssueLabelReadError(Exception):
+    """A configured classification cannot establish complete issue membership."""
+
+    def __init__(self, *, classification: str, reason: str) -> None:
+        self.classification = classification
+        self.reason = reason
+        super().__init__(f"issue label {classification!r} could not be read: {reason}")
+
+
+class GitRepositoryError(ValueError):
+    """A requested local path does not identify an available Git repository."""
+
+
+class GitOperationError(RuntimeError):
+    """A Git command failed or returned an invalid provider response."""
+
+
+class GitSourceReadError(Exception):
+    """The requested immutable repository object cannot supply source bytes."""
+
+    def __init__(self, *, ref: str, path: str | None, reason: str) -> None:
+        self.ref = ref
+        self.path = path
+        self.reason = reason
+        super().__init__(f"source {ref!r}:{path!r} could not be read: {reason}")
+
+
+class AssertionComparisonError(Exception):
+    """A protected comparison cannot establish a readable, unambiguous pair."""
+
+    def __init__(self, *, source_ref: str, reason: str) -> None:
+        self.source_ref = source_ref
+        self.reason = reason
+        super().__init__(f"assertion comparison for {source_ref!r} refused: {reason}")
+
+
+class AuditEvidenceReadError(Exception):
+    """A criterion's recorded grading cannot establish one current observation."""
+
+    def __init__(self, *, criterion_key: str, reason: str) -> None:
+        self.criterion_key = criterion_key
+        self.reason = reason
+        super().__init__(f"Evidence for {criterion_key!r} could not be read: {reason}")
 
 
 class WorkspaceError(Exception):
     """Raised when workspace acquisition or release fails."""
+
+
+class BaseReadingUnavailableError(Exception):
+    """The dispatched checks could not be run at the lane's base.
+
+    One type for every way the run does not happen — an unreadable base ref,
+    a refused tree, a tree that is not that commit, an answer nothing can be
+    read from — because the consequence is one: there is no reading at the
+    base, and a pass with no reading at the base is not this branch's pass.
+    It never leaves the step that made the run.
+    """
+
+    def __init__(self, *, base_ref: str, reason: str) -> None:
+        self.base_ref = base_ref
+        self.reason = reason
+        super().__init__(f"the checks at base {base_ref!r} were not run: {reason}")
+
+
+class CheckObservationError(Exception):
+    """A completed watch cannot establish one immutable check-set identity."""
+
+    def __init__(self, *, repo_url: str, ref: str, reason: str) -> None:
+        self.repo_url = repo_url
+        self.ref = ref
+        self.reason = reason
+        super().__init__(f"Cannot read watched checks for {repo_url}@{ref}: {reason}")
+
+
+class PRTrackerIdentityError(Exception):
+    """The publishable PR body lost its required tracker identity."""
+
+    def __init__(self, *, issue_key: str) -> None:
+        self.issue_key = issue_key
+        super().__init__(
+            "gated PR body does not retain the fixed tracker issue identity "
+            f"{issue_key!r}"
+        )
+
+
+class RunShapeReadError(Exception):
+    """Recorded observations cannot establish a run-shape predicate."""
+
+    def __init__(self, *, signal: str, source_ref: str, reason: str) -> None:
+        self.signal = signal
+        self.source_ref = source_ref
+        self.reason = reason
+        super().__init__(f"{signal} cannot read {source_ref!r}: {reason}")
+
+
+class SurfaceLeaseError(Exception):
+    """A surface acquisition or write lacks the required live lease.
+
+    The address is snapshotted as primitive fields; no adapter object or
+    lease record crosses the boundary. ``current_holder=None`` reports that
+    no run currently holds the surface, including after a lease expired.
+    Contention is not transient: the caller decides its next action, and a
+    retry policy must not silently retry a failed acquisition.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        surface: WritableSurface,
+        current_holder: str | None,
+    ) -> None:
+        address = f"{surface.kind.value}:{surface.ref.kind.value}:{surface.ref.key}"
+        if surface.marker is not None:
+            address = f"{address} (marker: {surface.marker})"
+        holder = "none" if current_holder is None else current_holder
+        super().__init__(f"{message} (surface: {address}; current holder: {holder})")
+        self.surface_kind: str = surface.kind.value
+        self.scope_kind: str = surface.ref.kind.value
+        self.scope_key: str = surface.ref.key
+        self.marker: str | None = surface.marker
+        self.current_holder: str | None = current_holder
+
+
+class SurfaceContendedError(SurfaceLeaseError):
+    """Another run holds, or is bidding for, part of the set being acquired.
+
+    Raised only by acquisition. ``current_holder`` names the settled owner,
+    or is ``None`` when the refusing bid is in a race the backend has not
+    settled. A write-time refusal of a lease the writer itself no longer
+    holds is the base ``SurfaceLeaseError``, never this.
+    """
+
+
+class OrganizeSurfaceResidualError(Exception):
+    """A write needs an address inside the scope that this round does not hold.
+
+    Raised before any backend call. The addresses are the residual the
+    caller records as findings on the items that own them. A peer outside
+    the scope is a different refusal and never reaches here, which is why
+    this is not a kind of ``OrganizeWriteRefusalError``: a handler of that
+    refusal must not absorb a residual.
+    """
+
+    def __init__(self, *, issue_key: str, surfaces: frozenset[WritableSurface]) -> None:
+        if not surfaces:
+            raise ValueError("a surface residual names at least one address")
+        self.issue_key = issue_key
+        self.surfaces = surfaces
+        addresses = ", ".join(
+            f"{surface.kind.value}:{surface.ref.key}"
+            for surface in sorted(
+                surfaces, key=lambda item: (item.ref.key, item.kind.value)
+            )
+        )
+        super().__init__(
+            f"the write authored for {issue_key} needs undeclared "
+            f"addresses: {addresses}"
+        )
+
+
+class SurfaceLeaseLostError(Exception):
+    """Renewal could not confirm the run's complete declared write set.
+
+    The renewal result does not identify a competing holder or prove that
+    the surfaces are unheld. Callers stop writing without inventing either
+    fact and must not reacquire as part of handling this failure.
+    """
+
+    def __init__(self, *, job_id: str, surfaces: frozenset[WritableSurface]) -> None:
+        self.job_id = job_id
+        self.surfaces = surfaces
+        super().__init__(f"run {job_id!r} lost its declared surface lease")
+
+
+class SurfaceWriteAttributionError(Exception):
+    """A protected record cannot be attributed to this tracker writer."""
+
+    def __init__(self, *, surface: WritableSurface, author: str | None) -> None:
+        self.surface = surface
+        self.author = author
+        super().__init__(
+            "the protected tracker record is not attributable to this writer "
+            f"(author: {author!r})"
+        )
+
+
+class PrincipalAuthoredSurfaceError(Exception):
+    """A write would replace text the tracker attributes to a principal.
+
+    The machine may rewrite what the tracker records as its own; a
+    principal's words are not its to replace, and the refusal is the
+    port's, not a prompt's.  The address is snapshotted as primitive
+    fields, and no attribution identity crosses the boundary: which of
+    the workspace's members wrote the body is the tracker's business,
+    and a caller that learned it would have been told who to impersonate.
+    """
+
+    def __init__(self, *, surface: WritableSurface) -> None:
+        address = f"{surface.kind.value}:{surface.ref.kind.value}:{surface.ref.key}"
+        super().__init__(
+            f"the addressed body is principal-authored (surface: {address})"
+        )
+        self.surface_kind: str = surface.kind.value
+        self.scope_kind: str = surface.ref.kind.value
+        self.scope_key: str = surface.ref.key
+
+
+class ApprovalLabelWriteError(Exception):
+    """A label write named the admission member the approver alone grants.
+
+    Granting or revoking admission is the approver's own act.  A
+    configuration whose semantic classification resolves to that same
+    member would let an ordinary label write hand a run its own
+    authorization, so the write is refused at the port rather than
+    relied on not to be attempted.
+
+    ``classification`` is the configured member the write named — an
+    ``issue_labels`` key for a classification write, a ``QueueState`` value
+    for a queue-state write.
+    """
+
+    def __init__(self, *, issue_key: str, classification: str) -> None:
+        self.issue_key = issue_key
+        self.classification = classification
+        super().__init__(
+            f"label write {classification!r} on {issue_key!r} names the "
+            "approval member and cannot be written"
+        )
+
+
+class DuplicateCommentMarkerError(Exception):
+    """Several comments claim the same first-line marker on one target."""
+
+    def __init__(
+        self, *, target: str, marker: str, comment_keys: Sequence[str]
+    ) -> None:
+        super().__init__(
+            f"duplicate comment marker {marker!r} on {target!r}: "
+            f"{', '.join(comment_keys)}"
+        )
+        self.target = target
+        self.marker = marker
+        self.comment_keys = tuple(comment_keys)
+
+
+class StaleWriteError(Exception):
+    """Neither the asserted anchor nor its replacement is on the target."""
+
+    def __init__(self, *, target: str, expected: str) -> None:
+        super().__init__(f"stale description write on {target!r}: anchor {expected!r}")
+        self.target = target
+        self.expected = expected
+
+
+class StaleCommentWriteError(Exception):
+    """An asserted native comment changed before its amendment could be issued."""
+
+    def __init__(self, *, target: str, expected_comment_key: str, reason: str) -> None:
+        self.target = target
+        self.expected_comment_key = expected_comment_key
+        self.reason = reason
+        super().__init__(
+            f"comment {expected_comment_key!r} on {target!r} "
+            f"cannot be amended: {reason}"
+        )
+
+
+class RulingRecordReadError(Exception):
+    """The addressed issue's ruling records are unreadable or ambiguous."""
+
+    def __init__(self, *, issue_key: str, lane_key: str | None, reason: str) -> None:
+        self.issue_key = issue_key
+        self.lane_key = lane_key
+        self.reason = reason
+        region = (
+            "across its recorded lanes" if lane_key is None else f"for {lane_key!r}"
+        )
+        super().__init__(
+            f"rulings on {issue_key!r} {region} could not be read: {reason}"
+        )
+
+
+class RulingUnrecordedError(Exception):
+    """An open question was raised and its answer is not confirmed on the tracker.
+
+    One error for every way the pre-loop step can fail to leave a confirmed
+    record: the write refused, the lease was lost, the independent judgement
+    did not uphold what landed, or the read-back did not find the record it
+    had just written. What the consumer downstream needs is the same in every
+    case — the loop was not entered, because nothing it could read is there.
+    """
+
+    def __init__(self, *, issue_key: str, reason: str) -> None:
+        self.issue_key = issue_key
+        self.reason = reason
+        super().__init__(f"an open question on {issue_key!r} is unanswered: {reason}")
+
+
+class LaneEntryError(Exception):
+    """A lane cannot be entered from the facts it presents, and nothing is minted.
+
+    Every reading that reaches here is knowable before a session and before a
+    git call: a key that could not be a ref, a recorded association set that
+    resolves to no single deliverable or base, a recorded branch the remote no
+    longer holds.  Minting a second branch beside a recorded one would lose
+    the work the record names, so the lane is refused and reported instead.
+    """
+
+    def __init__(
+        self, *, issue_key: str, reason: str, branches: Sequence[str] = ()
+    ) -> None:
+        self.issue_key = issue_key
+        self.reason = reason
+        self.branches: tuple[str, ...] = tuple(branches)
+        named = f" ({', '.join(self.branches)})" if self.branches else ""
+        super().__init__(f"lane {issue_key!r} cannot be entered: {reason}{named}")
+
+
+class LaneRecordReadError(Exception):
+    """A lane's branch record cannot be read from its addressed tracker comment."""
+
+    def __init__(
+        self,
+        *,
+        issue_key: str,
+        lane_key: str,
+        record_ref: str | None,
+        reason: str,
+    ) -> None:
+        self.issue_key = issue_key
+        self.lane_key = lane_key
+        self.record_ref = record_ref
+        self.reason = reason
+        super().__init__(
+            f"lane record {record_ref!r} on {issue_key!r} "
+            f"for {lane_key!r} could not be read: {reason}"
+        )
+
+
+class LaneRecordWriteError(Exception):
+    """One of the lane's own tracker writes cannot be made as asked.
+
+    Raised before the write whenever the facts it would state are not the
+    facts the observation holds: a record is never composed from an unread
+    prior or from a head the receipt did not name, and a verdict that
+    answers some other roster than the one it was dispatched against
+    reaches no criterion sub-issue at all.
+    """
+
+    def __init__(self, *, lane_key: str, reason: str) -> None:
+        self.lane_key = lane_key
+        self.reason = reason
+        super().__init__(f"lane record for {lane_key!r} could not be written: {reason}")
+
+
+class EscalationReadError(Exception):
+    """Resolution cannot be established from a readable, unique escalation."""
+
+    def __init__(
+        self, *, issue_key: str, lane_key: str, escalation_key: str, reason: str
+    ) -> None:
+        self.issue_key = issue_key
+        self.lane_key = lane_key
+        self.escalation_key = escalation_key
+        self.reason = reason
+        super().__init__(
+            f"escalation {escalation_key!r} on {issue_key!r} "
+            f"in lane {lane_key!r} could not be read: {reason}"
+        )
+
+
+class CriterionReadError(Exception):
+    """A criterion membership read could not establish a complete answer."""
+
+    def __init__(self, *, issue_key: str, reason: str) -> None:
+        self.issue_key = issue_key
+        self.reason = reason
+        super().__init__(f"criteria of {issue_key!r} could not be read: {reason}")
+
+
+class CriterionResolutionError(ValueError):
+    """A native criterion key has no unique current child in the addressed family."""
+
+    def __init__(self, *, issue_key: str, criterion_key: str, reason: str) -> None:
+        self.issue_key = issue_key
+        self.criterion_key = criterion_key
+        self.reason = reason
+        super().__init__(
+            f"criterion {criterion_key!r} of {issue_key!r} could not be resolved: "
+            f"{reason}"
+        )
+
+
+class PersistedCriterionSetError(Exception):
+    """A persisted criteria artifact reached a tracker-native barrier.
+
+    The native arm reads its criterion set from the tracker at every
+    barrier and carries it on no branch file and in no local state; a
+    document handed in where that read belongs is refused, not read past.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(
+            "a persisted criteria artifact cannot stand in for the tracker's "
+            "criterion set"
+        )
+
+
+class FireSpecEntryError(Exception):
+    """The current subject lacks its machine completion or human approval."""
+
+    def __init__(self, *, issue_key: str, reason: str) -> None:
+        self.issue_key = issue_key
+        self.reason = reason
+        super().__init__(f"fire subject {issue_key!r} cannot enter: {reason}")
+
+
+class SubjectAmendedError(FireSpecEntryError):
+    """The subject text read at entry differs from the digest on the record.
+
+    Read once per process entry, compared, and never silently re-read: a
+    lane whose subject was edited under it stays refused and reported until
+    a person acts on the record, because what its criteria were graded
+    against is not the text that is there now.
+    """
+
+    def __init__(
+        self, *, issue_key: str, recorded_digest: str, current_digest: str
+    ) -> None:
+        self.recorded_digest = recorded_digest
+        self.current_digest = current_digest
+        super().__init__(
+            issue_key=issue_key,
+            reason=(
+                f"the subject text digest {current_digest} differs from the "
+                f"recorded {recorded_digest}"
+            ),
+        )
+
+
+class EmptyFireCriteriaError(Exception):
+    """A successful tracker spec read found no criterion sub-issues."""
+
+    def __init__(self, *, issue_key: str) -> None:
+        self.issue_key = issue_key
+        super().__init__(f"fire subject {issue_key!r} has no criterion sub-issues")
+
+
+class InvalidFireCriterionError(Exception):
+    """A criterion cannot supply its required specification at fire entry."""
+
+    def __init__(self, *, issue_key: str, criterion_key: str, reason: str) -> None:
+        self.issue_key = issue_key
+        self.criterion_key = criterion_key
+        self.reason = reason
+        super().__init__(
+            f"criterion {criterion_key!r} of fire subject {issue_key!r} "
+            f"cannot be consumed: {reason}"
+        )
+
+
+class DuplicateIssueIdentityError(Exception):
+    """Several issues claim one scope-and-deliverable identity."""
+
+    def __init__(
+        self, *, scope_key: ScopeRef, deliverable_key: str, issue_keys: Sequence[str]
+    ) -> None:
+        super().__init__(
+            f"duplicate deliverable {deliverable_key!r} in "
+            f"{scope_key.kind.value}:{scope_key.key}: {', '.join(issue_keys)}"
+        )
+        self.scope_key = scope_key
+        self.deliverable_key = deliverable_key
+        self.issue_keys = tuple(issue_keys)
+
+
+class ScopeCycleError(Exception):
+    """A cycle in the scope's dependency graph prevents any plan being returned.
+
+    ``issue_keys`` is one offending directed cycle, without unrelated issues
+    that merely lead into it. No edge is removed or invented to produce an
+    order; the caller receives the tracker keys that require repair.
+    """
+
+    def __init__(self, *, issue_keys: Sequence[str]) -> None:
+        self.issue_keys: tuple[str, ...] = tuple(issue_keys)
+        super().__init__(f"scope dependency cycle: {', '.join(self.issue_keys)}")
+
+
+class ScopeReadError(Exception):
+    """A scope cannot be resolved without inventing membership or metadata."""
+
+    def __init__(self, message: str, *, ref: ScopeRef) -> None:
+        super().__init__(f"{message} (scope: {ref.kind.value}:{ref.key})")
+        self.ref: ScopeRef = ref
+
+
+class ScopeStatusError(Exception):
+    """The scope's status update cannot be posted as derived.
+
+    Three readings, one type: a scope kind whose container carries no status
+    surface at all, a body with nothing in it, and an outbound gate that
+    changed the derived report.  The first two are raised before any backend
+    call, so a scope with no target spends no request finding out; the third
+    is raised instead of writing, because a redacted variant of a derived
+    report is not a weaker version of that report but a different claim.
+    """
+
+    def __init__(self, *, ref: ScopeRef, reason: str) -> None:
+        self.ref: ScopeRef = ref
+        self.reason = reason
+        super().__init__(f"{reason} (scope: {ref.kind.value}:{ref.key})")
+
+
+class ScopePlanRefusalError(ScopeReadError):
+    """Live scope facts violate the stage barrier before dispatch can begin."""
+
+    def __init__(
+        self,
+        *,
+        ref: ScopeRef,
+        open_decisions: Sequence[str],
+        backlog_criteria: Sequence[str],
+        cross_subtree_edges: Sequence[tuple[str, str]],
+    ) -> None:
+        self.open_decisions = tuple(open_decisions)
+        self.backlog_criteria = tuple(backlog_criteria)
+        self.cross_subtree_edges = tuple(cross_subtree_edges)
+        details = []
+        if self.open_decisions:
+            details.append("open decisions: " + ", ".join(self.open_decisions))
+        if self.backlog_criteria:
+            details.append("backlog-kind criteria: " + ", ".join(self.backlog_criteria))
+        if self.cross_subtree_edges:
+            details.append(
+                "cross-subtree criterion edges: "
+                + ", ".join(
+                    f"{source} -> {target}"
+                    for source, target in self.cross_subtree_edges
+                )
+            )
+        super().__init__("scope plan refused; " + "; ".join(details), ref=ref)
+
+
+class ScopeNotApprovedError(ScopeReadError):
+    """The addressed scope carries no approval, on it or above it.
+
+    A ``ScopeReadError`` because it is one: a live scope fact read at
+    entry, refusing the run before any member is read. Not approved and
+    nothing to do are then different outcomes, and neither is silence.
+    """
+
+    def __init__(self, *, ref: ScopeRef) -> None:
+        super().__init__("scope is not approved", ref=ref)
+
+
+class ScopeRunLiveError(ScopeReadError):
+    """Another job over the same scope was submitted earlier and is still live.
+
+    A ``ScopeReadError`` for the reason ``ScopeNotApprovedError`` is one: a
+    live scope fact read at entry, refusing the run before any member is
+    read. The live job and its lane are named because they are what an
+    operator acts on — the run to wait for, and where to find it.
+    """
+
+    def __init__(self, *, ref: ScopeRef, job_id: str, lane: str) -> None:
+        self.job_id: str = job_id
+        self.lane: str = lane
+        super().__init__(
+            f"a run of this scope is already live: job {job_id} on lane {lane!r}",
+            ref=ref,
+        )
+
+
+class ScopedExecutionUnavailableError(Exception):
+    """An addressed scope cannot execute through the legacy workflow pipeline."""
+
+    def __init__(self, message: str, *, ref: ScopeRef) -> None:
+        super().__init__(f"{message} (scope: {ref.kind.value}:{ref.key})")
+        self.ref: ScopeRef = ref
 
 
 class TransientAPIError(Exception):
@@ -101,6 +689,11 @@ class OutboundContentBlockedError(Exception):
     operator must be able to tell apart.  ``hits`` carries the per-span
     rationale, without which a human can neither confirm nor overrule the
     block — and a gate that cannot be confirmed gets worked around.
+
+    A structured finding is located by its field and value on the hit, never
+    by an offset into the rendered text: the writer repairs the value it
+    declared, and an offset for a value it never rendered as one substring
+    would be invented.
     """
 
     def __init__(
@@ -115,11 +708,26 @@ class OutboundContentBlockedError(Exception):
         detail = f"{message} (writer: {writer}; categories: {', '.join(categories)})"
         if failure is not None:
             detail = f"{detail} (scan failure: {failure.value})"
+        for hit in hits:
+            if hit.source is not None:
+                detail = f"{detail} ({_describe_source(hit.source)})"
+            elif hit.has_span and hit.matched_text is not None:
+                detail = (
+                    f"{detail} (start: {hit.start}; end: {hit.end}; "
+                    f"matched text: {hit.matched_text!r})"
+                )
         super().__init__(detail)
         self.writer: str = writer
         self.categories: tuple[str, ...] = tuple(categories)
         self.failure: ScanFailureKind | None = failure
         self.hits: tuple[ScanHit, ...] = tuple(hits)
+
+
+def _describe_source(source: TrackerAggregate) -> str:
+    """The declared value, named by its own field: what a writer repairs."""
+    if isinstance(source, ObjectCount):
+        return f"source: {source.field}; value: {source.value}"
+    return f"source: {source.field}; identities: {', '.join(source.identities)}"
 
 
 class QueueFullError(Exception):
@@ -175,6 +783,27 @@ class AssetFetchError(Exception):
         self.issue_key: str = issue_key
         self.reason: str = reason
         self.asset_key: str | None = asset_key
+
+
+class DeliveryHeadError(Exception):
+    """A delivery branch no longer has the head whose evidence was supplied."""
+
+    def __init__(
+        self,
+        *,
+        issue_id: str,
+        branch: str,
+        expected_sha: str,
+        observed_sha: str | None,
+    ) -> None:
+        super().__init__(
+            f"Delivery head changed for {issue_id} on {branch}: "
+            f"expected {expected_sha}, observed {observed_sha!r}"
+        )
+        self.issue_id = issue_id
+        self.branch = branch
+        self.expected_sha = expected_sha
+        self.observed_sha = observed_sha
 
 
 class BaseResolutionError(Exception):
@@ -315,3 +944,119 @@ class StaleBaseError(Exception):
         self.recorded_ref: str = recorded_ref
         self.implied_ref: str = implied_ref
         self.changed_inputs: list[str] = list(changed_inputs)
+
+
+class OrganizeAdmissionIdentityError(Exception):
+    """The judgment did not address the source issue that was dispatched."""
+
+    def __init__(self, *, expected: str, observed: str) -> None:
+        self.expected = expected
+        self.observed = observed
+        super().__init__(
+            f"organize admission returned issue {observed!r}, expected {expected!r}"
+        )
+
+
+class CheckChainExecutionError(Exception):
+    """The configured chain could not be observed as command results."""
+
+    def __init__(self, *, cwd: str, step_name: str | None, reason: str) -> None:
+        self.cwd = cwd
+        self.step_name = step_name
+        self.reason = reason
+        super().__init__(f"Cannot execute check chain in {cwd!r}: {reason}")
+
+
+class UnionHeadReadError(Exception):
+    """Current remote heads could not establish a complete union snapshot."""
+
+    def __init__(self, *, scope_key: str, branch: str | None, reason: str) -> None:
+        self.scope_key = scope_key
+        self.branch = branch
+        self.reason = reason
+        super().__init__(f"Union head observation for {scope_key!r} refused: {reason}")
+
+
+class UnionUnstableError(Exception):
+    """Every allowed union attempt was superseded by current remote heads."""
+
+    def __init__(
+        self,
+        *,
+        scope_key: str,
+        attempts: int,
+        lane_keys: tuple[str, ...],
+        measured_shas: tuple[str, ...],
+        current_shas: tuple[str, ...],
+    ) -> None:
+        self.scope_key = scope_key
+        self.attempts = attempts
+        self.lane_keys = lane_keys
+        self.measured_shas = measured_shas
+        self.current_shas = current_shas
+        super().__init__(
+            f"Union heads for {scope_key!r} changed across {attempts} attempts"
+        )
+
+
+class AuditClaimReadError(ValueError):
+    """The claim's source or remote head cannot support this observation."""
+
+
+class WriteBackReadError(ValueError):
+    """An addressed artifact cannot be re-read completely for verification."""
+
+
+class PRStateReadError(ValueError):
+    """A native PR observation cannot establish the requested identity."""
+
+
+class OrganizeWriteRefusalError(Exception):
+    """A proposed or stale write is outside this operation's current authority."""
+
+    def __init__(self, *, issue_key: str, reason: str) -> None:
+        self.issue_key = issue_key
+        self.reason = reason
+        super().__init__(f"organize write for {issue_key!r} refused: {reason}")
+
+
+class OrganizeHaltError(Exception):
+    """A halted Organize stage retains its exact addressed halt report."""
+
+    def __init__(self, *, scope: ScopeRef, report: OrganizeReport) -> None:
+        if report.halt is None:
+            raise ValueError("an Organize halt requires a halted report")
+        self.scope = scope
+        self.report = report
+        super().__init__(
+            f"Organize for {scope.kind.value} {scope.key!r} halted: "
+            f"{report.halt.cause.value}"
+        )
+
+
+class OrganizeDecisionRequiredError(Exception):
+    """An author found a human decision, before proposing any permitted write."""
+
+    def __init__(self, *, issue_key: str, question: str, evidence: str) -> None:
+        self.issue_key, self.question, self.evidence = issue_key, question, evidence
+        super().__init__(
+            f"organize author for {issue_key!r} needs a decision: {question}"
+        )
+
+
+class UnverifiedWritePathError(Exception):
+    """A tracker write path in the installed code that nothing accounts for.
+
+    Raised at boot, before the tracker is dialled, for every call of the
+    tracker's artifact-write surface that no write-back verifier drives and
+    no derived-write declaration beside its writer holds out.  ``paths``
+    names each one as ``module::function::method``, so the refusal says
+    exactly which write to route through the verifier or declare.
+    """
+
+    def __init__(self, *, paths: Sequence[str]) -> None:
+        self.paths: tuple[str, ...] = tuple(paths)
+        super().__init__(
+            "tracker write paths with neither a write-back verifier nor a "
+            "derived-write declaration: " + ", ".join(self.paths)
+        )

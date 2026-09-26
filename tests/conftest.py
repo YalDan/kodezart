@@ -1,14 +1,18 @@
 """Shared async test fixtures — no mocking, full chain exercised."""
 
+import ipaddress
+import logging
 import os
-from collections.abc import AsyncGenerator
+import socket
+from collections.abc import AsyncGenerator, Callable, Iterator
 
 import pytest
+import structlog
 from httpx import ASGITransport, AsyncClient
 
-from kodezart.adapters.git_branch_merger import GitBranchMerger
-from kodezart.adapters.subprocess_git_service import SubprocessGitService
-from kodezart.core.config import AppConfig
+from kodezart.adapters.git.branch_merger import GitBranchMerger
+from kodezart.adapters.git.service import SubprocessGitService
+from kodezart.config.app import AppConfig
 from kodezart.main import create_app
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.agent import AssistantTextEvent, ResultEvent
@@ -30,6 +34,25 @@ for _ambient in [name for name in os.environ if name.startswith("KODEZART_")]:
 AppConfig.model_config["env_file"] = None
 
 
+@pytest.fixture(autouse=True)
+def _restore_logging_configuration() -> Iterator[None]:
+    """A boot test must not leave handlers bound to its closed capture stream."""
+    root = logging.getLogger()
+    handlers = list(root.handlers)
+    levels = {
+        name: logging.getLogger(name).level
+        for name in ("", "uvicorn.access", "uvicorn.error")
+    }
+    configuration = structlog.get_config()
+    try:
+        yield
+    finally:
+        root.handlers = handlers
+        for name, level in levels.items():
+            logging.getLogger(name).setLevel(level)
+        structlog.configure(**configuration)
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _git_test_identity() -> None:
     """Provide a git identity to subprocess git commands invoked by tests.
@@ -43,8 +66,11 @@ def _git_test_identity() -> None:
     os.environ.setdefault("GIT_COMMITTER_EMAIL", "test@kodezart-test.invalid")
 
 
-_GATED_MARKERS: dict[str, str] = {
-    "live": "live tests need Claude CLI (run with: pytest -m live)",
+#: The marker classes the collection gate deselects from the default run.
+#: Read by the census as well as by the gate below: a test newly carrying
+#: one of these is a test that stops running.
+GATED_MARKERS: dict[str, str] = {
+    "live": "live tests need external credentials or CLI (run with: pytest -m live)",
     "postgres": (
         "postgres tests need a database at KODEZART_TEST_POSTGRES_URL "
         "(run with: pytest -m postgres)"
@@ -52,17 +78,190 @@ _GATED_MARKERS: dict[str, str] = {
 }
 
 
+class LiveReachError(Exception):
+    """A default-run test opened a connection to an address off this machine."""
+
+    def __init__(self, address: object) -> None:
+        super().__init__(
+            f"a default-run test reached the non-loopback address {address!r}"
+        )
+        self.address = address
+
+
+def _loopback(address: object) -> bool:
+    """Whether an internet socket *address* names this machine and no other."""
+    if not isinstance(address, tuple) or not address:
+        return False
+    host = str(address[0]).split("%", 1)[0]
+    if host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+#: Every refusal the guard made since the current item began, in order. A
+#: refusal the code under test caught and carried on from is still a test
+#: that tried to leave this machine, so it fails that item at teardown; a
+#: test that means to be refused takes its own record with take_refusals().
+_REFUSALS: list[LiveReachError] = []
+
+#: The two socket methods the guard wraps, as the socket module ships them.
+_GUARDED_METHODS = ("connect", "connect_ex")
+_UNGUARDED: dict[str, Callable[[socket.socket, object], object]] = {}
+
+#: The proxy variables an HTTP client honours, in both cases. A proxy on a
+#: loopback port would relay an in-process request off this machine past the
+#: socket guard, which sees only the loopback connect to the proxy, so they
+#: are out of the environment while the guard is on and back while it is
+#: lifted: a ``pytest -m live`` run keeps the proxy it was started with.
+PROXY_VARIABLES = tuple(
+    spelling
+    for proxy in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY")
+    for spelling in (proxy, proxy.lower())
+)
+_STRIPPED_PROXIES: dict[str, str] = {}
+
+
+def _guarded[R](
+    original: Callable[[socket.socket, object], R],
+) -> Callable[[socket.socket, object], R]:
+    """*original*, refusing before any packet an address off this machine."""
+
+    def connect(self: socket.socket, address: object) -> R:
+        if self.family != socket.AF_UNIX and not _loopback(address):
+            refused = LiveReachError(address)
+            _REFUSALS.append(refused)
+            raise refused
+        return original(self, address)
+
+    return connect
+
+
+def _guard(*, on: bool) -> None:
+    """Put the guard on the socket class, or put the shipped methods back.
+
+    The proxy variables go with it: taken out of the environment, and kept,
+    when the guard goes on; put back when it is lifted.
+    """
+    for name, original in _UNGUARDED.items():
+        setattr(socket.socket, name, _guarded(original) if on else original)
+    if on:
+        for name in PROXY_VARIABLES:
+            value = os.environ.pop(name, None)
+            if value is not None:
+                _STRIPPED_PROXIES[name] = value
+    else:
+        os.environ.update(_STRIPPED_PROXIES)
+        _STRIPPED_PROXIES.clear()
+
+
+def guarded() -> bool:
+    """Whether both socket methods are wrapped by the guard right now.
+
+    False before the guard was ever installed: an empty table of shipped
+    methods wraps nothing, and is no guard.
+    """
+    return bool(_UNGUARDED) and all(
+        getattr(socket.socket, name) is not original
+        for name, original in _UNGUARDED.items()
+    )
+
+
+def take_refusals() -> list[LiveReachError]:
+    """The refusals made since the current item began, taken so none fails it."""
+    taken = list(_REFUSALS)
+    _REFUSALS.clear()
+    return taken
+
+
+def leaves_the_machine(item: pytest.Item) -> bool:
+    """Whether *item* may reach off this machine: it carries a gated mark.
+
+    That set is ``GATED_MARKERS`` itself, read here rather than listed again.
+    """
+    return any(item.get_closest_marker(name) for name in GATED_MARKERS)
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Guard the whole session, collection and wide-scope fixtures included.
+
+    Every default-run test stays on this machine: the fakes, never a
+    workspace. A Unix socket or a loopback address is reached as before; a
+    connect anywhere else raises ``LiveReachError`` before the call is made
+    (KOD-469). Installed once, before collection, so module import, and the
+    setup of a session-, package- or module-scoped fixture, run under it as
+    a test body does.
+
+    What it does not reach, in code terms: a child process, because the
+    patch is on this interpreter's socket class; name resolution, which
+    connects nothing through it; and ``sendto`` on a datagram socket, which
+    sends without a connect.
+    """
+    _ = config
+    _UNGUARDED.update({name: getattr(socket.socket, name) for name in _GUARDED_METHODS})
+    _guard(on=True)
+
+
+def pytest_unconfigure(config: pytest.Config) -> None:
+    """Put the socket class back as the session found it."""
+    _ = config
+    _guard(on=False)
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_runtest_setup(item: pytest.Item) -> None:
+    """Lift the guard for exactly the item a gated mark lets leave the machine.
+
+    First among the setup hooks, so that item's fixtures set up unguarded;
+    the teardown hook below puts the guard back after its fixtures are torn
+    down. Every item starts with no refusal on record, so what the teardown
+    check reads is that item's own.
+    """
+    _REFUSALS.clear()
+    if leaves_the_machine(item):
+        _guard(on=False)
+
+
+@pytest.hookimpl(trylast=True)
+def pytest_runtest_teardown(item: pytest.Item, nextitem: pytest.Item | None) -> None:
+    """Put the guard back after a gated item, before the next item begins."""
+    _ = nextitem
+    if leaves_the_machine(item):
+        _guard(on=True)
+
+
+def refusal_failure(refusals: list[LiveReachError]) -> str | None:
+    """What fails an item whose code caught *refusals* and carried on, if any."""
+    if refusals:
+        return f"a refused off-machine connect was swallowed: {refusals}"
+    return None
+
+
+@pytest.fixture(autouse=True)
+def _no_swallowed_refusal() -> Iterator[None]:
+    """Fail an item whose code under test caught a refusal and carried on."""
+    yield
+    failure = refusal_failure(take_refusals())
+    if failure is not None:
+        pytest.fail(failure)
+
+
 def pytest_collection_modifyitems(
     config: pytest.Config,
     items: list[pytest.Item],
 ) -> None:
     marker_expr = config.getoption("-m", default="")
-    for marker, reason in _GATED_MARKERS.items():
+    for marker, reason in GATED_MARKERS.items():
         if marker in marker_expr:
             continue
         skip = pytest.mark.skip(reason=reason)
         for item in items:
-            if marker in item.keywords:
+            # The mark itself, not the keyword: a parametrize id or a function
+            # attribute spelled like the marker is a keyword too, and would
+            # skip a test that carries no gated mark at all.
+            if any(item.iter_markers(name=marker)):
                 item.add_marker(skip)
 
 

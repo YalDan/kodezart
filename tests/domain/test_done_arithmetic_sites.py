@@ -1,0 +1,960 @@
+"""One body decides whether a criterion family is finished (KOD-443).
+
+A fire's finished state is the rollup over its criterion sub-issues, and a
+second body deciding the same thing from a criterion's own state is how two
+answers to one question come to disagree without anything red saying so.
+The rule therefore lives in one function, every reader consults it, and the
+results are applied at one named seam.
+
+Nothing here is listed by hand that the tree can be asked for.  The closed
+kinds are read off the vocabulary's own openness predicate and cross-checked
+against the rule's answers, so neither can move without the other saying so;
+each owner's module is read off the symbol; the scanned tree is the package
+the rule is packaged in.  What IS listed is the exemptions, each with the
+reason it is one, and the table is checked against the walk in both
+directions, so an exemption for a site that no longer exists is as red as an
+unexempted site.
+
+The alias rule of this walk is its own, and narrow by decision: only a
+binding whose value IS the member attribute binds an alias for it.  The
+stage-move finder beside it answers a different question — which names hold
+the member a ``stage=`` keyword is handed, where the value is the member
+itself — and its rule reports a name bound to a comparison against the
+member, which here would report a body that decided nothing.
+
+A closed kind is found by object after import, tree-wide: a name bound
+anywhere to a closed member or to a collection of nothing but closed members,
+followed through imports (``HELD_CRITERION_STATE``, ``_CLOSED_STATE_KINDS``);
+the vocabulary under an ``as`` import or reached through a module attribute;
+any attribute chain ending in a closed member; a comparison of a
+``state_kind`` read against a string equal to a closed member's value; and
+the openness predicate called, held uncalled, passed on, or imported under
+another name.  The narrow textual rules stay beside that reading, so a
+planted body that never imports the vocabulary is read too.
+
+Outside this reach, as for every static guard: a value handed across a
+function boundary, where the other function is not resolved at this site
+(returned from a helper, stored on an object and read elsewhere, or passed
+through a container built elsewhere); a name built at run time; and a
+binding made only when a function runs (``setattr`` or ``globals()`` inside
+a function body).  Outside it too, by the Check's own words: a selection
+over the open kinds that decides which criteria a fire works on.
+"""
+
+import ast
+import inspect
+import sys
+import textwrap
+from pathlib import Path
+
+import pytest
+
+from kodezart.chains.scope_walker import read_scope_ready
+from kodezart.core.protocols import TrackerPort
+from kodezart.domain.gap import (
+    compute_gap,
+    gap_membership,
+    open_state_kind,
+    state_membership,
+)
+from kodezart.domain.issue_tree import SubtreeClosure
+from kodezart.types.domain.criteria import TrackerCriterion
+from kodezart.types.domain.operation import LifecycleStage
+from kodezart.types.domain.tracker import TrackerIssue, WorkflowStateKind, is_open
+from tests.domain.test_criterion_cross_off import (
+    qualified_names,
+    source_tree,
+    stage_moves,
+)
+from tests.fakes import make_tracker_issue
+from tests.object_resolution import UNBOUND, denoted, names_of, names_of_tree
+
+#: The package the rule is packaged in, and so the tree it speaks for.
+SOURCE = (
+    Path(sys.modules[state_membership.__module__].__file__ or "").resolve().parents[1]
+)
+#: The symbols this arithmetic is stated through, each with its owner: the
+#: kind-level reading, its two askings, the family's gap and the rollup.
+ARITHMETIC = (
+    state_membership,
+    gap_membership,
+    open_state_kind,
+    compute_gap,
+    SubtreeClosure,
+)
+#: The kinds the vocabulary treats as closed, read off its own predicate.
+TERMINAL = frozenset(kind.name for kind in WorkflowStateKind if not is_open(kind))
+VOCABULARY = WorkflowStateKind.__name__
+OPENNESS = is_open.__name__
+#: The closed members themselves, and the values they are persisted as.
+CLOSED = frozenset(kind for kind in WorkflowStateKind if not is_open(kind))
+CLOSED_VALUES = frozenset(kind.value for kind in CLOSED)
+#: The row field a criterion's kind is read from, read off the row itself.
+(STATE_FIELD,) = (
+    name
+    for name, info in TrackerIssue.model_fields.items()
+    if info.annotation is WorkflowStateKind
+)
+CRITERION_LABEL = "criterion"
+MODULE_BODY = "<module>"
+
+
+def module_of(symbol: object) -> str:
+    """The module a symbol is declared in, as a path inside the package."""
+    return (
+        Path(sys.modules[symbol.__module__].__file__ or "")
+        .resolve()
+        .relative_to(SOURCE)
+        .as_posix()
+    )
+
+
+RULE_SITE = f"{module_of(state_membership)}::{state_membership.__qualname__}"
+#: Each arithmetic name against the module that owns it, read off the symbol.
+OWNERS = {symbol.__name__: symbol.__module__ for symbol in ARITHMETIC}
+
+#: Every body that reads a terminal criterion state and is not the rule, each
+#: with the reason it is not the rule's business.
+EXEMPT = {
+    "types/domain/tracker.py::<module>": (
+        "the vocabulary itself: the closed-kind set the openness predicate is "
+        "written from decides nothing"
+    ),
+    "types/domain/tracker.py::is_open": (
+        "the vocabulary's own openness predicate over one kind: it decides "
+        "nothing about a family, and each body that consults it is reported "
+        "where it does"
+    ),
+    "types/domain/tracker.py::is_non_counting": (
+        "the vocabulary's non-counting predicate over one kind, asked where a "
+        "selection is made: which criteria a fire's spec read and the native "
+        "writer's authority read take, and whether the organize criteria stage "
+        "is owed, the selection over organize children the convergence loop "
+        "made itself before KOD-616 moved it here; it decides nothing about "
+        "whether a family is finished, and tests/domain/test_non_counting.py "
+        "holds it to the rule's excluded arms for every kind"
+    ),
+    "chains/criteria.py::TrackerCriteria._owed": (
+        "selects the criteria this fire works on (the unstarted ones, plus the "
+        "ones this fire already crossed off); decides nothing about whether "
+        "anything is finished"
+    ),
+    "services/lane_state_writer.py::TrackerLaneStateWriter._take_back": (
+        "the precondition of one write on one criterion: only a criterion the "
+        "board still holds finished is moved back, and nothing about whether a "
+        "family is finished is decided"
+    ),
+    "domain/criterion_cross_off.py::<module>": (
+        "the vocabulary itself: the constant naming the state a held grading "
+        "sits in decides nothing"
+    ),
+    "chains/audit_evidence.py::AuditEvidenceVerifier._observe": (
+        "one claim's admissibility: whether this criterion has made a claim "
+        "worth auditing yet, never whether a set is finished"
+    ),
+    "chains/audit_forge.py::AuditForgeVerifier.observe": (
+        "one claim's admissibility, at the forge arm's entry"
+    ),
+    "chains/audit_sweep.py::AuditReadSweep._observe": (
+        "one claim's admissibility, where the sweep selects a claim to read"
+    ),
+    "chains/audit_sweep.py::AuditReadSweep._observe_forge": (
+        "the same admissibility for the forge half of the same sweep"
+    ),
+    "domain/audit_claims.py::audit_deferral": (
+        "one claim's admissibility, named as the deferral it produces"
+    ),
+    "services/audit_sources.py::AuditSourceReader._criterion": (
+        "one claim's admissibility, where the audited criterion is resolved"
+    ),
+    "types/domain/audit_evidence.py::AuditEvidenceObservation.is_lapse": (
+        "one claim's admissibility, on the record that carries the claim"
+    ),
+    "domain/dispatch.py::clause_open": (
+        "reads whether a blocking clause is open from the blocker issue's own "
+        "state, not its subtree, as KOD-188, KOD-285, KOD-217 and KOD-717 "
+        "require; the scope walker answers discharge through "
+        "SubtreeClosure.is_closed"
+    ),
+    "domain/topology.py::plan_topology": (
+        "orders the plan's edges by the blocker issue's own state, not its "
+        "subtree, as KOD-188, KOD-285, KOD-217 and KOD-717 require; the scope "
+        "walker answers discharge through SubtreeClosure.is_closed"
+    ),
+    "domain/organize.py::organize_gap": (
+        "selection over organize children, which are not criterion sub-issues"
+    ),
+    "services/base_resolver.py::BaseResolver._input_for": (
+        "reads each blocker's own state (blocker.state_kind), not its subtree, "
+        "when it builds a base's input, as KOD-188, KOD-285, KOD-217 and "
+        "KOD-717 require; the scope walker answers discharge through "
+        "SubtreeClosure.is_closed"
+    ),
+    "services/base_resolver.py::BaseResolver.unrecorded_closed_blockers": (
+        "reads each blocker's own state, not its subtree, for the closed "
+        "blockers nobody recorded, as KOD-188, KOD-285, KOD-217 and KOD-717 "
+        "require; the scope walker answers discharge through "
+        "SubtreeClosure.is_closed"
+    ),
+    "services/scope_planning.py::read_scope_plan": (
+        "selection over dispatch candidates, which are not criterion sub-issues"
+    ),
+    "domain/mandate_graph.py::structural_write_uncrosses_milestone": (
+        "reads lane-graph members (the fire, its subtree and the milestone's "
+        "members), which are not criterion sub-issues and which compute_gap "
+        "refuses, together with the lane graph's own supersession records; "
+        "services/mandate_graph.py, which collects the graph readings it is "
+        "asked over, has no production importer (KOD-443); moving it onto "
+        "the arithmetic is a backlog item"
+    ),
+}
+
+
+def _member(node: ast.AST) -> bool:
+    """Whether *node* is the vocabulary's own attribute for a closed kind."""
+    return (
+        isinstance(node, ast.Attribute)
+        and node.attr in TERMINAL
+        and isinstance(node.value, ast.Name)
+        and node.value.id == VOCABULARY
+    )
+
+
+def _aliases(tree: ast.Module) -> frozenset[str]:
+    """Each name this module binds directly to a closed-kind member."""
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and _member(node.value):
+            names.update(
+                target.id for target in node.targets if isinstance(target, ast.Name)
+            )
+        elif (
+            isinstance(node, ast.AnnAssign)
+            and node.value is not None
+            and _member(node.value)
+            and isinstance(node.target, ast.Name)
+        ):
+            names.add(node.target.id)
+    return frozenset(names)
+
+
+def _closed(value: object) -> bool:
+    """Whether an object is a closed member, or a non-empty collection of
+    nothing but closed members."""
+    if isinstance(value, WorkflowStateKind):
+        return value in CLOSED
+    return (
+        isinstance(value, set | frozenset | tuple | list)
+        and bool(value)
+        and all(
+            isinstance(member, WorkflowStateKind) and member in CLOSED
+            for member in value
+        )
+    )
+
+
+def _reads_a_closed_kind(node: ast.AST, names: dict[str, object]) -> bool:
+    """Whether *node* reads a closed kind or the openness predicate, by
+    object: a name or attribute chain denoting either, however it is bound,
+    imported or aliased, and wherever it stands (called, held, or passed)."""
+    if isinstance(node, ast.Name) and not isinstance(node.ctx, ast.Load):
+        return False
+    if not isinstance(node, ast.Name | ast.Attribute):
+        return False
+    found = denoted(node, names)
+    return found is not UNBOUND and (found is is_open or _closed(found))
+
+
+def _state_kind_read(node: ast.expr) -> bool:
+    """A read of a row's kind, or of the value it is persisted as."""
+    if isinstance(node, ast.Attribute) and node.attr == "value":
+        node = node.value
+    return isinstance(node, ast.Attribute) and node.attr == STATE_FIELD
+
+
+def _compares_a_closed_value(node: ast.AST) -> bool:
+    """A comparison of a row's kind against a string that IS a closed value."""
+    if not isinstance(node, ast.Compare):
+        return False
+    operands = [node.left, *node.comparators]
+    return any(_state_kind_read(operand) for operand in operands) and any(
+        isinstance(operand, ast.Constant) and operand.value in CLOSED_VALUES
+        for operand in operands
+    )
+
+
+def _calls_openness(node: ast.AST) -> bool:
+    if not isinstance(node, ast.Call):
+        return False
+    func = node.func
+    return (isinstance(func, ast.Name) and func.id == OPENNESS) or (
+        isinstance(func, ast.Attribute) and func.attr == OPENNESS
+    )
+
+
+def _sites(tree: ast.Module, names: dict[str, object] | None = None) -> frozenset[str]:
+    """Every body of *tree* that reads a criterion's finishedness.
+
+    *names* is what the module's names denote; without it they are read
+    off the tree's own imports.
+    """
+    where = qualified_names(tree)
+    named = _aliases(tree)
+    resolved = names_of_tree(tree) if names is None else names
+    return frozenset(
+        where.get(id(node), "") or MODULE_BODY
+        for node in ast.walk(tree)
+        if _member(node)
+        or (isinstance(node, ast.Name) and node.id in named)
+        or _calls_openness(node)
+        or _reads_a_closed_kind(node, resolved)
+        or _compares_a_closed_value(node)
+    )
+
+
+def surface(root: Path) -> frozenset[str]:
+    """Every such body under *root*, as module::qualname."""
+    found: set[str] = set()
+    for path in sorted(root.rglob("*.py")):
+        module = path.relative_to(root).as_posix()
+        text = path.read_text()
+        found.update(
+            f"{module}::{site}"
+            for site in _sites(ast.parse(text), names_of(module, text, root))
+        )
+    return frozenset(found)
+
+
+def _declarations(root: Path, names: frozenset[str]) -> dict[str, list[str]]:
+    """Each module under *root* declaring one of *names*, by module."""
+    found: dict[str, list[str]] = {}
+    for path in sorted(root.rglob("*.py")):
+        module = path.relative_to(root).as_posix()
+        declared = sorted(
+            {
+                node.name
+                for node in ast.walk(ast.parse(path.read_text()))
+                if isinstance(
+                    node, ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef
+                )
+                and node.name in names
+            }
+        )
+        if declared:
+            found[module] = declared
+    return found
+
+
+def _imports(root: Path, owners: dict[str, str]) -> dict[str, list[str]]:
+    """Each import of an owned name that does not name its owning module."""
+    found: dict[str, list[str]] = {}
+    for path in sorted(root.rglob("*.py")):
+        module = path.relative_to(root).as_posix()
+        wrong = sorted(
+            {
+                f"{alias.name} from {node.module}"
+                for node in ast.walk(ast.parse(path.read_text()))
+                if isinstance(node, ast.ImportFrom)
+                for alias in node.names
+                if alias.name in owners
+                and (node.module != owners[alias.name] or alias.asname == alias.name)
+            }
+        )
+        if wrong:
+            found[module] = wrong
+    return found
+
+
+def probe(kind: WorkflowStateKind, *, label: str = CRITERION_LABEL):
+    return make_tracker_issue(
+        "fire/criterion", state_kind=kind, issue_labels=frozenset({label})
+    )
+
+
+def superseded_probe(kind: WorkflowStateKind) -> TrackerIssue:
+    """A probe carrying a supersession note, which the rule does not read."""
+    return probe(kind).model_copy(update={"body": "Superseded by fire/other."})
+
+
+def test_the_scanned_vocabulary_is_the_rules_own_terminal_set():
+    """The scanned kinds are the ones the rule itself treats as closed.
+
+    Read twice over: off the openness predicate, and off the rule's answers
+    for every member of the vocabulary.  A closed kind is one the rule
+    answers "not owed" for; every other kind is owed.  The rule reads the
+    state alone, so a probe carrying a supersession note is answered as the
+    same probe without one (KOD-794).  Neither reading can move without the
+    other saying so.
+    """
+    assert TERMINAL == {"COMPLETED", "CANCELED", "DUPLICATE"}
+    closed = set()
+    for kind in WorkflowStateKind:
+        owed = open_state_kind(kind)
+        assert gap_membership(probe(kind)) is state_membership(kind)
+        assert gap_membership(superseded_probe(kind)) is state_membership(kind)
+        if not owed:
+            closed.add(kind.name)
+        else:
+            assert kind.name not in TERMINAL, kind
+    assert closed == TERMINAL
+
+
+def test_a_name_bound_to_a_comparison_is_not_an_alias_of_the_member():
+    """The alias rule is narrow: a bool is not the member under another word.
+
+    A name bound to a comparison against the member holds the answer, not
+    the vocabulary, and a body that only reads that answer decided nothing.
+    """
+    tree = ast.parse(
+        f"def observe(row):\n"
+        f"    finished = row.state_kind is {VOCABULARY}.COMPLETED\n"
+        f"    return finished\n"
+    )
+    assert _aliases(tree) == frozenset()
+    assert _sites(tree) == frozenset({"observe"})
+    bound = ast.parse(
+        f"def observe(row):\n"
+        f"    done = {VOCABULARY}.COMPLETED\n"
+        f"    return row.state_kind is done\n"
+    )
+    assert _aliases(bound) == frozenset({"done"})
+    assert _sites(bound) == frozenset({"observe"})
+
+
+def test_the_closure_arithmetic_is_declared_once_and_only_there():
+    """One owner per symbol, and no second declaration of any of the names."""
+    assert (
+        module_of(state_membership)
+        == module_of(gap_membership)
+        == module_of(open_state_kind)
+        == module_of(compute_gap)
+        == "domain/gap.py"
+    )
+    assert module_of(SubtreeClosure) == "domain/issue_tree.py"
+    names = frozenset(OWNERS)
+    places = {symbol.__name__: module_of(symbol) for symbol in ARITHMETIC}
+    assert _declarations(SOURCE, names) == {
+        module: sorted(name for name, owner in places.items() if owner == module)
+        for module in sorted(set(places.values()))
+    }
+
+
+def _imports_of(root: Path, name: str) -> dict[str, str]:
+    """Each module importing *name*, with the module it imports it from."""
+    found: dict[str, str] = {}
+    for path in sorted(root.rglob("*.py")):
+        module = path.relative_to(root).as_posix()
+        for node in ast.walk(ast.parse(path.read_text())):
+            if isinstance(node, ast.ImportFrom) and any(
+                alias.name == name for alias in node.names
+            ):
+                found[module] = node.module or ""
+    return found
+
+
+def test_every_closure_reader_imports_the_arithmetic_from_its_owner():
+    """Every reader names the owning module, and nobody re-exports a name.
+
+    The composed readers need no listing here: each caller of
+    ``read_scope_ready`` imports it from its owner, that module reaches the
+    closure from its owner, and the closure reaches the rule from its owner,
+    so a new composed reader reaches the same arithmetic with no edit here.
+    """
+    assert _imports(SOURCE, OWNERS) == {}
+    readers = _imports_of(SOURCE, read_scope_ready.__name__)
+    assert readers
+    assert set(readers.values()) == {read_scope_ready.__module__}
+    walker = module_of(read_scope_ready)
+    assert _imports_of(SOURCE, SubtreeClosure.__name__)[walker] == (
+        SubtreeClosure.__module__
+    )
+    assert _imports_of(SOURCE, compute_gap.__name__)[module_of(SubtreeClosure)] == (
+        compute_gap.__module__
+    )
+
+
+def test_a_re_exported_arithmetic_name_is_reported(tmp_path):
+    """An ``X as X`` re-export offers a second module to reach the rule by."""
+    (tmp_path / "shim.py").write_text(
+        f"from {compute_gap.__module__} import {compute_gap.__name__} as "
+        f"{compute_gap.__name__}\n"
+    )
+    assert _imports(tmp_path, OWNERS) == {
+        "shim.py": [f"{compute_gap.__name__} from {compute_gap.__module__}"]
+    }
+
+
+def test_one_body_decides_finishedness_from_a_criterion_state():
+    found = surface(SOURCE)
+    assert found - frozenset(EXEMPT) == frozenset({RULE_SITE}), sorted(
+        found - frozenset(EXEMPT)
+    )
+
+
+def _closed_readings(
+    statements: list[ast.stmt], names: dict[str, object]
+) -> list[ast.AST]:
+    """Every node of *statements* that reads a closed kind or the predicate."""
+    named = _aliases(ast.Module(body=statements, type_ignores=[]))
+    return [
+        node
+        for statement in statements
+        for node in ast.walk(statement)
+        if _member(node)
+        or (isinstance(node, ast.Name) and node.id in named)
+        or _calls_openness(node)
+        or _reads_a_closed_kind(node, names)
+        or _compares_a_closed_value(node)
+    ]
+
+
+def calls_of(function: ast.AST) -> list[ast.Call]:
+    """Every call a body makes, in walk order."""
+    return [node for node in ast.walk(function) if isinstance(node, ast.Call)]
+
+
+def test_the_rollup_reads_no_closed_kind_and_hands_each_criterion_to_the_rule():
+    """The rollup's walk asks the rule about each criterion and decides nothing.
+
+    Its criterion arm is a call of the rule, resolved by object in the module
+    that declares it, and no closed kind is read anywhere in the walk: a
+    Canceled or Duplicate criterion is not refused or kept by the rollup, the
+    rule excludes it on state alone (KOD-794), so the rollup's module needs no
+    exemption at all.
+    """
+    module = module_of(SubtreeClosure)
+    text = (SOURCE / module).read_text()
+    names = names_of(module, text, SOURCE)
+    (function,) = ast.parse(
+        textwrap.dedent(inspect.getsource(SubtreeClosure._walk))
+    ).body
+    assert isinstance(function, ast.FunctionDef)
+    assert any(denoted(call.func, names) is compute_gap for call in calls_of(function))
+    assert _closed_readings(function.body, names) == []
+    assert {site for site in surface(SOURCE) if site.startswith(f"{module}::")} == set()
+    assert not any(site.startswith(f"{module}::") for site in EXEMPT)
+
+
+PLANTED_ROLLUP = (
+    f"from {WorkflowStateKind.__module__} import {VOCABULARY}\n\n\n"
+    "class SubtreeClosure:\n"
+    "    def _walk(self, issue):\n"
+    "        return tuple(\n"
+    f"            c for c in (issue,) if c.state_kind is not {VOCABULARY}.COMPLETED\n"
+    "        )\n"
+)
+ASKING_ROLLUP = (
+    f"from {compute_gap.__module__} import {compute_gap.__name__}\n\n\n"
+    "class SubtreeClosure:\n"
+    "    def _walk(self, issue):\n"
+    f"        return {compute_gap.__name__}((issue,)).owed\n"
+)
+
+
+def test_a_rollup_restating_the_rule_is_reported(tmp_path):
+    """A walk deciding a criterion from its own state is a second arithmetic.
+
+    The same walk asking the rule instead is not reported, so the report is
+    about the restatement and not about the walk.
+    """
+    names = names_of_tree(ast.parse(PLANTED_ROLLUP))
+    (planted,) = ast.parse(PLANTED_ROLLUP).body[1:]
+    assert isinstance(planted, ast.ClassDef)
+    (function,) = planted.body
+    assert isinstance(function, ast.FunctionDef)
+    assert _closed_readings(function.body, names) != []
+    assert all(
+        denoted(call.func, names) is not compute_gap for call in calls_of(function)
+    )
+    restating, asking = tmp_path / "restating", tmp_path / "asking"
+    restating.mkdir()
+    asking.mkdir()
+    (restating / "rollup.py").write_text(PLANTED_ROLLUP)
+    (asking / "rollup.py").write_text(ASKING_ROLLUP)
+    assert surface(restating) == frozenset({"rollup.py::SubtreeClosure._walk"})
+    assert surface(asking) == frozenset()
+
+
+def test_every_exemption_names_a_site_the_walk_reports():
+    """A stale exemption reds: the table cannot outlive the site it excuses."""
+    assert frozenset(EXEMPT) <= surface(SOURCE), sorted(
+        frozenset(EXEMPT) - surface(SOURCE)
+    )
+
+
+def test_every_exemption_carries_the_reason_it_is_one():
+    assert all(reason.strip() for reason in EXEMPT.values())
+    assert RULE_SITE not in EXEMPT
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        pytest.param(
+            "def finished(criteria):\n"
+            "    return not [\n"
+            "        row\n"
+            "        for row in criteria\n"
+            f"        if row.state_kind is not {VOCABULARY}.COMPLETED\n"
+            f"        and row.state_kind is not {VOCABULARY}.CANCELED\n"
+            "    ]\n",
+            id="the-members-themselves",
+        ),
+        pytest.param(
+            "def finished(criteria):\n"
+            f"    return not any({OPENNESS}(row.state_kind) for row in criteria)\n",
+            id="through-the-openness-predicate",
+        ),
+    ],
+)
+def test_a_second_body_deciding_finishedness_is_reported(tmp_path, body):
+    (tmp_path / "second.py").write_text(body)
+    assert surface(tmp_path) == frozenset({"second.py::finished"})
+
+
+VOCABULARY_MODULE = WorkflowStateKind.__module__
+HELD_MODULE = "kodezart.domain.criterion_cross_off"
+
+#: A second body deciding finishedness, in each spelling of a closed kind the
+#: walk resolves, each with the bodies it must report.
+CLOSED_KIND_SPELLINGS = {
+    "vocabulary-as-import": (
+        f"from {VOCABULARY_MODULE} import {VOCABULARY} as Kind\n\n\n"
+        "def finished(rows):\n"
+        "    return all(c.state_kind is Kind.COMPLETED for c in rows)\n",
+        {"finished"},
+    ),
+    "module-attribute-chain": (
+        "from kodezart.types.domain import tracker\n\n\n"
+        "def finished(rows):\n"
+        "    return all(\n"
+        f"        c.state_kind is tracker.{VOCABULARY}.COMPLETED for c in rows\n"
+        "    )\n",
+        {"finished"},
+    ),
+    "string-value": (
+        "def finished(rows):\n"
+        '    return all(c.state_kind == "completed" for c in rows)\n',
+        {"finished"},
+    ),
+    "string-value-on-the-left": (
+        "def finished(rows):\n"
+        '    return all("canceled" != c.state_kind.value for c in rows)\n',
+        {"finished"},
+    ),
+    "module-alias-read-in-a-body": (
+        f"done = {VOCABULARY}.COMPLETED\n\n\n"
+        "def finished(row):\n"
+        "    return row.state_kind is done\n",
+        {MODULE_BODY, "finished"},
+    ),
+    "imported-held-state": (
+        f"from {HELD_MODULE} import HELD_CRITERION_STATE\n\n\n"
+        "def finished(rows):\n"
+        "    return all(row.state_kind is HELD_CRITERION_STATE for row in rows)\n",
+        {"finished"},
+    ),
+    "imported-held-state-negated": (
+        f"from {HELD_MODULE} import HELD_CRITERION_STATE\n\n\n"
+        "def finished(criteria):\n"
+        "    return not any(\n"
+        "        row.state_kind is not HELD_CRITERION_STATE for row in criteria\n"
+        "    )\n",
+        {"finished"},
+    ),
+    "imported-closed-set": (
+        f"from {VOCABULARY_MODULE} import _CLOSED_STATE_KINDS\n\n\n"
+        "def finished(rows):\n"
+        "    return all(row.state_kind in _CLOSED_STATE_KINDS for row in rows)\n",
+        {"finished"},
+    ),
+    "vocabulary-as-import-in-a-display": (
+        f"from {VOCABULARY_MODULE} import {VOCABULARY} as Kind\n\n\n"
+        "def finished(rows):\n"
+        "    return all(\n"
+        "        c.state_kind in (Kind.COMPLETED, Kind.CANCELED) for c in rows\n"
+        "    )\n",
+        {"finished"},
+    ),
+    "openness-passed-to-map": (
+        f"from {VOCABULARY_MODULE} import {OPENNESS}\n\n\n"
+        "def finished(rows):\n"
+        f"    return not any(map({OPENNESS}, (r.state_kind for r in rows)))\n",
+        {"finished"},
+    ),
+    "openness-held-uncalled": (
+        f"from {VOCABULARY_MODULE} import {OPENNESS}\n\n\n"
+        "def finished(rows):\n"
+        f"    check = {OPENNESS}\n"
+        "    return not any(check(r.state_kind) for r in rows)\n",
+        {"finished"},
+    ),
+    "openness-imported-as": (
+        f"from {VOCABULARY_MODULE} import {OPENNESS} as still_open\n\n\n"
+        "def finished(rows):\n"
+        "    return not any(still_open(r.state_kind) for r in rows)\n",
+        {"finished"},
+    ),
+    "closure-by-string": (
+        "class SubtreeClosure:\n"
+        "    def is_closed(self, key):\n"
+        "        return all(\n"
+        '            row.state_kind == "completed" for row in self.roster(key)\n'
+        "        )\n",
+        {"SubtreeClosure.is_closed"},
+    ),
+    "closure-by-held-state": (
+        f"from {HELD_MODULE} import HELD_CRITERION_STATE\n\n\n"
+        "class SubtreeClosure:\n"
+        "    def is_closed(self, key):\n"
+        "        return all(\n"
+        "            row.state_kind is HELD_CRITERION_STATE\n"
+        "            for row in self.roster(key)\n"
+        "        )\n",
+        {"SubtreeClosure.is_closed"},
+    ),
+}
+
+
+@pytest.mark.parametrize("spelling", sorted(CLOSED_KIND_SPELLINGS))
+def test_a_closed_kind_is_read_however_it_is_spelled(tmp_path, spelling):
+    body, sites = CLOSED_KIND_SPELLINGS[spelling]
+    (tmp_path / "second.py").write_text(body)
+    assert surface(tmp_path) == frozenset(f"second.py::{site}" for site in sites)
+
+
+def test_the_closed_kinds_and_their_values_are_read_off_the_vocabulary():
+    assert {kind.name for kind in CLOSED} == TERMINAL
+    assert CLOSED_VALUES == {kind.value for kind in CLOSED}
+    assert STATE_FIELD
+
+
+def test_an_open_kind_or_a_mixed_set_is_not_a_closed_reading(tmp_path):
+    (tmp_path / "open.py").write_text(
+        f"from {VOCABULARY_MODULE} import {VOCABULARY}\n\n"
+        f"MIXED = frozenset({{{VOCABULARY}.UNSTARTED, {VOCABULARY}.STARTED}})\n\n\n"
+        "def owed(rows):\n"
+        f"    return [r for r in rows if r.state_kind is {VOCABULARY}.UNSTARTED]\n"
+        "\n\n"
+        "def fresh(rows):\n"
+        "    return [r for r in rows if r.state_kind in MIXED]\n"
+    )
+    assert surface(tmp_path) == frozenset()
+
+
+def test_a_value_handed_across_a_function_boundary_is_not_seen(tmp_path):
+    """The stated limit: a closed kind returned from a helper elsewhere."""
+    (tmp_path / "second.py").write_text(
+        "def finished(rows, kinds):\n"
+        "    closed = kinds.closed()\n"
+        "    return all(row.state_kind in closed for row in rows)\n"
+    )
+    assert surface(tmp_path) == frozenset()
+
+
+def test_a_name_built_at_run_time_is_not_seen(tmp_path):
+    """The stated limit: a member reached by a name composed when it runs."""
+    (tmp_path / "second.py").write_text(
+        f"from {VOCABULARY_MODULE} import {VOCABULARY}\n\n\n"
+        "def finished(rows):\n"
+        f"    done = getattr({VOCABULARY}, 'COMP' + 'LETED')\n"
+        "    return all(row.state_kind is done for row in rows)\n"
+    )
+    assert surface(tmp_path) == frozenset()
+
+
+def test_a_binding_made_only_when_a_function_runs_is_not_seen(tmp_path):
+    """The stated limit: a closed member bound through ``globals()``."""
+    (tmp_path / "second.py").write_text(
+        f"from {HELD_MODULE} import HELD_CRITERION_STATE\n\n\n"
+        "def bind():\n"
+        "    globals()['DONE_KIND'] = HELD_CRITERION_STATE\n\n\n"
+        "def finished(rows):\n"
+        "    return all(row.state_kind is DONE_KIND for row in rows)\n"
+    )
+    assert surface(tmp_path) == frozenset({"second.py::bind"})
+
+
+#: The stage a finished criterion is moved to, and the write that moves it,
+#: each read off the vocabulary and the port rather than spelled here.
+DONE = LifecycleStage.DONE.name
+STATE_MOVE = TrackerPort.set_workflow_state.__name__
+#: The criterion record's own identity field: the one a finished-state move
+#: may address it by.
+IDENTITY = "id"
+
+
+def _keyword(call: ast.Call, name: str) -> ast.expr | None:
+    return next(
+        (word.value for word in call.keywords if word.arg == name),
+        None,
+    )
+
+
+def _moves_to_done(stage: ast.expr, names: dict[str, object]) -> bool:
+    """Whether a ``stage=`` value is the finished stage: spelled as the
+    member, or denoting it by object however it is bound or imported."""
+    return (isinstance(stage, ast.Attribute) and stage.attr == DONE) or denoted(
+        stage, names
+    ) is LifecycleStage.DONE
+
+
+def _addressed(key: ast.expr, annotations: dict[str, str]) -> str:
+    """What a move addresses: the annotation of the parameter whose own
+    identity it names, or, for anything else, the expression itself."""
+    if (
+        isinstance(key, ast.Attribute)
+        and key.attr == IDENTITY
+        and isinstance(key.value, ast.Name)
+        and key.value.id in annotations
+    ):
+        return annotations[key.value.id]
+    return ast.unparse(key)
+
+
+def finished_identities(
+    sources: dict[str, str], *, method: str
+) -> dict[str, list[str]]:
+    """What every move into the finished state addresses, by function.
+
+    A mover is a function the stage-move finder reports, or one holding a
+    call of *method* whose ``stage=`` resolves to the finished stage by
+    object.  Every such call in it is collected, in source order, so a
+    second move beside the criterion's cannot hide behind it.  A move
+    addresses a record only as ``<parameter>.id``; any other ``issue_key``
+    is reported as written.
+
+    A put-back through the restore moves a row to the state the board held
+    and is outside this reading: ``tests/test_issue_state_write_sites.py``
+    holds every restore to a name read off the board.
+    """
+    addressed: dict[str, list[str]] = {}
+    for module, text in sorted(sources.items()):
+        tree = ast.parse(text)
+        names = names_of(module, text)
+        movers = frozenset(stage_moves(tree, method=method, stage=DONE))
+        where = qualified_names(tree)
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+                continue
+            annotations = {
+                argument.arg: (
+                    ""
+                    if argument.annotation is None
+                    else ast.unparse(argument.annotation)
+                )
+                for argument in [
+                    *node.args.posonlyargs,
+                    *node.args.args,
+                    *node.args.kwonlyargs,
+                ]
+            }
+            found = [
+                (call.lineno, call.col_offset, _addressed(key, annotations))
+                for call in ast.walk(node)
+                if isinstance(call, ast.Call)
+                and isinstance(call.func, ast.Attribute)
+                and call.func.attr == method
+                and (stage := _keyword(call, "stage")) is not None
+                and (key := _keyword(call, "issue_key")) is not None
+                and (where[id(node)] in movers or _moves_to_done(stage, names))
+            ]
+            if found:
+                addressed[f"{module}::{where[id(node)]}"] = [
+                    entry for _, _, entry in sorted(found)
+                ]
+    return addressed
+
+
+def test_the_finished_state_is_written_only_onto_a_criterion_identity():
+    """The one move into the finished state addresses a criterion, by type.
+
+    A sibling guard says how many functions make the move; this says what
+    the move addresses: the identity it names comes from a parameter the
+    function declares as the criterion record, so a fire key or an issue key
+    cannot ride through the same write.
+    """
+    assert IDENTITY in TrackerCriterion.model_fields
+    assert finished_identities(source_tree(), method=STATE_MOVE) == {
+        "services/lane_state_writer.py::TrackerLaneStateWriter._write_one": [
+            TrackerCriterion.__name__
+        ]
+    }
+
+
+MOVER = (
+    "async def move(self, *, {parameter}) -> None:\n"
+    f"    await self._tracker.{STATE_MOVE}(\n"
+    f"        issue_key={{addressed}}, stage=LifecycleStage.{DONE}\n"
+    "    )\n"
+)
+
+
+@pytest.mark.parametrize(
+    ("parameter", "addressed", "annotation"),
+    [
+        pytest.param(
+            f"criterion: {TrackerCriterion.__name__}",
+            "criterion.id",
+            TrackerCriterion.__name__,
+            id="a-criterion-record",
+        ),
+        pytest.param("lane: LaneBinding", "lane.id", "LaneBinding", id="a-lane"),
+        pytest.param(
+            "lane: LaneBinding", "lane.lane_key", "lane.lane_key", id="a-lane-key"
+        ),
+        pytest.param(
+            "issue: TrackerIssue", "issue.issue_key", "issue.issue_key", id="an-issue"
+        ),
+        pytest.param("key: str", '"KOD-1"', "'KOD-1'", id="a-written-down-key"),
+        pytest.param(
+            f"criterion: {TrackerCriterion.__name__}",
+            'criterion.id[: criterion.id.rfind("/")]',
+            "criterion.id[:criterion.id.rfind('/')]",
+            id="a-sliced-criterion-identity",
+        ),
+    ],
+)
+def test_what_a_planted_move_addresses_is_read_off_its_own_parameter(
+    parameter, addressed, annotation
+):
+    sources = {
+        "chains/planted.py": MOVER.format(parameter=parameter, addressed=addressed)
+    }
+    assert finished_identities(sources, method=STATE_MOVE) == {
+        "chains/planted.py::move": [annotation]
+    }
+
+
+TWO_MOVES = (
+    "from kodezart.types.domain.operation import LifecycleStage\n\n\n"
+    f"async def settle_both(self, *, criterion: {TrackerCriterion.__name__}, "
+    "lane: LaneBinding) -> None:\n"
+    f"    await self._tracker.{STATE_MOVE}(\n"
+    f"        issue_key=lane.lane_key, stage=LifecycleStage.{DONE}\n"
+    "    )\n"
+    "    await settle(\n"
+    f"        self._tracker.{STATE_MOVE}(\n"
+    f"            issue_key=criterion.id, stage=LifecycleStage.{DONE}\n"
+    "        )\n"
+    "    )\n"
+)
+ALIASED_STAGE = (
+    "from kodezart.types.domain.operation import LifecycleStage as Stage\n\n"
+    "FINISHED = Stage.DONE\n\n\n"
+    "async def close(self, *, lane: LaneBinding) -> None:\n"
+    f"    await self._tracker.{STATE_MOVE}(issue_key=lane.lane_key, stage=FINISHED)\n"
+)
+
+
+def test_a_second_move_beside_the_criterions_is_reported():
+    """Every move in a function is read, not the last one walked."""
+    assert finished_identities({"chains/planted.py": TWO_MOVES}, method=STATE_MOVE) == {
+        "chains/planted.py::settle_both": ["lane.lane_key", TrackerCriterion.__name__]
+    }
+
+
+def test_a_move_whose_stage_denotes_the_finished_stage_by_object_is_reported():
+    assert finished_identities(
+        {"chains/planted.py": ALIASED_STAGE}, method=STATE_MOVE
+    ) == {"chains/planted.py::close": ["lane.lane_key"]}

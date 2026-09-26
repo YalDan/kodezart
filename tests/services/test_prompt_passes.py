@@ -8,16 +8,20 @@ against a literal in the code, which is the one thing this has to catch.
 """
 
 import ast
-from collections.abc import Callable
+import asyncio
+from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime, tzinfo
 from pathlib import Path
 from typing import Final
 
 import pytest
 import structlog.testing
+from pydantic import ValidationError
 
 from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.composition.passes import (
+    _DISPATCH_NAME,
+    MARKER_PURPOSES_BY_FAMILY,
     DispatchRuntime,
     build_dispatch_runtime,
     build_prompt_passes,
@@ -25,7 +29,8 @@ from kodezart.composition.passes import (
 )
 from kodezart.composition.records import RECORD_KIND_BY_PASS
 from kodezart.composition.tracker import DialledTracker
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
+from kodezart.core.constants import DEFAULT_LANE
 from kodezart.core.errors import (
     PassGateCapabilityError,
     PassKnowledgeCapabilityError,
@@ -35,15 +40,23 @@ from kodezart.core.logging import get_logger
 from kodezart.core.prompt_namespaces import bindings_for
 from kodezart.services import pass_scheduler as pass_scheduler_module
 from kodezart.services.pass_scheduler import PassScheduler, ScheduledPass
-from kodezart.services.prompt_pass import pass_render_bindings
+from kodezart.services.prompt_pass import gate_render_bindings, pass_render_bindings
 from kodezart.services.run_recorder import RunRecorder
-from kodezart.types.domain.dispatch import PassSignal
+from kodezart.types.domain.agent import (
+    PASS_GATE_SCHEMA,
+    ResultEvent,
+    ScopeScanNode,
+    ScopeScanOutput,
+)
+from kodezart.types.domain.dispatch import PassRun, PassSignal
 from kodezart.types.domain.operation import (
     DocumentSystem,
     OperationConfig,
+    OperationMemberAbsentError,
     QueueState,
     RecordDestination,
     RunKind,
+    ScopeLabel,
 )
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run_records import (
@@ -52,21 +65,29 @@ from kodezart.types.domain.run_records import (
     RunRecord,
     RunRecordResult,
 )
+from kodezart.types.domain.scope import ScopeContainer, ScopeKind, ScopeRef
 from kodezart.types.domain.session import SessionType
 from tests.fakes import (
     FIXTURE_EPOCH,
     SUPPRESS_ALL_SKILLS,
     FakeAgentRunner,
+    FakeDeliveryProbe,
+    FakeGitService,
     FakeJobQueue,
+    FakeRepoCache,
+    FakeScopeStatusWriter,
     FakeTrackerPort,
+    FakeWorkspaceProvider,
     ManagedFakeLinearMcpServer,
+    PassThroughGate,
     make_tracker_issue,
 )
 from tests.prompts.sets import V5_SET
 from tests.prompts.test_minimal_floor import minimal_fixture
 from tests.prompts.test_operation_config import raw_example, write_toml
+from tests.prompts.test_organize_mandate_bindings import declared_operation
 from tests.prompts.test_prompt_wiring import DEFAULT_SET, load_registry
-from tests.services.test_pass_scheduler import Metronome, _settle
+from tests.services.test_pass_scheduler import Metronome
 from tests.services.test_prompt_pass import example_config
 
 COMPOSITION_SOURCE = (
@@ -87,6 +108,27 @@ GROOMING_INTERVAL = 907.0
 #: pass against shared values, and fails against these.
 FIRE_PREP_TIMEOUT = 401.0
 GROOMING_TIMEOUT = 809.0
+
+#: The other cadences this module's deployment sets, on the same principle.
+#: None of them has a default: a pass is scheduled only when its interval and
+#: timeout are both set, so a deployment that means a pass to run says so.
+DISPATCH_INTERVAL = 293.0
+DISPATCH_TIMEOUT = 211.0
+SUPERVISOR_INTERVAL = 317.0
+SUPERVISOR_TIMEOUT = 113.0
+
+#: Every cadence setting left unset, for the rows that ask what a deployment
+#: that sets none of them schedules.
+NO_CADENCE: dict[str, object] = {
+    "dispatch_pass_interval_seconds": None,
+    "dispatch_pass_timeout_seconds": None,
+    "fire_prep_pass_interval_seconds": None,
+    "fire_prep_pass_timeout_seconds": None,
+    "grooming_pass_interval_seconds": None,
+    "grooming_pass_timeout_seconds": None,
+    "supervisor_pass_interval_seconds": None,
+    "supervisor_pass_timeout_seconds": None,
+}
 
 
 #: The shipped example declares documents and records in the knowledge
@@ -125,15 +167,34 @@ def per_run(key: PromptKey) -> dict[str, object]:
     return pass_render_bindings(identity)
 
 
+#: The deployment's own tracker credential, set on every configuration this
+#: module builds: the organize stage sessions of a scope run are described the
+#: tracker server built from it, so a scope deployment's boot requires it, and
+#: a per-issue deployment reads nothing else off it. A case about its absence
+#: overrides it with an empty tracker table.
+TRACKER_CREDENTIAL: dict[str, object] = {"token": "lin_api_" + "k" * 40}
+
+
 def _config(tmp_path: Path, **overrides: object) -> AppConfig:
     settings: dict[str, object] = {
+        "tracker": TRACKER_CREDENTIAL,
         "fire_prep_pass_interval_seconds": FIRE_PREP_INTERVAL,
         "fire_prep_pass_timeout_seconds": FIRE_PREP_TIMEOUT,
         "grooming_pass_interval_seconds": GROOMING_INTERVAL,
         "grooming_pass_timeout_seconds": GROOMING_TIMEOUT,
+        "dispatch_pass_interval_seconds": DISPATCH_INTERVAL,
+        "dispatch_pass_timeout_seconds": DISPATCH_TIMEOUT,
+        "supervisor_pass_interval_seconds": SUPERVISOR_INTERVAL,
+        "supervisor_pass_timeout_seconds": SUPERVISOR_TIMEOUT,
         "scheduled_pass_working_dir": str(tmp_path / "pass"),
-        "knowledge_session_grants": [SessionType.SCHEDULED_PASS],
-        "knowledge_mcp_token": KNOWLEDGE_TOKEN,
+        "knowledge": {
+            "session_grants": [SessionType.SCHEDULED_PASS],
+            "connection": {
+                "transport": "http",
+                "server_url": "https://knowledge.invalid/mcp",
+                "credential": KNOWLEDGE_TOKEN,
+            },
+        },
     }
     settings.update(overrides)
     return AppConfig(**settings)  # type: ignore[arg-type]
@@ -157,17 +218,21 @@ def dialled_over(
         caller=ManagedFakeLinearMcpServer(),
         operation=operation,
         ledger=tracker.self_writes,
+        status=FakeScopeStatusWriter(),
     )
 
 
 async def _registrations(
     tmp_path: Path,
     *,
-    tracker: FakeTrackerPort | None = None,
     operation: OperationConfig | None = None,
     **overrides: object,
 ) -> tuple[list[ScheduledPass], FakeAgentRunner]:
-    """The passes exactly as the composition registers them."""
+    """The passes exactly as the composition registers them.
+
+    No tracker: the prompt passes take none, because the session reaches
+    the tracker itself and so does the gate question asked before it.
+    """
     declared = example_config() if operation is None else operation
     prompts = load_registry(bindings=dict(bindings_for(declared)))
     runner = FakeAgentRunner(events=[])
@@ -177,7 +242,6 @@ async def _registrations(
             config=_config(tmp_path, **overrides),
             operation=declared,
             prompts=prompts,
-            dialled=dialled_over(tracker, declared),
             runner=runner,
             skills=SUPPRESS_ALL_SKILLS,
         ),
@@ -188,6 +252,81 @@ async def _registrations(
 #: The vendor's own words when a credential holds no scope for a scan.
 DIAGNOSIS = "auth_insufficient_scope: this credential cannot read those"
 
+#: Every boot refusal below is asserted in both HTTP modes.  Debug is the
+#: switch a handler would read to keep serving past a refusal, and a boot
+#: that refuses only outside it degrades in the mode it was not tested in
+#: (KOD-706: no code path degrades, skips a write, or logs and continues).
+EITHER_MODE = pytest.mark.parametrize(
+    "debug", [False, True], ids=["debug-off", "debug-on"]
+)
+
+
+#: What the standing-scope pass is registered under, spelled here rather
+#: than imported: the name is what an operator reads in a log and what a
+#: later pass-set assertion enumerates, so a rename must redden this too.
+HEARTBEAT_PASS = "scope_heartbeat"
+
+#: The organize owner's two bounds.
+ORGANIZE_BOUNDS: dict[str, object] = {
+    "max_admission_rounds": 2,
+    "max_convergence_rounds": 2,
+}
+
+#: The host-MCP opt-in, switched on. It is the organize session's only way to
+#: the tracker's tools, so boot refuses a deployment that declares organize
+#: scopes over a dialled tracker without it; every such deployment here sets it.
+#: The deployment half of a standing-scope operation: the owner bounds the
+#: run's stages require and the dispatch cadence driving the heartbeat, so
+#: what the schedule holds is decided by the declared rows alone.
+STANDING_SCOPE_SETTINGS: dict[str, object] = {
+    "organize": ORGANIZE_BOUNDS,
+    "write_back": {"max_verify_rounds": 2},
+}
+
+
+#: The one standing scope this module declares, and the board the pass
+#: reads it off. Stated once as a ref so the row the operation declares and
+#: the container the label sits on cannot drift apart: a pass submitting
+#: some other scope's run would then be submitting a scope no board here
+#: has.
+STANDING_SCOPE = ScopeRef(kind=ScopeKind.PROJECT, key="standing-project")
+
+
+def standing_scope_operation(*, scopes: bool = True) -> OperationConfig:
+    """The declared organize table, with or without one standing-scope row."""
+    fields = declared_operation().model_dump()
+    fields["organize_scopes"] = (
+        [
+            {
+                "scope": STANDING_SCOPE.model_dump(mode="json"),
+                "repo_url": fields["repos"][0]["url"],
+            }
+        ]
+        if scopes
+        else []
+    )
+    return OperationConfig.model_validate(fields)
+
+
+def approving_board() -> FakeTrackerPort:
+    """The standing project, carrying the label that admits its run.
+
+    The container as well as the label, because the approval question reads
+    a node's labels AND its parent edge: a board holding the label and no
+    container answers a question no workspace answers.
+    """
+    return FakeTrackerPort(
+        scope_containers=[
+            ScopeContainer(
+                ref=STANDING_SCOPE,
+                name="the standing project",
+                description="",
+                url=f"https://tracker.invalid/project/{STANDING_SCOPE.key}",
+            )
+        ],
+        scope_label_members={STANDING_SCOPE: frozenset({ScopeLabel.APPROVED})},
+    )
+
 
 async def _runtime(
     tmp_path: Path,
@@ -195,7 +334,10 @@ async def _runtime(
     tracker: FakeTrackerPort | None,
     runner: FakeAgentRunner,
     operation: OperationConfig | None = None,
+    reconciled: OperationConfig | None = None,
+    github_api: FakeDeliveryProbe | None = None,
     prompt_set: str = DEFAULT_SET,
+    queue: FakeJobQueue | None = None,
     **overrides: object,
 ) -> DispatchRuntime:
     """Boot the scheduled-pass runtime exactly as the composition root does.
@@ -204,6 +346,21 @@ async def _runtime(
     because that is what the root does: every refusal the passes can raise
     is settled before anything stateful is built, and the builder below
     re-checks none of it.
+
+    *reconciled* is the operation the dialled tracker carries, where a caller
+    needs it to differ from the one handed in raw. Preflight still runs on the
+    raw copy, as the root's does. Left out, the two are one object, so nothing
+    downstream can tell which copy it was handed.
+
+    *github_api* is the delivery probe the dispatch passes are gated on, so a
+    caller that needs a schedule with something registered BEFORE the arms this
+    module asks about can have one. Left out, no dispatch pass is built, which
+    is what every caller here but the registration rows wants.
+
+    *queue* is the caller's when it means to read what a registered pass
+    submitted: the queue this boot wires is the one the pass holds, and a
+    case that could not see it could only assert the registration rather
+    than the pass.
     """
     declared = example_config() if operation is None else operation
     config = _config(tmp_path, **overrides)
@@ -211,30 +368,48 @@ async def _runtime(
         default_set=prompt_set,
         bindings=dict(bindings_for(declared)),
     )
-    queue = FakeJobQueue()
+    queue = FakeJobQueue() if queue is None else queue
     await verify_pass_preflight(
         config=config,
         operation=declared,
         tracker=tracker,
-        github_api=None,
+        github_api=github_api,
         prompts=prompts,
     )
     return await build_dispatch_runtime(
+        workspace=FakeWorkspaceProvider(),
         recorder=RunRecorder(records={}, sinks={}),
         config=config,
         operation=declared,
-        dialled=dialled_over(tracker, declared),
-        github_api=None,
+        dialled=dialled_over(tracker, declared if reconciled is None else reconciled),
+        github_api=github_api,
         queue=queue,
         registry=queue,
-        gate=None,
-        git=None,  # type: ignore[arg-type]
-        cache=None,  # type: ignore[arg-type]
+        # The dispatch passes' own collaborators, which nothing builds without a
+        # delivery probe: with none handed over these stay the absent values
+        # every other caller here boots with, so a row that asks for no dispatch
+        # pass boots exactly as it did.
+        gate=PassThroughGate() if github_api is not None else None,
+        git=FakeGitService() if github_api is not None else None,  # type: ignore[arg-type]
+        cache=FakeRepoCache() if github_api is not None else None,  # type: ignore[arg-type]
         prompts=prompts,
         runner=runner,
         skills=SUPPRESS_ALL_SKILLS,
         log=get_logger(__name__),
     )
+
+
+async def _settle_requests(metronome: Metronome, count: int) -> None:
+    """Wait until every driver has run its boot tick and asked for its sleep.
+
+    With a limit of zero no sleep completes, so what the scheduler ran is
+    exactly the boot ticks; each driver then asks for its interval once.
+    """
+    for _ in range(count * 500):
+        if len(metronome.requested) >= count:
+            return
+        await asyncio.sleep(0)
+    raise AssertionError(f"only {metronome.requested} requested, expected {count}")
 
 
 async def test_each_pass_sends_its_own_rendered_prompt_on_its_own_cadence(
@@ -243,11 +418,11 @@ async def test_each_pass_sends_its_own_rendered_prompt_on_its_own_cadence(
     """One tick each: two sessions, two prompts, two configured intervals."""
     registered, runner = await _registrations(tmp_path)
     prompts = load_registry(bindings=dict(bindings_for(example_config())))
-    metronome = Metronome(limit=len(registered))
+    metronome = Metronome(limit=0)
     scheduler = PassScheduler(passes=registered, sleep=metronome.sleep)
 
     await scheduler.start()
-    await _settle(metronome.parked)
+    await _settle_requests(metronome, len(registered))
     await scheduler.stop()
 
     assert set(metronome.requested) == {FIRE_PREP_INTERVAL, GROOMING_INTERVAL}
@@ -299,77 +474,39 @@ def test_the_pass_composition_holds_no_numeric_literal() -> None:
     assert numbers == []
 
 
-async def test_gating_is_per_pass_configuration_and_the_defaults_differ(
+async def test_the_boot_tick_asks_no_gate_and_the_next_tick_does(
     tmp_path: Path,
 ) -> None:
-    """Fire-prep ships gated on two of its streams; grooming ships ungated.
+    """The registered pass keeps its window: unasked at boot, asked after.
 
-    Asserted through a tick rather than by reading the wiring: what
-    matters is that a quiet board skips one pass and still runs the other.
+    Asserted through ticks rather than by reading the wiring: the boot tick
+    opens the session over the whole board, and the tick after asks the
+    gate question over the window since it, in the schema of the gate's
+    output model, before opening anything.
     """
-    tracker = FakeTrackerPort()
-    registered, runner = await _registrations(tmp_path, tracker=tracker)
-    metronome = Metronome(limit=len(registered))
-    scheduler = PassScheduler(passes=registered, sleep=metronome.sleep)
+    registered, runner = await _registrations(tmp_path)
+    fire_prep = next(
+        entry for entry in registered if entry.name == PromptKey.FIRE_PREP_PASS.value
+    )
 
-    await scheduler.start()
-    await _settle(metronome.parked)
-    await scheduler.stop()
+    await fire_prep.run(FIXTURE_EPOCH)
+    boot_calls = list(runner.calls)
+    await fire_prep.run(TICK)
 
     prompts = load_registry(bindings=dict(bindings_for(example_config())))
-    assert [call["prompt"] for call in runner.calls] == [
-        prompts.template_for(PromptKey.GROOMING_PASS).render(
-            per_run(PromptKey.GROOMING_PASS)
-        ),
-    ], "grooming verifies the tree, which is work even when nothing changed"
-    # Port calls and no session: fire-prep asked its questions, got
-    # nothing, and never opened one. Every one of them named a board, and
-    # none of them was a review scan — the shipped set carries neither an
-    # unscoped question nor the review signal.
-    assert tracker.scans, "fire-prep consulted its gate rather than skipping it"
-    assert tracker.review_scans == []
-    assert [query for query in tracker.scans if query.team_key is None] == []
-
-
-async def test_an_operator_can_gate_or_ungate_any_pass(tmp_path: Path) -> None:
-    """The knob is real in both directions, over the same quiet board."""
-    quiet = FakeTrackerPort()
-    gated, gated_runner = await _registrations(
-        tmp_path,
-        tracker=quiet,
-        grooming_pass_gate_signals=[PassSignal.issues_changed],
-        fire_prep_pass_gate_signals=[],
+    assert [call["output_format"] for call in boot_calls] == [None]
+    assert [call["output_format"] for call in runner.calls[1:]] == [
+        {"type": "json_schema", "schema": PASS_GATE_SCHEMA},
+        None,
+    ], "the runner fake answers nothing, and no answer runs the pass"
+    assert runner.calls[1]["prompt"] == prompts.template_for(
+        PromptKey.PASS_GATE
+    ).render(
+        gate_render_bindings(
+            name=PromptKey.FIRE_PREP_PASS.value, window_start=FIXTURE_EPOCH
+        )
     )
-    metronome = Metronome(limit=len(gated))
-    scheduler = PassScheduler(passes=gated, sleep=metronome.sleep)
-
-    await scheduler.start()
-    await _settle(metronome.parked)
-    await scheduler.stop()
-
-    prompts = load_registry(bindings=dict(bindings_for(example_config())))
-    assert [call["prompt"] for call in gated_runner.calls] == [
-        prompts.template_for(PromptKey.FIRE_PREP_PASS).render(
-            per_run(PromptKey.FIRE_PREP_PASS)
-        ),
-    ], "the defaults are a default, not the behaviour"
-
-
-async def test_a_declared_signal_with_no_tracker_runs_the_pass_ungated(
-    tmp_path: Path,
-) -> None:
-    """Absent gate and quiet gate are different states, never conflated."""
-    registered, runner = await _registrations(tmp_path, tracker=None)
-    metronome = Metronome(limit=len(registered))
-    scheduler = PassScheduler(passes=registered, sleep=metronome.sleep)
-
-    await scheduler.start()
-    await _settle(metronome.parked)
-    await scheduler.stop()
-
-    assert len(runner.calls) == len(registered), (
-        "no port to ask means ungated, never silently switched off"
-    )
+    assert runner.calls[1]["session_type"] is SessionType.SCHEDULED_PASS
 
 
 async def test_the_boot_seam_registers_the_prompt_passes(tmp_path: Path) -> None:
@@ -392,63 +529,317 @@ async def test_the_boot_seam_registers_the_prompt_passes(tmp_path: Path) -> None
     assert runtime.lifecycle is None
 
 
-async def test_a_signal_the_credential_cannot_scan_for_aborts_boot(
+async def test_declared_standing_scopes_register_the_heartbeat_on_the_dispatch_cadence(
     tmp_path: Path,
+) -> None:
+    """The scope heartbeat, beside the grooming pass.
+
+    One registration for the whole operation, on the cadence the dispatch
+    scans already run on, ticking at boot, and with no report: it writes no
+    record, so a tick of it is not a run anything could record. The grooming
+    pass is still there once — it works the whole board before approval, the
+    heartbeat submits what approval admits — and the cadence is read off the
+    configuration rather than spelled here.
+    """
+    config = _config(tmp_path, **STANDING_SCOPE_SETTINGS)
+    operation = standing_scope_operation()
+    repo_url = operation.repos[0].url
+    scan = ScopeScanOutput(
+        scopes=[
+            ScopeScanNode(
+                kind=STANDING_SCOPE.kind,
+                key=STANDING_SCOPE.key,
+                repository=repo_url,
+                why="approved, with an open issue below it",
+            )
+        ],
+        reason="one approved project is not finished",
+    )
+    answer = ResultEvent(
+        subtype="success",
+        duration_ms=1,
+        duration_api_ms=1,
+        is_error=False,
+        num_turns=1,
+        session_id="scan-session",
+        structured_output=scan.model_dump(mode="json", by_alias=True),
+    )
+    queue = FakeJobQueue()
+    runtime = await _runtime(
+        tmp_path,
+        tracker=approving_board(),
+        runner=FakeAgentRunner(events=[answer]),
+        operation=operation,
+        queue=queue,
+        **STANDING_SCOPE_SETTINGS,
+    )
+
+    registered = [entry.name for entry in runtime.scheduler.passes]
+    (heartbeat,) = [
+        entry for entry in runtime.scheduler.passes if entry.name == HEARTBEAT_PASS
+    ]
+    assert heartbeat.interval_seconds == config.dispatch_pass_interval_seconds
+    assert heartbeat.timeout_seconds == config.dispatch_pass_timeout_seconds
+    assert heartbeat.report is None
+    assert heartbeat.tick_at_boot is True
+    assert registered.count(HEARTBEAT_PASS) == 1
+    assert registered.count(PromptKey.GROOMING_PASS.value) == 1
+
+    # The REGISTERED callable, ticked: what the scheduler would reach is the
+    # heartbeat's own scheduled run, answering in the vocabulary a scheduled
+    # pass answers in and submitting the node the scan lists onto the queue
+    # this boot wired, where POST /fire submits too. A registration carrying
+    # some other callable passes every assertion above and fails here.
+    assert await heartbeat.run(FIXTURE_EPOCH) is PassRun.RAN
+    ((lane, request),) = queue.submissions
+    assert lane == DEFAULT_LANE
+    assert request.scope == STANDING_SCOPE
+    assert request.repo_url == repo_url
+    # The scan lists the same node again, and the registry holds its run as
+    # live: the second tick submits nothing beside it.
+    assert await heartbeat.run(FIXTURE_EPOCH) is PassRun.SKIPPED
+    assert len(queue.submissions) == 1
+
+
+async def test_an_operation_with_no_scope_labels_registers_no_heartbeat(
+    tmp_path: Path,
+) -> None:
+    """Non-vacuity for the registration above: the approval labels wire it.
+
+    The same deployment over an operation that declares no scope labels
+    schedules no heartbeat: its scan would have no approval to look for.
+    """
+    fields = example_config().model_dump()
+    fields["scope_labels"] = {}
+    runtime = await _runtime(
+        tmp_path,
+        tracker=FakeTrackerPort(),
+        runner=FakeAgentRunner(events=[]),
+        operation=OperationConfig.model_validate(fields),
+    )
+
+    assert {entry.name for entry in runtime.scheduler.passes} == {
+        PromptKey.FIRE_PREP_PASS.value,
+        PromptKey.GROOMING_PASS.value,
+    }
+
+
+@EITHER_MODE
+async def test_a_signal_the_credential_cannot_scan_for_aborts_boot(
+    tmp_path: Path, debug: bool
 ) -> None:
     """KOD-151: the silent failure, made the loudest thing a deployment has.
 
     A gate whose scan the credential is not scoped for answers "nothing
     moved" every tick, which is exactly what a quiet board answers. The
-    pass it guards never runs again and nothing says so — so boot asks
-    first, and dies naming the signal, the pass and the vendor's reason.
+    dispatch pass it guards never runs again and nothing says so — so boot
+    asks first, and dies naming the signal, the pass and the vendor's reason.
     """
     tracker = FakeTrackerPort(scan_refusals={PassSignal.reviews_changed: DIAGNOSIS})
+    runner = FakeAgentRunner(events=[])
 
     with pytest.raises(PassGateCapabilityError) as caught:
         await _runtime(
             tmp_path,
             tracker=tracker,
-            runner=FakeAgentRunner(events=[]),
-            fire_prep_pass_gate_signals=[
-                PassSignal.issues_changed,
+            runner=runner,
+            http={"debug": debug},
+            github_api=FakeDeliveryProbe(),
+            dispatch_pass_gate_signals=[
+                PassSignal.approved_changed,
                 PassSignal.reviews_changed,
             ],
         )
 
     named = str(caught.value)
     assert PassSignal.reviews_changed.value in named
-    assert PromptKey.FIRE_PREP_PASS.value in named
+    assert _DISPATCH_NAME in named
     assert DIAGNOSIS in named
-    assert PassSignal.issues_changed.value not in named, (
+    assert PassSignal.approved_changed.value not in named, (
         "a signal the credential can answer is not part of the refusal"
     )
+    # The refusal ends the boot: one probe, and no session after it.
+    assert tracker.capability_probes == [
+        (PassSignal.approved_changed, PassSignal.reviews_changed)
+    ]
+    assert runner.calls == []
+
+
+@EITHER_MODE
+async def test_two_refused_signals_are_named_in_one_abort(
+    tmp_path: Path, debug: bool
+) -> None:
+    """Every refused signal is named at once, with its pass and its reason.
+
+    An operator fixing one scope at a time pays a boot cycle per signal, so
+    the probe asks for every signal the schedule declares and the abort names
+    each refusal it came back with, the pass that refusal leaves ungated, and
+    the diagnosis the backend gave for it.
+    """
+    second = "auth_insufficient_scope: nor those"
+    tracker = FakeTrackerPort(
+        scan_refusals={
+            PassSignal.approved_changed: DIAGNOSIS,
+            PassSignal.reviews_changed: second,
+        }
+    )
+    runner = FakeAgentRunner(events=[])
+
+    with pytest.raises(PassGateCapabilityError) as caught:
+        await _runtime(
+            tmp_path,
+            tracker=tracker,
+            runner=runner,
+            http={"debug": debug},
+            github_api=FakeDeliveryProbe(),
+            dispatch_pass_gate_signals=[
+                PassSignal.approved_changed,
+                PassSignal.reviews_changed,
+            ],
+        )
+
+    named = str(caught.value)
+    assert PassSignal.approved_changed.value in named
+    assert PassSignal.reviews_changed.value in named
+    assert DIAGNOSIS in named and second in named
+    assert named.count(_DISPATCH_NAME) == 2
+    # One abort carries both: the probe asked for both signals in one call.
+    assert tracker.capability_probes == [
+        (PassSignal.approved_changed, PassSignal.reviews_changed)
+    ]
+    assert runner.calls == []
+
+
+@EITHER_MODE
+async def test_two_refused_signals_sharing_one_diagnosis_are_each_named(
+    tmp_path: Path, debug: bool
+) -> None:
+    """Refusals are one per refused signal, however many share a diagnosis.
+
+    A backend gives every signal one tool serves the same diagnosis, so two
+    refused signals with one reason are the ordinary multi-refusal case: the
+    abort still carries a refusal for each signal, each naming its own.
+    """
+    tracker = FakeTrackerPort(
+        scan_refusals={
+            PassSignal.approved_changed: DIAGNOSIS,
+            PassSignal.triage_backlog: DIAGNOSIS,
+        }
+    )
+    runner = FakeAgentRunner(events=[])
+
+    with pytest.raises(PassGateCapabilityError) as caught:
+        await _runtime(
+            tmp_path,
+            tracker=tracker,
+            runner=runner,
+            http={"debug": debug},
+            github_api=FakeDeliveryProbe(),
+            dispatch_pass_gate_signals=[
+                PassSignal.approved_changed,
+                PassSignal.triage_backlog,
+            ],
+        )
+
+    refusals = caught.value.refusals
+    assert len(refusals) == 2, refusals
+    for signal in (PassSignal.approved_changed, PassSignal.triage_backlog):
+        starting = [item for item in refusals if item.startswith(f"{signal.value} ")]
+        assert len(starting) == 1, (signal, refusals)
+    assert all(DIAGNOSIS in item for item in refusals)
+    assert tracker.capability_probes == [
+        (PassSignal.approved_changed, PassSignal.triage_backlog)
+    ]
+    assert runner.calls == []
+
+
+@EITHER_MODE
+async def test_the_prompt_passes_put_no_signal_in_the_probe(
+    tmp_path: Path, debug: bool
+) -> None:
+    """A credential that can scan for nothing still boots the two prompt passes.
+
+    Their gate is a session over the tracker server the pass itself is
+    described, so no scan is asked through the dialled port on their
+    behalf: a deployment scheduling only them probes nothing and boots.
+    """
+    tracker = FakeTrackerPort(scan_refusals=dict.fromkeys(PassSignal, DIAGNOSIS))
+    runner = FakeAgentRunner(events=[])
+
+    runtime = await _runtime(
+        tmp_path,
+        tracker=tracker,
+        runner=runner,
+        http={"debug": debug},
+        # Unset, so the heartbeat that pair would schedule is not here either.
+        dispatch_pass_interval_seconds=None,
+        dispatch_pass_timeout_seconds=None,
+    )
+
+    assert tracker.capability_probes == []
+    assert {entry.name for entry in runtime.scheduler.passes} == {
+        PromptKey.FIRE_PREP_PASS.value,
+        PromptKey.GROOMING_PASS.value,
+    }
+
+
+@EITHER_MODE
+async def test_a_refused_dispatch_signal_aborts_naming_the_dispatch_pass(
+    tmp_path: Path, debug: bool
+) -> None:
+    """The per-issue dispatch pass's signal is probed and refused like any other.
+
+    A deployment with a delivery probe and repositories whose teams the
+    dispatch pass scans schedules the dispatch pass; its gate signal is asked
+    for at boot, and a credential that cannot scan for it aborts startup naming
+    the dispatch pass and the diagnosis. The two session passes declare no
+    signal here, so the dispatch pass is the only thing that can have put the
+    signal in the probe.
+    """
+    operation = example_config()
+    assert any(operation.teams_scanned_by(repo.url) for repo in operation.repos)
+    tracker = FakeTrackerPort(scan_refusals={PassSignal.approved_changed: DIAGNOSIS})
+    runner = FakeAgentRunner(events=[])
+
+    with pytest.raises(PassGateCapabilityError) as caught:
+        await _runtime(
+            tmp_path,
+            tracker=tracker,
+            runner=runner,
+            http={"debug": debug},
+            operation=operation,
+            github_api=FakeDeliveryProbe(),
+            dispatch_pass_gate_signals=[PassSignal.approved_changed],
+        )
+
+    assert caught.value.refusals == (
+        f"{PassSignal.approved_changed.value} gates {_DISPATCH_NAME}: {DIAGNOSIS}",
+    )
+    assert tracker.capability_probes == [(PassSignal.approved_changed,)]
+    assert runner.calls == []
+
+
+@EITHER_MODE
+def test_the_refusal_cases_boot_in_the_mode_they_name(
+    tmp_path: Path, debug: bool
+) -> None:
+    """Non-vacuity for the mode rows: the override reaches the boot's config."""
+    assert _config(tmp_path, http={"debug": debug}).http.debug is debug
 
 
 async def test_the_shipped_defaults_boot_and_then_run(tmp_path: Path) -> None:
     """The other arm, end to end: what ships boots, and the pass it wired works.
 
-    Nothing here restates the defaults. Boot probes exactly the signals the
-    shipped configuration carries, the credential answers, and the gate the
-    composition built — containers and all — wakes fire-prep on a board
-    with a standing triage backlog.
+    Nothing here restates the defaults. Boot probes nothing for the prompt
+    passes, and the pass the composition built runs its first tick over the
+    board without asking and asks the gate on the tick after.
     """
-    operation = example_config()
-    tracker = FakeTrackerPort(
-        issues=[
-            make_tracker_issue(
-                "FIX-1",
-                team_key=operation.team_keys()[0],
-                queue_states=[QueueState.TRIAGE],
-            ),
-        ],
-    )
+    tracker = FakeTrackerPort()
     runner = FakeAgentRunner(events=[])
 
     runtime = await _runtime(tmp_path, tracker=tracker, runner=runner)
 
-    assert tracker.capability_probes == [
-        tuple(AppConfig().fire_prep_pass_gate_signals),
-    ]
+    assert tracker.capability_probes == []
     fire_prep = next(
         entry
         for entry in runtime.scheduler.passes
@@ -456,11 +847,17 @@ async def test_the_shipped_defaults_boot_and_then_run(tmp_path: Path) -> None:
     )
     await fire_prep.run(FIXTURE_EPOCH)
 
-    assert len(runner.calls) == 1
+    assert [call["output_format"] for call in runner.calls] == [None]
+    await fire_prep.run(TICK)
+    assert [call["output_format"] for call in runner.calls[1:]] == [
+        {"type": "json_schema", "schema": PASS_GATE_SCHEMA},
+        None,
+    ]
 
 
+@EITHER_MODE
 async def test_a_pass_whose_prompt_has_a_hole_refuses_at_preflight(
-    tmp_path: Path,
+    tmp_path: Path, debug: bool
 ) -> None:
     """KOD-150: the hole is a boot refusal naming the pass and the placeholders.
 
@@ -476,7 +873,7 @@ async def test_a_pass_whose_prompt_has_a_hole_refuses_at_preflight(
 
     with pytest.raises(PromptRenderError) as caught:
         await verify_pass_preflight(
-            config=_config(tmp_path),
+            config=_config(tmp_path, http={"debug": debug}),
             operation=operation,
             tracker=None,
             github_api=None,
@@ -495,6 +892,237 @@ async def test_the_shipped_example_wires_without_a_render_refusal(
     assert len((await _registrations(tmp_path))[0]) == len(
         (PromptKey.FIRE_PREP_PASS, PromptKey.GROOMING_PASS)
     )
+
+
+# ---------------------------------------------------------------------------
+# KOD-1235: boot verifies the marker prefixes a wired pass can ask for
+# ---------------------------------------------------------------------------
+
+
+def without_prefixes(operation: OperationConfig, *purposes: str) -> OperationConfig:
+    """*operation* with the named marker purposes undeclared."""
+    return operation.model_copy(
+        update={
+            "marker_prefixes": {
+                purpose: prefix
+                for purpose, prefix in operation.marker_prefixes.items()
+                if purpose not in purposes
+            }
+        }
+    )
+
+
+async def test_a_scope_deployment_lacking_prefixes_its_passes_ask_for_is_refused(
+    tmp_path: Path,
+) -> None:
+    """Every missing key at once, before any pass is built.
+
+    Measured 2026-09-24 on the live scope deployment: a file declaring ten
+    of the template's fifteen prefixes booted four times, and the first
+    stage with work refused 30 s in over ``claim`` when its surface lease
+    released. Boot now names that key, and every other one a pass it
+    schedules can ask for, in the spelling the point-of-use refusal uses.
+    """
+    operation = without_prefixes(standing_scope_operation(), "claim", "run_alarm")
+
+    with pytest.raises(OperationMemberAbsentError) as caught:
+        await verify_pass_preflight(
+            config=_config(tmp_path, **STANDING_SCOPE_SETTINGS),
+            operation=operation,
+            tracker=approving_board(),
+            github_api=None,
+            prompts=load_registry(bindings=dict(bindings_for(operation))),
+        )
+
+    assert caught.value.missing == (
+        "marker_prefixes['claim'], marker_prefixes['run_alarm']"
+    )
+
+
+async def test_a_prefix_only_an_unwired_pass_asks_for_does_not_refuse_the_boot(
+    tmp_path: Path,
+) -> None:
+    """The check reads exactly the passes that will wire.
+
+    A scope deployment schedules no per-issue dispatch pass, so the base
+    spec and run outcome only that pass records are not its operator's
+    problem; the boot goes through and the grooming pass is scheduled.
+    """
+    dispatch_only = MARKER_PURPOSES_BY_FAMILY["dispatch"] - (
+        MARKER_PURPOSES_BY_FAMILY["scope"] | MARKER_PURPOSES_BY_FAMILY["audit"]
+    )
+    assert dispatch_only == {"base_spec", "run_outcome"}
+    operation = without_prefixes(standing_scope_operation(), *dispatch_only)
+
+    runtime = await _runtime(
+        tmp_path,
+        tracker=approving_board(),
+        runner=FakeAgentRunner(events=[]),
+        operation=operation,
+        organize=STANDING_SCOPE_SETTINGS["organize"],
+        write_back=STANDING_SCOPE_SETTINGS["write_back"],
+    )
+
+    assert PromptKey.GROOMING_PASS.value in [
+        entry.name for entry in runtime.scheduler.passes
+    ]
+
+
+async def test_the_shipped_example_declares_every_prefix_the_wired_passes_ask_for(
+    tmp_path: Path,
+) -> None:
+    """Non-vacuity for the refusal above: the per-issue example boots whole.
+
+    The example wires the dispatch passes — a tracker and a delivery probe
+    over a roster with no scopes — and its table declares everything they
+    can ask for, so the check has nothing to name.
+    """
+    runtime = await _runtime(
+        tmp_path,
+        tracker=FakeTrackerPort(),
+        runner=FakeAgentRunner(events=[]),
+        github_api=FakeDeliveryProbe(),
+    )
+
+    assert [
+        entry.name for entry in runtime.scheduler.passes if _DISPATCH_NAME in entry.name
+    ] != []
+
+
+# ---------------------------------------------------------------------------
+# KOD-1238: every cadence is set explicitly; unset, the pass is not scheduled
+# ---------------------------------------------------------------------------
+
+
+def _not_configured(logs: Sequence[Mapping[str, object]]) -> dict[str, object]:
+    """Each pass boot named as not configured, and the settings it named."""
+    return {
+        str(entry["name"]): entry["settings"]
+        for entry in logs
+        if entry["event"] == "scheduled_pass_not_configured"
+    }
+
+
+async def test_with_no_cadence_set_a_per_issue_deployment_schedules_nothing(
+    tmp_path: Path,
+) -> None:
+    """Every pass that would wire is named, with the two settings to set."""
+    with structlog.testing.capture_logs() as logs:
+        runtime = await _runtime(
+            tmp_path,
+            tracker=FakeTrackerPort(),
+            runner=FakeAgentRunner(events=[]),
+            github_api=FakeDeliveryProbe(),
+            dispatch_pass_interval_seconds=None,
+            dispatch_pass_timeout_seconds=None,
+            fire_prep_pass_interval_seconds=None,
+            fire_prep_pass_timeout_seconds=None,
+            grooming_pass_interval_seconds=None,
+            grooming_pass_timeout_seconds=None,
+            supervisor_pass_interval_seconds=None,
+            supervisor_pass_timeout_seconds=None,
+        )
+
+    assert runtime.scheduler.passes == ()
+    assert runtime.lifecycle is None
+    assert _not_configured(logs) == {
+        "dispatch": [
+            "KODEZART_DISPATCH_PASS_INTERVAL_SECONDS",
+            "KODEZART_DISPATCH_PASS_TIMEOUT_SECONDS",
+        ],
+        HEARTBEAT_PASS: [
+            "KODEZART_DISPATCH_PASS_INTERVAL_SECONDS",
+            "KODEZART_DISPATCH_PASS_TIMEOUT_SECONDS",
+        ],
+        "audit": [
+            "KODEZART_AUDIT_SWEEP_INTERVAL_SECONDS",
+            "KODEZART_AUDIT__TIMEOUT_SECONDS",
+        ],
+        PromptKey.FIRE_PREP_PASS.value: [
+            "KODEZART_FIRE_PREP_PASS_INTERVAL_SECONDS",
+            "KODEZART_FIRE_PREP_PASS_TIMEOUT_SECONDS",
+        ],
+        PromptKey.GROOMING_PASS.value: [
+            "KODEZART_GROOMING_PASS_INTERVAL_SECONDS",
+            "KODEZART_GROOMING_PASS_TIMEOUT_SECONDS",
+        ],
+    }
+
+
+async def test_with_no_cadence_set_a_scope_deployment_schedules_nothing(
+    tmp_path: Path,
+) -> None:
+    """Every pass is named the same way: the scope passes and the session passes.
+
+    A declared scope switches nothing off (2026-09-24): the two session passes
+    would run here on their cadence pairs, so unset they are named too, and
+    so is the heartbeat, which runs on the dispatch pair.
+    """
+    with structlog.testing.capture_logs() as logs:
+        runtime = await _runtime(
+            tmp_path,
+            tracker=approving_board(),
+            runner=FakeAgentRunner(events=[]),
+            operation=standing_scope_operation(),
+            organize=ORGANIZE_BOUNDS,
+            write_back=STANDING_SCOPE_SETTINGS["write_back"],
+            dispatch_pass_interval_seconds=None,
+            dispatch_pass_timeout_seconds=None,
+            fire_prep_pass_interval_seconds=None,
+            fire_prep_pass_timeout_seconds=None,
+            grooming_pass_interval_seconds=None,
+            grooming_pass_timeout_seconds=None,
+            supervisor_pass_interval_seconds=None,
+            supervisor_pass_timeout_seconds=None,
+        )
+
+    assert runtime.scheduler.passes == ()
+    assert set(_not_configured(logs)) == {
+        HEARTBEAT_PASS,
+        "supervisor",
+        "audit",
+        PromptKey.FIRE_PREP_PASS.value,
+        PromptKey.GROOMING_PASS.value,
+    }
+    assert _not_configured(logs)[HEARTBEAT_PASS] == [
+        "KODEZART_DISPATCH_PASS_INTERVAL_SECONDS",
+        "KODEZART_DISPATCH_PASS_TIMEOUT_SECONDS",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("interval", "timeout"),
+    [
+        (
+            "KODEZART_DISPATCH_PASS_INTERVAL_SECONDS",
+            "KODEZART_DISPATCH_PASS_TIMEOUT_SECONDS",
+        ),
+        (
+            "KODEZART_FIRE_PREP_PASS_INTERVAL_SECONDS",
+            "KODEZART_FIRE_PREP_PASS_TIMEOUT_SECONDS",
+        ),
+        (
+            "KODEZART_GROOMING_PASS_INTERVAL_SECONDS",
+            "KODEZART_GROOMING_PASS_TIMEOUT_SECONDS",
+        ),
+        (
+            "KODEZART_SUPERVISOR_PASS_INTERVAL_SECONDS",
+            "KODEZART_SUPERVISOR_PASS_TIMEOUT_SECONDS",
+        ),
+        ("KODEZART_AUDIT_SWEEP_INTERVAL_SECONDS", "KODEZART_AUDIT__TIMEOUT_SECONDS"),
+    ],
+)
+@pytest.mark.parametrize("half", ["interval", "timeout"])
+def test_one_half_of_a_cadence_refuses_at_load_naming_both(
+    monkeypatch: pytest.MonkeyPatch, interval: str, timeout: str, half: str
+) -> None:
+    """An interval with no timeout, or a timeout with no interval, never boots."""
+    monkeypatch.setenv("KODEZART_ORGANIZE__MAX_ADMISSION_ROUNDS", "1")
+    monkeypatch.setenv("KODEZART_ORGANIZE__MAX_CONVERGENCE_ROUNDS", "1")
+    monkeypatch.setenv(interval if half == "interval" else timeout, "600")
+    with pytest.raises(ValidationError) as refused:
+        AppConfig(_env_file=None)
+    assert f"{interval} and {timeout}" in str(refused.value)
 
 
 # ---------------------------------------------------------------------------
@@ -530,8 +1158,9 @@ async def test_the_minimal_floor_boots_and_names_the_roster_it_lacks(
     assert unwired["absent"] == ["teams", "repos"]
 
 
+@EITHER_MODE
 async def test_the_floor_boots_where_the_same_hole_over_a_roster_refuses(
-    tmp_path: Path,
+    tmp_path: Path, debug: bool
 ) -> None:
     """The boot render still guards every pass that WIRES, and only those.
 
@@ -552,13 +1181,16 @@ async def test_the_floor_boots_where_the_same_hole_over_a_roster_refuses(
     )
 
     assert [entry.name for entry in floor.scheduler.passes] == []
+    runner = FakeAgentRunner(events=[])
     with pytest.raises(PromptRenderError):
         await _runtime(
             tmp_path,
             tracker=None,
-            runner=FakeAgentRunner(events=[]),
+            runner=runner,
             operation=rostered,
+            http={"debug": debug},
         )
+    assert runner.calls == []
 
 
 # ---------------------------------------------------------------------------
@@ -569,8 +1201,14 @@ async def test_the_floor_boots_where_the_same_hole_over_a_roster_refuses(
 #: the knowledge store.  Written out rather than left to the default,
 #: because what these cases turn on is the grant and it must be visible.
 UNGRANTED: dict[str, object] = {
-    "knowledge_session_grants": [],
-    "knowledge_mcp_token": None,
+    "knowledge": {
+        "session_grants": [],
+        "connection": {
+            "transport": "http",
+            "server_url": "https://knowledge.invalid/mcp",
+            "credential": None,
+        },
+    },
 }
 
 #: Every surface of the shipped example that lives in the knowledge system,
@@ -627,8 +1265,9 @@ def _mutated(tmp_path: Path, mutate: Callable[[dict[str, object]], None]) -> Pat
     return write_toml(tmp_path, raw)
 
 
+@EITHER_MODE
 async def test_a_knowledge_destination_no_pass_can_reach_aborts_boot(
-    tmp_path: Path,
+    tmp_path: Path, debug: bool
 ) -> None:
     """Two halves, legal apart, an instruction to nowhere together.
 
@@ -640,13 +1279,16 @@ async def test_a_knowledge_destination_no_pass_can_reach_aborts_boot(
     the ``knowledge`` map's keys among them, and the tracker-side one is not
     among them.
     """
+    runner = FakeAgentRunner(events=[])
     with pytest.raises(PassKnowledgeCapabilityError) as caught:
         await _runtime(
             tmp_path,
             tracker=None,
-            runner=FakeAgentRunner(events=[]),
+            runner=runner,
+            http={"debug": debug},
             **UNGRANTED,
         )
+    assert runner.calls == []
 
     named = str(caught.value)
     for entry in KNOWLEDGE_ENTRIES:
@@ -734,8 +1376,9 @@ def _fire_record_knowledge_side(raw: dict[str, object]) -> None:
     }
 
 
+@EITHER_MODE
 async def test_a_fire_log_the_fires_own_session_cannot_reach_aborts_boot(
-    tmp_path: Path,
+    tmp_path: Path, debug: bool
 ) -> None:
     """KOD-265: the capability question is asked of every session, not one.
 
@@ -747,14 +1390,17 @@ async def test_a_fire_log_the_fires_own_session_cannot_reach_aborts_boot(
     is missing, and names only the surface that session was owed.
     """
     operation = load_operation_config(_mutated(tmp_path, _fire_record_knowledge_side))
+    runner = FakeAgentRunner(events=[])
 
     with pytest.raises(PassKnowledgeCapabilityError) as caught:
         await _runtime(
             tmp_path,
             tracker=None,
-            runner=FakeAgentRunner(events=[]),
+            runner=runner,
             operation=operation,
+            http={"debug": debug},
         )
+    assert runner.calls == []
 
     named = str(caught.value)
     assert SessionType.TICKET_FIRE.value in named
@@ -782,10 +1428,17 @@ async def test_the_same_operation_boots_once_the_fire_is_granted_too(
         tracker=None,
         runner=FakeAgentRunner(events=[]),
         operation=operation,
-        knowledge_session_grants=[
-            SessionType.SCHEDULED_PASS,
-            SessionType.TICKET_FIRE,
-        ],
+        knowledge={
+            "session_grants": [
+                SessionType.SCHEDULED_PASS,
+                SessionType.TICKET_FIRE,
+            ],
+            "connection": {
+                "transport": "http",
+                "server_url": "https://knowledge.invalid/mcp",
+                "credential": KNOWLEDGE_TOKEN,
+            },
+        },
     )
 
     assert operation.records[RunKind.FIRE.value].system is DocumentSystem.KNOWLEDGE
@@ -825,6 +1478,9 @@ async def test_a_deployment_with_no_store_wires_both_passes_and_records_nothing(
         operation=operation,
         prompt_set=V5_SET,
         **UNGRANTED,
+        # Unset: the heartbeat that pair would schedule records nothing.
+        dispatch_pass_interval_seconds=None,
+        dispatch_pass_timeout_seconds=None,
     )
 
     assert {entry.name for entry in runtime.scheduler.passes} == {
@@ -847,25 +1503,16 @@ async def test_a_deployment_with_no_store_wires_both_passes_and_records_nothing(
 async def test_adding_a_pass_is_a_table_row(tmp_path: Path) -> None:
     """The open-closed claim, executable.
 
-    A third pass needs a prompt key, an interval and a signal list — and
-    nothing structural. Standing in for the third row with a re-pointed
-    existing one proves the shape carries its own key, interval and gate
-    rather than any of the three being wired per pass.
+    A third pass needs a prompt key and a cadence pair — and nothing
+    structural. The two registered rows prove the shape carries its own key
+    and interval rather than either being wired per pass.
     """
-    tracker = FakeTrackerPort(
-        issues=[make_tracker_issue("FIX-1", team_key=example_config().team_keys()[0])],
-    )
-    registered, runner = await _registrations(
-        tmp_path,
-        tracker=tracker,
-        fire_prep_pass_gate_signals=[PassSignal.approved_changed],
-        grooming_pass_gate_signals=[PassSignal.approved_changed],
-    )
-    metronome = Metronome(limit=len(registered))
+    registered, runner = await _registrations(tmp_path)
+    metronome = Metronome(limit=0)
     scheduler = PassScheduler(passes=registered, sleep=metronome.sleep)
 
     await scheduler.start()
-    await _settle(metronome.parked)
+    await _settle_requests(metronome, len(registered))
     await scheduler.stop()
 
     assert len(runner.calls) == len(registered)
@@ -1028,7 +1675,8 @@ class TestTheClauseAndTheRunnerNameOneRow:
         rows for one run, on every live pass.
         """
         prompt = await self._prompt_of_one_run(tmp_path)
-        other = prescribed_title(prompt).replace(" — ", " - ")
+        # The same instant spelled the session's own way: a space for the T.
+        other = prescribed_title(prompt).replace("T", " ", 1)
         assert other != prescribed_title(prompt)
         log = SessionWrittenLog([other])
 
@@ -1036,3 +1684,24 @@ class TestTheClauseAndTheRunnerNameOneRow:
 
         assert result is RunRecordResult.WRITTEN
         assert log.titles == [other, self._record().title()]
+
+
+async def test_the_intake_passes_tick_at_boot_and_the_dispatcher_does_not(
+    tmp_path: Path,
+) -> None:
+    """Fire prep and grooming run when the process comes up (owner, 2026-09-24)."""
+    runtime = await _runtime(
+        tmp_path,
+        tracker=FakeTrackerPort(),
+        runner=FakeAgentRunner(events=[]),
+        github_api=FakeDeliveryProbe(),
+    )
+    at_boot = {entry.name: entry.tick_at_boot for entry in runtime.scheduler.passes}
+    assert at_boot[PromptKey.FIRE_PREP_PASS.value] is True
+    assert at_boot[PromptKey.GROOMING_PASS.value] is True
+    assert all(
+        flag is False
+        for name, flag in at_boot.items()
+        if name.startswith(f"{_DISPATCH_NAME}:")
+    )
+    assert any(name.startswith(f"{_DISPATCH_NAME}:") for name in at_boot)

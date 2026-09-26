@@ -10,22 +10,30 @@ red until the document catches up.  That is the whole mechanism.
 """
 
 import ast
-import json
 import re
+import sys
 import tomllib
 from pathlib import Path
 
+import pytest
 from fastapi.routing import APIRoute
+from pydantic import ValidationError
 
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
+from kodezart.domain.model_surfaces import MODEL_CLASSIFICATION
 from kodezart.main import create_app
 from kodezart.types.domain.agent import AgentEvent
+from tests.docs.configuration import (
+    RETIRED_KNOWLEDGE_VARIABLES,
+    shipped_config_variables,
+)
 from tests.docs.test_api_event_reference import SECTION as API_EVENT_HEADING
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CONFIGURATION_DOC = REPO_ROOT / "docs" / "configuration.md"
 API_DOC = REPO_ROOT / "docs" / "api.md"
 ARCHITECTURE_DOC = REPO_ROOT / "docs" / "architecture.md"
+MODEL_AGREEMENT_DOC = REPO_ROOT / "docs" / "model-agreement.md"
 README = REPO_ROOT / "README.md"
 ENV_EXAMPLE = REPO_ROOT / ".env.example"
 
@@ -46,9 +54,16 @@ _UNDOCUMENTED_BY_DESIGN: frozenset[str] = frozenset(
 _FORGE_PATH_PERMISSIONS: dict[str, str] = {
     "/repos/{}/{}": "Metadata: read",
     "/repos/{}/{}/pulls": "Pull requests: read/write",
+    "/repos/{}/{}/pulls/{}": "Pull requests: read/write",
     "/repos/{}/{}/issues/{}/comments": "Pull requests: read/write",
-    "/repos/{}/{}/commits/{}/check-runs": "Actions: read",
+    "/repos/{}/{}/commits/{}": "Contents: read",
+    "/repos/{}/{}/commits/{}/check-runs": "Checks: read",
+    "/repos/{}/{}/check-runs/{}": "Checks: read",
     "/repos/{}/{}/actions/workflows": "Actions: read",
+    "/repos/{}/{}/actions/runs": "Actions: read",
+    "/repos/{}/{}/actions/runs/{}/attempts/{}": "Actions: read",
+    "/repos/{}/{}/actions/runs/{}/attempts/{}/jobs": "Actions: read",
+    "/repos/{}/{}/actions/runs/{}/rerun": "Actions: read/write",
 }
 
 
@@ -58,12 +73,40 @@ def _declared_version() -> str:
     return project["version"]
 
 
-def _shipped_config_variables() -> set[str]:
-    return {f"{ENV_PREFIX}{name.upper()}" for name in AppConfig.model_fields}
+_shipped_config_variables = shipped_config_variables
+
+
+_MIGRATION_SECTION = re.compile(
+    r"^## Knowledge environment migration\n(?P<body>.*?)(?=^## |\Z)",
+    re.MULTILINE | re.DOTALL,
+)
+
+
+def _knowledge_migrations(text: str) -> list[tuple[str, str]]:
+    match = _MIGRATION_SECTION.search(text)
+    section = "" if match is None else match["body"]
+    return re.findall(
+        r"^\| `(KODEZART_[A-Z0-9_]+)` \| `(KODEZART_[A-Z0-9_]+)` \|$",
+        section,
+        re.MULTILINE,
+    )
 
 
 def _config_variables_named_in(path: Path) -> set[str]:
-    return set(re.findall(rf"{ENV_PREFIX}[A-Z0-9_]+", path.read_text(encoding="utf-8")))
+    text = path.read_text(encoding="utf-8")
+    if path == CONFIGURATION_DOC:
+        # Only exact historical names in the explicitly marked migration table
+        # are exempt from the shipped surface; replacements must still exist.
+        match = _MIGRATION_SECTION.search(text)
+        if match is not None:
+            section = match["body"]
+            for old, new in _knowledge_migrations(text):
+                if old in RETIRED_KNOWLEDGE_VARIABLES:
+                    section = section.replace(
+                        f"| `{old}` | `{new}` |", f"| removed | `{new}` |"
+                    )
+            text = text[: match.start("body")] + section + text[match.end("body") :]
+    return set(re.findall(rf"{ENV_PREFIX}[A-Z0-9_]+", text))
 
 
 def _documented_endpoints() -> set[tuple[str, str]]:
@@ -130,44 +173,20 @@ def test_env_example_assigns_only_real_variables() -> None:
     assert assigned <= _shipped_config_variables()
 
 
-def _env_example_assignments() -> dict[str, object]:
-    """Every uncommented assignment, keyed by field name and JSON-coerced."""
-    values: dict[str, str] = {}
-    for line in ENV_EXAMPLE.read_text(encoding="utf-8").splitlines():
-        if "=" not in line or line.lstrip().startswith("#"):
-            continue
-        key, raw = line.split("=", 1)
-        values[key.strip().removeprefix(ENV_PREFIX).lower()] = raw.strip()
-    return {
-        name: json.loads(raw)
-        if AppConfig.model_fields[name].annotation not in (str, str | None)
-        and raw.startswith(("{", "["))
-        else raw
-        for name, raw in values.items()
-    }
-
-
 def test_env_example_values_load() -> None:
-    """Every assignment in the example is a value the field actually accepts."""
-    AppConfig(**_env_example_assignments())  # type: ignore[arg-type]
+    """Exercise the same dotenv source, nested decoding and validation as boot."""
+    AppConfig(_env_file=ENV_EXAMPLE)
 
 
 def test_every_env_example_value_is_the_fields_shipped_default() -> None:
-    """``README.md`` promises copying the file changes no behaviour.
-
-    Compared after validation rather than as text, so ``30`` against a float
-    default of ``30.0`` is equal — which is what "changes no behaviour"
-    means — while a genuinely drifted value is not.  Nothing here restates
-    a default: the expected side is the field's own, read off ``AppConfig()``.
-    """
-    defaults = AppConfig()
+    """Compare the fully validated example to the actual shipped defaults."""
+    loaded = AppConfig(_env_file=ENV_EXAMPLE)
+    defaults = AppConfig(_env_file=None)
     drifted = [
         name
-        for name, value in _env_example_assignments().items()
-        if getattr(AppConfig(**{name: value}), name)  # type: ignore[arg-type]
-        != getattr(defaults, name)
+        for name in AppConfig.model_fields
+        if getattr(loaded, name) != getattr(defaults, name)
     ]
-
     assert drifted == []
 
 
@@ -265,36 +284,6 @@ def test_the_sse_event_table_has_rows_at_all() -> None:
     assert len(_documented_event_types()) > 10
 
 
-def _attribute_reads_of(field_name: str) -> list[str]:
-    """Every module under ``src/`` that reads ``<something>.<field_name>``."""
-    sites: list[str] = []
-    for source in sorted((REPO_ROOT / "src").rglob("*.py")):
-        tree = ast.parse(source.read_text(encoding="utf-8"))
-        if any(
-            isinstance(node, ast.Attribute) and node.attr == field_name
-            for node in ast.walk(tree)
-        ):
-            sites.append(source.relative_to(REPO_ROOT).as_posix())
-    return sites
-
-
-def test_the_tracker_server_name_has_exactly_the_consumers_its_description_claims() -> (
-    None
-):
-    """The field's description says two consumers — factory and record sink.
-
-    An earlier claim — a consumer in session attachment — was contradicted
-    by exactly this derivation and corrected; the tracker-side record sink
-    then became a real second reader (KOD-170), and the description names
-    it.  A reader appearing or vanishing makes this red until the
-    description tells the truth again.
-    """
-    assert _attribute_reads_of("tracker_mcp_server_name") == [
-        "src/kodezart/composition/records.py",
-        "src/kodezart/composition/tracker.py",
-    ]
-
-
 def _documented_protocols() -> set[str]:
     """Every protocol named in the architecture doc's Protocol Map."""
     section = ARCHITECTURE_DOC.read_text(encoding="utf-8").split("## Protocol Map")[1]
@@ -338,6 +327,39 @@ def test_no_documented_protocol_is_absent_from_the_port_module() -> None:
     assert _documented_protocols() - _shipped_protocols() == set()
 
 
+#: The sentence in the model agreement doc that names the semantic key a
+#: deployment maps for model membership, and the key itself as its one
+#: capture.  Anchored on both sides -- the port call it is read through and
+#: the config mapping it lives in -- so the pattern cannot drift onto some
+#: other backticked word in the document.
+_DOCUMENTED_MODEL_KEY = re.compile(
+    r"using the `([^`]+)` semantic key\s+in the existing "
+    r"`OperationConfig\.issue_labels` mapping",
+)
+
+
+def _documented_model_classification() -> str:
+    """The classification key the model agreement doc tells a deployment to map."""
+    found = _DOCUMENTED_MODEL_KEY.search(
+        MODEL_AGREEMENT_DOC.read_text(encoding="utf-8"),
+    )
+    assert found is not None, "the model agreement doc names no semantic key"
+    return found.group(1)
+
+
+def test_the_model_classification_is_the_key_the_agreement_doc_documents() -> None:
+    """The constant is the name a deployment configures, not a name of its own.
+
+    Every test and fixture derives the model marker from
+    ``MODEL_CLASSIFICATION``, so the constant respelled leaves the suite
+    green while a deployment whose operation file still maps the documented
+    key resolves no model at all and every writer leases only what it named
+    -- model scoping gone, silently.  Read off the document instead, so the
+    external name is what the constant is checked against (KOD-604).
+    """
+    assert MODEL_CLASSIFICATION == _documented_model_classification()
+
+
 # ---------------------------------------------------------------------------
 # The class behind the "all 12 protocols" and "18 event types" instances
 # ---------------------------------------------------------------------------
@@ -363,6 +385,8 @@ _DERIVED_SET_NOUNS: tuple[str, ...] = (
     "endpoints?",
     "adapters?",
     "criteria",
+    "roles?",
+    "members?",
 )
 
 _NOUNS = "|".join(_DERIVED_SET_NOUNS)
@@ -440,6 +464,8 @@ def test_the_counted_claim_pattern_matches_the_instances_it_was_written_for() ->
         "### Event Types (18 total)",
         "**Streaming events (11)**:",
         "**Workflow events (6)**:",
+        "the port is composed of 41 tracker roles",
+        "its 56 members",
     ):
         assert _COUNTED_CLAIM.search(claim) is not None, claim
 
@@ -473,3 +499,66 @@ def test_the_counted_claim_pattern_leaves_ordinary_prose_alone() -> None:
         "the event types are tabulated below",
     ):
         assert _COUNTED_CLAIM.search(innocent) is None, innocent
+
+
+def test_nested_environment_names_include_each_actual_transport_arm():
+    shipped = _shipped_config_variables()
+    assert {
+        "KODEZART_KNOWLEDGE",
+        "KODEZART_KNOWLEDGE__CONNECTION",
+        "KODEZART_KNOWLEDGE__CONNECTION__SERVER_URL",
+        "KODEZART_KNOWLEDGE__CONNECTION__COMMAND",
+    } <= shipped
+    assert "KODEZART_KNOWLEDGE__CONNECTION__SERVRE_URL" not in shipped
+    assert not RETIRED_KNOWLEDGE_VARIABLES & shipped
+
+
+def test_migration_table_names_the_exact_retired_api_and_valid_replacements():
+    rows = _knowledge_migrations(CONFIGURATION_DOC.read_text())
+    assert len(rows) == len(RETIRED_KNOWLEDGE_VARIABLES)
+    assert {old for old, _ in rows} == RETIRED_KNOWLEDGE_VARIABLES
+    assert {new for _, new in rows} <= _shipped_config_variables()
+
+
+@pytest.mark.parametrize("name", sorted(RETIRED_KNOWLEDGE_VARIABLES))
+def test_documented_retired_name_is_actually_refused(name, monkeypatch):
+    monkeypatch.setenv(name, "synthetic-retired-value")
+    with pytest.raises(ValidationError, match="Extra inputs"):
+        AppConfig(_env_file=None)
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        "KODEZART_KNOWLEDGE__CONNECTION__SERVRE_URL",
+        "KODEZART_NOT_A_SHIPPED_FIELD_",
+        "| `KODEZART_KNOWLEDGE_MCP_TOKEN` | "
+        "`KODEZART_KNOWLEDGE__CONNECTION__CREDENTIAL` |",
+    ],
+)
+def test_doc_guard_rejects_nested_typo_or_retired_row_outside_migration(
+    tmp_path, monkeypatch, extra
+):
+    document = tmp_path / "configuration.md"
+    document.write_text(CONFIGURATION_DOC.read_text() + "\n## Current setup\n" + extra)
+    monkeypatch.setattr(sys.modules[__name__], "CONFIGURATION_DOC", document)
+    with pytest.raises(AssertionError):
+        test_no_document_names_a_config_variable_that_does_not_exist()
+
+
+def test_default_guard_rejects_a_valid_nested_nondefault(tmp_path, monkeypatch):
+    example = tmp_path / ".env"
+    example.write_text(
+        ENV_EXAMPLE.read_text() + "\nKODEZART_KNOWLEDGE__SERVER_NAME=another\n"
+    )
+    monkeypatch.setattr(sys.modules[__name__], "ENV_EXAMPLE", example)
+    with pytest.raises(AssertionError):
+        test_every_env_example_value_is_the_fields_shipped_default()
+
+
+def test_example_guard_rejects_invalid_nested_transport(tmp_path, monkeypatch):
+    example = tmp_path / ".env"
+    example.write_text('KODEZART_KNOWLEDGE__CONNECTION={"transport":"unsupported"}\n')
+    monkeypatch.setattr(sys.modules[__name__], "ENV_EXAMPLE", example)
+    with pytest.raises(ValidationError):
+        test_env_example_values_load()

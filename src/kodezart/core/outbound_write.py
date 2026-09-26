@@ -12,6 +12,8 @@ writer whose event can drift, and a gate whose observability drifts per
 surface is one an operator cannot reason about.
 """
 
+from collections.abc import Callable
+
 from kodezart.core.logging import BoundLogger
 from kodezart.core.protocols import OutboundContentGate
 from kodezart.domain.errors import OutboundContentBlockedError
@@ -20,6 +22,7 @@ from kodezart.types.domain.gating import (
     GateVerdict,
     OutboundDestination,
     RepoVisibility,
+    TrackerAggregate,
     WriterShape,
     content_digest,
     surface_of,
@@ -35,6 +38,7 @@ async def gated_write(
     shape: WriterShape,
     destination: OutboundDestination,
     content_class: ContentClass,
+    aggregates: tuple[TrackerAggregate, ...],
 ) -> str:
     """Gate *content* for *destination*; return what may be written.
 
@@ -45,6 +49,9 @@ async def gated_write(
     ``content_class`` is passed straight through and never inferred here.
     This function does not know where the bytes came from; the writer that
     called it does, which is why the parameter is required.
+
+    ``aggregates`` travels the same way as ``content_class``: the writer
+    declares it, this function forwards it.
     """
     decision = await gate.gate(
         content=content,
@@ -52,6 +59,7 @@ async def gated_write(
         shape=shape,
         destination=destination,
         content_class=content_class,
+        aggregates=aggregates,
     )
     await log.ainfo(
         "outbound_content_gated",
@@ -68,6 +76,7 @@ async def gated_write(
                 "start": hit.start,
                 "end": hit.end,
                 "rationale": hit.rationale,
+                "source": None if hit.source is None else hit.source.field,
             }
             for hit in decision.hits
         ],
@@ -82,3 +91,37 @@ async def gated_write(
             hits=decision.hits,
         )
     return decision.content
+
+
+async def gated_exact(
+    *,
+    gate: OutboundContentGate,
+    log: BoundLogger,
+    content: str,
+    visibility: RepoVisibility,
+    destination: OutboundDestination,
+    content_class: ContentClass,
+    aggregates: tuple[TrackerAggregate, ...],
+    refusal: Callable[[], Exception],
+) -> str:
+    """Gate *content* and refuse unless every byte of it survives the gate.
+
+    Some surfaces carry content whose worth is its exactness — recorded
+    facts, quoted evidence — and a redacted variant of those is not a
+    weaker version of the write but a different claim.  Such a writer
+    cannot accept the gate's rewrite, so an altered result is refused with
+    the writer's own error rather than written.
+    """
+    result = await gated_write(
+        gate=gate,
+        log=log,
+        content=content,
+        visibility=visibility,
+        shape=WriterShape.PROSE,
+        destination=destination,
+        content_class=content_class,
+        aggregates=aggregates,
+    )
+    if result != content:
+        raise refusal()
+    return result

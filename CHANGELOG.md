@@ -9,6 +9,181 @@ concerns.
 
 ## [Unreleased]
 
+### Changed
+
+- The standing scopes' heartbeat (`services/scope_heartbeat.py`) asks the
+  `scope_scan` question once a tick and submits each approved, unfinished node
+  it lists as a scope run, as `POST /api/v1/agent/fire` submits one. It skips a
+  node with a live run (`scope_heartbeat_scope_live`) or a repository the
+  operation does not declare (`scope_heartbeat_repository_undeclared`), logs
+  `scope_heartbeat_scanned` and `scope_heartbeat_run_submitted`, and remembers
+  nothing between ticks. It reads no `[[organize_scopes]]` row: it is scheduled
+  wherever a tracker is dialled, `[scope_labels]` is declared and the dispatch
+  pair is set, and it ticks at boot.
+- The fire-prep and grooming prompts (`anthropic_v5`) carry a standing rule:
+  the simplest solution, verified; scopes pushed to a decision; a decision asked
+  for in one short comment with options, a lean and a table or diagram when
+  shape is the question.
+- The fire-prep and grooming passes decide whether to run by asking an agent.
+  Before every tick but the first after boot, the pass opens one short
+  session of its own kind (`PromptKey.PASS_GATE`, template `pass_gate.md` in
+  both sets) over the window since its last tick that ran, answered in the
+  `PassGateOutput` schema (`run`, `moved`, `reason`): `run: false` skips the
+  tick (`scheduled_pass_skipped`), anything else runs it, and an answer that
+  is missing or unreadable is named (`pass_gate_unanswered`) and runs the
+  pass. `pass_gate_asked` and `pass_gate_answered` carry the window, engine,
+  effort and answer. The question's engine is the `pass_gate` key of
+  `KODEZART_AGENT__SESSION_MODELS`, meant for the cheapest engine the provider
+  offers. The passes no longer read the tracker through the process's own
+  credential before a tick (KOD-1257); the per-issue dispatch pass keeps its
+  deterministic gate.
+- A tracker call the vendor refuses (401, which Linear also answers for a key
+  whose hourly request budget is spent) is answered with silence: the adapter
+  stops asking for fifteen minutes, presents the credential once more, and
+  gives up after four such silences (`tracker_credential_refused_waiting`,
+  then `tracker_credential_refused`). A scope run that waits stays a live job,
+  so the heartbeat submits nothing beside it (KOD-1256).
+- The fire-prep and grooming prompts (`anthropic_v5`) assign a proposed scope's
+  tracker issue to the approver principal and name them in the proposal comment,
+  so a `scope:proposed` reaches the approver where they read.
+- With `KODEZART_AGENT__DANGEROUSLY_ALLOW_HOST_MCP=true`, the board sessions
+  (scheduled passes, organize stages) are no longer described the deployment's
+  own tracker server beside the host's: they reach the tracker under the host's
+  stored login and its own request budget. A README known issue records why
+  (KOD-1256: a spent Linear budget ends the run).
+- The fire-prep and grooming passes run their first tick at boot when their
+  cadence pairs are set (`ScheduledPass.tick_at_boot`); every other pass still
+  sleeps one interval before its first tick.
+
+### Removed
+
+- `KODEZART_DISPATCH_WORKFLOW`, refused at boot from every source: the v0.2
+  per-issue dispatch passes and the standing scopes' heartbeat both run on the
+  dispatch cadence pair, and `scheduled_pass_not_selected` is no longer emitted.
+- `OrganizeTrackerCapabilityError`, and the boot refusal of
+  `[[organize_scopes]]` rows without `[organize]`, `[write_back]` or a tracker:
+  no scheduled pass reads them any more.
+- `KODEZART_FIRE_PREP_PASS_GATE_SIGNALS` and
+  `KODEZART_GROOMING_PASS_GATE_SIGNALS`, refused at boot from every source.
+  `PassGate` and `PassGateReader` remain for the dispatch pass alone; the
+  boot capability probe no longer asks for any signal on the prompt passes'
+  behalf, and `prompt_pass_gates_absent_no_tracker` and
+  `prompt_pass_skipped_no_delta` are no longer emitted.
+
+## [0.3.0] - 2026-09-24
+
+### Added
+
+- `docs/running-a-scope.md`, one page for running a scope: what the run is and
+  is not, what the first boot writes to the team, the environment it needs, what
+  boot logs, how to start and re-enter a run, and which member refuses where.
+  `docs/operation.scope.toml` is the config it points at.
+- `KODEZART_QUEUE__RUN_TIMEOUT_SECONDS`, an optional time limit on each queued
+  job (KOD-1251). A job past it is cancelled, logs `job_timed_out` and ends with
+  the new outcome `job_timed_out`; its stream closes, so a fire's claim is
+  released, and its lane takes the next job
+  (`src/kodezart/adapters/asyncio_job_queue.py`). Unset, there is no limit and
+  the queue behaves as before.
+
+### Changed
+
+- No scheduled pass has a default cadence (KOD-1238). The dispatch pass and the
+  standing scopes' heartbeat (`KODEZART_DISPATCH_PASS_INTERVAL_SECONDS`,
+  `KODEZART_DISPATCH_PASS_TIMEOUT_SECONDS`), fire preparation
+  (`KODEZART_FIRE_PREP_PASS_*`), grooming (`KODEZART_GROOMING_PASS_*`), the
+  audit (`KODEZART_AUDIT_SWEEP_INTERVAL_SECONDS` with
+  `KODEZART_AUDIT__TIMEOUT_SECONDS`) and the supervisor tick
+  (`KODEZART_SUPERVISOR_PASS_*`) each run only when their interval and timeout
+  are both set; unset, the pass is not scheduled and boot logs the new
+  `scheduled_pass_not_configured` event naming the pass and the two settings.
+  One half of a pair without the other refuses at load naming both
+  (`config/app.py`, `CADENCE_SETTINGS`). The `audit_pass_not_wired` event is
+  replaced by `scheduled_pass_not_configured` for the audit. A deployment that
+  relied on a default cadence must now set it; see
+  `docs/migration-v0.2-to-v0.3.md`.
+- Organizing a scope before approval is the grooming and fire-prep passes'
+  work, over the whole board like every other issue: a project or initiative
+  in the declared boundary carrying `scope_labels.triage` whose members are
+  every one groomed and fire-ready gets `scope_labels.proposed` from those
+  passes (`prompts/sets/anthropic_v5/grooming_pass.md`, `fire_prep_pass.md`);
+  the grooming pass also flags target dates out of order with the graph.
+  `scope_labels.approved` stays the one human act, and it is what the run's
+  first stage now gates on: the shipped `ticket` row's `gate_label_key` is
+  `scope_labels.approved` (`docs/operation.scope.toml`). Every organize table
+  row runs inside the approved scope run; `MandatePhaseRole` gains
+  `prompt_phase`, the binding the organize session prompt selects the stage's
+  rubric by, so the session owner dispatches on no mandate kind.
+- A scope run's organize stage sessions (`SessionType.ORGANIZE_PASS`) are
+  described the deployment's own tracker server, as the grooming and fire-prep
+  sessions are (`adapters/mcp/mapping.py`, `BOARD_SESSION_TYPES`): every
+  session that touches the tracker runs on kodezart's own connection, never on
+  a login the host holds. `OrganizeTrackerCapabilityError` is raised at boot
+  when a deployment declaring `[[organize_scopes]]` has no
+  `KODEZART_TRACKER__TOKEN`; `KODEZART_AGENT__DANGEROUSLY_ALLOW_HOST_MCP` is
+  no longer required by anything organize-related.
+- Boot checks `[marker_prefixes]` against every purpose a pass it schedules can
+  ask for and refuses naming every missing key at once
+  (`composition/passes.py`, `wired_marker_purposes`). A purpose only an unwired
+  pass asks for is not demanded. `docs/operation.scope.toml` gains the `claim`
+  and `work_ref` entries the scope passes ask for, and the `repository` entry
+  a configured audit pass can ask for.
+- Every document that said scoped execution was unimplemented now says what is
+  true: a scoped request runs when a tracker is dialled, and
+  `ScopedExecutionUnavailableError` names the absence of a scoped arm or of a
+  delivery reader for the origin. The README's stale paragraph about claim
+  acquisition being refused is deleted; claim acquisition is implemented.
+- An operation that declares `[[organize_scopes]]` schedules the scope passes
+  — the standing scopes' heartbeat, the supervisor tick and a configured audit
+  — and switches nothing else off: the periodic dispatch pass, the fire-prep
+  and grooming prompt passes and the lifecycle watcher are scheduled on their
+  own premises, each pass's cadence pair among them, scopes or no scopes.
+- A v0.2 operation file boots as it is (KOD-903), as the one exception to the
+  no-fallback rule: `[[initiatives]]` is accepted and ignored, a file with no
+  `[marker_prefixes]` table gets the markers v0.2 wrote for the per-issue path,
+  and a `records.fire` log with neither `columns` nor `outcome_mapping` gets
+  v0.2's title-line row and no record clause. Boot logs
+  `operation_file_v02_accepted` once when it applies, its `defaulted` naming
+  `marker_prefixes` and `records.fire` where each was given. A v0.2 claim already on
+  an issue is honoured until it lapses and is never written again.
+  `docs/migration-v0.2-to-v0.3.md` says what an old file gets.
+- `[run_event_states]` is optional in an operation file, and dialling the
+  tracker no longer requires it. A declared table is still total at load time.
+  Nothing on the scope path reads the table: a run event's comment is rendered
+  from `[marker_prefixes]` alone.
+
+### Removed
+
+- The organize tick. `services/organize_tick.py`, `build_organize_tick`, the
+  `organize` cadence (`KODEZART_ORGANIZE__INTERVAL_SECONDS`,
+  `KODEZART_ORGANIZE__TIMEOUT_SECONDS`; `OrganizeSettings` keeps the owner's
+  two bounds and refuses a cadence field) and the `organize` run kind with its
+  `[records.organize]` destination are gone. Boot knows no pass named
+  organize: `scheduled_pass_not_configured` never names it and
+  `pass_scheduler_started` never lists it. What the tick did before approval
+  is the grooming and fire-prep passes' work; the ticket and criteria stages
+  run inside the scope run the heartbeat submits.
+- The pre-approval `groom` phase. `MandateKind.GROOM`, its role row, the
+  `organize_groom_rubric` prompt role and its two template files, the
+  `phase_groom` prompt binding and the shipped `issue_labels.groomed` entry
+  are gone; an operation file declaring a `groom` row is refused at load
+  naming it. The supervisor's scope tally observes the one remaining barrier,
+  ticket to criteria.
+- The criterion class. `criterionClass` is gone from every criterion on the
+  wire — `workflow_criteria.criteria[]` now carries `id` and `text`, while
+  `.kodezart/criteria.json` entries also retain their `feasibility` evidence.
+  The acceptance-criteria prompt no longer asks a generator to classify what it
+  emits. Nothing reads the old key: a payload carrying it is refused, and a
+  persisted artifact carrying it is not this version's input.
+
+### Changed
+
+- The accept gate grades every criterion alike: any graded criterion that does
+  not pass rejects the run, where a failed `soft_signal` used to ship it with a
+  flag. `workflow_iteration.verdict` keeps its three states — `ship_with_flags`
+  is now reached by a criterion the feasibility sweep could not grade, and the
+  `## Shipped with flags` section of a pull-request body carries those ungraded
+  criteria and the evaluator's `sherlockFlags`, never a failed criterion.
+
 ## [0.2.0] - 2026-09-07
 
 v0.2 turns kodezart from a request-driven service into one that runs on its
@@ -561,7 +736,8 @@ agents for iterative code generation with quality gates.
 - Hexagonal architecture with protocol-based ports and swappable adapters.
 - Requirements: Python 3.12+, `uv`, Git, the Claude Code CLI. MIT licence.
 
-[Unreleased]: https://github.com/YalDan/kodezart/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/YalDan/kodezart/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/YalDan/kodezart/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/YalDan/kodezart/compare/v0.1.4...v0.2.0
 [0.1.4]: https://github.com/YalDan/kodezart/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/YalDan/kodezart/compare/v0.1.2...v0.1.3

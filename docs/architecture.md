@@ -1,5 +1,26 @@
 # Architecture
 
+The authored Ralph evaluator observes native SDK session openings at its
+actual dispatch boundary. A typed `node_session_started` stream occurrence
+carries the existing fire identity and explicit node invocation; each
+iteration, corrective dispatch and graph-level retry is a separate invocation. A repeated native
+opening frame is not a second session. Missing or malformed opening evidence
+is refused after draining the executor, preserving its cleanup. Generic calls
+without a fire identity retain their existing stream. On the scoped arm each
+evaluation's observed openings are also posted on the lane's own stream once
+the drain is over, whether it returned or raised, and before malformed evidence
+is refused. A drain that opened sessions and then failed is retried under
+another invocation, so its openings are posted before its failure propagates;
+a recorder failure at that point is logged and never replaces the drain's own
+failure, and a cancelled drain posts nothing. The writer posts one
+`node_session_started` event per opening the stream does not already hold,
+keyed to the whole invocation and the session it opened
+(`TrackerLaneStateWriter.record_node_sessions`, through the
+`NodeSessionRecorder` role the loop is handed). The authored arm has no lane
+stream and posts none. The alarm subject vocabulary does not provide a
+per-node subject identity, which this producer does not invent: a
+substitution is observed on the lane.
+
 ## Overview
 
 Kodezart follows a hexagonal (ports-and-adapters) architecture with three
@@ -15,6 +36,29 @@ layers:
 All cross-layer dependencies point inward through protocols defined in
 `core/protocols.py`. Infrastructure adapters are wired in the composition root
 (`main.py` `lifespan()`).
+Dialling the tracker consults no run-event table; a declared one is checked when
+the operation file loads. An operation that declares `[[organize_scopes]]`
+schedules the passes that read that one table — the observation tick where a
+tracker is dialled and the audit where one is configured — beside the per-issue machine: the dispatch pass, the two
+prompt passes and the lifecycle watcher are built on their own premises, each
+pass's cadence pair among them, whether or not scopes are declared.
+Each prompt pass (`services/prompt_pass.py`) asks a gate question before every
+tick but its first after boot: one short session of the same kind and grant
+as the pass, rendered from the `pass_gate` template with the pass's name and
+the window since its last tick that ran, answered in the `PassGateOutput`
+schema through the same runner and `session_policy` path as every other
+structured session. `run: false` skips the tick and the pass sleeps its
+interval; `run: true`, a missing answer and an unreadable answer all open the
+pass. The per-issue dispatch pass keeps its deterministic gate
+(`services/pass_gate.py`) over the process's own tracker credential.
+The lifespan registers each acquired resource with an `AsyncExitStack`.
+Shutdown stops the scheduler and queue, drains lifecycle watchers and finishes
+their records, then closes their transports; the checkpointer retains its
+context-managed lifetime. The same releases run on partial startup and
+exceptional exit, and one release failure does not skip later callbacks. The
+unwind is one owned task so repeated cancellation cannot interrupt a queue
+worker or close a transport before its consumers finish. Each cleanup failure
+is logged before propagation, so later failures cannot hide an earlier error.
 
 ## Component Diagram
 
@@ -38,6 +82,7 @@ does not exist.
 | ----------------- | ------------------------ | ---------------------------------------------------- |
 | LogEmitter        | structlog `stdlib.BoundLogger` | The five awaited emitters. No adapter class: the configured wrapper already satisfies the port, and a test asserts it |
 | GitService        | SubprocessGitService     | Git CLI via asyncio subprocess                       |
+| GitSourceReader   | SubprocessGitSourceReader | Pins local commits and reads exact regular-file blob bytes without checkout |
 | RepoCache         | LocalBareRepoCache       | Bare repo clones in a cache directory                |
 | AgentExecutor     | ClaudeClientExecutor     | **Default.** Persistent sessions via ClaudeSDKClient |
 | AgentExecutor     | ClaudeAgentExecutor      | One-shot via `query()`. Available but NOT wired in default composition root |
@@ -45,39 +90,818 @@ does not exist.
 | ChangePersister   | GitChangePersister       | Detects changes, generates commit message, commits, pushes |
 | BranchMerger      | GitBranchMerger          | Fast-forward merge and push                          |
 | PRCreator         | GitHubAPIClient          | Opens pull requests and comments on them             |
-| CIMonitor         | GitHubAPIClient          | Polls check runs for a pushed head                   |
+| PRStateReader | GitHubAPIClient | Reads exact native PR identity, head repository/branch/SHA, base repository/branch and open/closed/merged lifecycle; refuses foreign or unavailable head/base repositories; no mutation authority |
+| ForgeQuery | GitHubAPIClient | Reads the open pull request on a head ref for check-before-create, and composes a branch's web page from the origin's own host; no mutation authority |
+| CIMonitor         | GitHubAPIClient          | Returns a coherent completed, absent or incomplete check observation; re-observes Actions attempts at one commit |
 | DeliveryProbe     | GitHubAPIClient          | Answers whether an issue already has an open delivery |
 | DeliveryProbe     | NoForgeDeliveryProbe     | The same answer for an origin with no forge behind it. A peer, selected per repository at the composition root — not a degraded mode |
 | McpToolCaller     | HttpMcpToolCaller, StdioMcpToolCaller | One MCP tool call over the vendor's HTTP or stdio transport |
-| RunRecordSink     | LinearRecordSink, NotionRecordSink | One structural run record into one declared destination (KOD-170) |
+| RunRecordSink     | LinearRecordSink, NotionRecordSink | One structural run record into one declared destination |
 | ManagedMcpToolCaller | HttpMcpToolCaller     | The same caller plus the session lifetime boot owns  |
-| TrackerPort       | LinearMcpTracker         | Tracker vocabulary over the vendor MCP server, no model in the loop |
+| TrackerPort       | LinearMcpTracker         | Tracker vocabulary over the vendor MCP server, no model in the loop. It declares no member of its own: every member belongs to the role its consumer names, and this composes all of them for the composition root that holds one adapter |
+| TrackerCommentReader | LinearMcpTracker | Complete comment reads for lane, escalation and ruling readers |
+| TrackerCriteriaReader | LinearMcpTracker | Full current criterion families for resolution and audit consumers |
+| CriterionResolver | NativeCriterionResolver | Resolves one criterion identity to its own sub-issue, or refuses; the narrow role a consumer that needs a single criterion depends on, carrying no family read of its own |
+| ModelMemberReader | LinearMcpTracker | The two reads a model's surface set is resolved from — its marked membership and each member's criteria — narrowed out of the port rather than added to it |
+| WorkRefReader | LinearMcpTracker | The one read base resolution makes to find a blocker's branch, narrowed out of the port rather than added to it; on the per-issue pass it is the refs recorded against the issue |
+| WorkRefReader | RecordedDeliverableRefs | The same read on the scope path, answered from the blocker's own lane run-state record, which is where a lane's deliverable branch is written. A peer, selected at the composition root — not a fallback |
+| FireCriteriaReader | TrackerCriteria | Refreshes current native criterion obligations at execution, retry and replay barriers, and answers the same obligations from a subtree reading the caller already holds (the native writer's authority read, KOD-1249) |
+| FireCriteriaSource | TrackerCriteria | Composes the typed native subject specification from the admitted subject and its subtree's criteria, and supplies current criterion reads |
+| TrackerContextReader | LinearMcpTracker | Referenced assets and document bodies for fire context |
+| TrackerScopeApprovalReader | LinearMcpTracker | The reads a scope-member question needs, composed from the cascade and the container metadata roles and declaring the scope's own labels; a scope run's entry and the heartbeat depend on it alone, and the organize owner's gate reading (`scope_carries`) is typed on it |
+| LaneStateTracker | LinearMcpTracker | Exactly the tracker calls the lane's own state writer makes, composed from the comment, event, issue, description, state and criterion roles those calls belong to |
+| CriterionReopener | LinearMcpTracker | The one state move the audit makes (a refuted finished criterion back to unstarted), narrowed out of the port rather than added to it |
+| ContainerMetadataReader | LinearMcpTracker | What a container is, read on its own; composed into the approval read and taken by the tracker-artifact reader |
+| ExecutionApprovalReader | LinearMcpTracker | The one approval question an entry asks, composed into the approval read and into the scope-ready read the walker takes |
+| IssueReader | LinearMcpTracker | One issue, whole; the read the audit runtime and the native amendment arm make, and a base of the composed roles that read an issue |
+| PlanningIssueReader | LinearMcpTracker | One issue with complete relations; composed into the scope-plan read, the lane escalation writer and the artifact reader |
+| IssueRevisionReader | LinearMcpTracker | One issue and its body digest; the read the organize author round and the organize owner make |
+| IssueScanReader | LinearMcpTracker | The board scan the dispatch pass's gate and the fire dispatcher select on |
+| ScopeFamilyReader | LinearMcpTracker | The scope family, resolved for scope resolution and composed into every membership read |
+| StateHistoryReader | LinearMcpTracker | When an issue entered its state; the read audit candidate collection makes |
+| EscalationResolutionReader | LinearMcpTracker | Whether a decision record answers an escalation; the read the escalation signal and the run-shape reading make |
+| RecordedRepositoryReader | LinearMcpTracker | The repository a staged fire recorded; read by the audit request reader and the fire dispatcher |
+| WriterIdentityReader | LinearMcpTracker | The account this credential writes as, read once by the boot that refuses an unattributable writer |
+| ScanCapabilityReader | LinearMcpTracker | The scan scopes a credential holds, read once by the pass preflight |
+| SurfaceAuthorshipReader | LinearMcpTracker | Whom the tracker records as the author of a body it can replace. The read answers the backend's own attribution together with the distinct holders whose recorded writes replaced it, in the order the backend placed those records; it is asked only of the two body surfaces the port can replace |
+| ScopeReadPreflight | LinearMcpTracker | The capability assertions a scope read makes first; composed into the scope-plan read and the lane escalation writer |
+| TrackerVocabulary | LinearMcpTracker | The declared vocabulary resolved and instated: the two calls tracker boot makes |
+| CriterionMintWriter | LinearMcpTracker | The criterion mint on a role of its own, taken by the organize owner and by nothing else |
+| DescriptionWriter | LinearMcpTracker | The one body replacement the port offers; composed into the lane state, amendment and organize writer roles |
+| WorkflowStateWriter | LinearMcpTracker | The configured lifecycle move; composed into the lane state tracker and the per-issue lifecycle writer |
+| StateRestorer | LinearMcpTracker | The put-back a reader's own state asks for; composed into the walk's role and the lifecycle writer |
+| ClassificationWriter | LinearMcpTracker | One configured classification added; composed into the lane escalation writer and the organize owner |
+| CommentRecordWriter | LinearMcpTracker | The marker-keyed record write; composed into every role that keeps a record on an issue |
+| LaneEventWriter | LinearMcpTracker | The append to a lane's event stream, composed into the run-alarm and lane-state roles |
+| ClaimHolder | LinearMcpTracker | Extending and withdrawing a claim already held: the claim heartbeat's two calls |
+| WorkRefRecorder | LinearMcpTracker | The ref record beside the ref read, taken by base resolution and the per-issue lifecycle writer |
+| SubjectCriteriaReader | LinearMcpTracker | A subject and its criterion family: the audit terminal reading's two reads |
+| ScopeMemberReader | LinearMcpTracker | The scope family and each member's criteria, which is what scope membership resolves |
+| ScopePlanReader | LinearMcpTracker | Everything a scope plan is read from, with no write in it: the plan and delivery coordinator readings |
+| ScopeRosterReader | LinearMcpTracker | A scope's roster and each member's classification, which the scope tally reads twice to agree |
+| ScopeTallyReader | LinearMcpTracker | The roster the scope tally is counted over, behind the classification preflight: exactly what a scope's stage barrier is read from, with no event read and no write |
+| ScopeReadyReader | LinearMcpTracker | The scope plan plus the approval an entry asks for: what the scope walker and the dispatcher read |
+| FireSubjectReader | LinearMcpTracker | The admitted subject of a fire over the family it is measured against: the criteria stage's reads |
+| OrganizeAuthorReader | LinearMcpTracker | The criterion family and body digests the organize and authoring rounds read |
+| OrganizeContextTracker | LinearMcpTracker | The issues, milestones and records the organize context reader assembles from |
+| PassGateReader | LinearMcpTracker | The board and review scans the dispatch pass's gate decides on, with no write |
+| TrackerArtifactReader | LinearMcpTracker | Every read a tracker artifact is assembled from; taken by the audit pass, the sweep's verifier and the artifact reader itself |
+| FireDispatchTracker | LinearMcpTracker | The claim, base and staging facts the deterministic dispatch decides on |
+| BaseResolutionTracker | LinearMcpTracker | The issue read and the ref record base resolution works from |
+| RequestRecordReader | LinearMcpTracker | The comments, issues and routing an audit request is composed from |
+| AuditCandidateReader | LinearMcpTracker | The state entry and membership audit candidate collection selects on |
+| LaneEscalationTracker | LinearMcpTracker | The escalation record a lane writes and the reads it is composed from |
+| LaneLapseEscalationTracker | LinearMcpTracker | The question a lapsed grading raises and the reads the write-back verifier checks it by: what the lane's lapse escalations hand on |
+| AuditPublicationWriter | LinearMcpTracker | The record an audit publishes, under the lease publication holds |
+| EscalationSignalReader | LinearMcpTracker | The resolution and records an escalation's ageing is observed from; the supervisor's ageing arm holds it for the collector it hands it to |
+| RecordSignalReader | LinearMcpTracker | The criterion family and lane record a barren tick, and a lane's recorded ruling growth, are observed from |
+| OrganizeOwnerTracker | LinearMcpTracker | Everything the older cascade organize owner reads and every write it makes: the widest single consumer; the wired session owner reads through ScopeFamilyReader and TrackerScopeApprovalReader alone and writes nothing |
+| FireRulingTracker | LinearMcpTracker | The criterion reads and record writes a ruling round makes |
+| AmendmentWriteTracker | LinearMcpTracker | Every read the amendment write-back is composed from and every write it makes |
+| NativeAmendmentTracker | LinearMcpTracker | The amendment writes plus the membership the native arm reads beside them, and the criterion minter its weakened-assertion marks take |
+| LifecycleStateWriter | LinearMcpTracker | The writes the per-issue lifecycle makes on one issue, and nothing wider |
+| ScopeStatusWriter | LinearScopeStatusUpdates | The scope terminal's one write, a role beside the port rather than a member of it; built over the tracker's caller the way the record sink is |
+| ScopeStatusReader | LinearScopeStatusUpdates | The one read the scope terminal makes before its one write: the reports the container already carries, so a report is posted once across a restart; a role beside the port, over the tracker's caller |
+| ScopeStatusUpdates | LinearScopeStatusUpdates | The container-status role whole, read and write, one class over the tracker's caller |
+| SurfaceLeaseTracker | LinearMcpTracker | Exactly the lease calls a writing job's own lifetime makes, narrowed out of the port rather than added to it |
+| RunAlarmTracker | LinearMcpTracker | Exactly the tracker calls an observation of a run's shape makes: every alarm record on one issue, read in one listing, and one keyed record rewritten, which it declares, over the lease, lane-history and lane-append roles it composes. It holds no workflow state, queue state, criterion reset or description edit, so its holder cannot move a run's state |
+| LaneEventHistory | LinearMcpTracker | A lane's posted events read for a grading's provenance; narrowed out of the port rather than added to it, and holding no write |
+| CriterionMinter | LinearMcpTracker | Exactly the tracker calls one obligation mint makes, composed from the criterion mint, criterion reopen and lease roles: the lease on a lane's criterion child set, the mint under it, and the move of a child the mint answered with back to unstarted under a lease on that child, narrowed out of the port rather than added to it; it holds no other workflow state and no description edit, so its holder can add an obligation, or reopen the one it names, and change no text the lane already carries |
+| LaneStateWriter | TrackerLaneStateWriter | Records the lane's run state in the same act as the commit that changed it |
+| NodeSessionRecorder | TrackerLaneStateWriter | A node's observed session openings, put on its lane's stream once each |
+| WriteBackStep | _EscalationStep and the per-surface step bodies of the organize, amendment and audit writers | One writing step the verifier drives: the step owns its write and names the surface re-read after it |
+| WriteBackJudge | FreshWriteBackJudge | Judges the artifact that landed, in a session that wrote none of it |
+| LaneLapseEscalator | LaneLapseEscalations | The one question a lane raises when a grading it cannot re-derive lapses: on the lane's own issue, keyed by that criterion, written after the move back and judged inside a verified window |
 | ArtifactPersister | GitArtifactPersister     | Writes and cleans named files under `.kodezart/`     |
 | AgentRunner       | AgentService             | Orchestrates workspace lifecycle around executor     |
+| NativeWriteGuard | _NativeWriterGuard | Reads current native Checks and pinned records, routes claims through independent judgment and canonical verified amendment writes, and guards harness commit and publication, and refuses a commit that loses an assertion a pinned record it holds designates, leaving the mark as a criterion on the lane |
 | GitAuth           | GitHubTokenAuth          | Injects GitHub PAT into HTTPS URLs                   |
 | QualityGate       | RalphLoop                | LangGraph iterative execute/evaluate loop            |
 | TicketGenerator   | TicketGenerationLoop     | LangGraph draft/review loop                          |
-| WorkflowEngine    | RalphWorkflowEngine      | LangGraph outer pipeline                             |
+| WorkflowEngine    | AuthoredDeliveryCoordinator | Authored orchestration around the shared fire graph |
 | JobQueue          | AsyncioJobQueue          | In-process lanes, bounded depth and concurrency      |
-| JobRegistry       | AsyncioJobQueue          | The same queue read as a record store                |
+| DispatchProducer | FireDispatcher | Ranks an approved scan and launches one fire per pass |
+| DispatchProducer | ScopeDispatcher | Walks a scope's ready set and launches one lane per pass, over criterion sub-issues rather than a deliverable's workflow field |
+| JobRegistry | InMemoryJobRegistry, AsyncioJobQueue | The records the queue writes into, built before the engine so a scope run's entry reads liveness from it; a live job is found by its scope on any lane |
 | RunStateReader    | LangGraphRunStateReader  | Reads a run's checkpointed state                     |
 | PromptProvider    | InRepoPromptRegistry     | Prompt sets as directories of templates              |
 | PromptSetProvider | InRepoPromptRegistry     | Set content belonging to no key: lens definitions, the system-prompt append |
 | SkillInventory    | HostSkillInventory       | What the host provisions; kodezart installs nothing  |
 | RepoVisibilityResolver | GitHubAPIClient     | Resolves PRIVATE / PUBLIC / UNKNOWN once per run     |
-| ContentScanner    | RegexContentScanner      | The deterministic pattern half of the outbound gate  |
-| ContentScanner    | AgentContentScanner      | The judgment half, ordered after the patterns        |
-| OutboundContentGate | PatternOutboundContentGate | CLEAN / REDACTED / BLOCKED over N scanners      |
+| ContentJudgment | AgentContentScanner | Fresh semantic judgment after fixed local checks |
+| OutboundContentGate | OutboundAdmission | Fixed credentials, typed tracker aggregates, references and authored admission |
 | RefPublisher      | GitRefPublisher          | Points a named ref at an existing commit on the remote |
+| CheckChainRunner | SubprocessCheckChainRunner | Runs the ordered declared check steps in a scratch directory and captures every result |
 | Remediator        | RemediationChain         | One remediation round: failure evidence in, one targeted ticket out |
+
+SDK mapping translates exact native result variants and retained exception causes
+into a neutral `SessionFailureKind`. The live content judgment adapter consumes
+that fact as `ScanFailureKind`. Turn/cost limits and structured
+output exhaustion do not retry; declared connection and API transient failures
+retain the bounded retry policy. Unknown execution failures block as
+`execution_error` without guessing from error text or retrying them as network
+failures. Refusal uses the reported stop reason. Interpretation stays inside the
+adapter; the transient result carries the neutral fact internally with
+`exclude=True`, preserving existing public result JSON. No checkpoint state
+stores this transient event. Domain exceptions gain no vendor fields.
+
+The CI adapter's `rerun_checks` resolves the supplied ref once, validates that
+every observed check belongs to an identifiable Actions workflow attempt, then
+requests each run again. Subsequent `wait_for_checks` and `failed_check_names`
+calls on that monitor and ref read the requested attempt's jobs, with the same
+commit identity. Existing completed checks cannot satisfy that observation.
+The caller should supply an immutable commit SHA and keep its rerun/read
+sequence on the same monitor and asynchronous task. Each task owns its
+attempt context; a later rerun by another task cannot replace its observation.
+Baseline selection and dispatch are serialized per repository and resolved
+SHA, including branch aliases. A shared attempt floor refuses stale baselines
+across tasks. Different SHAs can dispatch independently. Attempt tracking is
+process-local; it is not a durable rerun ledger.
+
+The existing CI poll and page bounds apply. An unsupported check provider,
+incomplete enumeration, unknown result, or unobservable new attempt raises a
+domain error. Rerun POSTs are issued once: a partial batch or lost response
+remains an error instead of retrying a write whose effect is uncertain. The
+adapter uses GitHub's documented [workflow run rerun and attempt APIs](https://docs.github.com/en/rest/actions/workflow-runs)
+and [attempt-specific jobs API](https://docs.github.com/en/rest/actions/workflow-jobs#list-jobs-for-a-workflow-run-attempt).
+The Actions permission must allow writes to request a rerun.
+
+Tracker revision reads return a frozen `TrackerIssueRevision`: the full issue
+and an opaque, nonempty digest of the body returned in that same read. This
+applies to both ordinary issues and criterion sub-issues. The Linear adapter
+hashes those exact UTF-8 body bytes; timestamps, comments, labels and workflow
+state do not participate. Each surface changes independently, and replaying
+an unchanged body preserves its digest.
+
+`read_issue_state_change` requires native state history from the same complete
+issue read. Exactly one current interval must agree with the issue state and
+its timestamps; absent, ambiguous or inconsistent history is a typed refusal.
+General issue edits do not stand in for state transitions. The audit collector
+reads complete scope and criterion membership before and after detail reads,
+refusing changed snapshots or duplicate native members before coverage begins.
+These are checked observations, not an atomic vendor snapshot; scheduled audit
+sessions remain a separate consumer.
+
+The selected tracker provides criterion-family and body-revision reads directly.
+Their required semantics are exercised by the shared native/fake conformance
+suite. Boot performs real credential and mapping checks; empty capability
+self-declarations do not prove an adapter's behavior. The scan-capability probe
+runs once, inside the boot preflight, and nothing after boot asks for or
+handles its answer: a signal the credential cannot answer aborts startup
+naming every refused signal, the passes each one gates and the backend's own
+diagnosis.
+
+`TrackerCommentReader`, `TrackerCriteriaReader` and `TrackerContextReader` expose
+only the read operations used by record readers, criterion consumers and the
+fire context assembler. The composed `TrackerPort` inherits those definitions;
+the selected adapter satisfies each role directly.
+
+`TrackerScopeApprovalReader` is the same narrowing for the one question "is this
+addressed scope approved". Approval is granted as a label on a node and read
+downward, so the answer needs three reads and no more: a container's own
+configured labels, the parent edge that continues the chain, and the per-issue
+cascade. An issue scope is that cascade. A container scope reads its own labels
+and walks its parent edge upward. A milestone carries no label level at all: no
+native object of that kind holds a configured label, so its owning project is
+the first node in the chain, and a label planted on the milestone's backing data
+approves nothing. Composed as one function over the role, so the readers of that
+answer depend on no writer. For a container-addressed scope the same walk
+answers every configured scope member, asked with the member rather than fixed
+to approval, so a milestone-addressed scope reads any configured member off its
+owning project exactly as it is run on that project's approval, resolved once
+per reading of the gate and never once per member issue. An issue-addressed
+scope is bounded differently: its approval member is the per-issue cascade, and
+any other member is the addressed issue's own configured labels, read off that
+issue alone. A project above the issue that carries triage does not answer an
+issue-addressed scope's reading of that member; continuing the walk above an
+issue for a non-approval member would need a read this role does not have.
+
+`read_scope_plan` applies native stage barriers at the actual scoped engine
+entry before any execution arm is selected. Its `require_scope_plan_reads`
+declaration requires semantic criterion and decision mappings; a missing mapping
+cannot turn an open decision into an empty set. The shared `read_scope_members`
+reader preserves direct criterion children even when container filtering omits
+them, and serves audit collection as well as planning.
+
+The explicit `read_planning_issue` port read requires reported semantic labels
+and full requested dependency relations. Planning reads the board once: the
+scope family, the subtree under each root member, and one planning read per
+blocker outside both; an issue the family already holds is never read again,
+and a dependency read that answers another identity refuses. Since 2026-09-24
+(KOD-1241) nothing is re-read and compared: a member mentioned elsewhere on the
+tracker between two reads gains a related-to relation and a later `updated_at`,
+and that refused a live scope twice over a fact no plan uses. Open decisions,
+backlog-kind criteria and criterion edges leaving their parent's subtree yield
+`ScopePlanRefusalError` with the offending native keys. Existing topology
+arithmetic owns cycle detection. A successful planning snapshot alone makes no
+approval or readiness claim.
+
+Before any of that, a scope run asks one question of the address it was given:
+is this scope approved. The answer follows the label cascade upward from the
+addressed node, so an issue under an approved project and a project under an
+approved initiative are both admitted, and a milestone is admitted by its
+owning project. A scope with no approval anywhere above it refuses by type
+before a single member is read, which is a different outcome from a scope that
+is approved and has nothing left to do: that one is walked and observed once,
+with nothing dispatched. `ScopeRunLiveError` refuses ahead of even that read:
+it means another job over the same scope was submitted earlier in this process
+and is still live; it names that job and its lane, and nothing about the scope
+was read. The per-member approval reading inside `read_scope_ready`
+is unchanged and still decides each lane (KOD-425); this is the run's own
+admission, not a substitute for it.
+
+The actual scoped entry then calls `read_scope_ready`. It requires all three
+semantic classifications (`criterion`, `tracker`, `decision`) through the shared
+`require_issue_classification_reads` declaration, reads current
+approval through the issue's real ancestry, and selects only native scope
+deliverables with a nonempty criterion gap. It also reports, separately from
+those, the approved members whose criterion gap is EMPTY: they are no lane to
+work, and on an origin whose lane can deliver the walker dispatches them for
+their delivery alone, before it fires any ready lane (KOD-844). Record issues
+and criteria are never selected and never reported that way either; an approved
+deliverable without its own criteria refuses. That refusal is the walk's
+candidate selection, not the fire entry's reading, which measures membership
+over the whole subtree (see the native arm below). Deliverable
+workflow state does not decide either gap or subtree closure. An in-scope blocker
+closes only when all its criterion children and every deliverable child's full
+subtree close, including children outside a container's membership filter. An
+open criterion under such a child is named on the read's `unreachable` with its
+key and the reason the filter missed it, computed from the same closure as the
+unresolved keys, and the walk copies it into every observation.
+Each consulted complete issue subtree passes the same `read_scope_plan` barriers;
+an outside-filter open decision is refused by key, never closed by its empty
+criterion set. Record classification does not waive those stage barriers.
+The existing topology ranking consumes that explicit closure result without
+consulting parent state. Each result carries exactly its current gap, and the
+next call recomputes from tracker reads. Scope membership, complete child trees
+and approval are checked again before returning; this is an optimistic read,
+not transactional exclusion from concurrent tracker writers.
+
+A canceled or duplicate criterion counts for nothing on its state alone. It
+leaves every gap and leaves `unresolved`, and it is named by key in the ready
+read's `excluded` and in each walk observation's `excluded_criteria`, so a
+reader tells an obligation the board set aside from one that was never there
+(KOD-794).
+
+A criterion the board Canceled or closed as a Duplicate counts for nothing, at
+the readiness read and at the spec read alike: it joins no gap, no
+specification and no unresolved list, and it refuses nothing (KOD-794). The gap
+arithmetic reads the criterion's own state kind and nothing else, so no second
+input and no inferred reference decides what an abandoned criterion means.
+A member whose every criterion is Canceled or Duplicate owes nothing and reads
+closed at the readiness read, while a fire entered on such a subject is refused
+as empty at the spec read. The readers that ask the one predicate,
+`is_non_counting`, are the spec read, the native writer's authority read,
+`existing_criterion` and the criteria stage's `needs_criteria`; the gap and
+readiness read asks the gap arithmetic's one state match, `state_membership` in
+`domain/gap.py`, whose excluded arms are the same kinds, and a test holds the
+two to one answer for every kind. The organize reader in `domain/organize.py`
+that still names Canceled itself is the known exception. A static scan holds
+the Duplicate kind to the enum's own module, and to one arm of that match, in
+the shapes it sees: the `DUPLICATE` attribute, or a subscript by the member's
+name, on the enum spelled by its own name, by a from-import alias or as a
+module attribute, and a string constant equal to the kind's value.
+
+Each ready lane's gap is measured on the walk observation, as `gaps`: one
+`GapMeasurement` per ready lane naming its open subtree criteria at that read,
+built fresh every tick and written to none of the three surfaces the run
+writes down: the lane record comment, a criterion's Evidence row and the scope
+status update (KOD-461). An
+open criterion inside a ready lane's subtree that the scope's own filter cannot
+address in its own right is named among the observation's exclusions as
+`out_of_scope`, with the reason the filter gives; one under a blocked or
+unapproved member stays on `unresolved_criteria` and is named when its lane is
+ready.
+
+`LaneRecordReader` reads the owning issue's complete comment listing through
+`TrackerPort`, locates the exact configured `marker_prefixes.run_state` marker,
+and returns the native comment and decoded `LaneRunState` from that same read.
+An existing `record_ref` must still identify that marker comment. Missing,
+duplicate, malformed or misaddressed records raise `LaneRecordReadError`;
+transport failure never becomes an empty record. Every call reads again, so a
+fresh client needs no process cache, repository, trajectory or forge connection.
+
+`LaneEntryReader` gathers the facts one lane's entry is decided from and
+nothing else: the record, through that reader, and — only when a record exists
+— one remote head per branch that record's roles resolve. At re-entry the
+record is the only source of what the lane committed, so the record is
+resolved before any remote is asked anything: `recorded_lane` resolves the
+loop, deliverable and base refs by ROLE — never a ref composed from another
+ref's text — and the head as the record's last commit act, never the head field
+and never a remote reading. After a stall exit that had a commit, that last act
+is the best iteration: the consolidated tip when the landing integrated, and
+otherwise the best commit itself. A record whose run reached no stall exit names
+its last act, and that is the head. A record naming no commit act
+refuses, because a lane resumed against none has nothing to grade (KOD-705).
+The loop level's remote head is read at the branch the LOOP role resolves, and
+says whether the recorded loop branch still stands at that head; where it does
+not, the difference is logged under `lane_record_head_differs` with both shas.
+The deliverable level is then read at the
+branch the DELIVERABLE role resolves and compared with the tip of the base the
+record names: a deliverable branch that has taken nothing from its loop stands
+exactly where that base does, and one standing anywhere else carries work of
+its own and is stated under `lane_deliverable_head_differs` rather than
+refused. Both shas reach the entry, so each level is answered by a sha of its
+own and neither stands in for the other.
+`decide_lane_entry` then decides from those facts alone. No record with an open criterion gap mints the
+lane's two names and cuts its loop branch from the base that resolves now; no
+record with an empty gap is nothing to do. A record with an open gap resumes at
+the record's head on its recorded DELIVERABLE branch, whether or not a pull
+request is recorded: on its recorded loop branch when the remote holds that
+branch at the head, and otherwise on a fresh loop branch cut from the head sha,
+with the old loop branch left where it stands (KOD-705, KOD-96). A record whose
+gap is empty and that carries no pull request is a deliver-only entry, which the
+walker selects and dispatches for its delivery alone; a record carrying a pull
+request with an empty gap is nothing to do.
+
+A lane the facts leave nothing to do RESTS. The walker states it by name under
+`scope_lane_nothing_to_do` and does not offer that lane again in the same
+invocation, so a reading that keeps reporting the lane cannot make the walk
+spin on it. Being fired is not what rests a lane: a lane IS fired again in the
+same invocation while its last fire closed a previously open criterion of its
+subtree, because one fire's iteration budget is smaller than some lanes are and
+such a lane converges across fires instead of owing the remainder to the next
+invocation. The tick after a fire reads which of the criterion identities the
+lane owed the subtree now carries as closed, and reads nothing else. A criterion
+canceled or marked duplicate during a fire leaves the gap on its state alone, so
+it reads as closed to that reading, and the lane gets at most one more fire
+before it rests. A fire that
+closed none of them puts the lane's issue back to the state its own open work
+stands in — the state name the first unstarted criterion it still owes carries,
+written through the port's own restore, which reads first and writes nothing
+when the issue is already there — and rests the lane, under
+`scope_lane_plateaued`; where the gap names no unstarted state the write is not
+made and `scope_lane_put_back_skipped` says so. That write is the lane's own
+work and runs inside the lane's own boundary: a tracker that will not take it
+rests the lane and reports it under `scope_lane_failed`, and the walk spends the
+rest of the invocation on the other lanes. A lane selected for its delivery
+alone takes ONE such turn per invocation and rests after it, under
+`scope_lane_finished_turn_rested`, whatever that turn's fire did: a delivery that
+landed leaves the pull request on the lane's record and nothing further to do,
+and a fire that reached no delivery moved nothing about the lane, so a second
+identical turn would say what the first said. How the fire ended is not read to
+decide any of it — what the walker offers next follows from the board and from
+its own resting lanes (KOD-724, KOD-725). Every lane resting is reported
+on the walk observation, and `dispatched` carries one entry per fire. The walker
+asks the forge nothing about a candidate at all, neither at selection nor at the
+lane's own boundary: where a lane stands is its own record, and a lane whose
+pull request is already open is the lane whose next commits that pull request
+receives (KOD-431, KOD-785). The one forge read a lane's turn makes is about a
+closed blocker recording no branch (KOD-777, below). A deliver-only entry enters
+the fire graph already accepted — the
+verdict states the entry's own fact, that every criterion of the subtree is
+Done — reads its roster as the whole finished subtree out of the entry's one
+subtree reading, and is routed past the loop to
+consolidation: what such a lane is missing is not work but the consolidation,
+review and pull request that follow one. A criterion reopened between the walk's
+selection and that reading refuses with `FireSpecEntryError` naming it, before
+any session opens. A remediation round on such a lane takes the loop like any
+other round.
+
+Every damaged or mismatched fact is a typed refusal of that one lane, made
+before any session and with nothing minted: an unreadable, duplicated or
+malformed record stays `LaneRecordReadError` and is never read as "no record";
+associations that settle no single deliverable or no single base, a recorded
+branch the remote no longer holds, and a recorded base that is not the base
+resolving now each raise `LaneEntryError`. A loop branch the remote holds
+anywhere but the record's head is not resumed from: it is logged with both shas
+and left in place, and a lane owing nothing whose loop branch has left its head
+raises `LaneEntryError`, because delivering that branch as it stands would
+deliver a commit the record does not name. So a lane that landed and then had
+every criterion crossed off, with no pull request, refuses on every walk, even
+though its deliverable branch holds the record's head; the refusal stays inside
+that lane.
+The subject text is read once, at the fire's entry, and compared with the
+digest the record pinned: a difference raises `SubjectAmendedError` before any
+session, and a record with no digest is not compared and is pinned by its next
+write. The record also pins the base its first commit was dispatched on
+(`dispatchBase`). At every entry that base and the base resolving now are
+compared by `is_base_stale`. A stale base is not a refusal: the fire runs, and
+every grading its loop would carry from one iteration to the next lapses through
+`graded_state`'s base arm. A record with no pinned base is not compared and is
+pinned by its next write. The reading is reachable on one arm only: a base whose
+inputs or arm changed is renamed, and the recorded-base check above refuses it;
+a base that keeps its name, which is one blocker whose delivery advanced, reads
+stale and lapses what the loop carries (KOD-888). Nothing here is remembered in
+process: every fact is read again before every fire, so a killed process changes
+nothing about the next decision (KOD-684, KOD-433, KOD-840).
+
+`TrackerLaneStateWriter` is the write side of that same record, and of the
+criterion cross-off beside it. Its calls follow. `record_commit` runs inside the
+persisting phase of a native execution, between the push and the completion of
+the phase, so a commit and what it is recorded as are one operation: a record
+write that fails takes the phase with it. It reads
+the workspace head, the remote branch tip and the base..head changeset, parses
+the prior record before composing the next one, and edits the marker comment in
+place under `marker_prefixes.run_state`. That edit is unleased — the lane is the
+record's single writer, and the comment's own preconditions (one comment per
+marker, machine authorship, the expected prior body) are what protect it. The
+first push also posts one `first_push` event under `marker_prefixes.run_event`;
+later commits post nothing, so the lane's comment count stops growing after it.
+
+`record_pull_request` is another. The lane graph's delivering step makes it
+after the delivery coordinator returns, so where a completed delivery is
+retained is the record and not a graph checkpoint: it reads the record through
+the same reader, writes nothing when the record already carries that pull
+request, and otherwise edits the one marker comment in place under the prior
+body it just read. A lane with no record gets no first record composed out of a
+delivery: the write is skipped, the writer logs `lane_pull_request_not_recorded`
+with the lane and the pull request, and delivery completes. On the
+tracker-native arm the lane graph is also the caller that reaps its fire's
+divergence backups: after an accepted, consolidated fire, and before the graph
+ends, it runs `FireConsolidation.cleanup_backups` under the same guard the
+authored arm uses.
+
+`record_landing` is the stall exit's best act on that same record, through the
+same writer. The landing step makes it on every stall exit that has a best
+iteration: when the landing put that work on the deliverable branch, the row
+names the tip the deliverable then stands at, and otherwise — a consolidation
+that did not integrate, or a forge-less landing — it names the best commit
+itself, one of the loop branch's own commits. Either way re-entry resumes there
+and not at the loop tip the best iteration was chosen over. The row is bound to
+the loop branch the best commit was pushed on, which the consolidation step
+writes beside the best commit as `best_iteration_branch`: a remediation round
+draws a loop branch of its own, and a round that committed nothing may push its
+branch at its cut point, but that push is not an iteration commit and never
+replaces an earlier best, so a row bound to the run's last loop branch would
+re-enter the lane at that cut point and not at its best. A stall exit with no commit records nothing, and neither does one
+whose best commit has no known branch. It writes nothing when the record's
+newest act is already that sha. A lane with no record at all — a commit pushed
+whose record write then failed — has nothing to re-enter from, so the landing
+act is not written and no first record is composed from it: the writer logs
+`lane_landing_not_recorded` with the lane and the landed sha, and delivery
+proceeds, so the stalled lane's pull request still opens.
+
+`write_cross_offs` is another call. `RalphLoop._evaluate_node` makes it once
+per iteration, after the grade and before the iteration event is emitted, so a
+consumer that sees the event for iteration n can read the tracker and find that
+iteration's cross-offs already on it. It is handed the roster the attempt was
+dispatched against and the whole grade of it, one for one and in order. For a
+criterion the attempt passed, the sha it was graded at goes on that sub-issue's
+Evidence row, one `criterion_passed` event naming that sha is posted on the
+LANE under `marker_prefixes.run_event`, and the sub-issue then moves to the
+configured `done` stage — the body edit under its own compare-and-set
+precondition, the announcement as soon as that edit lands, the transition last.
+The event records the row write, so it follows that write and nothing else: a
+stamp that refuses posts nothing, and a transition that refuses after it leaves
+the row and its last entry naming the same commit, including for a criterion
+already finished and graded again at a later head, which no later attempt's
+roster would reach to repair. The event is what makes the lane's stream the
+Evidence row's own write history, which is what the audit's restamp trace
+reads. The stream is looked up for that entry before anything is written, and
+the pass is posted unless the criterion's last row-write entry there is already
+that same pass: the same verdict written again at the same head restamps the
+same row and announces nothing twice, while a head that returns to a commit
+the criterion passed at before a later refutation announces that pass again,
+so the history ends at the commit the row names. After the transition, one
+`issue_crossed_off` event keyed to that criterion and carrying that sha is
+posted on the lane's stream, unless the stream already holds that exact event.
+It is the lane's own account of the act: a reader finding the sub-issue out of
+Done later can tell a criterion this lane finished and something else moved
+back from one that was never finished. For a criterion the attempt
+failed that this fire had already finished, the sub-issue moves back to the
+team's unstarted state first, the refuting grading then goes on its Evidence
+row, and one `criterion_refuted` event is posted under
+`marker_prefixes.run_event` last. That order is what the act guarantees: a
+failure anywhere after the move back leaves the criterion owed, and the next
+fire re-grades it, instead of leaving it certified at a sha that failed it. The
+lane's event stream is read once for the whole act, before any sub-issue is
+touched, so a pass, a refutation, a lapse and an undemonstrated reading in one
+attempt look their entries up in that one reading of the board. For a
+criterion the attempt read nothing about, its event is the act's only write.
+
+A criterion whose grading no longer stands goes back the same way and is
+announced under its own kind. The sub-issue returns to the team's unstarted
+state, keeping the sha it was graded at on its Evidence row with its pointer
+saying that grading lapsed, so a reader sees the gap between what was graded and
+where the branch went rather than a satisfied criterion, and one
+`criterion_lapsed` event keyed to it is posted last, unless the stream already
+holds that exact event. A lapse is the criterion being owed again, not a
+regression, so the take-back that reports a refutation and the take-back that
+reports a lapse are one act with one difference — the kind of its event — and
+a reader of the stream never sees a move back nobody reported. A lapse records
+no new commit on the row, so it is no entry of the row's write history. A
+lapse repeated in a later iteration finds the sub-issue already
+unstarted and writes nothing at all. Nothing is written on the criterion itself
+beyond its state and its Evidence row, and no parent's workflow state. A grading
+resting on a performed observation, which the loop cannot re-derive, does leave
+one question — on the lane's own issue, after the move back, addressed under the
+criterion whose grading lapsed, so a later iteration and a later run rewrite the
+same question rather than adding a second one. That question is judged against
+the tree it was raised at before the raising step returns, and it marks its
+issue for decision.
+
+What the tick's two criterion signals read of these take-backs has known limits,
+and each is behaviour rather than an oversight. The take-back moves the
+criterion first and posts its account last, for the reason given above; so a
+lost post, or the designed stop when a third party amends the sub-issue under
+the move, leaves the criterion in Todo with `issue_crossed_off` as the lane's
+last account of it, and that raises `TALLY_REGRESSED` for the lane's own
+take-back. The native amendment reset
+(`services/amendment_writeback.py`, wired into the scoped loop by
+`composition/engine.py`) and the audit reopen (`services/audit_reopen.py`) each
+move a crossed-off criterion back to Todo and post no account on the lane's
+stream, so each raises `TALLY_REGRESSED`: that is the literal reading of a
+criterion out of Done with no `criterion_refuted` event. A criterion moved by
+hand to Backlog or Triage raises nothing, because only a move back to the
+unstarted state is the regression. A criterion finished before
+`issue_crossed_off` existed has no account on any stream and is never observed.
+And a criterion record already raised is not rewritten when its criterion
+leaves the scope's criterion reading or is re-parented, because the record's
+address is composed from the criterion's parent and the tick only reads the
+criteria the scope still carries.
+
+Which criteria an iteration is asked about follows from the same reading. The
+loop remembers what its last evaluation graded as graph state, and at the next
+iteration asks, for each of those gradings, whether it still stands at the new
+head — reading the changed paths of the commit record between that grading's own
+sha and the new head, one read per distinct graded sha, and none at all for a
+cheap grading, which is owed again on any head move. A grading that still stands
+is withheld from the session and written nowhere; an expensive one that has
+stopped standing goes back to the session, because the loop can re-derive it; one
+resting on a performed observation is not re-derived at all, because the loop
+cannot perform the observation, and is taken back instead — and asked about,
+once. The class a grading declares is held by its criterion for the rest of the
+loop run: a later iteration that re-derives the criterion and declares another
+class — a row that states none declares `cheap` — raises `StickyClassError`
+before anything of that iteration is written, and the walk records the lane
+failed. A remediation round runs the loop again with nothing standing, so it
+holds no class from the round before, and no class is kept across fires, for the
+same reason the loop keeps none of its standing. What reaches the gate is still the whole roster: a withheld criterion
+carries the row its standing grading earns, with the harness's own reason in
+place of a verdict nobody asked for, so the denominator does not move between
+iterations and the gate cannot clear over an outstanding lapse. Nothing persists
+that memory — the scope arm runs with no checkpointer — so a killed run
+re-enters from the board with every criterion its roster owes to be graded
+again. The owning issue's finished state is the tracker's own rollup over its
+criterion sub-issues, which `SubtreeClosure` reads, so the scope walker sees a
+lane close with no further write. The audit's terminal precondition consults
+that one arithmetic over the direct criterion family the port returns, and
+nothing writes a parent's finished state.
+
+A native evaluation is graded in a workspace the loop owns, acquired at the sha
+the verdict will be stamped with. Before that workspace is released the loop
+reads whether it holds uncommitted changes and what its head is; a verdict from
+a workspace that held changes, or stood at another head, was read from a working
+copy rather than from the branch, so every result of the attempt is regraded as
+not passed with one fixed reason and each cross-off carries
+`CrossOffState.undemonstrated` beside the reading that failed instead of a pass
+or a fail. What reaches the tracker for such an attempt is one event per
+criterion, appended to the lane's run-event stream, naming that reading, keyed
+to the criterion's sub-issue and carrying the sha the verdict would have been
+stamped with. The sub-issue itself is untouched: there is no verdict to write on
+it, so its state does not move and its Evidence row is not stamped.
+
+A pass is worth what its check discriminates, so after the grading stands the
+same question is asked of a second tree. `MutationSurvivalReader` acquires
+another workspace at the graded sha, one session removes from it the behaviour
+the passing criteria name, and the evaluation prompt that produced those passes
+is put again, byte for byte, in that copy. A criterion that passed in both trees
+read nothing about the behaviour it names: its pass is withheld and it resolves
+undemonstrated with `check_survived_mutation`. What is read off the mutant tree
+is the two facts `read_workspace_head` answers — it must still stand at the
+graded sha and must hold changes — and the second grading's results. What is not
+read is anything the removing session says about its own work: it returns no
+structured output, and a removal that committed, moved the head or changed
+nothing leaves every pass standing. The failure mode is silence rather than a
+withholding, and a criterion the mutant grading fails or does not answer for is
+not a survivor, because a verdict read in a tree the sha does not name is no
+more the branch's than a pass read there is.
+
+A check whose assertion observes nothing about the subject under test — a
+double constructed and handed to none of the subjects — passes in the mutant
+tree for the same reason it passes in the clean one, so it survives every
+removal and reaches that same reading with that same value. No second reading
+is taken for it, and no detector of its own is built: one mechanism resolves
+both, and what tells the two readings apart on the record is
+`UndemonstratedReason`, never a fifth cross-off state. The gap one mechanism
+leaves is the case it cannot reach at all: a criterion whose named behaviour no
+removal session can take out of the tree leaves the copy unchanged, so no
+reading is taken there and the pass stands. Closing that needs a third reading,
+over what the production code holds rather than over what a removal changed
+(KOD-613), not a second mechanism here.
+
+A native evaluation whose grading did stand then runs each criterion it passed
+through that criterion's own check again, in a further tree the loop owns at the
+commit the recorded base resolves to. A check that already passes there passes
+without any of the work, so the head's pass is a reading of the base rather than
+of the branch, and that criterion carries `CrossOffState.undemonstrated` as well,
+with `satisfied_at_base`. A reading that cannot be taken at all — a base ref that
+names no commit, a tree that is refused or is not that commit, an answer nothing
+can be read from — claims no pass either, and the attempt continues with a row in
+the run's log naming the base ref and which criteria went unread. Such a
+criterion, and one the reading left out or answered twice, carries
+`base_reading_unsettled` rather than `satisfied_at_base`: nothing was read at the
+base for it, so the reading that came back empty is the base reading itself, not
+a check found passing there. A criterion the attempt failed, or already withheld
+by an earlier reading, is never read at the base: a fail is unproven already.
+The base reading qualifies the cross-off and not the verdict — the evaluator did
+read the changeset, so its verdict still reaches the wire. What reaches the
+tracker for such a criterion is the one run event its reason names, as for the
+other readings; its sub-issue is not moved to the `done` stage, and the owning
+issue's finished state is the rollup over its criterion sub-issues as it always
+was.
+
+A criterion this environment cannot demonstrate at all is a separate reading, and
+it is not a fact about the branch. A judged unverifiable finding whose claim names
+a typed capability the matched repository's configured `runner_environment`
+declares explicitly `false` — that configuration alone decides it; an omitted key
+is unknown and does not decide it, and no session observes a probe — upholds the
+existing criterion at `environment_lacks_capability`. The refusal is
+recorded where every refusal is, as the amendment marker comment on the
+criterion's own sub-issue, naming the capability, and it escalates once under the
+same refusal occurrence that keys that record, on that same sub-issue, which is
+then classified `decision`. A cost never reaches this reason: a departure resting
+on a cost claim with a base measurement on record returns
+`cost_measured_affordable` or `cost_measured_uneconomic`, one with no base
+measurement on record returns `ground_not_reproduced`, and none of them reaches
+`environment_lacks_capability`. The machine moves no state, so the subtree still
+reads and the lane goes on owing that criterion until a person revives it or
+cancels it with a supersession; and
+`CrossOffState.undemonstrated` above keeps its own workspace-hygiene meaning and
+is not used for this. Because the plan read refuses while any open issue in a
+member's subtree carries `decision`, the scope tick after such an escalation for
+an open criterion ends the run naming it, which is the barrier holding the walk
+until a person answers. Reviving it therefore takes both declaring the capability
+in the repository's runner environment and removing the `decision`
+classification from that sub-issue, then firing again.
+
+`lane_record_body` places one readable JSON value under the configured record
+marker, followed by fixed re-entry guidance. The record preserves three-state remote head facts,
+ordered `LaneCommit` rows — one row per commit act, not one per loop iteration:
+a head already recorded appends no second row, and a head that returns to an
+earlier sha is a new act with a row of its own (KOD-681) — `LanePR` and
+explicitly typed `BranchAssociation` roles, parents and run identities. Its loop
+branch must appear in the association set, and each run has at most one
+deliverable. Branch names do not supply roles. Those are the model's own
+invariants, and the composer is the boundary that types them:
+`next_lane_record` catches the model's `ValidationError` over the value it
+composes and raises `LaneRecordWriteError`, so a caller that writes a record
+never sees a validation error out of a layer it did not call, and a refused
+write leaves the prior record exactly as it was (KOD-703).
+The model follows the declared list fields: field assignment is frozen, but
+the lists are not deeply immutable. Consumers must not mutate retained evidence;
+each read returns freshly decoded values rather than a shared cached collection.
+Counts remain independently recorded observations, so the consistency signal
+can still detect disagreement with commit rows. The re-entry text directs a
+resume at the record's last commit act, never at a remote tip the record does
+not name: the existing loop branch is checked out where the remote holds it at
+that sha. Where it stands anywhere else, a lane that still owes criteria cuts a
+fresh loop branch from the record's last commit act beside the kept
+association, and a lane that owes nothing and carries no pull request is
+refused rather than delivered from a branch standing elsewhere. A branch the
+remote no longer holds is recovered rather than replaced. It treats absent or
+reaped remote refs explicitly. A divergence recovery's backup ref is recorded
+as a `RECOVERY` association derived from the loop branch, so a ref the
+persister pushed to recover is a recorded fact of the run. Associations stay
+recorded when consolidation deletes the loop branch and when cleanup reaps the
+backups after an accepted, consolidated fire: deleting a ref writes nothing to
+the record. `associated_branches` answers membership from the record alone, and
+whether a branch exists now is a separate remote read. Satisfaction and
+Evidence remain on the criterion issues.
+
+The reader recognizes this declared format; old free-form manual comments need
+an explicit migration. The fixed re-entry section is read as the current text
+or as one of the exact earlier texts kept in `PREVIOUS_REENTRY_SECTIONS`, each
+dated in the source, and any other text is refused. A writer renders only the
+current one, so the next write of a record read under an earlier text migrates
+that comment in place. A formatter and cold tracker read do not implement the
+committing node's collection/write operation, its first-push notification,
+first-class branch-association persistence, or a complete mid-loop kill test.
+Mandatory write leases and the recorded association-storage conflict remain
+separate prerequisites. The scope terminal reads each lane's branch and pull
+request through this reader; whether a lane is done is read from its criterion
+sub-issues, never from the record.
+
+Body revisions retain the exact same-read body and a nonempty digest. Shared
+conformance checks cover body changes, unchanged replays and metadata-only
+writes. An unreadable or invalid revision refuses at the actual read; no
+consumer substitutes an empty digest or treats it as live.
+
+The paragraphs from here to the organize table below describe the older
+cascade owner, `services/organize_owner.py`: its admission sessions, its gap
+arithmetic and its leased write-back. That owner stays in the tree and is
+constructible through `build_organize_owner`, and it is wired nowhere; the
+stages a scope run runs today are described after the organize table.
+
+Admission sessions return an `AdmissionJudgment`. The caller creates the
+`AdmissionResult` by attaching the body digest from the revision supplied to
+that session; the agent never supplies that metadata. A body changed while
+the session runs therefore leaves a result about the earlier body.
+`OrganizeAdmission.is_live` reads the surface's current revision and calls the
+pure two-digest comparison. It starts no session and never restamps a result.
+An issue body and each criterion body are graded and checked independently.
+Persistence, phase markers and issue readiness orchestration remain separate
+consumers of those results.
+
+The pure `organize_gap` function takes a complete scope revision snapshot,
+admissions keyed by each surface identity, open findings and the configured
+semantic body marker. It returns original issue records in snapshot order.
+Missing markers, absent or stale admissions, missing non-Canceled criterion
+children, or open findings put an issue in the work set. A stale criterion
+body puts its parent there through the same comparison, without lapsing the
+parent body judgment; execution-state changes alone do not. Record-shaped
+`tracker` and `decision` members and criterion children are never work targets.
+Incomplete parent identity or duplicate revision/admission records refuse
+computation. Collecting and persisting these snapshots and running leased
+author sessions remain orchestration work outside this pure function.
+
+The admission test asks gradability beside buildability. The assessing and
+verifying roles are given each declared repository's check chain and runner
+environment, with the named absence where a repository declares none, and a
+deliverable no declared environment can demonstrate is a repairable refusal
+whose repair is to move the demonstration. A criterion sub-issue is created
+only when its author names what will fill its Evidence (a runnable test, or
+the observation recorded where no test can run); one that names neither is
+refused before the child exists. The Evidence row itself is still created
+empty. That refusal asks only that a demonstration is named. Whether the
+named test runs through a declared check, or the named observation is one the
+declared runner environment can make, is the criteria author's judgement,
+under a prompt that carries the same declared environments, and the
+verifier's under the verify prompt.
+
+One organize table, `[[organize_mandates]]`, declares a `ticket` row and a
+`criteria` row, each with a gate label and a terminal marker. It still loads
+and is still validated: a declared table must hold both rows, a `groom` row is
+refused at load naming it, a row may gate on `scope_labels.approved` by that
+exact reference, and no row may mark with the approval label or reach it
+through an alias. The cascade owner above runs over it, and the tracker
+adapter reads the criteria row's marker when it reads a fire's subject
+(`criteria_stage_label_key` in `composition/tracker.py`). The scope run reads
+no row of it.
+
+A scope run's two stages are `ScopeStages` in `chains/scope_stages.py`: the
+`groom` and `prep` nodes of `RalphWorkflowEngine._build_scope_graph`. Each
+renders the `organize_session` prompt for one phase, ticket or criteria, and
+runs ONE session through the agent runner: session type `organize_pass`,
+unattended, no allowlist and no subagents, in the scheduled passes' working
+directory and never in a cloned repository. The session works the board with
+the tracker server its kind is given — the deployment's own server under the
+tracker key, or, with the host MCP opt-in on, the host's own — and what it
+writes there is the whole of what happens: kodezart takes no lease, writes no
+marker, keeps no record and runs no verifier. After its criteria session,
+`prep` asks the `scope_done` question and keeps each criterion sub-issue the
+board lists, with its Check, as the run's criteria; a board that lists none
+ends the run `criteria_infeasible`. There is no stage barrier and no marker
+roster: a run submitted again after a failure grooms and preps again from
+what the board holds.
+
+Measured 2026-09-24 (KOD-1239): the cascade owner cost about 5,900 tracker
+calls per settling round of the scratch scope and wrote its markers only at
+the end; one session with the tracker tools over the same scope took 8 tool
+calls and 45 seconds. That is why each stage is one session.
+
+The prompt says what the session is never to do: add or remove a scope label,
+move a workflow state, touch a member labelled `tracker`, touch a criterion
+sub-issue outside the criteria phase, or read a body's "Open question for the
+fire to rule on before it starts" as an open human choice — that question is
+the fire-time ruling's own. Escalation is the decision label and nothing else:
+the session adds it to the member, writes the question on it, and leaves the
+member as it is.
+
+Setting the approval label is what starts a scope run. On the dispatch
+cadence the `scope_heartbeat` pass asks the scope scan, one short agent session
+over the board, which approved nodes inside the declared teams are not finished,
+and submits a scope run for each one the record store holds no live job for and
+whose repository the operation declares, onto the queue `POST /fire` submits to.
+It makes no tracker write and remembers nothing between ticks: a finished node
+is left out of the scan, and the run's entry refuses a node that is not approved
+or already has a run going.
+
+Approval is read once per run, at its entry. `ScopeEntry.admit`
+(`services/scope_entry.py`) refuses a scope that already has a live job, and
+then one that is not approved, before anything else is read. Nothing after the
+entry reads approval again: withdrawing it during a run stops no session, the
+cron's next scan leaves the node out, and a new run's entry would refuse it.
+No act of a run comes before approval (KOD-788).
 
 ## Workflow Pipeline
 
-The outer workflow runs as a LangGraph StateGraph defined in
-`chains/ralph_workflow.py`:
+The delivery-free `RalphWorkflowEngine` in `chains/ralph_workflow.py` owns
+one compiled fire graph. `AuthoredDeliveryCoordinator` in
+`chains/authored_delivery.py` embeds that graph and owns the existing authored
+HTTP delivery operations. A CI remediation draft re-enters the same fire graph
+at criteria generation; it does not rebuild the ticket or create another set
+of fire nodes.
 
-Two nodes — `persist_ticket` and `persist_artifacts` — are added only when an
-ArtifactPersister is wired; the rest are always present.
+Composition constructs five concrete fire phases: `FireSpecification` authors
+and validates the input, `FireImplementation` persists artifacts and drives the
+loop, `FireConsolidation` owns branch consolidation and backup cleanup,
+`FireReview` judges the consolidated diff, and `FireRemediation` owns the shared
+round budget and drafted state transition. Each constructor takes only its
+phase's collaborators and bounds. `WorkflowState` and `ExecutionContext` still
+carry the run state; there is no second context or phase protocol.
+
+The fire graph owns checkpoint and retry mechanics once. The authored coordinator
+composes that graph with `AuthoredPublication` and `AuthoredChecks`, reusing its
+remediation phase and graph mechanics. It no longer inherits the fire's agent,
+Git, loop and persistence dependencies. Public run signatures, node names,
+checkpoint identities and terminal event shapes remain unchanged.
+
+Two fire nodes — `persist_ticket` and `persist_artifacts` — are present only on
+the authored arm, and there only when an ArtifactPersister is wired; the
+tracker-native arm writes nothing under the artifact directory, and no module
+reads it. Re-entry and satisfaction are read from the tracker.
 
 ```mermaid
 stateDiagram-v2
@@ -88,72 +912,50 @@ stateDiagram-v2
     generate_ticket --> generate_criteria : no artifact persister
     persist_ticket --> generate_criteria
     generate_criteria --> validate_criteria
-    validate_criteria --> generate_criteria : regeneration demanded, bound not spent
-    validate_criteria --> complete : bound spent, criteria still infeasible
-    validate_criteria --> persist_artifacts : criteria dispatchable, persister wired
-    validate_criteria --> run_ralph_loop : criteria dispatchable, no persister
+    validate_criteria --> generate_criteria : regeneration remains
+    validate_criteria --> complete : infeasible and bound spent
+    validate_criteria --> persist_artifacts : persister wired
+    validate_criteria --> run_ralph_loop : no persister
     persist_artifacts --> run_ralph_loop
     run_ralph_loop --> merge_to_feature
-    merge_to_feature --> review_against_ticket : merged
-    merge_to_feature --> remediate : a remediable failure, rounds left
-    merge_to_feature --> land_best_iteration : the loop never accepted
-    merge_to_feature --> complete : nothing to land
+    merge_to_feature --> review_against_ticket : consolidated
+    merge_to_feature --> remediate : loop failed and rounds remain
+    merge_to_feature --> land_best_iteration : loop exhausted
+    merge_to_feature --> complete : consolidation failed
     land_best_iteration --> complete
-    review_against_ticket --> open_pr : review passed
-    review_against_ticket --> monitor_ci : a pull request is already open
-    review_against_ticket --> remediate : review failed, rounds left
-    review_against_ticket --> comment_failure : review failed, rounds spent
-    review_against_ticket --> complete : no forge configured
+    review_against_ticket --> remediate : review failed and rounds remain
+    review_against_ticket --> complete : reviewed or budget exhausted
     remediate --> generate_criteria
-    open_pr --> monitor_ci
-    open_pr --> complete : CI monitoring disabled
-    monitor_ci --> complete : CI passed
-    monitor_ci --> remediate : CI failed, rounds left
-    monitor_ci --> comment_failure : CI failed, rounds spent
-    comment_failure --> complete
     complete --> [*]
 ```
 
-1. **resolve_visibility** - Resolves the target repository's PRIVATE / PUBLIC /
-   UNKNOWN posture once, which is what the outbound gate is engaged under for
-   the rest of the run
-2. **generate_branch** - Asks the agent to generate a descriptive branch name
-   slug, then creates a feature branch (`kodezart/{slug}-{hex}`) and a ralph
-   working branch (`{feature}-ralph-{hex}`)
-3. **generate_ticket** - Delegates to the TicketGenerator to draft an
-   implementation ticket from the raw user prompt
-4. **persist_ticket** - Writes the ticket under `.kodezart/` in the worktree
-   (only when an ArtifactPersister is wired)
-5. **generate_criteria** - Asks the agent to analyze the codebase and derive
-   testable acceptance criteria from the ticket
-6. **validate_criteria** - Dispatches the drafted criteria to an adversarial
-   refuter, which returns a three-state verdict per criterion plus any jointly
-   unsatisfiable subsets. `infeasible` criteria and the members of a
-   contradiction are routed back to **generate_criteria** for amendment, up to
-   `KODEZART_CRITERIA_MAX_REGENERATION_ROUNDS`; a set that still demands
-   regeneration once the bound is spent halts the run before the loop
-7. **persist_artifacts** - Writes the validated criteria beside the ticket
-   (only when an ArtifactPersister is wired)
-8. **run_ralph_loop** - Delegates to the QualityGate for iterative
-   execute/evaluate until criteria pass or max iterations
-9. **merge_to_feature** - Consolidates the ralph branch into the feature branch
-   and pushes; the consolidation status is what routes the rest of the run
-10. **land_best_iteration** - The stall exit: a run whose loop never accepted
-    still publishes its best iteration and opens a do-not-merge pull request
-    over it, so a human reads what was reached. Its `workflow_pr` event carries
-    `delivered: false`, and no work ref is recorded for it
-11. **review_against_ticket** - Reviews the merged work against the ticket's own
-    criteria, after the merge rather than inside the loop
-12. **remediate** - One remediation round: the failure evidence in, one targeted
-    ticket out, bounded by `KODEZART_REMEDIATION_MAX_ROUNDS`
-13. **open_pr** - Opens the delivery pull request. Its `workflow_pr` event
-    carries `delivered: true`, and the tracker write-back records that branch
-    and its pushed tip as the issue's deliverable work ref
-14. **monitor_ci** - Polls check runs for the pushed head
-15. **comment_failure** - Posts the failure the run ends on where a reader will
-    find it
-16. **complete** - The single terminal node: every path ends here, carrying the
-    run's outcome
+The initial authored run resolves visibility, generates its branch and ticket,
+then derives and validates criteria. The loop implements those criteria;
+consolidation records the selected branch and exact SHA before review. An
+unaccepted run publishes and selects its best iteration when a ref publisher
+is configured. It creates no PR. The shared remediation draft uses the same
+cumulative round budget and returns through criteria validation.
+
+`WorkflowState` and `WorkflowCompleteEvent` contain only fire facts. A clean
+fire ends `handed_off_for_delivery`; a review-budget failure retains its own
+outcome. Neither terminal contains PR or check fields, and artifact cleaning
+is not a fire operation.
+
+The authored outer coordinator performs its existing PR-description session,
+gates and creates the PR, watches checks when configured, and drafts CI
+remediation when budget remains. Its failure comment is an outer operation.
+It filters the internal fire terminal and emits one
+`AuthoredWorkflowCompleteEvent`, preserving the existing `workflow_complete`
+HTTP discriminator, PR/check fields and outcomes. An authored request without
+a tracker issue remains valid and gets no invented issue footer. Artifact
+cleaning runs here before PR creation. Backup cleanup runs after the final
+outer terminal; an intermediate fire handoff does not remove backups during
+CI remediation. With no forge, the same outer coordinator retains the
+existing no-adapter outcome.
+
+This extraction does not wire the tracker-native scope walker or replace its
+criterion trajectory producer. The lane-addressed `DeliveryCoordinator`
+retains its separate strict FIRE identity and dispatch contract.
 
 ## Ticket Generation Loop
 
@@ -210,6 +1012,17 @@ stateDiagram-v2
 On iterations 2+, `iteration_feedback.augment_prompt()` appends failed criteria
 and their reasoning to the execution prompt, giving the agent targeted feedback.
 
+The engineering standard — SOLID, DRY, hexagonal, and KISS as the way to get
+there, each with this repository's reading — is stated once, in the
+`house_rules` fragment of the `anthropic_v5` prompt set, and reaches every
+session of every prompt key as the system-prompt append rather than inside any
+template body. The evaluation and the post-merge review are composed with the
+set's `design_review` fragment, which has the session try to refute each
+changed file's compliance with that standard: a violation named with file:line
+and the principle breached fails every criterion whose evidence rests on that
+file, and a violation in a file no criterion rests on is raised as a flag in
+the session's own name, which the accept gate carries to the pull request.
+
 The default maximum is 5 iterations (configurable via
 `KODEZART_MAX_ITERATIONS`).
 
@@ -239,7 +1052,7 @@ prevent accumulation.
 
 ```mermaid
 graph LR
-    SDK["Claude SDK Messages"] --> Map["map_message()<br/>_sdk_mapping.py"]
+    SDK["Claude SDK Messages"] --> Map["map_message()<br/>sdk_mapping.py"]
     Map --> Domain["Domain AgentEvent"]
     Domain --> SSE["format_sse()<br/>utils/sse.py"]
     SSE --> HTTP["HTTP text/event-stream"]
@@ -296,7 +1109,13 @@ construction sets `strict_mcp_config=True`**, whether or not it also
 configures `mcp_servers` — the guard answers the working directory, so a
 session that describes no server of its own needs it exactly as much as one
 that does. One mapping helper builds both keywords together rather than
-passing them separately at each construction site.
+passing them separately at each construction site. The one shape the
+invariant accepts beside the literal is the negation of the operator's
+`dangerously_allow_host_mcp` opt-in (`KODEZART_AGENT__DANGEROUSLY_ALLOW_HOST_MCP`,
+`AgentSettings`), threaded from the composition root through the executor
+into that helper: with it on, every session runs unguarded and also loads the
+servers the host's own user-level Claude configuration declares, and boot
+logs `host_mcp_allowed_dangerously` as a warning.
 `tests/adapters/test_mcp_strictness.py` enforces it over every
 `ClaudeAgentOptions` construction in `src/kodezart/`, merging the explicit
 keywords with every `**`-unpacked option source — one merged set per branch
@@ -307,8 +1126,28 @@ cannot quietly escape it.
 
 ### Permission Modes
 
-- `plan` - Read-only tools, agent cannot modify files
-- `bypassPermissions` - Full tool access including `Edit` and `Write`
+Application ports and execution contexts carry `PermissionMode` from the domain
+session vocabulary: `INTERACTIVE`, `ACCEPT_EDITS`, `PLAN`, or `UNATTENDED`.
+The Claude adapters translate these to `default`, `acceptEdits`, `plan`, and
+`bypassPermissions` respectively. Tool selection remains an independent input.
+
+HTTP retains its existing `plan` and `bypassPermissions` values and defaults
+(query: `plan`; workflow/fire: `bypassPermissions`). The handler translates them
+before invoking the application. HTTP responses do not expose the internal
+permission value. Checkpoint configuration round-trips the domain enum; there
+is no supported cross-version workflow-resume API.
+
+Application callers select one of four existing `ToolPreset` bundles:
+evaluation, delegated evaluation, authoring, or implementation. The SDK option
+mapper expands these to the native ordered tool names. `AllowedTools` also
+accepts an explicit string list, passed through without parsing, reordering,
+or restricting future, scoped, or MCP selectors. Named subagents retain their
+explicit selector lists.
+
+HTTP continues to accept only explicit lists with its existing defaults and
+schemas. A preset is one whole value in internal submission/context models;
+an explicit list containing the same word stays a list after JSON or checkpoint
+serialization. Permission mode and knowledge-server grants remain independent.
 
 ### Structured Output
 
@@ -327,3 +1166,1225 @@ config.
 > replacement for the configurable dict pattern. The codebase pins
 > `langgraph>=0.2.0` and does not use `config_schema`. This pattern may need
 > migration in future LangGraph versions.
+
+## Run-shape observations
+
+`RunAlarm` is a frozen observation value with exactly one subject, one signal,
+ordered nonempty readings, an optional threshold bound, and the raising
+commit and holder. It has no diagnosis, remediation, severity or message
+field. Readings retain source references and verbatim values, including
+empty values; commit references remain opaque.
+
+The subject model validates scope, lane, issue, criterion, surface and
+escalation addresses. A criterion member is its own tracker sub-issue key,
+carried without parsing parent text. A surface member uses
+`surface_alarm_member_id(WritableSurface(...))`: canonical JSON preserves
+the complete address inside the declared string member field, so equivalent
+addresses cannot create different alarm identities through formatting.
+The alarm vocabulary and payload validation are available independently of
+signal computation and of the writers that publish it; constructing a model
+enables neither.
+
+`domain.run_alarm_table.ALARM_TABLE` is keyed by the signal vocabulary and
+gives each member its one pure fold and the `PassSignal` scans its readings are
+collected through: `issues_changed` for the signals that read rosters,
+criterion states, stage markers or the issue graph, and none for those that
+read only comments and records. `require_alarm_table` is the first statement of
+`composition/passes.py::verify_pass_preflight`, so a member with no fold aborts
+startup with `AlarmTableError` naming every such member before anything is
+built. When the deployment schedules the supervisor tick — a dialled tracker
+and a declared roster, the predicate that registers it — `_verify_wired_gates`
+adds one entry per alarm the tick observes, `supervisor/<alarm>`, carrying that
+alarm's declared scans, and the landed probe refuses with
+`PassGateCapabilityError` naming each refused scan with every alarm that
+declares it. A deployment that does not schedule the tick probes nothing on its
+behalf. Nothing at runtime asks whether a signal has a fold or a capability, no
+configuration field can name a signal, and nothing catches either refusal;
+`tests/test_capability_checked_at_boot.py` holds all three for the spellings it
+scans. Whether a stored record is an alarm is answered by `alarm_raised`, which
+replays the record through its own row's fold for every signal alike, and a
+missing fold is never answered as a quiet signal: with a record's row taken out
+of the table, `alarm_raised` raises `KeyError`, which
+`tests/domain/test_run_alarm_table.py` holds whatever an arm's spelling. No
+knob, whatever its name or type, narrows what the supervisor observes: every
+function that reads `OBSERVED_ALARMS`, the supervisor arm of
+`_verify_wired_gates` and the lane observation's `_announceable` among them,
+reads no `AppConfig` or `OperationConfig` field inside the statements that
+read that set other than a `run_alarm_*` numeric bound. That scan is keyed on
+the consumer and resolved by object; a value handed across a function
+boundary, a name built at run time and a binding made only when a function
+runs are outside its reach.
+
+### Supervisor pass
+
+`services.supervisor_pass.SupervisorPass` is one scheduled tick over the
+scopes `OperationConfig.organize_scopes` declares, of which the tick reads
+each row's scope and nothing else, registered on the
+existing scheduler by `composition/supervisor.py::build_supervisor_pass` with
+its interval and timeout from application configuration, no report, and no
+sleep, timer or clock of its own. `composition/passes.py` registers it only
+when a tracker is dialled and the roster is non-empty; either one absent
+registers nothing and logs `supervisor_pass_not_wired` naming which. The pass
+holds no port at all: the scope read is injected as a callable and the
+observation is the observers', so it can reach no repository, session, queue
+or forge.
+
+Per scope it observes every member of the ready reading at the standing that
+reading gives it (`domain.lane_alarms.LaneStanding`): every ready lane with that
+lane's own roster and gap, every finished member with neither — a raise standing
+on a lane that has since finished is cleared rather than left — and every
+blocked or unapproved member as waiting. A waiting lane's tally is not composed:
+it is never fired, so there is no clock to measure, and the accepted consequence
+is that a lane raised and then blocked by hand stays raised until it is ready
+again. Its stream is still read, because a lapsed criterion keeps its lane's gap
+open, so a lane holding a lapse nothing will re-derive is exactly a lane that is
+not ready.
+
+The tick reads each scope through `chains.scope_walker.read_scope_ready` with
+`stage_barriers=False`: the scope, each consulted descendant tree and the final
+re-read take membership and dependencies through
+`services.scope_planning.read_scope_facts` rather than `read_scope_plan`, and
+the rest of the arithmetic is the walker's. A scope whose walk is held on an
+open decision is therefore still observed rather than failed; the walker's own
+read keeps the barriers and still refuses it. A member its own lapse question
+classified for decision, and which has criterion children, is carried in
+`ScopeReadySet.held` with every criterion of its subtree. The closure is handed
+these keys and reads them as lanes, not record issues: a lane a held lane blocks
+is blocked while the held lane owes criteria, and a parent member's gap includes
+the held lane's open criteria. A decision issue with no criterion children stays
+a record issue. A held lane is observed as waiting, so its tally is not composed
+and its stream is still read, and its questions are aged: a held lane is waiting
+on a person, and the ageing alarm is the alarm for that. A tally raise standing
+on it stays as it stood until the lane is ready again.
+
+One lane's failure is that lane's. Each scope read and each lane observation
+is contained, logged as `supervisor_scope_failed` or `supervisor_lane_failed`,
+and the tick then raises `SupervisorIncompleteError` naming what it could not
+reach, so the scheduler reports it failed with whatever it did write already
+on the tracker. Cancellation and the scheduler's own timeout are not a lane's
+failure and pass straight through.
+
+What the tick is observable by: an alarm is a record on the lane's own issue
+whose readings replay to an alarm. At `(LaneSubject(scope, lane),
+TALLY_UNMOVED)` it is announced by exactly one `run_alarm_raised` event on that
+lane's stream. A record whose readings replay to nothing is a tally reading
+kept so the next tick has an anchor, and it is written only when a lane moved
+while it still owed work — which is the only write a run that never stalls
+makes. There is no scope-keyed event: a scope's stall is observed from the
+roster and the stage markers on every tick and logged, and no run event and no
+record is keyed to a scope.
+
+The criteria a lane graded are observed at their own addresses on that lane's
+issue, `(CriterionSubject(scope, parent, criterion, lane), signal)`, and which
+lane a criterion belongs to is read off a fact rather than recomputed: it is the
+lane whose stream carries an account of it — `issue_crossed_off`,
+`criterion_refuted` or `criterion_lapsed` keyed to it — which is by construction
+a lane in whose subtree it sits. Its current state comes from the scope's own
+criterion reading. `domain.stream_signals.tally_regressed` raises when the
+lane's last account of a criterion is that it crossed it off and the criterion
+now stands unstarted: something moved it back and nobody reported it. A
+refutation is the lane reporting that move, and a lapse is not a regression, so
+neither raises. `domain.stream_signals.lapse_undischarged` raises when the last
+account is a lapse, the criterion is still owed, and the lane is not ready on
+this tick. Nothing on the scope path takes a claim, so "nothing will re-derive
+it" is read through a proxy, and the proxy is exactly "not ready on this tick".
+What the proxy cannot tell follows from that. No walk re-derives lanes one by
+one any more: a scope run works its whole parent in one loop. So every ready
+lane counts as re-derived, whether or not a scope run is going.
+
+Two further limits of the criterion reading are stated rather than built.
+Nested member lanes: a member whose parent is also a member reads its account
+from the lane whose stream announced it, and a criterion under two member lanes
+is observed through the announcing lane only — each lane reads its own stream
+and never the other's. So when both lanes graded a criterion, each is read by
+its own last word: the outer lane's `issue_crossed_off`, with the criterion back
+in Todo after the inner lane took it back as a lapse, raises `TALLY_REGRESSED`
+on the outer lane. Presence is read per scope: a lane blocked in one scope and
+ready in another is observed as each scope reads it, so the scope that reads it
+blocked can raise `LAPSE_UNDISCHARGED` at its own address while the other
+scope reads it ready and raises nothing.
+
+Both criterion signals raise with no bound. A criterion record is written only
+when what the address says differs from what the tick observed, where absence
+says not raised, so a healthy lane writes none; and it is never announced on
+the stream, whose transitions are the lane's.
+
+`domain.stream_signals.composition_substituted` reads the lane's stream alone:
+its `node_session_started` events, grouped by the invocation each is keyed to,
+raise at `(LaneSubject(scope, lane), COMPOSITION_SUBSTITUTED)` when any
+invocation opened more distinct sessions than it declared. Both counts come off
+the one reading, so the record replays and no bound is configured. It is
+composed at every standing, because the openings are facts of runs already
+over, and announced like the tally; it never clears, because a posted opening
+is never taken back.
+
+`services.alarm_supervisor.AlarmSupervisor` is the writer the tick observes
+through.
+Per lane it reads the run-state record, every alarm record on that lane's issue
+in one listing (`read_run_alarms`), and the lane's stream once, and
+`domain.lane_alarms.lane_alarm_records` composes what each address should
+hold. A lane with no run-state record is passed over before anything else is
+read. Each record is rewritten in place — a clear is an edit showing the
+condition ending, never a delete — under one lease over exactly the marker
+surfaces written that tick, which `domain.run_alarm_record.run_alarm_surface`
+is the single expression for. The lease is taken only around a write, because a
+lease is itself a comment on the carrier and a tick with nothing to say writes
+nothing. The records are written before their events: a record whose event was
+lost is repaired by the next tick, while an event without its record announces
+nothing. What the stream owes is read from the stream, so a condition firing
+across many ticks is announced once. The holder that takes
+the lease and the holder recorded on the alarm are the same string. That
+string is the pass's own identity, the operation name with the tick name on it
+(`services/supervisor_pass.py::supervisor_holder`); it is not composed from
+`dispatch_holder`, which names the process that holds fire claims.
+
+Each scope's stage barrier is observed first in that scope's iteration of the
+tick: `composition/supervisor.py::build_supervisor_pass` builds, beside the lane
+observer, a callable the tick is handed the way `read_ready` is, which binds the
+port to `services.scope_tally.observe_scope_barrier` and holds no loop of its
+own. That function is typed on `ScopeTallyReader` alone, the roster behind its
+classification preflight, and calls
+`services.scope_tally.observe_scope_tally` once for each rung of the governed
+sequence that has a successor, returning every open rung's alarm in that order,
+so two barriers open at once are two alarms. Each raise is
+logged as `supervisor_scope_alarm_raised` at warning with the scope, the
+signal it raised under (`tally_unmoved`, the member the scope arm widens) and
+the rung's marker address; a failure is logged as `supervisor_scope_arm_failed`,
+names the scope in `SupervisorIncompleteError`, and leaves the scope's lanes
+still observed. The argument is required, so there is no tick without it.
+
+`services.escalation_ageing_supervisor.EscalationAgeingSupervisor` is the
+tick's other lane observer (KOD-892). Once per scope it reads every member's
+run-state record the ready read names — ready, blocked, unapproved, closed and
+held — as the scope's position; a damaged record leaves that scope's questions
+unobserved for the tick, logged as `supervisor_escalations_unobserved`, while
+its lanes' alarms are still observed. Per ready lane and per held lane it asks,
+for each criterion of the lane's roster, whether the lapse question a lapsed
+observation raises (KOD-699) is on the lane's issue, through
+`EscalationRecordReader.find`. For each one there it reads the question's
+record at `(EscalationSubject, ESCALATION_AGEING)`, feeds the recorded
+question, the lane's commits and the tick-age count from the stored anchor to
+`services.escalation_signals.observe_recorded_escalation_ageing`, and writes
+through its leased recorder, `services.run_alarm_recorder.RunAlarmRecorder`,
+only when whether the question is raised changes. Its transition events are
+keyed per question, `escalation_ageing:<occurrence>`, so two questions on one
+lane are two streams; a lane-subject record's key stays its signal. Both keys
+are composed by `domain.run_alarm_record.alarm_event_due`, the one transition
+rule the lane observer's `domain.lane_alarms.alarm_event_due` also asks. Only
+lapse questions are aged.
+
+`services.scope_tally.observe_scope_tally` reads current native membership and
+strict issue classification twice before computing `tally_unmoved`. Its roster
+uses the same ORGANIZE work-target predicate as the gap: criterion and
+record-shaped issues are excluded without pruning deliverable descendants.
+The governed GROOM → TICKET → CRITERIA sequence selects adjacent configured
+terminal markers independently of table order. A member carrying the next
+marker while fewer than all members carry the current marker returns a scope
+alarm. Missing phase labels count as open; unreadable or changed membership
+and classification refuse. Required semantic mappings must be present, and
+aliased phase or classification markers refuse instead of changing the roster.
+
+The signal retains the exact configuration references, native scope address,
+roster keys and member label projections as readings, so replay needs no port.
+A missing member reading or null/empty marker set counts as open in the pure
+predicate. The final execution transition still requires a native member
+lane-dispatched event reader and explicitly refuses before querying, so the
+tick never asks for that rung.
+
+`tally_unmoved` has a second arm, chosen by the subject's kind and sharing the
+signal: under a `LaneSubject` it reads one lane's tally twice. A `LaneTally` is
+that reading — the criterion sub-issue keys the lane's subtree still owes,
+sorted, and the commit shas its run-state record carries, in recorded order.
+The arm takes four readings: the earlier tally, the current one, the earlier
+reading's identities that have since closed, and
+`run_alarm_max_commits_without_closure`. It returns an alarm when the lane owes
+work, closed none of what it owed, and recorded more commits since the earlier
+reading than the bound allows. The clock is therefore the lane's own record: a
+lane nobody fires records nothing and is quiet by arithmetic. Work counts
+identities and never lengths, the same position `domain/fire_plateau` states
+for the walk's own plateau, and closure is the walk's own arithmetic rather
+than a second one. A subject with neither arm refuses. `domain/tally_record`
+composes those readings from the tracker and decides what the one record at
+the address should hold next; whether a record is an alarm is answered by
+replaying its readings, never by whether it carries a bound, because the scope
+arm raises with none.
+
+`domain.run_shape.escalation_ageing` measures an unresolved escalation in
+recorded lane commits after its raise SHA and recorded walker ticks since
+raise. A walker tick leaves no tracker fact of its own (KOD-788); what it
+leaves is the commits the fired lane records, so a tick is counted by the
+commits every lane of the escalation's scope has recorded since the question
+was first observed. Either count exceeding its own AppConfig limit returns the observation;
+when both exceed, the commit bound has deterministic precedence. Equal counts
+remain clean. The function retains six readings in order: the escalation JSON,
+its resolution JSON, the ordered commit SHA projection, the tick-age count,
+the configured commit limit and the configured tick limit. Each value keeps
+its source reference and original bytes. Replaying those readings with the
+alarm's subject and raising provenance reconstructs the same alarm.
+
+`services.run_shape.read_escalation_ageing` consumes already-read tracker
+projections and reads the current addressed decision through
+`EscalationResolutionReader`. It has no writer or repository dependency. Missing escalation reads, malformed
+counts, and absent or duplicate raise positions refuse observation; they do
+not manufacture an unanswered question or a clean result. The configured
+limits are nonnegative counts, defaulting to five commits and ten ticks.
+`services.escalation_signals.observe_recorded_escalation_ageing` supplies the
+escalation and commit readings from their actual configured native records.
+The escalation reader consumes the existing writer's seven-field JSON, with
+strict occurrence identity and no interpretation of legacy prose. The lane
+record's ordered commits must completely reach its declared head and agree
+with its count. Both native records and the exact decision resolution used
+by the shared observer are checked again; a changed source refuses the
+observation, including a newly answered or withdrawn decision. All returned readings preserve
+their source comment identities, and neither collector writes or reads Git.
+The tick-age input is anchored once, on the question's own record: the first
+observation stores the scope's lane heads as the first reading of its
+`ESCALATION_AGEING` record at the existing `(subject, signal)` address, and
+every later tick counts the commits recorded after those heads
+(`domain.escalation_age_record`). A tick over unchanged tracker state counts
+the same commits and writes nothing, nothing reads a clock or counts the
+pass's own ticks, and a killed tick re-enters from the stored anchor alone. A
+question already answered when it is first observed is never anchored. The
+supervisor tick ages each lane's open lapse questions and writes their records
+under the same holder as its lane observer; other escalation occurrences are
+not aged. Leased alarm persistence exists, and only the supervisor tick's own
+observations write through it.
+
+`barren_tick_with_diff_growth` compares recorded files-changed and
+commits-ahead against their own configured bounds when a tick closes no
+previously-open reference. Its six readings carry the prior open identities,
+current closed identities, both lane-base growth counts and both limits.
+Only an identity present in both reference sets establishes progress;
+newly-added closed work and disappeared old work do not. Files take
+deterministic precedence if both limits are exceeded. The default bounds
+are ten files and five commits; both are configurable nonnegative counts.
+
+The read-only `observe_barren_tick` service uses `read_criteria` and the shared
+criterion gap arithmetic to obtain current closure. Done closes a criterion;
+cancellation or duplication is excluded on state alone. It retains the returned
+closure projection
+for replay and makes no tracker writes or version-control calls. Its shared
+`read_barren_tick` assembly also retains the exact criterion snapshot used
+for that observation. `observe_recorded_barren_tick` supplies both growth
+counters from an actual `LaneRecordReader` read, carrying the native comment
+identity and that record's head on each projection. It checks the addressed
+comment and complete criterion snapshot again before returning; source drift
+refuses both an alarm and a quiet result. It reads the declared counters
+without inferring them from commit rows or checking their agreement, which
+belongs to the separate record-consistency signal.
+
+The previous tick's open identities still require explicit supplied
+provenance. Their collectors remain separate
+work and no tick reaches them; leased alarm persistence exists, and only the
+supervisor tick's own observation and its escalation ageing arm write through it. These bounded record reads do not provide
+an atomic tracker transaction or an execution event stream.
+
+`surface_contended` counts distinct opaque run-holder identities for one
+complete `WritableSurface` address. Three readings carry that address, its
+ordered holder history and the configured limit (one holder by default).
+The address must match the alarm subject, and address/history references
+must name the same provenance source. Repeated writes by one holder count
+once; different runs writing the same address remain in its whole history.
+Different issue/marker/surface addresses are evaluated independently.
+
+`observe_surface_contention` only supplies the AppConfig limit to explicit
+provenance inputs. It does not provide a tracker provenance reader: ordered
+successful-write history carrying run identities across all six surface
+kinds still depends on the universal holder-aware writer foundation. Vendor
+account authors and change timestamps cannot supply those run identities.
+The pure count and replay tests do not establish that producer or its port
+conformance, and the leased alarm writer that exists observes the lane tally
+arm only.
+
+`write_back_missing` compares one event's explicitly declared
+`WritableSurface` with a successful keyed-record presence reading. The
+presence source must be that complete canonical address, including its
+marker. Only a strict boolean is accepted; an unreadable or omitted lookup
+cannot become absence. The resulting surface alarm retains both raw
+readings and has no threshold bound. Event-to-target projection and complete
+record collection belong to their producers and are not supplied by this
+predicate; it adds no competing event vocabulary or inferred target mapping.
+
+The existing `WorkRef` carries the observer's `landing` fact as `landed`,
+`not_landed` or `unknown`, alongside its branch and pushed head. The native
+work-ref marker serializes that field; older markers without it read as
+unknown, and malformed values refuse. Observers amend the existing record
+when they record a landing. The append-only `record_work_ref` operation
+retains its one-deliverable rule and never silently replaces that record.
+No landing fact is inferred from a merge strategy, Git ancestry or forge
+state, and no second landing carrier is introduced on the lane run record.
+The base resolver discards explicitly landed inputs before looking up their
+remote branch. An all-landed input set therefore uses the configured trunk;
+a mixed set retains only the other recorded inputs. Unknown and not-landed
+inputs keep the existing resolution path, including a typed refusal when
+their branch is missing. Multiple deliverable records refuse as ambiguous
+before choosing a base.
+
+On the scope path those deliverable refs do not come from refs recorded against
+the blocker's issue. `WorkRefReader` is the one read role base resolution makes
+them through, and the scoped composition serves it from the blocker's own lane
+run-state record: one ref per record, at the DELIVERABLE branch the record's
+associations name, and no landing, so it reads unknown and keeps the existing
+resolution path (KOD-776, KOD-842). The per-issue pass hands the tracker itself
+as that reader, stated at its composition rather than defaulted (KOD-834).
+
+The assumed-landed arm — a closed blocker carrying no deliverable ref anywhere
+on its ancestor chain contributes no input, because its work reached the trunk
+outside this operation's delivery loop — is reached only after one
+`open_delivery_exists` read about that blocker answered that no open delivery
+holds its work. The walker makes that read, once per named blocker per turn and
+before the base is resolved: an open delivery refuses the lane with the
+resolution error the base would otherwise have been wrong about, no open
+delivery states the assumption in the log under `base_input_no_open_delivery`,
+and a forge that cannot answer raises its own typed error, which is neither
+answer (KOD-721, KOD-777). The resolver names the blockers and holds no forge
+collaborator that could settle them.
+
+At the walk's one clean exit the scope terminal reports. It reads the tick's
+own ready set for which members owe nothing, and each lane's run-state record
+for the branch and pull request that lane carries; it remembers nothing of the
+invocation, so a killed run re-enters and reports the same way. Before the
+event is built and before anything is written, the vector is asserted to cover
+every lane of that reading, compared by key; a vector that does not is an alarm
+rather than an ending, so the invocation ends there with nothing posted instead
+of a short report being published as a complete one. Its one write
+is the container's status update, through `ScopeStatusWriter` and no port
+member, gated exactly under its own destination as DERIVED content, carrying
+its lane roster to the gate as a typed value beside the rendered body — a gate
+that altered the report refuses the write rather than publishing a different
+claim. The status update is a point-in-time surface, so the roster is
+admitted; the same value on a durable surface is refused by the durability
+rule before any write. Before it posts, it reads the container's recent status
+updates through `ScopeStatusReader` and posts only when its report differs from
+the latest report of this operation already there; a read that refuses
+propagates before any write, and a person's note on the same surface is passed
+over rather than compared. Nothing is leased, claimed or marked in progress for
+it, and no writable-surface address is taken: no container-description
+destination exists, and exactly-one follows from the terminal running once and
+comparing before it posts (KOD-788). That write sits outside the write-back verifier,
+declared a derived write beside its writer, which the adoption census and the
+boot gate both read,
+rather than a new read-back arm, because the walk it
+reports on has ended and there is no judged commit to verify it against
+(KOD-806). A milestone or issue scope has no status surface at the backend, so
+it ends with the terminal event alone and `scope_status_surface_absent` in the
+log; no containing project is written in its place.
+
+`commits_ahead_of_record` compares four projections from one lane record:
+lane key, declared head, commits-ahead count and ordered `LaneCommit` rows.
+Each frozen row carries exactly `sha`, `subject` and `issue_id`. Either
+direction of count disagreement raises the lane alarm, with no configured
+bound. Subject/source mismatches, inconsistent SHA stamps and ambiguous
+commit identities refuse observation. Commit subjects and issue mentions
+never affect the count. A wholly stale record whose terms agree remains
+invisible: the declared head is retained for replay and is never resolved
+against a repository. Both predicates remain pure.
+
+`services.lane_record_signals.observe_commits_ahead_of_record` supplies the
+commit-consistency inputs through the addressed `LaneRecordReader`. One
+successful tracker read provides the lane key, recorded head, declared count
+and enumerated rows; all four projections retain that native comment identity
+and its recorded head. A supplied record reference must match, and missing,
+malformed, duplicated or unreadable records retain the reader's refusal.
+The service performs no repository read or tracker write and does not turn
+an unreadable record into an empty lane. The signal's whole-record-staleness
+limit remains unchanged. Event-to-target collection for skipped writes remains separate work, and
+nothing observes this signal: the leased writer that exists observes the lane
+tally arm, the signals read off a lane's stream and the escalation ageing arm
+only.
+
+`record_superseded` compares explicit assertions about the same field in the
+same lane. Its three raw readings contain the record's `LaneFieldValue`, an
+event's `LaneFieldValue`, and the lane record's ordered commit SHA projection.
+The frozen field projection carries only `lane_key`, `field_key` and an
+opaque string `value`; each assertion's SHA remains on its `AlarmReading`.
+History must name the same record source, and both asserted SHAs must occur
+exactly once. Missing or ambiguous history refuses even when values agree.
+
+A differing decoded value raises `RECORD_SUPERSEDED` only when the event's
+SHA stands strictly after the record's SHA in that series. Earlier or equal
+positions cannot supersede it, and equal values stay clean. No timestamp,
+SHA spelling, event-body interpretation or repository read establishes the
+order. The alarm retains all original readings and has no threshold bound.
+The field projection is an observation input, not a new run-event vocabulary;
+the event/record readers must supply those assertions and the commit order.
+Their collectors remain separate work, and nothing observes this signal: the
+leased writer that exists observes the lane tally arm, the signals
+read off a lane's stream and the escalation ageing arm only.
+
+`rulings_outpace_closures` counts distinct machine-authored ruling identities
+added since the recorded last-closure snapshot. Its five readings preserve
+the baseline/current ruling projections, prior open/current closed references
+and the actual `run_alarm_max_rulings_without_closure` bound (default five,
+configurable and nonnegative). Only the intersection of the two obligation
+sets establishes a closure. Repeated identities, amended answers and principal
+rulings cannot inflate the count. Required authorship comes from the ruling
+artifact, using the owner's `RulingId` and `RulingAuthor` vocabulary; transport
+authors and timestamps cannot supply it. The read-only service obtains current
+criterion closure through the shared gap arithmetic for every declared lane
+issue. `read_lane_rulings` now obtains those projections from full native
+ruling comments for every explicitly supplied lane member. The configured
+`ruling` occurrence marker is separate from escalation decision replies;
+`RulingRecordReader` checks exact question identity, native ownership and
+required authorship before projecting it. `observe_recorded_ruling_growth`
+combines that current read with live closure and the caller's retained
+baseline. Amendments keep their deterministic question identity and cannot
+reset the baseline. A reworded question is a different identity, so it is a new
+record that names the identity it replaces; the earlier record stays on its
+surface, unedited. The native arm's `rule_open_questions` step now writes
+each pinned answer as a verified, leased marker comment on the issue whose own
+text raised the question, before the loop; the lane-membership producer and
+persisted window advancement remain separate implementation work.
+
+The criterion-lifecycle code conformance module checks both identity owners:
+`CriterionRef` is constructed by the subject specification formatter in
+`domain/fire_spec.py`, which the fire's entry composes over the admitted
+subject and its subtree's criteria, and `RulingId` by the ruling mint.
+Its shared static guard covers direct, qualified, imported
+and assigned constructor aliases, including calls in function headers. Ruling
+address fields retain the minted type through containers and forward references;
+text, other untyped values and rebinding the identity name fail the guard.
+The static guards under `tests/` resolve names through one shared resolver
+(`tests/name_resolution.py`), so an import alias, a module route or an
+assignment alias is the same site under another spelling, and a parameter
+handed a value at a call is scanned as its holder.
+Native and fake tracker fixtures show that duplicate or amended criterion text
+does not change the addressed keys. Static modules beside it hold the same
+discipline over the read: the criterion template-row grammar is compiled in
+`domain/fire_spec.py` alone and read only there, no other module matches
+criterion-shaped text against a body, and criterion sub-issues reach the
+tracker only through the port's criterion read. `create_criterion_if_absent`
+is called from the criteria stage alone and implemented by one adapter method
+under the criterion child-set surface. A checklist a person wrote in the body is
+adopted by the criteria author, one criterion per item with the item's text
+quoted verbatim as its Check; the body is left as it is. The stage is owed while
+no child counts or while a checklist item has no criterion: an item is covered
+by any child whose Check states it, whatever that child's state, so a criterion
+a person canceled is not minted again. The stage asks `criteria_owed` before
+each author session and again after it, so an item the session left out keeps
+the stage owed and no parent is marked while one is uncovered. The task-list
+items are read by `checklist_items`, beside the row grammar in
+`domain/fire_spec.py`. A re-run
+mints nothing because check-before-create compares the Check text with outer
+whitespace stripped. A native
+identity is the sub-issue key and nothing else: removing one criterion and
+renumbering the `AC-n` tokens of the remainder moves no key, and the retired key
+resolves to nothing rather than to the criterion that took its number. The
+authored arm enumerates from 1 each round, which `GeneratedCriteriaOutput`
+states and this rule does not bind. Evaluator state/body writer adoption and the
+separate model-membership and spec-backend invariants remain unfinished.
+
+`CriterionResolver` is the narrow role for resolving one criterion, and
+`NativeCriterionResolver` in `criterion_sources` is its one implementation. It
+reads the complete current child family through `TrackerCriteriaReader` and
+returns the one full `TrackerIssue` with the requested own key. A missing,
+multiple or unreadable match raises `CriterionResolutionError` naming both
+the key and its owning issue; no text matching, checkbox address or cached
+criterion set participates. Duplicate pagination of the same native object is
+still handled by the adapter's existing enumeration contract. The audit claim,
+Evidence, repository-source and forge consumers take the role — not
+`TrackerCriteriaReader.read_criteria` — and retain their own state eligibility and final
+source-coherence checks, so none of them holds a roster it could search itself.
+A consumer that genuinely needs the whole family takes `TrackerCriteriaReader`
+instead; that is the different read surface the role exists to separate out. The
+generic resolver admits every workflow state and performs no write. Leased state
+and Evidence writer adoption remains separate.
+
+`structural_write_uncrosses_milestone` compares complete lane membership
+snapshots. The collector reads both the fire subtree and native milestone
+membership through the port, including archived issues, and preserves the
+returned state, parent and membership facts. Conflicting versions of a shared
+member refuse observation instead of pretending the reads are atomic. The
+prior graph must support crossing under the charter: completed fire, all
+members completed or canceled with recorded supersession. A newly present
+unresolved member while the fire remains completed raises the alarm; an
+existing member changing only state does not. No derived crossed flag or vendor change
+timestamp replaces this graph comparison. Both signals preserve their raw
+readings for replay; the structural signal has no threshold. Retaining prior
+snapshots remains separate work, and nothing observes either signal: the
+leased writer that exists observes the lane tally arm, the signals
+read off a lane's stream and the escalation ageing arm only.
+## Audit coverage selection
+
+`AuditCoverage` visits the supplied complete eligible snapshot in state-change
+time and issue-key order. The first attempt is full; later attempts select new
+or changed identities until the configured full-sweep interval expires. Marks
+are per-scope process caches and are advanced only after every selected visit
+returns. Interrupted or failed attempts repeat their selection, and a fresh
+process starts full. Per-key stamps retain newly observed identities even when
+their times tie a previously covered entry. Neither a quiet tick nor an empty
+snapshot postpones periodic full coverage. If the next configured tick would
+cross the full-coverage deadline, the current tick covers everything; intervals
+that are not divisible therefore cannot silently extend the declared bound.
+
+The caller supplies the observation time; this component adds no clock, timer
+or scheduler. A simultaneous attempt for the same scope refuses without
+disturbing its owner. Candidates are snapshotted before visiting, and returned
+coverage facts are immutable point-in-time observations, not durable verdicts.
+The native tracker state-change collector supplies complete checked candidates.
+Granted audit sessions and registration on the existing scheduler remain
+separate implementation work. Sampled mode is retired.
+
+## Check-chain execution
+
+The check-chain runner executes each declared command through the host shell,
+in the supplied directory and in declared order. Earlier failures do not hide
+later observations. The configured per-step deadline includes launch and kills the shell process
+group while retaining partial output. Repeated cancellation cannot interrupt
+eventual-process cleanup; cancellation propagates after the attempt is reaped.
+Cleanup repeats group termination at its configured polling cadence until
+captured output reaches EOF, covering a child created during the first signal.
+Empty or ambiguous step identities refuse before execution.
+The runner returns failed names and ordered outputs without classifying roots
+or cascades. Union composition and its result publication are separate consumers.
+
+`UnionComposition.verify` consumes the planner's ordered lane-head snapshot
+through an immutable measurement boundary. `UnionTick.verify` is its current-head
+consumer: one instance fixes the scope, repository configuration and selected
+base; each call supplies the complete ordered lane-branch roster. It reads the
+current remote SHAs, reuses its own unchanged result, and otherwise fetches with
+matching head reads on both sides before invoking the actual scratch composition.
+It re-reads every head before reporting a new result
+and repeats a stale attempt. The configured attempt bound produces
+`UnionUnstableError` if the heads keep moving, and an absent or unreadable head
+produces `UnionHeadReadError`. Native reads settle before cancellation returns;
+concurrent calls on one instance share the result. These are repeat-read
+observations, without atomic exclusion of a writer after the last read. The
+scope walk asks its union once per tick, and a tick whose lane heads are
+unchanged reuses the observation rather than composing again; durable
+persistence of the result remains outside the scope path, which compiles no
+checkpointer (KOD-840).
+
+The walk holds a factory rather than an instance, because what a union may
+reuse is pinned to one repository path and one selected base and both are facts
+about one invocation: one union per invocation, in a local, so a killed run's
+next invocation composes again from tracker and remote facts alone. A
+repository declaring no check chain is not composed at all, and the invocation
+says so. A measurement that refuses is stated and ends nothing: it rests no
+lane, reports no lane failure and stops no dispatch, because whether a scope
+composes is an observation of the scope and not a gate on it. The branch each
+lane contributes is the one its own run-state record names, read through the
+narrow ref-reading role (KOD-842). The union holds no forge collaborator
+(KOD-778).
+
+The pinned composition consumes the ordered lane-head snapshot
+and an immutable selected base. It creates a detached Git worktree, merges
+those exact commit IDs in planner order, runs `RepoEntry.checks`, and removes
+the tree on return, refusal, exception, or cancellation. Scratch merges have
+a separate Git operation; normal branch consolidation remains fast-forward
+only. Named branches and forge pull requests are untouched.
+
+Both union consumers require the native Git replacement namespace to be empty.
+A replacement can make an immutable commit name select another tree, so an
+unreadable namespace or any replacement raises `UnionHeadReadError`. The check
+precedes scratch creation, runs again before checks and before returning either
+checks or a merge conflict, and also protects cached current-head results.
+Replacement reads settle before cancellation propagates. Like the head checks,
+these observations do not claim atomic exclusion of later local writers.
+
+The shared `UnionCompositionResult` retains scope and repository identity,
+ordered branch/head pairs, the selected base, and the discarded scratch
+path and commit. A conflict reports only its successfully merged prefix;
+infrastructure errors remain errors. Executed checks use the restored
+historical root/cascade classifier, and a red check result carries one
+`UnionRemediationEntry` naming those roots and cascades. A measured merge
+conflict carries one entry naming its actual conflicting lane and paths, with
+no invented check failures. The shared result validates that every red has
+exactly its matching remediation and every green has none. This scope outcome
+is independent of lane outcomes. The result is available to any caller;
+it does not itself publish a tracker remediation record or scope terminal.
+The returned remediation supplies no fabricated record reference and no
+terminal outcome; the scope terminal derives its outcome from criterion states
+alone. The terminal holds no union collaborator and reads no union value, and a
+static assertion reports any module of it that reaches one: over its import
+closure, the modules it imports directly, and the modules of the classes its
+signatures take and give and of every class their fields reach. The assertion
+does not see an untyped method body, nor anything that closure does not reach,
+such as a type named only in a collaborator's method signatures or an
+annotation that is not a class.
+
+
+## Current-head audit claim sessions
+
+`AuditClaimVerifier` reads the current criterion through its owning lane's
+complete criterion query and extracts only its Check. It reconstructs the lane
+from the current addressed tracker comment, resolves the actual remote branch
+head and acquires a detached workspace at that exact SHA. The fresh evaluative
+session receives the Check and measured head, with `session_id=None`, no
+subagents and the configured read-only tools. The record's prior head, prior
+Evidence/verdict and author transcript are not session inputs.
+Active Git replacement references refuse the claim before dispatch or before
+an observation returns: a matching SHA and clean status alone do not prove
+that the workspace contains the original commit tree. The replacement read
+settles before cancellation releases the workspace, and read failures propagate.
+
+The result uses the shared three-state `AuditVerdict`. The caller attaches the
+measured SHA, native comment reference and exact Check. A changed criterion,
+record, workspace or remote head refuses the observation; workspace release
+also runs on errors and cancellation. This is a repeat-read observation, not an
+atomic snapshot or a full sweep: Evidence-sha/lapse handling, mandate completion,
+report publication, write-back and scheduler registration remain separate work.
+
+Revision comparisons share `AuditSourceReader` and `FreshAuditSession`.
+The source reader requires the criterion's native Evidence, validates its
+graded commit against the current recorded branch, and retains the exact
+criterion, Check, Evidence and lane comment. Its `require_unchanged` check
+re-reads the criterion, lane record and remote head before a consumer returns.
+The session helper owns a detached workspace at the immutable head, checks
+its head and cleanliness before and after fresh read-only execution, and
+settles acquisition, native reads and release through repeated cancellation.
+Callers supply a prompt and output schema and validate the returned structured
+value; the helpers neither inherit prior conclusions nor publish a verdict.
+
+`DetectorRemovalVerifier` composes these readers with the
+`audit_detection_removal` role. The fresh session compares the real graded and
+current revisions, tests the removal counterfactual, and searches for retained,
+moved or replacement detection. Removing a mechanism and its final effective
+test produces a refuted observation; retained detection keeps this particular
+arm quiet even when that test is red. Inconclusive comparisons use the existing
+unverifiable verdict.
+
+Before returning a proposed finding, the consumer re-reads its mechanism and
+test quotations from native baseline blobs and verifies their stated lines.
+It rejects excerpts that still exist at the current path. Native source lookup
+distinguishes an absent file from an unreadable commit or unsupported object.
+The session's semantic counterfactual remains a judgment: exact quotations do
+not prove the absence of all replacement detection. The test fixture executes
+the real current suite and baseline detector at the current head through the
+actual agent/workspace boundary; it does not call a live model. The verifier
+returns a source-checked observation. `AuditReadSweep` invokes it independently
+for each native criterion request and completes a separate existing mandate
+report for every demonstrated loss. Each report retains the exact mechanism
+and detector quotations, their addresses and the absence demonstration; these
+remain evidence for a judgment rather than a new routing rule. A quiet or
+unverifiable detector produces its own non-refuted report without a mandate.
+
+Failure in the ordinary claim or over-claim arm does not suppress this detector.
+An unavailable revision or verifier is named separately, including states
+outside the revision reader's completed/configured-review contract. Final scope,
+record and current-head checks include every successful detector observation.
+The native sweep fixtures execute the current suite and old guard: deleting the
+last guard reports a loss, while retaining or replacing it keeps this arm quiet.
+There are no tracker writes, coverage marks or writer-lease bypasses here;
+scheduled publication and complete coverage of the other detectors remain
+separate consumers.
+
+
+### Restamp traceability
+
+A criterion's Evidence row names the commit its grading was read at, and
+restamping that row is a write nothing used to answer for. `AuditReadSweep`
+now traces it: `AuditRestampVerifier` reads the lane issue's own append-only
+run-event stream through the narrowed `LaneEventHistory` role, keeps the
+events keyed to this criterion that record a write of its Evidence row, and
+asks whether the row's commit is the one the LAST recorded grading names. It holds, otherwise it is
+refuted — never unverifiable, because the stream was read rather than left
+unsettled, and `AuditRestampTrace` refuses that verdict at construction.
+
+Membership anywhere in the history would not do. An entry followed by a later
+recorded grading is itself later than the restamp, so a row pointing behind
+the grading that actually last ran would be admitted, and order is the only
+thing an append-only stream guarantees.
+
+The stream is the row's write history because every cross-off records its
+grading there. A passing cross-off restamps the Evidence row and posts one
+`criterion_passed` event carrying the same sha, beside the `criterion_refuted`
+a failing one posts; both address the lane issue, so a criterion sub-issue
+still carries no comment. Without the passing entry the history would hold
+only the refutations, and the ordinary lifecycle — refuted at one commit, then
+passed at the next — would read as a row pointing behind its last recorded
+grading and be refuted for having been legitimately restamped (KOD-506).
+
+Only those two kinds are the row's history (`EVIDENCE_ROW_WRITES`). An
+undemonstrated reading posts its own event keyed to the criterion at the sha
+it read, but it writes no Evidence row and moves no state: a criterion finished
+at one commit and read as undemonstrated at the next keeps the row of the
+earlier grading, finished. Read as an entry, that event would leave the row
+behind the history's last commit and refute a row nothing rewrote, so the
+history leaves it out and ends where the row does in every state a cross-off
+can leave (KOD-506, KOD-610).
+
+A criterion whose history holds no recorded grading was never restamped by its
+lane and is not traced at all: an empty history is a row no lane write accounts
+for — one a person moved into the finished state, or one whose announcement
+never landed — and reading it as "no entry at this commit" would answer for a
+write the stream never saw.
+
+The trace is an observation, not a publication. It rides in the scope report's
+raw observations and adds no comment, marker or coverage effect, and the
+verifier takes no claim, judgment or verdict: an implementation that graded
+whether the restamped verdicts happen to be true has no parameter to arrive
+through. A lapsed criterion is traced too — a lapse is exactly a row whose
+commit is behind head. A failed or damaged stream read raises the typed
+Evidence read failure, which the sweep's single translation point turns into
+an unavailable reason.
+
+A refuted trace is still a refutation the sweep produces, so it carries a
+mandate verdict like every other (KOD-516). Before the lapse return, the sweep
+runs the same mandate hunt at the current head, with the defect named as a
+restamp not traced to the last recorded grading and the trace's reason as the
+refutation evidence, and keeps the result beside the trace as an
+`AuditRestampReport`, which refuses a refuted trace without a mandate verdict
+and a finding that names another defect. The trace itself is not edited, and
+the report is not published: the raw observations still carry the trace.
+
+
+### Recorded assertion drift
+
+`build_audit_read_sweep` constructs `RecordedAssertionDriftDetector`, and
+`AuditReadSweep` runs it for every criterion target, comparing each test a
+protection record names between the criterion's graded sha and the head
+(KOD-510, KOD-891). Each `AssertionDeviationClaim` rides in the scope report's
+raw observations and adds no comment, marker, escalation, reopen or state
+move of its own: a deviation is evidence, not a verdict on the criterion whose
+Evidence supplied the baseline. A comparison that cannot be made — an
+unreadable protection record or a refused comparison, collected in
+`DRIFT_READ_FAILURES` rather than widening the audit's read failures — refuses
+that subject's coverage as the other arms do. A completed criterion graded
+behind the head is deferred before any arm's reading counts, so its claim is
+carried on the report and not judged.
+
+
+## Standing over-claim observations
+
+`AuditOverclaimVerifier.observe` reads the criterion through `AuditSourceReader`
+and obtains one fresh `FreshAuditSession` judgment at the measured head. Its
+schema requires exactly one reading for each standing check: recomputed
+aggregates, independently witnessed completeness, verbatim adoption and
+compliance with the artifact's own rules. Refuted aggregates name the recomputed
+value; unverifiable readings name the missing artifact. Prior grading prose,
+author reasoning and old verdicts are not session inputs.
+
+For adoption, the session identifies source and artifact paths at the graded
+or current revisions. The harness reads their immutable Git objects and compares
+actual bytes independently of the session's coverage assessment. A differing
+pair refutes adoption even if the session reported all topics covered. Missing
+native objects remain unverifiable, foreign revisions and self-witnesses refuse,
+and equal pairs cannot fill a separately missing external witness. The model
+still owns semantic claim discovery and witness selection; a list of matching
+pairs is not proof that every possible adoption claim was discovered.
+
+The observation derives its overall three-state verdict from all four readings,
+then rechecks native criterion, lane-record and remote-head identity. It performs
+no tracker writes. `AuditReadSweep` now invokes this verifier for each native
+criterion request independently of its ordinary claim/Evidence arm. It retains
+all four readings, including recomputed values, missing witnesses and native
+byte pairs. Each category has its own addressed report; every refutation passes
+through the existing mandate hunt before that report can be returned. Equal
+reading text cannot relabel categories or exchange their mandate findings.
+
+An unavailable verifier or source produces a named per-target detector refusal;
+it does not suppress the independent claim arm. The revision reader still
+requires a completed or configured-review criterion with native Evidence, so
+other states retain their fresh claim observation and an unavailable revision
+detector. A lapsed completed claim can coexist with a current over-claim
+observation. Final native source checks and equal observed branch heads prevent
+combining observations from different revisions. Scheduled coverage advancement
+and leased publication remain separate consumers. Native Git fixtures exercise all four
+categories using a scripted external judgment boundary; they validate execution
+and evidence handling without claiming live-model detection accuracy.
+
+## Recorded criterion Evidence and lapse observations
+
+Whether a grading taken at one commit still stands at another is answered by one
+function under `domain/`, `graded_state` in `domain/lapse.py`, for every record
+that carries a graded sha (KOD-696). It is pure arithmetic over the two shas, the
+grading's re-derivation class, the path prefixes that grading exercised and the
+changed paths of the commit record between them; it runs no command and reads no
+tree. Its reading is a two-member value, never a boolean, and it refuses to
+answer as a truth value at all, because a grading nothing has re-derived and a
+grading that failed are different things and a boolean collapses them. The audit
+lane's own lapse observation reads that answer instead of weighing the two shas
+itself, so the lane-state writer and the audit cannot come to disagree about what
+a sha behind head is worth.
+
+A static assertion over the shipped sources reports any other body that compares
+a graded sha with a head sha, and names every reader that consults the rule. Both
+surfaces are derived — the identity off the Evidence record's own fields, the
+rule's module and name off the rule itself, the scanned tree off the package it is
+packaged in — so a rename carries the assertion with it. The identity checks that
+weigh a head against a head, and the self-resolution checks that ask whether a
+recorded revision is the commit it says it is, are provenance rather than
+standing: each is exempt by name, with its reason, and an exemption for a body
+that no longer compares anything is as red as a body nobody exempted.
+
+`AuditReadSweep` independently invokes `AuditForgeVerifier` for completed native
+criterion requests. The request's criterion, owning issue and repository come
+from the same native scope assembly as the other arms. The full forge reading
+retains recorded Evidence, required and observed check names, and the existing
+delivery classifier's same-SHA rerun history. This sweep can request bounded
+forge reruns; it performs no tracker writes.
+
+Each forge verdict has an addressed claim report using the exact Check, native
+lane-comment reference and historical graded SHA. Refutations receive the
+existing mandate hunt at that SHA. If the hunt fails, the raw forge observation
+remains available with an explicit failure and no completed forge report.
+Missing capabilities, rosters and prerequisites remain unverifiable. A missing
+verifier or ineligible source has its own refusal without suppressing other
+arms. The observed criterion must equal the collected target, and final native
+source checks still cover its body, state, Evidence and lane record. Historical
+forge SHAs do not enter the current-head equality check: a current lapse can
+coexist with a green or refuted historical forge proposition. Scheduling,
+coverage advancement and leased publication remain separate consumers.
+
+A terminal refutation is hunted the same way. When the recorded branch is gone
+from the remote, the terminal read is emitted as REFUTED with `NO_BRANCH`: the
+absent branch is the demonstrated defect, not an unreadable surface.
+`AuditTerminalReport` relaxes its head requirement for exactly that
+discrepancy, and the hunt runs with `head_sha=None`, acquiring no workspace
+and reading no Git object, so its verdict is whatever it finds over the
+tracker surfaces. The runtime publishes that report and judges its write-back,
+and any escalation it raises, at the remote trunk head, the same read the
+scope summary is judged at.
+
+Every verdict-bearing arm of `AuditReadObservation` — the terminal read, the
+forge reading, the restamp trace and the recorded Evidence — is listed in
+`MANDATED_ARMS` beside the field that completes it and the reason field that
+excuses it. A REFUTED value with neither refuses construction, so the sweep
+cannot emit a refutation without its mandate verdict. A refutation whose hunt
+genuinely fails keeps its raw value beside that reason, and the runtime then
+refuses the subject and ends the tick incomplete (KOD-516).
+
+`AuditEvidenceVerifier.observe` reads the requested criterion's current full
+record and its lane's addressed run-state comment. The existing Evidence field
+contains one explicit JSON block, rendered by `render_evidence_field`:
+
+````markdown
+**Evidence:**
+```json
+{
+  "gradedSha": "0123456789abcdef0123456789abcdef01234567",
+  "test": "tests/test_contract.py::test_current_check"
+}
+```
+````
+
+The complete Git commit identity and named test or recorded observation are the
+two stored fields. The codec refuses repeated fields/keys, ambiguous framing,
+extra verdicts and historical prose. It does not rewrite that prose or infer a
+SHA from it. The shared criterion-field parser keeps Check extraction separate
+from Evidence and ignores quoted field labels and HTML comments.
+
+For a completed criterion, the reader fetches the recorded repository, reads
+the live remote branch head, and verifies both immutable commit identities and
+their ancestry. A completed claim at an older commit yields `unverifiable`,
+naming the original criterion, recorded SHA and current head, without a grading
+session. An off-branch or unreadable commit causes a typed read refusal.
+Active Git replacement references also refuse before ancestry is inspected
+and before the observation returns: substituted parent history cannot establish
+that the Evidence SHA belongs to the current branch. Both replacement reads
+settle through cancellation, including the lapse arm that starts no session.
+An unreadable replacement namespace is a typed read failure, never an empty set.
+
+A current completed claim, or a claim in the configured review state, goes
+through the existing fresh `AuditClaimVerifier`. Review re-verification does not
+require old history to remain reachable after a rewrite: it judges the current
+Check at the current remote head and retains the previous Evidence as a prior
+claim, without reestablishing it as proof. Recorded test prose and verdicts stay
+out of that session. The final source, lane record and remote head reads must
+agree; owned repository reads settle before cancellation returns.
+
+These are observations before correction and publication. Evaluator adoption
+of the codec, historical migration, Evidence test/observation admissibility,
+forge comparison, state transitions, mandate-complete reports and the scheduled
+sweep remain separate consumers. The reader acquires no authoring lease and
+performs no tracker write; the required correction writers must use the ruled
+lease and inline verification boundaries.
+
+`AuditReopener` is that correction writer, and the only one. It moves a
+criterion whose current-Check claim was refuted at the branch head back to the
+team's one unstarted state, through `CriterionReopener` — a one-member role
+narrowed out of the port, not a widening of it. Its step is driven by
+`AuditPublisher.write_leased`, so the move happens under this job's lease on the
+criterion's own surface and inside the same write-back verification every audit
+write uses; the artifact re-read is the criterion's body, state and labels. A
+reopen is the scope's last act, after every publication and after the summary,
+because each earlier step re-reads the whole request snapshot and refuses any
+change but a known comment stamp or the decision classification. The step edits
+no body, so a reopened criterion keeps the Evidence row naming the grading that
+was refuted, and the refutation comment published beside it is the evidence.
+
+A covered member whose own state carries nothing to audit yet is deferred rather
+than refused: `audit_deferral` reads the member's state and the configured
+review state and answers `claim_not_made` for a criterion that has made no
+claim, `terminal_not_reached` for any other issue outside that state, and
+`graded_behind_head` for a completed criterion whose recorded grading sits
+behind the head. The pass asks it before it asks the sweep, so a deferred member
+opens no session and costs no Git or forge read, and the deferrals ride on both
+the run report and the published summary.
+
+The separate `AuditForgeVerifier` checks a completed criterion's own explicit
+Evidence SHA through the existing CI monitor and completed-watch reader. Its
+request cannot supply a replacement SHA. The returned commit must match exactly;
+no branch name, newer branch run or ancestor run can substitute. Completed watch
+snapshots now retain their check names, and every explicitly configured
+`CheckStep.forge_check` must be present before accepting green. A readable red
+is still classified when another declared check is missing: reproduced failure
+can refute the forge claim without proving unrelated missing checks. A reported
+check the repository does not roster is left out of the arm — its red refutes
+nothing and prompts no rerun — and the observation names what it left out. An
+empty configured roster leaves the repository's observed CI roster
+authoritative.
+
+Green at that SHA holds the forge proposition. Red goes through the existing
+`classify_red_checks` with the operation's repository declarations and existing
+rerun bound, including native same-SHA rerun requests. A reproduced work defect is
+refuted; an unmet prerequisite or unclassified red is unverifiable. A flake with
+an exact-SHA green rerun holds, while a rerun with no observable checks remains
+unverifiable. A missing run never proves this proposition, including when the
+separate delivery policy declares the repository forge-exempt. Each call starts
+a fresh task-owned observation sequence so a caller's older CI watch or rerun
+cannot replace its evidence. The full criterion source is reread before return.
+
+This is a forge-claim observation, not a whole-criterion satisfaction verdict.
+It performs no tracker writes, correction or remediation. Scheduled sweep
+composition, mandate completion for refutations, lease-protected state changes
+and publication remain separate consumers.
+
+## Scoped execution boundary
+
+An addressed scope is routed to the scoped arm, which walks the scope one lane
+at a time: what it offers, how a lane enters, what rests it and what refuses it
+are stated above, with `read_scope_ready`, `LaneEntryReader` and the record's
+own writer. Unscoped authored jobs keep their existing forge routing and
+execution.
+
+Scope readers, planning and readiness remain available to their current
+consumers. The former preparation, feasibility and ruling-proposal stack ran
+work only to refuse; its exclusive ports, transient schema and prompt role have
+been retired. They are not an alternate execution path or evidence of a
+completed fire.
+
+The native arm's order is `resolve_visibility`, `revalidate_criteria`,
+`rule_open_questions`, `run_ralph_loop`. The entry step reads the subject once
+through the port, which admits it and lists nothing, and then measures
+criterion membership over that subject's subtree through the same scope
+membership read every later barrier re-takes. One reading answers both the
+specification the fire is graded against and the roster its loop starts on, so
+the captured specification names every criterion sub-issue under the subject
+that counts — its own children and, recursively, its deliverable children's. A
+subtree holding none is refused with `EmptyFireCriteriaError` naming the
+subject, before the question step and before the loop's graph is dispatched (the
+pinned interim on KOD-786; what the walk does with such a member is decided
+there, not here). A criterion the board Canceled or closed as a Duplicate
+neither joins the specification nor refuses that read, and a subtree whose every
+criterion is one of those is refused as empty. There is no second, narrower
+reading in which the subject's own criterion children alone admit or refuse a
+fire (KOD-790). The question step asks one read-only pass under the
+`fire_time_ruling` role what the subject text and the current Checks leave open,
+pins each answer on the issue whose text raised it, reads it back, and only then
+enters the loop. The identities an answer may address are the subject and every
+criterion sub-issue of its subtree, read again after that pass through the same
+membership read the entry takes and before the write, so a sub-issue the board
+removed or reparented while the pass ran no longer resolves and an answer
+addressed to one ends the fire `ruling_unrecorded` with nothing written. An open
+question whose answer cannot be confirmed on the tracker ends the fire
+`ruling_unrecorded`, with the loop un-entered. An answer that names work the
+subject's own `Deliverables` section does not state is not pinned at all: it is
+raised on the issue whose text raised the question, inside the same leased and
+verified window a pinned answer is written in, and the fire then ends
+`ruling_unrecorded`. Unlike the retired stack this one has a consumer: the
+loop's own writer contract renders the pinned answers it reads back. The
+evaluation step reads the same criteria at the lane's base under the
+`base_check` role, in the tree it owns there.
+
+The dispatch pass's gate keeps its vendor timestamp window for reply and
+mention scanning. Atomic issue-write responses can identify their own
+stamp. Comment creation, edit, and deletion instead record explicit native
+mutation receipts; no post-write issue read is attributed to that write.
+Each gate retains its own complete native issue/comment observation and
+receipt cursor, replays only declared changes, and compares the result.
+Native fields outside the configured label vocabulary remain in the opaque
+projection. Stable bounding issue reads and two complete comment listings
+must agree before a container mark advances; unreadability, pagination
+ambiguity, source movement, or cancellation leaves that window unspent.
+Rearming a failed pass restores both observations and marks. The latest
+256 receipts across the service are retained, independently readable by
+multiple gates. If an observation or rearm checkpoint needs evicted history,
+the gate wakes conservatively; a partial receipt suffix is never treated as
+complete evidence. A new gate with no retained comment baseline likewise
+wakes once. This fixed bookkeeping window adds no operator configuration
+or reader-lifecycle registry. It bounds retained receipt bodies by count,
+not native comment size or the current snapshots themselves.
+
+Native state saves can omit history. One optional issue read can fill only
+that receipt field when its issue identity and timestamp match the atomic
+save response. The receipt accepts only the previous open interval closing
+at the one new interval, with all older rows unchanged. Replay also requires
+the prior history to match the state write's pre-read, so a principal's earlier
+transition is not absorbed. A later, unreadable, or inconsistent enrichment
+leaves history unaccounted for and wakes conservatively; it never restamps or
+fails the landed write. Cancellation still propagates.
+
+This suppresses unchanged own legacy-claim release, marker, base, and mixed
+lifecycle churn while retaining differing principal fields, comments,
+edits, and deletions. Timestamp-only movement without a new local receipt
+still wakes. Current snapshots cannot establish the causal author of
+indistinguishable transient histories, including a simultaneous mention-only
+ripple during otherwise identical own churn; this is not a vendor event
+history or a universal attribution proof. Admission continues to use its
+upstream body digest and gap, never this scan window or a second digest.
+
+
+Description edits address the complete issue body. An exact desired body or
+identical expected/replacement is unchanged without a write; an exact expected
+body is replaced once. Any other current body raises `StaleWriteError`.
+Substring matches, repeated fragments and incidental desired text never
+identify the target. A body carrying an adapter-owned identity keeps it
+across the edit, and an edit that would replace it is refused. This is
+optimistic stale-read detection, not atomic compare-and-swap; callers still
+serialize writes.
+
+### Ownership on the tracker's own capabilities
+
+A claim on an issue and a lease over a set of write surfaces are one
+mechanism: a marker comment per grant, on each target the grant addresses,
+carrying its kind, holder, per-grant nonce, expiry and the whole address
+set. The backend orders creations and stamps them, answers a listing with
+what it holds, keeps a comment's place across an edit by id, and deletes by
+id. It offers no conditional write, so no grant is believed from the echo of
+its own write.
+
+The holder is the writer's own identity — a run's queue job id, or a scheduled
+pass's own name — so every write of one scope invocation that supplies a
+holder supplies the same one. Independence between surfaces is therefore
+independence between addresses, never between the lanes of one walk: two
+lanes of the same invocation are one holder to the arbitration, and two
+criteria of one parent are two addresses because the vocabulary declares one
+surface per criterion sub-issue rather than one grant per subtree.
+
+Acquisition writes, then re-reads every target. The grant stands only where
+no other holder's live marker over a requested address was created no later
+than this one; an earlier one is an owner to name, and an equal instant is an
+order the backend did not settle, so both sides withdraw and report the tie
+rather than either claiming it. A holder that cannot find its own marker in
+the read-back withdraws and refuses: a grant that cannot be verified is not a
+grant.
+
+Renewal reads before it writes. A holder without a live marker over the whole
+set extends nothing, and what it takes down is its own, in two cases. One is
+its marker standing for exactly that set on part of it: a half-standing grant
+is no hold, and leaving it would name the holder as writing what it does not
+hold whole. The other is its own marker over the whole set that has lapsed:
+the read does not test liveness, so the renewal edits that marker, reads it
+back as not in force, and takes it down. A marker of the same holder for a
+disjoint address set is another grant and is left alone. The read takes the
+holder's markers that cover the set, not only those equal to it, so renewing
+a subset of the holder's own grant over a larger set renews that marker down
+to the subset. Where the holder does hold the whole set, it is renewed one
+marker at a time, editing each in place — which is what preserves the order
+the grant was taken in — and reading each write back before the next is
+published.
+
+The deadline a renewal puts in force is decided from the backend's stamp on
+that write against the deadline the write was published against, never from
+the holder's own clock, so neither skew nor the time a write took to land can
+move the fence. A renewal that lands late renews nothing and takes back only
+the deadlines it accounts for: a deadline carried past those was put there by
+a later grant of the same holder, whose ownership lives inside the marker this
+renewal was extending, so an earlier renewal's lapse does not void it on the
+markers the late write never reached. The residual accepted under KOD-831: on
+a set spanning two targets, the marker the late write did reach is taken
+back, and the later grant keeps only the other half. After that, the same
+holder's re-acquisition of the set is refused once naming no current holder,
+and an identical second call is granted. Release deletes only this holder's
+own markers, and expiry is read from the marker against the reader's clock, so
+a process that died renews nothing and its grant lapses on its own.
+
+Two processes writing under one holder identity at once are outside the
+design: the arbitration is over the identity, so it cannot tell them apart.
+That includes a restart: re-entering under a reused holder, it is granted
+while its predecessor's grant is still live, because a holder re-acquiring
+what it holds is not contention. Keeping one process per holder identity is
+an owed invariant (KOD-832).
+
+### Owned resource operations
+
+`settle` finishes one owned operation before propagating repeated caller
+cancellation. Read-only audit and admission workspaces use `owned_workspace`
+to finish acquisition, release the exact acquired path even if cancellation
+arrived before entry, and settle release on every exit. Integrity checks and
+fresh session policy stay inside each caller's workspace lifetime.
+
+`finish_owned` still returns the cancellation flag where a caller must first
+record acquisition or retain cleanup-error precedence: scratch worktree
+creation, process startup, tracker boot and application shutdown. Those cases
+cannot propagate cancellation immediately after acquisition.
+
+Fresh audit and admission judgments share `judge_in_workspace` in the existing
+audit-session module. It sends no previous session identifier, uses the
+read-only tool and permission policy, drains the result and preserves typed
+soft failures. The caller supplies its phase, prompt policy and error context,
+and retains the workspace through its own before/after source checks. ORGANIZE
+keeps its own session type and requires no Git dependency for this reuse.
+
+### Write-back adoption
+
+Every call of the dialled roles' artifact-write surface — every tracker
+write through those roles that leaves an artifact a later reader reads back —
+is either driven by `WriteBackVerifier.write_back` or declared derived beside
+the function that makes it.
+`kodezart.domain.write_adoption.take_census` states that over the installed
+source rather than over a list. The census covers the roles `DialledTracker`
+is dialled as; a dialled role's `call_tool`, which names no write verb, is
+outside the surface and is not censused here.
+
+The write surface is read off the roles the tracker is dialled as: the
+fields of `DialledTracker` whose type is declared in `kodezart.core.protocols`,
+so a role dialled beside the port over the same session (KOD-829) is censused
+exactly as a port member is. A public member whose leading name token is a
+mutating verb is a write; a write that takes more than addresses and lease
+bookkeeping is an artifact write.
+
+A call site is every call of an artifact write through a receiver other than
+`self`, and every place such a write is taken as a value (bound to a name,
+handed to a partial, passed as a callback); one taken at module or class
+level is a site of the module. A write named by reflection, a string naming
+it handed to the builtin `getattr` or to `operator.methodcaller`, is a call
+site as well. A write taken as a value is never driven, even
+inside a driven function: the write it stands for is made wherever the value
+is later called. Driven is proven by declared types, never by a name or a shape: a
+call resolves only through the enclosing scopes, the module's own
+definitions, its `kodezart` imports, annotated parameters, locals typed by
+their own annotation or every assignment of which constructs one class, `self` attributes typed by their
+class annotation or by every `__init__` assignment, and constructor calls.
+From the verifier's step parameter, read off the real method and the step
+protocol's one member, a step constructed into a sink grounds its class and
+drives the appliers passed to it; a caller's own parameter handed to a sink
+becomes a sink; a grounded step that forwards its write to a stored
+constructor parameter makes that parameter a sink. A function is driven by
+delegation only when every reference to its name anywhere in the tree is a
+resolved call, at least one resolves to it, and every such call stands in a
+driven function, so an unresolved reference withholds the grant rather than
+widening it. A call resolved to a method counts as a call of every override
+of it as well. Construction alone is never the whole grant: a granted
+applier or step member that any undriven function calls loses its grant, and
+so does an applier mentioned anywhere but in a call or the constructor
+argument that granted it. A call of a step member is weighed however it is
+typed: resolved to the member, to a base member it overrides, or to the step
+protocol's own member anywhere but in the verifier; and a read of the step
+field an applier was handed to counts as a call of that applier.
+
+A write no verifier drives is admissible only under
+`@derived_writes("<method>", …)` on the function that makes it
+(`kodezart.domain.derived_writes`, an identity decorator the census reads off
+the source): a state move or a fact any process recomputes from what the
+tracker already holds, which is the `ContentClass.DERIVED` reading. The
+declaration is exact in both directions — an undeclared undriven write is
+unadopted, and a declared write its function no longer makes undriven is
+stale — and it cannot shelter authored prose: a declared write whose writer
+names `ContentClass.AUTHORED` stays unadopted. Each declaring function says
+in its own docstring why its write is derived (KOD-806, KOD-867).
+
+Boot refuses what the census does not account for.
+`kodezart.composition.write_adoption.verify_write_adoption` is the first act of
+the application lifespan, before the forge client, the tracker dial and the
+mapping reconciliation (itself a write): over the installed source it raises
+`UnverifiedWritePathError` naming every unadopted path as
+`module::function::method`, and it raises as well when it finds no call of the
+write surface at all, so a packaging change cannot make it pass on nothing. It
+reads no configuration, because a write path no verifier drives is a defect in
+every deployment whatever it schedules. A stale declaration does not refuse
+boot; the guard in `tests/chains/test_write_back_adoption.py` holds the census
+to none. The census is kept per distinct source content, so a process parses
+the package once (KOD-533).

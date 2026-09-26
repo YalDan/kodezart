@@ -1,21 +1,35 @@
 """Agent event domain models for SSE streaming."""
 
 from enum import StrEnum
-from typing import Literal
+from typing import Annotated, Literal, Self
 
 from pydantic import (
     ConfigDict,
     Field,
     field_validator,
+    model_validator,
 )
 
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.accept import AcceptVerdict, SherlockFlag
+from kodezart.types.domain.amendment import (
+    AmendmentJudgment,
+    AmendmentReport,
+    NativeWriterOutput,
+    RepeatedUpheld,
+)
+from kodezart.types.domain.amendment_write import AmendmentTextOutput
+from kodezart.types.domain.assertion_drift import ProtectedTestRef
+from kodezart.types.domain.audit import (
+    AuditClaimJudgment,
+    AuditMandateJudgment,
+)
+from kodezart.types.domain.audit_detection_removal import DetectorRemovalJudgment
+from kodezart.types.domain.audit_overclaim import AuditOverclaimJudgment
 from kodezart.types.domain.branch import BaseInput, WorkRefRole
 from kodezart.types.domain.ci import CIStatus
 from kodezart.types.domain.consolidation import ConsolidationStatus
 from kodezart.types.domain.criteria import (
-    CRITERION_ID_PATTERN,
     ContractCorrection,
     CriteriaValidation,
     CriteriaValidationOutput,
@@ -24,12 +38,38 @@ from kodezart.types.domain.criteria import (
     FanInReport,
     GeneratedCriterion,
 )
-from kodezart.types.domain.gating import RepoVisibility
+from kodezart.types.domain.criterion_lifecycle import RederivationClass
+from kodezart.types.domain.gating import (
+    DurabilityCategory,
+    RedactionCategory,
+    RepoVisibility,
+)
+from kodezart.types.domain.node_session import NodeInvocation
+from kodezart.types.domain.organize import AdmissionJudgment
+from kodezart.types.domain.organize_owner import OrganizeProposal
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.persist import ArtifactPersistStatus
-from kodezart.types.domain.remediation import RemediationEntry
+from kodezart.types.domain.remediation import RemediationEntry, RemediationPlan
+from kodezart.types.domain.ruling_id import RulingId as RulingId
+from kodezart.types.domain.run_event import RunEventKind
+from kodezart.types.domain.scope_address import ScopeKind
+from kodezart.types.domain.session import SessionFailureKind
 from kodezart.types.domain.ticket_review import TicketApproval, TicketReviewMode
 from kodezart.types.domain.trajectory import LoopTrajectory
+from kodezart.types.domain.write_back import WriteBackFinding
+from kodezart.types.job_acceptance import (
+    AcceptanceHandle,
+    AcceptedQueuePosition,
+    JobLink,
+)
+
+
+class RulingAuthor(StrEnum):
+    """Authorship explicitly recorded by the ruling artifact's producer."""
+
+    MACHINE = "machine"
+    PRINCIPAL = "principal"
+
 
 # ---------------------------------------------------------------------------
 # Soft-failure raise-site identifier (typed alias)
@@ -45,6 +85,17 @@ from kodezart.types.domain.trajectory import LoopTrajectory
 RaiseSite = Literal[
     "ticket_creator",
     "ticket_reviewer",
+    "organize_assess",
+    "organize_author",
+    "organize_criteria_author",
+    "organize_verify",
+    "amendment_judge",
+    "amendment_author",
+    "write_back_verify",
+    "audit_claim",
+    "audit_overclaim",
+    "audit_detection_removal",
+    "audit_mandate",
     "branch_name",
     "acceptance_criteria",
     "criteria_validation",
@@ -54,6 +105,12 @@ RaiseSite = Literal[
     "commit_message",
     "remediation_ticket",
     "content_audit",
+    "fire_time_ruling",
+    "mutation_removal",
+    "mutation_evaluator",
+    "pass_gate",
+    "scope_scan",
+    "scope_done",
 ]
 
 # ---------------------------------------------------------------------------
@@ -276,6 +333,21 @@ class TaskUsageInfo(CamelCaseModel):
     duration_ms: int
 
 
+class NodeSessionStartedEvent(AgentEvent):
+    """An actual native opening, emitted by its addressed harness invocation.
+
+    This stream value does not assert that a tracker event was published.
+    On the scoped arm the durable publication is a separate write:
+    ``TrackerLaneStateWriter.record_node_sessions`` posts each opening on the
+    lane's own stream, where ``COMPOSITION_SUBSTITUTED`` reads it.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    type: Literal[RunEventKind.NODE_SESSION_STARTED] = RunEventKind.NODE_SESSION_STARTED
+    invocation: NodeInvocation
+    session_id: str = Field(min_length=1, pattern=r"\S")
+
+
 class UserMessageEvent(AgentEvent):
     """User message echoed back in the SSE stream."""
 
@@ -330,13 +402,16 @@ class SystemEvent(AgentEvent):
     actually loaded — the engine id among its ``data``, and beside it the
     output style its system prompt runs under.  ``output_style`` is that
     reported value, and it is ``None`` on every other subtype, which
-    knows nothing about one.
+    knows nothing about one.  ``mcp_servers`` is the same frame's MCP
+    server name to status, as the CLI reported each one, and ``{}`` on
+    every other subtype.
     """
 
     type: Literal["system"] = "system"
     subtype: str
     data: dict[str, object]
     output_style: str | None = None
+    mcp_servers: dict[str, str] = Field(default_factory=dict)
 
 
 class TaskStartedEvent(AgentEvent):
@@ -412,6 +487,11 @@ class ResultEvent(AgentEvent):
     """Terminal event with metrics, session ID, and output."""
 
     type: Literal["result"] = "result"
+    failure_kind: SessionFailureKind | None = Field(
+        default=None,
+        exclude=True,
+        description="Failure fact for live consumers; omitted from public result JSON.",
+    )
     subtype: str
     duration_ms: int
     duration_api_ms: int
@@ -530,7 +610,8 @@ class CriterionResult(CamelCaseModel):
     model_config = ConfigDict(frozen=True, populate_by_name=True)
 
     criterion_id: CriterionId = Field(
-        pattern=CRITERION_ID_PATTERN,
+        min_length=1,
+        pattern=r"\S",
         description=(
             "The dispatched criterion's id, echoed exactly. Return one result "
             "per dispatched id and invent none."
@@ -551,6 +632,26 @@ class CriterionResult(CamelCaseModel):
         description=(
             "The evidence for the verdict, citing output you ran: file paths "
             "with line numbers, test names, lint rule identifiers."
+        ),
+    )
+    rederivation_class: RederivationClass = Field(
+        default=RederivationClass.cheap,
+        description=(
+            "What re-deriving this verdict costs. 'cheap' if re-running it is "
+            "reading code or running a test; 'expensive' if it needs a long "
+            "build, a deployment or a paid call; 'observed' if it rests on "
+            "something performed once that cannot be repeated. A class other "
+            "than 'cheap' requires exercisedPaths and is read as 'cheap' "
+            "without them."
+        ),
+    )
+    exercised_paths: tuple[str, ...] = Field(
+        default=(),
+        description=(
+            "The repository-relative path prefixes this verdict examined, for "
+            "a class other than 'cheap'. A later commit touching one of them "
+            "is what ends the exemption from re-deriving the verdict, so name "
+            "every prefix it depended on and none it did not."
         ),
     )
 
@@ -579,6 +680,51 @@ class AcceptanceCriteriaOutput(CamelCaseModel):
     )
 
 
+class BaseCheckResult(CamelCaseModel):
+    """One criterion's own check, run at the lane's base rather than its head.
+
+    A reading of the base, taken so a pass at the head can be told apart from
+    a check that already passed before the branch existed. ``command`` is what
+    was actually run, reported so a reader of the run's log can repeat it; it
+    is the session's own text and reaches no durable surface.
+    """
+
+    model_config = ConfigDict(frozen=True, populate_by_name=True)
+
+    criterion_id: CriterionId = Field(
+        min_length=1,
+        pattern=r"\S",
+        description=(
+            "The dispatched criterion's id, echoed exactly. Return one result "
+            "per dispatched id and invent none."
+        ),
+    )
+    command: str = Field(
+        min_length=1,
+        description=(
+            "The exact command you ran in this tree for this criterion's "
+            "check, or what you did in its place when it names no command."
+        ),
+    )
+    satisfied_at_base: bool = Field(
+        description=(
+            "Whether that check already passes here, where none of the work "
+            "exists. A check you could not run is not satisfied."
+        ),
+    )
+
+
+class BaseCheckOutput(CamelCaseModel):
+    """Every answer one base reading settled, for the ids it was given."""
+
+    base_check_results: list[BaseCheckResult] = Field(
+        description=(
+            "Exactly one result per dispatched criterion id, covering every "
+            "id and no others."
+        ),
+    )
+
+
 class BranchNameOutput(CamelCaseModel):
     """Agent-generated branch name slug."""
 
@@ -592,6 +738,109 @@ class BranchNameOutput(CamelCaseModel):
     )
 
 
+class PassGateMovement(CamelCaseModel):
+    """One thing the gate saw move that its pass should act on."""
+
+    key: str = Field(
+        min_length=1,
+        description="The issue, review or scope key that moved.",
+    )
+    why: str = Field(
+        min_length=1,
+        description="One sentence on what moved and why the pass should act on it.",
+    )
+
+
+class PassGateOutput(CamelCaseModel):
+    """The gate session's answer: whether the pass has work in its window."""
+
+    run: bool = Field(
+        description=(
+            "True when something in the window is work for this pass; false "
+            "when the pass can sleep its interval."
+        ),
+    )
+    moved: list[PassGateMovement] = Field(
+        description=(
+            "What moved that the pass should act on, one entry per key; "
+            "empty when nothing did."
+        ),
+    )
+    reason: str = Field(
+        min_length=1,
+        description="One sentence stating why the pass runs or sleeps.",
+    )
+
+
+class ScopeScanNode(CamelCaseModel):
+    """One approved node the scope scan found unfinished."""
+
+    kind: ScopeKind = Field(
+        description="Which kind of node it is: initiative, project, milestone, issue.",
+    )
+    key: str = Field(
+        min_length=1,
+        description=(
+            "An issue's identifier, or a project's, initiative's or milestone's "
+            "uuid, never its display identifier."
+        ),
+    )
+    repository: str | None = Field(
+        description=(
+            "The url of the declared repository its work goes to, or the one "
+            "holding most of it when it spans several; null only when nothing "
+            "on the node tells."
+        ),
+    )
+    why: str = Field(
+        min_length=1,
+        description="One sentence on why the node is listed.",
+    )
+
+
+class ScopeScanOutput(CamelCaseModel):
+    """The scope scan's answer: the approved work that is not finished."""
+
+    scopes: list[ScopeScanNode] = Field(
+        description=(
+            "Every approved, unfinished node inside the boundary, once each; "
+            "empty when there is none."
+        ),
+    )
+    reason: str = Field(
+        min_length=1,
+        description="One sentence on the scan, naming any node it could not read.",
+    )
+
+
+class ScopeItem(CamelCaseModel):
+    """One issue below the parent, as the board shows it now."""
+
+    key: str = Field(min_length=1, description="The issue's key.")
+    criterion: bool = Field(
+        description="True when the issue is a criterion sub-issue.",
+    )
+    text: str = Field(
+        min_length=1,
+        description="A criterion's Check exactly as written; any other issue's title.",
+    )
+    done: bool = Field(
+        description="True when its workflow state is a completed or canceled one.",
+    )
+
+
+class ScopeItemsOutput(CamelCaseModel):
+    """The scope-done answer: every issue below the parent, and whether it is done."""
+
+    items: list[ScopeItem] = Field(
+        description="Every issue below the parent, once each, at any depth.",
+    )
+    reason: str = Field(
+        min_length=1,
+        description="One sentence on the state of the work below the parent.",
+    )
+
+
 class ContentAuditFinding(CamelCaseModel):
     """One finding from the judgment scanner's audit session.
 
@@ -600,12 +849,19 @@ class ContentAuditFinding(CamelCaseModel):
     excise, and the gate blocks rather than redacting such a finding.
     """
 
+    category: Literal[RedactionCategory.ORG_PRIVATE] | DurabilityCategory = Field(
+        description=(
+            "org_private for an organization privacy disclosure; object_count for "
+            "a tracker-object count claim; identifier_roster for a tracker roster. "
+            "Durability reasons are distinct from privacy redaction."
+        ),
+    )
     start: int | None = Field(
         default=None,
         ge=0,
         description=(
-            "Character offset where the leaking span starts, counted from the "
-            "start of the payload. Absent when the leak is carried by a "
+            "Character offset where the finding span starts, counted from the "
+            "start of the payload. Absent when the finding is carried by a "
             "passage rather than a substring."
         ),
     )
@@ -657,6 +913,161 @@ class GeneratedCriteriaOutput(CamelCaseModel):
     reasoning: str = Field(
         min_length=1,
         description="How the set was derived from the ticket and the repository.",
+    )
+
+
+class RulingClass(StrEnum):
+    """The four defects a fire-time ruling may resolve."""
+
+    PIN_READING = "pin_reading"
+    PIN_ARTIFACT = "pin_artifact"
+    REGROUND_PREMISE = "reground_premise"
+    RESOLVE_CONTRADICTION = "resolve_contradiction"
+
+
+class RulingProtectedTestRef(ProtectedTestRef):
+    """A native ruling designation retains the canonical typed owner identity."""
+
+    source_ref: RulingId = Field(min_length=1, pattern=r"\S")
+
+
+class Ruling(CamelCaseModel):
+    """One pinned answer, with explicit authorship and its stable question key."""
+
+    model_config = ConfigDict(frozen=True)
+
+    ruling_id: RulingId = Field(
+        min_length=1, pattern=r"\S", description="The harness-minted ruling identity."
+    )
+    issue_ref: str = Field(
+        min_length=1, pattern=r"\S", description="The owning tracker's issue key."
+    )
+    question: str = Field(
+        min_length=1, pattern=r"\S", description="The exact question being ruled on."
+    )
+    ruling_class: RulingClass = Field(
+        description="Which of the four permitted defects this ruling resolves."
+    )
+    resolution: str = Field(
+        min_length=1, pattern=r"\S", description="The pinned answer the fire consumes."
+    )
+    rejected_alternative: Annotated[str, Field(min_length=1, pattern=r"\S")] | None = (
+        Field(description="The losing reading or contradiction, or explicit absence.")
+    )
+    repo_evidence: tuple[Annotated[str, Field(min_length=1, pattern=r"\S")], ...] = (
+        Field(
+            description="Repository evidence references supporting the pinned answer."
+        )
+    )
+    authored_by: RulingAuthor = Field(
+        description="Explicit machine or principal authorship, independent of account."
+    )
+    supersedes: RulingId | None = Field(
+        default=None,
+        description=(
+            "The identity this record replaces, when its question restates an "
+            "earlier pinned question. Null when it replaces nothing. A record "
+            "never overwrites the one it supersedes."
+        ),
+    )
+    protected_tests: tuple[RulingProtectedTestRef, ...] | None = Field(
+        default=None,
+        description=(
+            "Tests explicitly designated as encoding this ruling. Each source_ref "
+            "is this ruling's identity. Null means designation was not recorded; "
+            "an empty list explicitly declares no protected tests."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def name_rejected_reading(self) -> Self:
+        if (
+            self.ruling_class
+            in {
+                RulingClass.PIN_READING,
+                RulingClass.RESOLVE_CONTRADICTION,
+            }
+            and self.rejected_alternative is None
+        ):
+            raise ValueError("this ruling class must name its rejected alternative")
+        return self
+
+    @model_validator(mode="after")
+    def supersede_another_identity(self) -> Self:
+        if self.supersedes == self.ruling_id:
+            raise ValueError("a record cannot supersede its own question")
+        return self
+
+    @model_validator(mode="after")
+    def own_protected_tests(self) -> Self:
+        if self.protected_tests is None:
+            return self
+        addresses = set()
+        for reference in self.protected_tests:
+            if reference.source_ref != self.ruling_id:
+                raise ValueError("a protected test must name its owning ruling")
+            address = (reference.path, reference.qualified_name)
+            if address in addresses:
+                raise ValueError("duplicate protected test in one ruling")
+            addresses.add(address)
+        return self
+
+
+class RulingAnswer(CamelCaseModel):
+    """One answer as the pre-loop question step is told it, before any identity.
+
+    Everything a record needs EXCEPT its identity and its authorship: the
+    identity is minted from the exact pair by the one minting site, and the
+    authorship is stamped by the step, so neither can be answered. The field
+    constraints are ``Ruling``'s own; the validators are not repeated here,
+    because ``Ruling`` is the one statement of a valid record and it is what
+    ``owed_rulings`` builds.
+    """
+
+    issue_ref: str = Field(
+        min_length=1, pattern=r"\S", description="The owning tracker's issue key."
+    )
+    question: str = Field(
+        min_length=1, pattern=r"\S", description="The exact question being answered."
+    )
+    ruling_class: RulingClass = Field(
+        description="Which of the four permitted defects this answer resolves."
+    )
+    resolution: str = Field(
+        min_length=1, pattern=r"\S", description="The pinned answer the fire consumes."
+    )
+    rejected_alternative: Annotated[str, Field(min_length=1, pattern=r"\S")] | None = (
+        Field(description="The losing reading or contradiction, or explicit absence.")
+    )
+    repo_evidence: tuple[Annotated[str, Field(min_length=1, pattern=r"\S")], ...] = (
+        Field(
+            description="Repository evidence references supporting the pinned answer."
+        )
+    )
+    supersedes_question: Annotated[str, Field(min_length=1, pattern=r"\S")] | None = (
+        Field(
+            default=None,
+            description=(
+                "The exact earlier pinned question this answer's question restates, "
+                "when it restates one; null otherwise."
+            ),
+        )
+    )
+    deliverable: Annotated[str, Field(min_length=1, pattern=r"\S")] | None = Field(
+        default=None,
+        description=(
+            "The item from the subject's Deliverables section this answer's work "
+            "falls under, quoted exactly as that section states it; null when the "
+            "answer requires building nothing beyond what that section already names."
+        ),
+    )
+
+
+class RulingOutput(CamelCaseModel):
+    """Everything one open-question session returns; empty when nothing is open."""
+
+    rulings: tuple[RulingAnswer, ...] = Field(
+        description="One answer per open question; an empty list means none is open."
     )
 
 
@@ -736,8 +1147,8 @@ class WorkflowIterationEvent(AgentEvent):
     it on this existing channel rather than on a second event type.
 
     ``verdict`` is three-state.  It replaced a boolean ``accepted``:
-    a run whose only failures are soft signals ships AND has something to
-    say, and no boolean could carry both.
+    a run carrying a criterion nothing could grade ships AND has something
+    to say, and no boolean could carry both.
     """
 
     type: Literal["workflow_iteration"] = "workflow_iteration"
@@ -780,7 +1191,7 @@ class WorkflowRemediationEvent(AgentEvent):
     type: Literal["workflow_remediation"] = "workflow_remediation"
     entry: RemediationEntry
     round_index: int
-    ticket: TicketDraftOutput
+    ticket: TicketDraftOutput | RemediationPlan
     base_ref: str
 
 
@@ -802,10 +1213,9 @@ class WorkflowCompleteEvent(AgentEvent):
 
     ``outcome`` is the sole terminal discriminator — required and
     non-nullable, so ``exclude_none=True`` can never drop it and no
-    serializer hack is needed to force it onto the wire.  ``ci_status``
-    now holds on the same ground, and ``merge_error`` says what its
-    string actually carries: the merge failure, never a general error
-    channel.
+    serializer hack is needed to force it onto the wire. Delivery facts
+    belong to the caller. ``merge_error`` carries only a consolidation
+    failure, never a general error channel.
     """
 
     type: Literal["workflow_complete"] = "workflow_complete"
@@ -817,11 +1227,16 @@ class WorkflowCompleteEvent(AgentEvent):
     merged: bool = False
     final_commit_sha: str | None = None
     merge_error: str | None = None
+    trajectory: LoopTrajectory | None = None
+    criteria_validation: CriteriaValidation | None = None
+
+
+class AuthoredWorkflowCompleteEvent(WorkflowCompleteEvent):
+    """Existing authored HTTP terminal after external delivery completes."""
+
     pr_url: str | None = None
     pr_number: int | None = None
     ci_status: CIStatus = CIStatus.not_monitored
-    trajectory: LoopTrajectory | None = None
-    criteria_validation: CriteriaValidation | None = None
 
 
 class WorkflowVisibilityEvent(AgentEvent):
@@ -856,11 +1271,11 @@ class JobAcceptedEvent(AgentEvent):
     """
 
     type: Literal["job_accepted"] = "job_accepted"
-    job_id: str
-    lane: str
-    queue_position: int
-    status_url: str
-    stream_url: str
+    job_id: AcceptanceHandle
+    lane: AcceptanceHandle
+    queue_position: AcceptedQueuePosition
+    status_url: JobLink
+    stream_url: JobLink
 
 
 class WorkflowCriteriaEvent(AgentEvent):
@@ -919,6 +1334,45 @@ class WorkflowTicketEvent(AgentEvent):
     mode: TicketReviewMode
 
 
+# The native graph forwards SDK events and emits only these progress variants.
+# Terminal events are consumed by its caller; authored ticket/artifact events
+# belong to the authored composition. Reuse models so wire validation preserves
+# every field rather than deserializing the AgentEvent base alone.
+class NativeAmendmentEvent(AgentEvent):
+    """Independent precommit findings; upheld departures were not actioned."""
+
+    type: Literal["native_amendment"] = "native_amendment"
+    report: AmendmentReport
+    repeated: tuple[RepeatedUpheld, ...] = ()
+
+
+type NativeFireProgressEvent = Annotated[
+    UserMessageEvent
+    | AssistantTextEvent
+    | AssistantThinkingEvent
+    | ToolUseEvent
+    | ToolResultEvent
+    | SystemEvent
+    | TaskStartedEvent
+    | TaskProgressEvent
+    | TaskUpdatedEvent
+    | TaskNotificationEvent
+    | ResultEvent
+    | StreamDataEvent
+    | ErrorEvent
+    | RateLimitWarningEvent
+    | NodeSessionStartedEvent
+    | WorkflowIterationEvent
+    | WorkflowConsolidationEvent
+    | WorkflowReviewEvent
+    | WorkflowRemediationEvent
+    | WorkflowVisibilityEvent
+    | WorkflowScopeBaseEvent
+    | NativeAmendmentEvent,
+    Field(discriminator="type"),
+]
+
+
 # Pre-computed WIRE schemas for structured agent output via output_format.
 # Each is the model's OWN schema: the contract the model is shown is the
 # contract its response is judged against, constraints included.
@@ -927,6 +1381,8 @@ COMMIT_MESSAGE_SCHEMA: dict[str, object] = CommitMessageOutput.model_json_schema
 ACCEPTANCE_CRITERIA_SCHEMA: dict[str, object] = (
     AcceptanceCriteriaOutput.model_json_schema()
 )
+# Schema for one reading of the dispatched checks at the lane's base
+BASE_CHECK_SCHEMA: dict[str, object] = BaseCheckOutput.model_json_schema()
 # Schema for agent-generated branch name slugs
 BRANCH_NAME_SCHEMA: dict[str, object] = BranchNameOutput.model_json_schema()
 # Schema for agent-generated acceptance criteria from ticket analysis
@@ -939,26 +1395,63 @@ CRITERIA_VALIDATION_SCHEMA: dict[str, object] = (
 )
 # Schema for structured ticket draft output
 TICKET_DRAFT_SCHEMA: dict[str, object] = TicketDraftOutput.model_json_schema()
+REMEDIATION_SCHEMA: dict[str, object] = RemediationPlan.model_json_schema()
 # Schema for structured ticket review output
 TICKET_REVIEW_SCHEMA: dict[str, object] = TicketReviewOutput.model_json_schema()
 PR_DESCRIPTION_SCHEMA: dict[str, object] = PRDescriptionOutput.model_json_schema()
 # Schema for the judgment scanner's structured audit verdict
 CONTENT_AUDIT_SCHEMA: dict[str, object] = ContentAuditOutput.model_json_schema()
+# Schema for a scheduled pass's gate question
+PASS_GATE_SCHEMA: dict[str, object] = PassGateOutput.model_json_schema()
+# Schemas for the two scope questions: the cron's scan and the run's check
+SCOPE_SCAN_SCHEMA: dict[str, object] = ScopeScanOutput.model_json_schema()
+SCOPE_DONE_SCHEMA: dict[str, object] = ScopeItemsOutput.model_json_schema()
 # Schema for the draft-critic lens's verdict on a drafted artifact
 DRAFT_CRITIQUE_SCHEMA: dict[str, object] = DraftCritiqueOutput.model_json_schema()
+
+AUDIT_MANDATE_SCHEMA: dict[str, object] = AuditMandateJudgment.model_json_schema()
+
+AUDIT_OVERCLAIM_SCHEMA: dict[str, object] = AuditOverclaimJudgment.model_json_schema()
+AUDIT_CLAIM_SCHEMA: dict[str, object] = AuditClaimJudgment.model_json_schema()
+DETECTOR_REMOVAL_SCHEMA: dict[str, object] = DetectorRemovalJudgment.model_json_schema()
+
+
+ORGANIZE_ADMISSION_SCHEMA: dict[str, object] = AdmissionJudgment.model_json_schema()
+NATIVE_WRITER_SCHEMA: dict[str, object] = NativeWriterOutput.model_json_schema()
+AMENDMENT_JUDGMENT_SCHEMA: dict[str, object] = AmendmentJudgment.model_json_schema()
+AMENDMENT_TEXT_SCHEMA: dict[str, object] = AmendmentTextOutput.model_json_schema()
+ORGANIZE_PROPOSAL_SCHEMA: dict[str, object] = OrganizeProposal.model_json_schema()
+WRITE_BACK_SCHEMA: dict[str, object] = WriteBackFinding.model_json_schema()
+RULING_SCHEMA: dict[str, object] = RulingOutput.model_json_schema()
 
 #: Every wire schema this system dispatches, by constant name. The
 #: wire-contract tests and the dispatch-site guard both read this rather
 #: than keeping their own list.
 WIRE_SCHEMAS: dict[str, dict[str, object]] = {
+    "NATIVE_WRITER_SCHEMA": NATIVE_WRITER_SCHEMA,
+    "AMENDMENT_JUDGMENT_SCHEMA": AMENDMENT_JUDGMENT_SCHEMA,
+    "AMENDMENT_TEXT_SCHEMA": AMENDMENT_TEXT_SCHEMA,
     "COMMIT_MESSAGE_SCHEMA": COMMIT_MESSAGE_SCHEMA,
     "ACCEPTANCE_CRITERIA_SCHEMA": ACCEPTANCE_CRITERIA_SCHEMA,
+    "BASE_CHECK_SCHEMA": BASE_CHECK_SCHEMA,
     "BRANCH_NAME_SCHEMA": BRANCH_NAME_SCHEMA,
     "GENERATED_CRITERIA_SCHEMA": GENERATED_CRITERIA_SCHEMA,
     "CRITERIA_VALIDATION_SCHEMA": CRITERIA_VALIDATION_SCHEMA,
     "TICKET_DRAFT_SCHEMA": TICKET_DRAFT_SCHEMA,
+    "REMEDIATION_SCHEMA": REMEDIATION_SCHEMA,
     "TICKET_REVIEW_SCHEMA": TICKET_REVIEW_SCHEMA,
     "PR_DESCRIPTION_SCHEMA": PR_DESCRIPTION_SCHEMA,
     "CONTENT_AUDIT_SCHEMA": CONTENT_AUDIT_SCHEMA,
+    "PASS_GATE_SCHEMA": PASS_GATE_SCHEMA,
+    "SCOPE_SCAN_SCHEMA": SCOPE_SCAN_SCHEMA,
+    "SCOPE_DONE_SCHEMA": SCOPE_DONE_SCHEMA,
     "DRAFT_CRITIQUE_SCHEMA": DRAFT_CRITIQUE_SCHEMA,
+    "ORGANIZE_ADMISSION_SCHEMA": ORGANIZE_ADMISSION_SCHEMA,
+    "ORGANIZE_PROPOSAL_SCHEMA": ORGANIZE_PROPOSAL_SCHEMA,
+    "WRITE_BACK_SCHEMA": WRITE_BACK_SCHEMA,
+    "RULING_SCHEMA": RULING_SCHEMA,
+    "AUDIT_CLAIM_SCHEMA": AUDIT_CLAIM_SCHEMA,
+    "AUDIT_OVERCLAIM_SCHEMA": AUDIT_OVERCLAIM_SCHEMA,
+    "DETECTOR_REMOVAL_SCHEMA": DETECTOR_REMOVAL_SCHEMA,
+    "AUDIT_MANDATE_SCHEMA": AUDIT_MANDATE_SCHEMA,
 }

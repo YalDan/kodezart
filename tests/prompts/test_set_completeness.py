@@ -15,8 +15,8 @@ import pytest
 from kodezart.adapters.in_repo_prompt_registry import default_sets_root
 from kodezart.core.errors import PromptResolutionError
 from kodezart.types.domain.prompts import PromptKey
-from tests.prompt_census import PROMPT_FUNCTION_COUNT
-from tests.prompts.sets import V5_SET
+from tests.prompt_census import PROMPT_FUNCTION_NAMES
+from tests.prompts.sets import ALL_CASES, V5_SET
 from tests.prompts.test_prompt_wiring import (
     DEFAULT_SET,
     complete_members,
@@ -34,8 +34,20 @@ V5_SET_DIR = default_sets_root() / V5_SET
 
 
 def test_the_census_is_the_enum() -> None:
-    """The shared census and the enum are one number, checked in one place."""
-    assert len(PromptKey) == PROMPT_FUNCTION_COUNT
+    """The independent role names exactly match the registered enum."""
+    assert {key.value for key in PromptKey} == PROMPT_FUNCTION_NAMES
+
+
+def test_every_registered_function_key_has_a_render_case() -> None:
+    """The roster is a census of the keys, not a sample of them.
+
+    The one guard that catches a key dropped from the case roster and the
+    artifact tags together: each of those two rosters is otherwise pinned only
+    by the other, so a key missing from both is missing from nothing.  It lives
+    here rather than beside the roster it reads because ``sets.py`` is not a
+    module pytest collects, where this census never ran at all.
+    """
+    assert {key for key, _ in ALL_CASES.values()} == set(PromptKey)
 
 
 def test_at_least_the_legacy_set_is_shipped() -> None:
@@ -77,18 +89,20 @@ def test_the_legacy_set_stays_complete_when_the_default_names_another_set(
     assert set(table.values()) == {DEFAULT_SET}
 
 
-@pytest.mark.parametrize(
-    "missing",
-    [PromptKey.FIX, PromptKey.EVALUATION, PromptKey.KNOWLEDGE_MAP],
-)
+@pytest.mark.parametrize("missing", list(PromptKey))
 def test_a_set_missing_one_key_raises_the_typed_boot_error(
     missing: PromptKey,
     tmp_path: Path,
 ) -> None:
-    """Removing one key from a set names that key in the typed boot error."""
+    """Removing one key from a set names that key in the typed boot error.
+
+    The skills table stays complete, so the member file is the only thing the
+    set no longer supplies: a registry that stopped looking for the member and
+    trusted the table alone would pass otherwise.
+    """
     members = complete_members("fixture")
     del members[missing.value]
-    write_set(tmp_path, "fixture", members)
+    write_set(tmp_path, "fixture", members, skills={key.value: [] for key in PromptKey})
 
     with pytest.raises(PromptResolutionError) as excinfo:
         load_registry(sets_root=tmp_path, default_set="fixture")

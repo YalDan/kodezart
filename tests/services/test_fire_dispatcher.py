@@ -32,7 +32,6 @@ from kodezart.types.domain.operation import (
     CheckStep,
     DocumentEntry,
     DocumentSystem,
-    Initiative,
     LifecycleStage,
     OperationConfig,
     OperationMemberAbsentError,
@@ -179,7 +178,6 @@ def operation_config(
         },
         knowledge={},
         endpoints={},
-        initiatives=[Initiative(id="init-1")],
     )
 
 
@@ -231,7 +229,7 @@ def dispatcher(
             max_bytes=ASSET_MAX_BYTES,
             fetch_timeout_seconds=ASSET_FETCH_TIMEOUT_SECONDS,
         ),
-        "resolver": BaseResolver(tracker=tracker, git=git, remote=REMOTE),
+        "resolver": BaseResolver(tracker=tracker, git=git, remote=REMOTE, refs=tracker),
         "cache": FakeRepoCache(),
         "trunk": TRUNK,
         "integration_workspace_dir": INTEGRATION_DIR,
@@ -696,8 +694,8 @@ class TestPriorityRanking:
         """
         root = Path(__file__).resolve().parents[2] / "src" / "kodezart"
         allowed = {
-            root / "adapters" / "linear_mcp_tracker.py",
-            root / "types" / "domain" / "linear_mcp.py",
+            root / "adapters" / "linear" / "tracker.py",
+            root / "adapters" / "linear" / "wire.py",
         }
         offenders: list[str] = []
         for path in sorted(root.rglob("*.py")):
@@ -1065,7 +1063,7 @@ class TestTheBaseIsReadOffTheGraph:
         report = await fire.run_pass()
 
         _, request = queue.submissions[0]
-        assert request.base_branch == TRUNK
+        assert request.base_spec.base_branch == TRUNK
         assert report.base is not None
         assert report.base.base_role is None
         assert report.base.inputs == ()
@@ -1089,8 +1087,8 @@ class TestTheBaseIsReadOffTheGraph:
         report = await fire.run_pass()
 
         _, request = queue.submissions[0]
-        assert request.base_branch == BLOCKER_BRANCH
-        assert request.base_branch != TRUNK
+        assert request.base_spec.base_branch == BLOCKER_BRANCH
+        assert request.base_spec.base_branch != TRUNK
         assert report.base is not None
         assert report.base.base_role is WorkRefRole.DELIVERABLE
         assert [item.blocker_issue_id for item in report.base.inputs] == ["K-2"]

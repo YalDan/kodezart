@@ -13,18 +13,23 @@ from kodezart.types.domain.accept import AcceptVerdict
 from kodezart.types.domain.ci import CIStatus
 from kodezart.types.domain.job import JobState
 from kodezart.types.domain.outcome import WorkflowOutcome
+from kodezart.types.job_acceptance import (
+    AcceptanceHandle,
+    AcceptedQueuePosition,
+    JobLink,
+)
 
 
 class FireAcceptedResponse(CamelCaseModel):
     """202 body for ``POST /api/v1/agent/fire`` — no stream, just the handle."""
 
-    job_id: str
-    lane: str
+    job_id: AcceptanceHandle
+    lane: AcceptanceHandle
     state: JobState
-    queue_position: int
+    queue_position: AcceptedQueuePosition
     submitted_at: datetime
-    status_url: str
-    stream_url: str
+    status_url: JobLink
+    stream_url: JobLink
 
 
 class RunStateResponse(CamelCaseModel):

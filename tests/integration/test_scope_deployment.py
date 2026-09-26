@@ -1,0 +1,452 @@
+"""The shipped scope operation file, read and booted as an operator has it."""
+
+import ast
+import asyncio
+import json
+import re
+from pathlib import Path
+
+import pytest
+
+from kodezart.adapters.toml_operation_config import load_operation_config
+from kodezart.chains.scope_walker import read_scope_ready
+from kodezart.composition.tracker import criteria_stage_label_key
+from kodezart.domain.errors import ScopeNotApprovedError
+from kodezart.domain.run_alarm_record import MARKER_PURPOSE
+from kodezart.main import create_app, lifespan
+from kodezart.services.scope_approval import scope_approved
+from kodezart.services.tracker_boot import owned_mappings
+from kodezart.types.domain.agent import ScopeScanOutput
+from kodezart.types.domain.branch import trunk_base
+from kodezart.types.domain.operation import ScopeLabel
+from kodezart.types.domain.organize import OrganizeLabelNamespace, split_label_key
+from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.scope_runtime import ScopeWalkEvent
+from kodezart.types.domain.session import PermissionMode
+from tests.prompts.test_prompt_wiring import load_registry
+from tests.prompts.test_set_completeness import shipped_sets
+from tests.services.test_prompt_passes import HEARTBEAT_PASS
+from tests.tools.scratch_board import ScratchBoardServer
+from tests.tools.scratch_scope import (
+    SCRATCH_DECLARATION,
+    ScratchScopeBuilder,
+    scratch_scope_plan,
+    target_from,
+)
+
+#: The file a scope operator copies. Loaded rather than restated: a test
+#: written against its own copy of these names would pass over a file nobody
+#: could boot.
+SCOPE_EXAMPLE = Path(__file__).resolve().parents[2] / "docs" / "operation.scope.toml"
+
+
+def shipped():
+    return load_operation_config(SCOPE_EXAMPLE)
+
+
+def test_the_shipped_file_names_a_rubric_role_the_registry_resolves_for_every_row() -> (
+    None
+):
+    """Every row's accept conditions resolve, in every shipped set.
+
+    Both rows: a run-stage row pointed at some other rubric would ship a stage
+    that accepts a member without the implementation test, and this is where
+    that shows.
+    """
+    rows = shipped().resolve_organize_mandates()
+    assert {row.spec.kind.value: row.spec.rubric_prompt_key.value for row in rows} == {
+        "ticket": "organize_spec_rubric",
+        "criteria": "organize_spec_rubric",
+    }
+    # One admission role for every row: what differs between the rows is the
+    # rubric rendered into it, never the role that judges.
+    assert {
+        row.spec.kind.value: row.spec.admission_prompt_key.value for row in rows
+    } == {
+        "ticket": "organize_assess",
+        "criteria": "organize_assess",
+    }
+    for set_name in shipped_sets():
+        registry = load_registry(default_set=set_name)
+        for row in rows:
+            assert registry.resolution_table()[row.spec.rubric_prompt_key] == set_name
+
+
+def test_the_shipped_ticket_row_gates_on_the_approved_member() -> None:
+    """The shipped file's own answer to what opens the run's first stage.
+
+    Every row runs under approval, and what admits a member to the first is
+    the scope's approval itself — a property of the addressed scope and of the
+    containers above it, the one human act in a run — and not the triage or
+    proposed member and not an issue classification. Read off the file rather
+    than restated, and read through the key's own split, so a row repointed at
+    another namespace reddens here.
+    """
+    loaded = shipped()
+    rows = loaded.resolve_organize_mandates()
+    assert [row.spec.kind.value for row in rows] == ["ticket", "criteria"]
+    assert all(row.role.runs_under_approval for row in rows)
+    namespace, key = split_label_key(rows[0].spec.gate_label_key)
+    assert namespace is OrganizeLabelNamespace.SCOPE
+    assert key == ScopeLabel.APPROVED.value
+    approved = loaded.scope_labels[ScopeLabel.APPROVED.value]
+    assert approved not in {
+        loaded.scope_labels[ScopeLabel.TRIAGE.value],
+        loaded.scope_labels[ScopeLabel.PROPOSED.value],
+    }
+    assert rows[0].gate_label == approved
+
+
+def test_the_shipped_file_names_the_criteria_stage_the_adapter_is_built_with():
+    """One answer, from the builder's own function: a lane fires on this label."""
+    loaded = shipped()
+    row = next(
+        row
+        for row in loaded.resolve_organize_mandates()
+        if row.role.marks_execution_stage
+    )
+    assert (
+        criteria_stage_label_key(loaded)
+        == split_label_key(row.spec.terminal_marker_key)[1]
+    )
+
+
+def test_the_shipped_file_declares_no_table_the_scope_path_never_reads() -> None:
+    """The header's claim about the two absent tables, asserted rather than read.
+
+    Both fields default to an empty mapping, so a table added to the file would
+    load, boot and walk while the header above it said there was none.
+    """
+    loaded = shipped()
+    assert loaded.run_event_states == {}
+    assert loaded.queue_states == {}
+
+
+#: Every purpose a marker prefix can be asked for is named in the source by one
+#: of four shapes. The floor below keeps an empty derivation from making the
+#: subset assertion say nothing.
+PURPOSE_FLOOR: frozenset[str] = frozenset(
+    {"run_state", "run_event", "ruling", "amendment", "repository"}
+)
+
+SRC = Path(__file__).resolve().parents[2] / "src"
+
+
+def _called_name(node: ast.expr) -> str:
+    """The bare name a call's target ends in: ``self._prefix`` is ``_prefix``."""
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        return node.attr
+    return ""
+
+
+def _string(node: ast.expr | None) -> str | None:
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    return None
+
+
+def marker_purposes_read_under_src() -> set[str]:
+    """Every marker purpose the source can ask for, off the syntax tree.
+
+    Four shapes, because the code asks in four ways: a `purpose=` keyword on
+    any call; the sole positional argument of a call whose function name ends in
+    `_prefix`; the first of the two positional arguments of a call whose
+    function name ends in `_pattern` (`LinearMarkers._pattern(purpose, suffix)`,
+    the one way `repository` is asked for); and a module-level name ending in
+    `_PURPOSE`.
+
+    A purpose named some fifth way is a blind spot stated here rather than
+    hidden. It would make this guard accept a declared member nothing reads,
+    which is the direction that costs a reader a false promise and not a run.
+    """
+    found: set[str] = set()
+    for path in sorted(SRC.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            for keyword in node.keywords:
+                if keyword.arg == "purpose" and (value := _string(keyword.value)):
+                    found.add(value)
+            if (
+                _called_name(node.func).endswith("_prefix")
+                and len(node.args) == 1
+                and not node.keywords
+                and (value := _string(node.args[0]))
+            ):
+                found.add(value)
+            if (
+                _called_name(node.func).endswith("_pattern")
+                and len(node.args) == 2
+                and not node.keywords
+                and (value := _string(node.args[0]))
+            ):
+                found.add(value)
+        for statement in tree.body:
+            if not isinstance(statement, ast.Assign):
+                continue
+            value = _string(statement.value)
+            if value is None:
+                continue
+            if any(
+                isinstance(target, ast.Name) and target.id.endswith("_PURPOSE")
+                for target in statement.targets
+            ):
+                found.add(value)
+    return found
+
+
+def test_every_marker_purpose_the_shipped_file_declares_is_one_the_code_reads() -> None:
+    """A declared purpose nothing asks for is a member the header promises is used.
+
+    A subset guard on purpose. The other direction — every purpose the walk
+    needs is declared — is not derivable from the source, because which
+    purposes a given deployment reaches depends on what it schedules; the walk
+    test above is what settles that, by failing the lane.
+    """
+    derived = marker_purposes_read_under_src()
+    assert PURPOSE_FLOOR <= derived, sorted(PURPOSE_FLOOR - derived)
+    declared = set(shipped().marker_prefixes)
+    assert declared <= derived, sorted(declared - derived)
+
+
+# ---------------------------------------------------------------------------
+# The acceptance preamble, in process: the real lifespan, booted from the
+# shipped file and the page's own environment block, over a board the scratch
+# builder built.
+# ---------------------------------------------------------------------------
+
+#: A credential in the shape boot accepts, assembled by concatenation so no
+#: literal here has the shape of a real one.
+TOKEN = "lin_api_" + "0" * 40
+FORGE_TOKEN = "fixture-forge-token"
+
+#: The seconds a scoped read is allowed before this case fails rather than
+#: hanging a whole run. Orders above what these reads take.
+READ_BOUND_SECONDS = 60
+
+#: The one fenced `bash` block of the page an operator follows.
+GUIDE = Path(__file__).resolve().parents[2] / "docs" / "running-a-scope.md"
+
+#: The three the page cannot print a usable value for. Every other variable the
+#: block carries is used exactly as printed.
+SUBSTITUTED: frozenset[str] = frozenset(
+    {
+        "KODEZART_TRACKER__TOKEN",
+        "KODEZART_GITHUB_TOKEN",
+        "KODEZART_OPERATION_CONFIG",
+    }
+)
+
+
+def guide_environment() -> dict[str, str]:
+    """The page's own environment, with only the three secrets substituted.
+
+    Read out of the page rather than restated here: a case that set its own
+    variables would boot a deployment nobody was told how to configure. The two
+    credentials and the config path take fixture values because a page cannot
+    print a real one; every other value is used exactly as printed.
+    """
+    block = re.search(
+        r"```bash\n(.*?)```", GUIDE.read_text(encoding="utf-8"), flags=re.DOTALL
+    )
+    assert block is not None
+    # Anchored on `export` and matched to the end of its line, because a
+    # placeholder like `<the tracker credential>` is not one word and a
+    # whitespace-bounded capture would take `<the` for the value.
+    printed = dict(
+        re.findall(r"^export (KODEZART_[A-Z0-9_]+)=(.+)$", block[1], flags=re.MULTILINE)
+    )
+    # Substituted, never added: each of the three has to be a name the page
+    # itself prints, or this helper would configure a deployment the page never
+    # told an operator about.
+    assert SUBSTITUTED <= set(printed), sorted(SUBSTITUTED - set(printed))
+    assert len(printed) >= 6
+    return {
+        **printed,
+        "KODEZART_TRACKER__TOKEN": TOKEN,
+        "KODEZART_GITHUB_TOKEN": FORGE_TOKEN,
+        "KODEZART_OPERATION_CONFIG": str(SCOPE_EXAMPLE),
+    }
+
+
+def scratch_project(loaded) -> dict[str, object]:
+    key = loaded.organize_scopes[0].scope.key
+    return {
+        "id": key,
+        "name": "Scratch scope",
+        "description": (
+            f"The board this deployment walks.\n{SCRATCH_DECLARATION}\n"
+            f"Nothing here is a record."
+        ),
+        "url": f"https://tracker.invalid/project/{key}",
+        "initiatives": [],
+        "labels": [],
+    }
+
+
+def scoped_run(app, loaded):
+    return app.state.workflow_engine.run(
+        prompt="",
+        repo_path=None,
+        repo_url=loaded.repos[0].url,
+        base_spec=trunk_base("unused-request-default"),
+        scope=loaded.organize_scopes[0].scope,
+        permission_mode=PermissionMode.UNATTENDED,
+        allowed_tools=[],
+        cache_key="acceptance",
+    )
+
+
+async def first_observation(app, loaded):
+    """The first walk observation of one run, and nothing after it."""
+    stream = scoped_run(app, loaded)
+    try:
+        async with asyncio.timeout(READ_BOUND_SECONDS):
+            async for event in stream:
+                if isinstance(event, ScopeWalkEvent):
+                    return event.observation
+    finally:
+        await stream.aclose()
+    raise AssertionError("the walk reported no observation")
+
+
+def logged(captured: str, name: str) -> list[dict[str, object]]:
+    return [
+        event
+        for line in captured.splitlines()
+        if line.strip().startswith("{")
+        for event in [json.loads(line.strip())]
+        if event.get("event") == name
+    ]
+
+
+async def test_a_scope_deployment_boots_from_the_shipped_files_and_fires_nothing(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The acceptance preamble, with nothing substituted but the transport and
+    the heartbeat's scan, which is an agent session and answers here that
+    nothing is approved yet.
+
+    A deployment configured from the shipped file and the page's own environment
+    block boots, reconciles its mappings into the team, schedules the standing
+    scopes' heartbeat beside the per-issue dispatch pass the same environment's
+    dispatch pair and forge token schedule, holds no checkpointer, and writes no
+    label onto any issue. Its first
+    scoped run is refused by type before a member is read, because nobody has
+    approved the project yet, and it leaves the board untouched.
+
+    Then the approval label is applied — by this test, standing for the person
+    whose act it is — and the approval question says yes. The ready reading is
+    read here through the deployment's own dialled adapter: the two root
+    issues ready with the third held by its live blocker. No run is started
+    after the approval, and no session is opened at all.
+    """
+    loaded = shipped()
+    project = scratch_project(loaded)
+    server = ScratchBoardServer(operation=loaded, project=project)
+    built = await ScratchScopeBuilder(
+        caller=server,
+        target=target_from(
+            operation=loaded,
+            team_key=next(iter(loaded.teams)),
+            project=str(project["name"]),
+            repo_url=loaded.repos[0].url,
+        ),
+        plan=scratch_scope_plan(),
+    ).build()
+    # What the builder built, before anything is asserted about it: the lane-set
+    # assertions below are all set comparisons, and an empty plan would satisfy
+    # every one of them.
+    assert set(built.lanes) == {"A", "B", "C"}
+    labels_before = {key: list(issue.labels) for key, issue in server.issues.items()}
+    payload_before = json.dumps(project, sort_keys=True)
+
+    for name, value in guide_environment().items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setattr(
+        "kodezart.composition.tracker.make_mcp_tool_caller",
+        lambda **_: server,
+    )
+
+    async def nothing_approved(**_: object) -> ScopeScanOutput:
+        return ScopeScanOutput(scopes=[], reason="nothing is approved yet")
+
+    monkeypatch.setattr("kodezart.composition.organize.ask", nothing_approved)
+
+    app = create_app()
+    async with lifespan(app):
+        events = capsys.readouterr().out
+        reconciled = logged(events, "tracker_mappings_reconciled")
+        assert len(reconciled) == 1
+        assert reconciled[0]["backend"] == "linear"
+        assert set(reconciled[0]["created"]) == {
+            ref.describe() for ref in owned_mappings(loaded)
+        }
+        # The page's environment sets the dispatch pair and no other: the
+        # per-issue dispatch pass and the heartbeat both run on it, and the
+        # supervisor and the two session passes are named as unset. Boot knows
+        # no pass named organize: the stages run inside the run the heartbeat
+        # submits.
+        assert [entry.name for entry in app.state.pass_scheduler.passes] == [
+            f"dispatch:{loaded.repos[0].url}",
+            HEARTBEAT_PASS,
+        ]
+        assert {
+            entry["name"] for entry in logged(events, "scheduled_pass_not_configured")
+        } == {
+            PromptKey.FIRE_PREP_PASS.value,
+            PromptKey.GROOMING_PASS.value,
+            "supervisor",
+            "audit",
+        }
+        # The observation tick records each lane's alarm under a configured
+        # prefix and refuses that lane by name without one, so a file that
+        # schedules the tick and declares no prefix is a file that stops at its
+        # first observed lane.
+        assert MARKER_PURPOSE in loaded.marker_prefixes
+        assert app.state.checkpointer is None
+        for name in ("scheduled_passes_not_wired", "prompt_passes_not_wired"):
+            assert logged(events, name) == [], name
+        # Boot instates the vocabulary in the TEAM; it labels no issue and does
+        # not touch the project it is about to be asked to walk.
+        assert {
+            key: list(issue.labels) for key, issue in server.issues.items()
+        } == labels_before
+        assert json.dumps(project, sort_keys=True) == payload_before
+
+        mark = len(server.calls)
+        # Before the label there is nothing to observe: the addressed scope
+        # carries no approval, so the run is refused at its entry rather than
+        # walked and reported empty one lane at a time.
+        scope = loaded.organize_scopes[0].scope
+        with pytest.raises(ScopeNotApprovedError) as refused:
+            _ = await first_observation(app, loaded)
+        assert refused.value.ref == scope
+        assert not [
+            name
+            for name, _ in server.calls[mark:]
+            if name in {"save_issue", "save_comment"}
+        ]
+
+        # The one human act, performed here because no agent may perform it.
+        project["labels"].append(loaded.scope_labels["approved"])
+        # The label is what admits the run: the entry's own question now says
+        # yes.
+        assert await scope_approved(ref=scope, tracker=app.state.tracker)
+
+        # The reading the admitted run takes its first tick from, read through
+        # this deployment's own dialled adapter: the two root lanes ready and
+        # the third held by its live blocker, off the board the builder built.
+        reading = await read_scope_ready(ref=scope, tracker=app.state.tracker)
+        assert reading.unapproved == ()
+        assert {lane.issue.issue_key for lane in reading.ready} == {
+            built.lanes["A"],
+            built.lanes["C"],
+        }
+        assert {
+            blocked.issue_key: blocked.blocker_keys for blocked in reading.blocked
+        } == {built.lanes["B"]: (built.lanes["A"],)}

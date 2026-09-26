@@ -4,50 +4,99 @@ Moved verbatim from the composition root, which imports and wires rather
 than defines.
 """
 
+import asyncio
 from dataclasses import dataclass
 from typing import Final, assert_never
 
-from kodezart.adapters.http_mcp_tool_caller import HttpMcpToolCaller
-from kodezart.adapters.linear_mcp_tracker import (
+from kodezart.adapters.linear.status_update import LinearScopeStatusUpdates
+from kodezart.adapters.linear.tracker import (
     ACCEPTED_CREDENTIAL_SHAPE,
     LinearMcpTracker,
     is_long_lived_credential,
 )
-from kodezart.core.config import AppConfig
-from kodezart.core.errors import TrackerCredentialShapeError
+from kodezart.adapters.mcp.http_tool_caller import HttpMcpToolCaller
+from kodezart.adapters.mcp.mapping import TrackerSessionServer
+from kodezart.config.tracker import TrackerSettings
+from kodezart.core.backoff import RetryPolicy
+from kodezart.core.errors import (
+    TrackerCredentialShapeError,
+    TrackerWriterAttributionError,
+)
 from kodezart.core.logging import BoundLogger
+from kodezart.core.owned_tasks import finish_owned
 from kodezart.core.protocols import (
     ManagedMcpToolCaller,
     McpToolCaller,
+    ScopeStatusUpdates,
     TrackerPort,
+    WriterIdentityReader,
 )
 from kodezart.services.tracker_boot import reconcile_tracker_mappings
 from kodezart.types.domain.dispatch import SelfWriteLedger
 from kodezart.types.domain.operation import OperationConfig
+from kodezart.types.domain.organize import split_label_key
 from kodezart.types.domain.tracker import EnsureAction, TrackerBackend
 
 #: Where the tracker credential is read from, named in the refusal because
 #: it is half of what an operator has to act on.
-CREDENTIAL_FIELD: Final[str] = "KODEZART_TRACKER_TOKEN"
+CREDENTIAL_FIELD: Final[str] = "KODEZART_TRACKER__TOKEN"
+
+#: The operation field that declares who the non-human writer is, named in
+#: the refusal when the operation declares none at all.
+AGENT_IDENTITY_FIELD: Final[str] = "agent_identities"
+
+#: The capability every refusal below names, so an operator reading one
+#: knows which boot check spoke.
+ATTRIBUTABLE_WRITER: Final[str] = "attributable writer"
 
 
-def make_mcp_tool_caller(*, config: AppConfig, token: str) -> ManagedMcpToolCaller:
+def tracker_auth_headers(*, settings: TrackerSettings, token: str) -> dict[str, str]:
+    """The credential header the tracker server is dialled with, spelled once."""
+    return {settings.auth_header: f"{settings.auth_scheme} {token}"}
+
+
+def tracker_session_server(*, settings: TrackerSettings) -> TrackerSessionServer | None:
+    """The tracker server a board-working session is given, or ``None`` without a key.
+
+    The same definition the programmatic client below dials — the URL, the
+    server identity and the deployment's own credential — so the grooming
+    and fire-prep sessions and a scope run's organize stage sessions work
+    the board under this deployment's key and budget (KOD-846 clause 5).  No
+    credential, no server: the tracker is unwired, the pass sessions run
+    without it, as boot says, and a scope deployment refuses to boot.
+    """
+    if settings.token is None:
+        return None
+    return TrackerSessionServer(
+        server_name=settings.server_name,
+        definition={
+            "type": "http",
+            "url": settings.server_url,
+            "headers": tracker_auth_headers(
+                settings=settings, token=settings.token.get_secret_value()
+            ),
+        },
+    )
+
+
+def make_mcp_tool_caller(
+    *, settings: TrackerSettings, token: str
+) -> ManagedMcpToolCaller:
     """The vendor MCP transport this deployment dials.
 
-    One server definition, one consumer: this factory, which builds the
-    programmatic client on the deterministic path.  No session attaches
-    the tracker server.
+    One server definition, two consumers: this factory, which builds the
+    programmatic client on the deterministic path, and
+    :func:`tracker_session_server`, which hands the scheduled-pass sessions
+    the same server under the same credential.
     """
     return HttpMcpToolCaller(
-        url=config.tracker_mcp_server_url,
-        server_name=config.tracker_mcp_server_name,
-        token=token,
-        timeout_seconds=config.tracker_timeout_seconds,
-        call_timeout_seconds=config.tracker_mcp_call_timeout_seconds,
-        sse_read_timeout_seconds=config.tracker_mcp_sse_read_timeout_seconds,
-        auth_header_name=config.tracker_mcp_auth_header,
-        auth_scheme=config.tracker_mcp_auth_scheme,
-        error_detail_limit=config.tracker_mcp_error_detail_limit,
+        url=settings.server_url,
+        server_name=settings.server_name,
+        headers=tracker_auth_headers(settings=settings, token=token),
+        timeout_seconds=settings.timeout_seconds,
+        call_timeout_seconds=settings.call_timeout_seconds,
+        sse_read_timeout_seconds=settings.sse_read_timeout_seconds,
+        error_detail_limit=settings.error_detail_limit,
     )
 
 
@@ -80,13 +129,69 @@ def refuse_foreign_credential(*, backend: TrackerBackend, token: str) -> None:
         )
 
 
+async def refuse_unattributable_writer(
+    *, tracker: WriterIdentityReader, operation: OperationConfig
+) -> None:
+    """Refuse a deployment whose writes no declared agent identity owns.
+
+    Read at boot and never again: every write this process makes is signed
+    by the credential's account, and an operation that cannot recognise
+    that account as its own agent reads its own writes as a principal's.
+    The comparison is over both spellings, since a declared identity may be
+    written as a mention or as the account name.
+    """
+    found = await tracker.writer_identity()
+    declared = {identity.lstrip("@") for identity in operation.agent_identities}
+    if not declared:
+        raise TrackerWriterAttributionError(
+            "the operation declares no non-human writer for this deployment",
+            capability=ATTRIBUTABLE_WRITER,
+            writer=sorted(found),
+            declared=(),
+            field=AGENT_IDENTITY_FIELD,
+        )
+    if {spelling.lstrip("@") for spelling in found}.isdisjoint(declared):
+        raise TrackerWriterAttributionError(
+            "the tracker credential is attributed to no declared agent identity",
+            capability=ATTRIBUTABLE_WRITER,
+            writer=sorted(found),
+            declared=sorted(declared),
+            field=CREDENTIAL_FIELD,
+        )
+
+
+def criteria_stage_label_key(operation: OperationConfig) -> str | None:
+    """The issue-label key that marks a lane's criteria stage complete.
+
+    The terminal marker of whichever resolved mandate row marks the execution
+    stage, reduced to the key half of its qualified reference — which is what
+    the adapter then looks up in ``issue_labels`` and nowhere else. ``None``
+    where no declared row marks that stage, and a lane that carries no such
+    marker cannot fire.
+
+    A function beside the builder rather than an expression inside it, because
+    a test about a shipped operation file needs the same answer the adapter is
+    built with, and a second copy of this expression in a test would be a
+    second opinion about which label that is.
+    """
+    return next(
+        (
+            split_label_key(row.spec.terminal_marker_key)[1]
+            for row in operation.resolve_organize_mandates()
+            if row.role.marks_execution_stage
+        ),
+        None,
+    )
+
+
 def build_tracker(
     *,
-    config: AppConfig,
+    backend: TrackerBackend,
+    retry: RetryPolicy,
     operation: OperationConfig,
     caller: McpToolCaller,
 ) -> tuple[TrackerPort, SelfWriteLedger]:
-    """The ``TrackerPort`` implementation ``config.tracker`` selects.
+    """The ``TrackerPort`` implementation ``backend`` selects.
 
     Adding a backend is a new adapter plus a member on ``TrackerBackend``.
     Consumers hold the protocol and change by nothing at all.
@@ -98,20 +203,39 @@ def build_tracker(
     which a reader on it would break (KOD-175).
     """
     ledger = SelfWriteLedger()
-    match config.tracker:
+    match backend:
         case TrackerBackend.LINEAR:
             adapter = LinearMcpTracker(
                 caller=caller,
                 queue_state_labels=operation.queue_states,
+                scope_labels=operation.scope_labels,
                 workflow_state_names=operation.workflow_states,
+                marker_prefixes=operation.marker_prefixes,
+                issue_labels=operation.issue_labels,
+                criteria_stage_label_key=criteria_stage_label_key(operation),
                 team_identifiers={
                     team_key: entry.name for team_key, entry in operation.teams.items()
                 },
-                max_retries=config.tracker_max_retries,
-                retry_backoff_factor=config.tracker_retry_backoff_factor,
+                retry=retry,
                 ledger=ledger,
             )
             return adapter, ledger
+
+
+def build_scope_status_writer(
+    *, backend: TrackerBackend, caller: McpToolCaller
+) -> ScopeStatusUpdates:
+    """The ``ScopeStatusUpdates`` implementation *backend* selects.
+
+    One class for one role over the same session the port dials, beside the
+    port rather than on it: the scope terminal states the single write it
+    makes and the one read that keeps it single, and every other tracker
+    consumer is unchanged by its existence (KOD-829).  The match is TOTAL, so
+    a second backend added without this role stops the type check here.
+    """
+    match backend:
+        case TrackerBackend.LINEAR:
+            return LinearScopeStatusUpdates(caller=caller)
 
 
 @dataclass(frozen=True)
@@ -127,6 +251,11 @@ class DialledTracker:
     tracker: TrackerPort
     caller: ManagedMcpToolCaller
     operation: OperationConfig
+    status: ScopeStatusUpdates
+    """The scope terminal's one write and the read that keeps it one, over
+    the same session and BESIDE the port the way the ledger is: they belong
+    to one consumer's role, and members for them on the port would put that
+    role into every tracker implementation (KOD-829)."""
     ledger: SelfWriteLedger
     """Where this tracker's own writes leave their stamp, for the pass gates
     that must not wake on them.  It travels WITH the tracker because the two
@@ -135,7 +264,7 @@ class DialledTracker:
 
 async def boot_tracker(
     *,
-    config: AppConfig,
+    settings: TrackerSettings,
     operation: OperationConfig | None,
     log: BoundLogger,
 ) -> DialledTracker | None:
@@ -155,48 +284,74 @@ async def boot_tracker(
     refusal it is — a 401 met while the session opens says only that the
     session broke (KOD-268).
     """
-    if operation is None or config.tracker_token is None:
+    if operation is None or settings.token is None:
         await log.ainfo(
             "tracker_not_configured",
             operation_config_present=operation is not None,
-            tracker_token_present=config.tracker_token is not None,
+            tracker_token_present=settings.token is not None,
         )
         return None
-    token = config.tracker_token.get_secret_value()
-    refuse_foreign_credential(backend=config.tracker, token=token)
-    caller = make_mcp_tool_caller(config=config, token=token)
+    token = settings.token.get_secret_value()
+    refuse_foreign_credential(backend=settings.backend, token=token)
+    caller = make_mcp_tool_caller(settings=settings, token=token)
     await caller.probe()
-    await caller.open()
     try:
+        await caller.open()
         tracker, ledger = build_tracker(
-            config=config,
+            backend=settings.backend,
+            retry=RetryPolicy(
+                attempts=settings.max_retries + 1,
+                initial_delay=settings.retry_backoff_factor,
+            ),
             operation=operation,
             caller=caller,
         )
+        await refuse_unattributable_writer(tracker=tracker, operation=operation)
         reconciliation = await reconcile_tracker_mappings(
             tracker=tracker,
             config=operation,
         )
-    except BaseException:
-        await caller.close()
+        await log.ainfo(
+            "tracker_mappings_reconciled",
+            backend=settings.backend.value,
+            adopted=[
+                item.ref.describe()
+                for item in reconciliation.outcomes
+                if item.action is EnsureAction.ADOPTED
+            ],
+            created=[
+                item.ref.describe()
+                for item in reconciliation.outcomes
+                if item.action is EnsureAction.CREATED
+            ],
+        )
+        return DialledTracker(
+            tracker=tracker,
+            caller=caller,
+            operation=reconciliation.config,
+            status=build_scope_status_writer(backend=settings.backend, caller=caller),
+            ledger=ledger,
+        )
+    except BaseException as failure:
+
+        async def close_caller() -> BaseException | None:
+            try:
+                await caller.close()
+            except BaseException as exc:
+                await log.aerror(
+                    "tracker_boot_cleanup_failed",
+                    error_kind=type(exc).__name__,
+                    error=str(exc),
+                    exc_info=True,
+                )
+                return exc
+            return None
+
+        cleanup_error, cancelled = await finish_owned(
+            asyncio.create_task(close_caller())
+        )
+        if cancelled or isinstance(failure, asyncio.CancelledError):
+            raise asyncio.CancelledError from cleanup_error
+        if cleanup_error is not None:
+            raise cleanup_error from failure
         raise
-    await log.ainfo(
-        "tracker_mappings_reconciled",
-        backend=config.tracker.value,
-        adopted=[
-            item.ref.describe()
-            for item in reconciliation.outcomes
-            if item.action is EnsureAction.ADOPTED
-        ],
-        created=[
-            item.ref.describe()
-            for item in reconciliation.outcomes
-            if item.action is EnsureAction.CREATED
-        ],
-    )
-    return DialledTracker(
-        tracker=tracker,
-        caller=caller,
-        operation=reconciliation.config,
-        ledger=ledger,
-    )

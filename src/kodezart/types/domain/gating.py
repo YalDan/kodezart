@@ -5,8 +5,10 @@ observable: content is never silently dropped and never silently posted.
 """
 
 import hashlib
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from enum import StrEnum
+from types import MappingProxyType
+from typing import Annotated, Literal
 
 from pydantic import ConfigDict, Field, model_validator
 
@@ -34,6 +36,13 @@ class GateVerdict(StrEnum):
     BLOCKED = "blocked"
 
 
+class SurfaceDurability(StrEnum):
+    """Whether a reader treats a write as current or as a past observation."""
+
+    DURABLE = "durable"
+    POINT_IN_TIME = "point_in_time"
+
+
 _SEVERITY: dict[GateVerdict, int] = {
     GateVerdict.CLEAN: 0,
     GateVerdict.REDACTED: 1,
@@ -59,7 +68,7 @@ def content_digest(content: str) -> str:
 
 
 class RedactionCategory(StrEnum):
-    """Deny-pattern categories. Each declares a verdict in AppConfig."""
+    """Privacy classes with fixed outbound consequences."""
 
     CROSS_REPO_NAMES = "cross_repo_names"
     TRACKER_URLS = "tracker_urls"
@@ -69,12 +78,66 @@ class RedactionCategory(StrEnum):
     ORG_PRIVATE = "org_private"
 
 
-#: The one category that carries NO pattern list, by construction.  A pattern
-#: describing an organisation contains the string it describes, so it cannot
-#: live in a public repository; AppConfig rejects it as a ``deny_patterns``
-#: key at boot rather than leaving the rule to be remembered.
-PATTERNLESS_CATEGORIES: frozenset[RedactionCategory] = frozenset(
-    {RedactionCategory.ORG_PRIVATE},
+TRACKER_ROSTER_MIN_REFERENCES = 3
+
+
+class DurabilityCategory(StrEnum):
+    """Aggregate claims always block; redacting one would preserve the claim."""
+
+    OBJECT_COUNT = "object_count"
+    IDENTIFIER_ROSTER = "identifier_roster"
+
+
+class ObjectCount(CamelCaseModel):
+    """A count of tracker objects a writer is about to render.
+
+    ``field`` is the writer's own field path for the number, so a refusal
+    hands back the place to repair rather than a position in the rendered
+    text.  Counts of tests, files and commits are repository facts, not
+    tracker aggregates, and have no member here: they are never declared.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    kind: Literal["count"] = "count"
+    field: str = Field(min_length=1, pattern=r"\S")
+    value: int = Field(ge=0)
+
+
+class IdentifierRoster(CamelCaseModel):
+    """The tracker identities a writer is about to render.
+
+    ``field`` is the writer's own field path for the list.  The identities
+    are the values the writer held before it rendered anything, so counting
+    them is arithmetic over the source rather than a reparse of the body.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    kind: Literal["roster"] = "roster"
+    field: str = Field(min_length=1, pattern=r"\S")
+    identities: tuple[Annotated[str, Field(min_length=1)], ...]
+
+
+#: One member per :class:`DurabilityCategory` member, discriminated on
+#: ``kind`` so a decision carrying one survives a JSON round trip exactly.
+type TrackerAggregate = Annotated[
+    ObjectCount | IdentifierRoster, Field(discriminator="kind")
+]
+
+
+type ScanCategory = RedactionCategory | DurabilityCategory
+
+
+REDACTION_VERDICTS: Mapping[RedactionCategory, GateVerdict] = MappingProxyType(
+    {
+        RedactionCategory.CROSS_REPO_NAMES: GateVerdict.REDACTED,
+        RedactionCategory.TRACKER_URLS: GateVerdict.REDACTED,
+        RedactionCategory.EMAIL_HANDLES: GateVerdict.REDACTED,
+        RedactionCategory.INFRA_ENDPOINTS: GateVerdict.BLOCKED,
+        RedactionCategory.CREDENTIALS: GateVerdict.BLOCKED,
+        RedactionCategory.ORG_PRIVATE: GateVerdict.REDACTED,
+    }
 )
 
 
@@ -121,6 +184,10 @@ class OutboundDestination(StrEnum):
     ARTIFACT_TICKET_JSON = "artifact_ticket_json"
     ARTIFACT_CRITERIA_JSON = "artifact_criteria_json"
     TRACKER_COMMENT = "tracker_comment"
+    TRACKER_STATUS_UPDATE = "tracker_status_update"
+    TRACKER_DESCRIPTION = "tracker_description"
+    TRACKER_TITLE = "tracker_title"
+    TRACKER_CLASSIFICATION = "tracker_classification"
 
 
 #: Total over :class:`OutboundDestination`; a test asserts the totality so a
@@ -135,12 +202,100 @@ DESTINATION_SURFACE: Mapping[OutboundDestination, OutboundSurface] = {
     OutboundDestination.ARTIFACT_TICKET_JSON: OutboundSurface.REPOSITORY,
     OutboundDestination.ARTIFACT_CRITERIA_JSON: OutboundSurface.REPOSITORY,
     OutboundDestination.TRACKER_COMMENT: OutboundSurface.TRACKER,
+    OutboundDestination.TRACKER_STATUS_UPDATE: OutboundSurface.TRACKER,
+    OutboundDestination.TRACKER_DESCRIPTION: OutboundSurface.TRACKER,
+    OutboundDestination.TRACKER_TITLE: OutboundSurface.TRACKER,
+    OutboundDestination.TRACKER_CLASSIFICATION: OutboundSurface.TRACKER,
 }
 
 
 def surface_of(destination: OutboundDestination) -> OutboundSurface:
     """The surface class *destination* writes onto."""
     return DESTINATION_SURFACE[destination]
+
+
+#: Classify real writers in code, alongside their surface classification.
+#: Descriptions and replaceable artifacts are read as current; appended
+#: comments and commit messages describe a particular event.
+DESTINATION_DURABILITY: Mapping[OutboundDestination, SurfaceDurability] = {
+    OutboundDestination.BRANCH_NAME: SurfaceDurability.DURABLE,
+    OutboundDestination.PR_TITLE: SurfaceDurability.DURABLE,
+    OutboundDestination.PR_BODY: SurfaceDurability.DURABLE,
+    OutboundDestination.PR_COMMENT: SurfaceDurability.POINT_IN_TIME,
+    OutboundDestination.COMMIT_MESSAGE: SurfaceDurability.POINT_IN_TIME,
+    OutboundDestination.COMMIT_MESSAGE_DIVERGENCE_REPLAY: (
+        SurfaceDurability.POINT_IN_TIME
+    ),
+    OutboundDestination.ARTIFACT_TICKET_JSON: SurfaceDurability.DURABLE,
+    OutboundDestination.ARTIFACT_CRITERIA_JSON: SurfaceDurability.DURABLE,
+    OutboundDestination.TRACKER_COMMENT: SurfaceDurability.POINT_IN_TIME,
+    OutboundDestination.TRACKER_STATUS_UPDATE: SurfaceDurability.POINT_IN_TIME,
+    OutboundDestination.TRACKER_DESCRIPTION: SurfaceDurability.DURABLE,
+    OutboundDestination.TRACKER_TITLE: SurfaceDurability.DURABLE,
+    OutboundDestination.TRACKER_CLASSIFICATION: SurfaceDurability.DURABLE,
+}
+
+
+def durability_of(destination: OutboundDestination | None) -> SurfaceDurability:
+    """An unclassified write is durable; every named writer has a mapping."""
+    if destination is None:
+        return SurfaceDurability.DURABLE
+    return DESTINATION_DURABILITY[destination]
+
+
+_COUNT_RATIONALE = (
+    "a count of tracker objects is read as current on a durable surface, so it "
+    "goes stale in place"
+)
+
+_ROSTER_RATIONALE = (
+    f"a roster of {TRACKER_ROSTER_MIN_REFERENCES} or more distinct tracker "
+    "identities is read as current on a durable surface, so it goes stale in place"
+)
+
+
+def aggregate_hits(
+    aggregates: Sequence[TrackerAggregate], *, destination: OutboundDestination
+) -> "tuple[ScanHit, ...]":
+    """The durable-write rule over declared tracker values. Arithmetic, no text.
+
+    This function has no ``content`` parameter, so it can never decide from
+    the rendered bytes: the structured values the writer declared are what
+    is classified.
+
+    A durable surface is read as current, so a tracker count or a tracker
+    roster written there is a claim that goes stale in place.  On a
+    point-in-time surface the same values describe one moment and pass.  A
+    count is a claim at any value, zero included — count claims are an
+    independent rule and not a consequence of the roster boundary.  A roster
+    is counted over DISTINCT identities against the one in-code minimum, so
+    a single reference, or one identity repeated, is a reference and not a
+    roster on every surface.
+    """
+    if durability_of(destination) is not SurfaceDurability.DURABLE:
+        return ()
+    hits: list[ScanHit] = []
+    for aggregate in aggregates:
+        match aggregate:
+            case ObjectCount():
+                hits.append(
+                    ScanHit(
+                        category=DurabilityCategory.OBJECT_COUNT,
+                        source=aggregate,
+                        rationale=_COUNT_RATIONALE,
+                    )
+                )
+            case IdentifierRoster() if (
+                len(set(aggregate.identities)) >= TRACKER_ROSTER_MIN_REFERENCES
+            ):
+                hits.append(
+                    ScanHit(
+                        category=DurabilityCategory.IDENTIFIER_ROSTER,
+                        source=aggregate,
+                        rationale=_ROSTER_RATIONALE,
+                    )
+                )
+    return tuple(hits)
 
 
 class ContentClass(StrEnum):
@@ -180,6 +335,7 @@ class ScanFailureKind(StrEnum):
     MALFORMED_VERDICT = "malformed_verdict"
     RATE_LIMITED = "rate_limited"
     TRANSPORT_ERROR = "transport_error"
+    EXECUTION_ERROR = "execution_error"
     EMPTY_RESPONSE = "empty_response"
     SPANS_UNRESOLVABLE = "spans_unresolvable"
     BUDGET_EXHAUSTED = "budget_exhausted"
@@ -193,14 +349,33 @@ class ScanHit(CamelCaseModel):
     span — "this paragraph implies an unreleased capability" has nothing to
     excise.  Redaction is span surgery, so a span-less hit blocks rather
     than redacts; :meth:`has_span` is what the gate asks.
+
+    ``source`` is set only by the deterministic rule over declared tracker
+    values, and it is the offending value itself: a structured finding is
+    about a value the writer held, not about a substring of what that value
+    was rendered into.
     """
 
     model_config = ConfigDict(frozen=True)
 
-    category: RedactionCategory
+    category: ScanCategory
     start: int | None = Field(default=None, ge=0)
     end: int | None = Field(default=None, ge=0)
     rationale: str | None = None
+    matched_text: str | None = None
+    source: TrackerAggregate | None = None
+
+    @model_validator(mode="after")
+    def _a_structured_finding_carries_no_offsets(self) -> "ScanHit":
+        """The locator of a typed value is the value; an offset would be invented."""
+        if self.source is not None and (
+            self.start is not None
+            or self.end is not None
+            or self.matched_text is not None
+        ):
+            msg = "a structured finding carries its source, never string offsets"
+            raise ValueError(msg)
+        return self
 
     @property
     def has_span(self) -> bool:
@@ -247,67 +422,6 @@ class GateDecision(CamelCaseModel):
 
     verdict: GateVerdict
     content: str
-    categories: tuple[RedactionCategory, ...] = ()
+    categories: tuple[ScanCategory, ...] = ()
     hits: tuple[ScanHit, ...] = ()
     failure: ScanFailureKind | None = None
-
-
-class ScannerRouting(CamelCaseModel):
-    """When a registered scanner must be consulted.
-
-    Declared BY the scanner and read BY the gate, so the gate routes without
-    knowing which adapter is which.  ``mandatory_destinations`` carries the
-    one rule provenance does not settle on its own: a destination that is
-    always audited whatever class its writer declares — a branch name is
-    generated once per run from the raw task text, so its cost is one call
-    per run and its declared class is beside the point.
-    """
-
-    model_config = ConfigDict(frozen=True)
-
-    surfaces: frozenset[OutboundSurface]
-    content_classes: frozenset[ContentClass]
-    mandatory_destinations: frozenset[OutboundDestination] = frozenset()
-
-    def applies(
-        self,
-        *,
-        destination: OutboundDestination,
-        content_class: ContentClass,
-    ) -> bool:
-        """Whether this scanner covers *destination* carrying *content_class*."""
-        if surface_of(destination) not in self.surfaces:
-            return False
-        return (
-            content_class in self.content_classes
-            or destination in self.mandatory_destinations
-        )
-
-
-#: The routing a scanner with no cost declares: everything, everywhere. The
-#: deterministic scanners run on every payload — that is what keeps a
-#: credential caught with no network call.
-UNCONDITIONAL_ROUTING: ScannerRouting = ScannerRouting(
-    surfaces=frozenset(OutboundSurface),
-    content_classes=frozenset(ContentClass),
-)
-
-
-#: The routing the JUDGMENT scanner declares.  Every clause is a cost
-#: decision made once, here, rather than at each call site:
-#:
-#: * surfaces — a payload published to the open internet or mirrored by the
-#:   coordination surface.  The repository's own history is out of scope for
-#:   this increment, which is where the affordability comes from.
-#: * classes — ``AUTHORED`` only.  Evaluator-cadence writes are ``DERIVED``
-#:   and cost nothing, by the writer declaring where its bytes came from
-#:   rather than by exemption; that is most of the outbound volume.
-#: * mandatory — the branch name, scanned whatever class its writer
-#:   declares.  It is generated once per run from the raw task text (the
-#:   private-input path), so the cost is one call per run, and an
-#:   ``IDENTIFIER`` writer blocks on any hit, which is right for a git ref.
-JUDGMENT_ROUTING: ScannerRouting = ScannerRouting(
-    surfaces=frozenset({OutboundSurface.PUBLICATION, OutboundSurface.TRACKER}),
-    content_classes=frozenset({ContentClass.AUTHORED}),
-    mandatory_destinations=frozenset({OutboundDestination.BRANCH_NAME}),
-)

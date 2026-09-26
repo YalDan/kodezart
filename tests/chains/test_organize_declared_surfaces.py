@@ -1,0 +1,1851 @@
+"""One organize round holds the set its row declares, over the real adapter.
+
+Every case drives the composed owner through ``factory``/``run_owner``, so the
+lease records read here are the ones the production path writes.
+"""
+
+import asyncio
+import re
+
+import pytest
+
+from kodezart.config.app import AppConfig
+from kodezart.config.organize import OrganizeSettings
+from kodezart.domain.errors import SurfaceLeaseError, SurfaceLeaseLostError
+from kodezart.services.run_surface_lease import RunSurfaceLease
+from kodezart.types.domain.scope import ScopeKind, ScopeRef
+from kodezart.types.domain.surface import SurfaceKind, WritableSurface
+from tests.chains.test_organize import result
+from tests.chains.test_organize_owner import factory, run_owner, written
+from tests.fakes import FakeMcpIssue
+from tests.tracker.conftest import CLAIMED_ISSUE
+
+JOB = "actual-organize-job"
+SIBLING = "FIX-SIBLING"
+GROOM_LINES = ("issue_description", "issue_graph", "issue_label_set")
+
+
+def settings(*, bound=2, convergence_bound=2, lease_seconds=900.0):
+    return AppConfig(
+        organize=OrganizeSettings(
+            max_admission_rounds=bound, max_convergence_rounds=convergence_bound
+        ),
+        write_back={"max_verify_rounds": 2},
+        tracker={"surface_lease_seconds": lease_seconds},
+    )
+
+
+def member(
+    board, key, *, description="Prepared body grounded in the source.", labels=()
+):
+    """One more issue of the scope, in the vendor's own shape."""
+    board.server.issues[key] = FakeMcpIssue(
+        id=key,
+        description=description,
+        parent_id=CLAIMED_ISSUE,
+        labels=list(labels),
+    )
+    return board.server.issues[key]
+
+
+def held(board):
+    """Every standing lease marker, as (holder, nonce, frozenset of addresses)."""
+    return [_read(comment.body) for comment in board.grants()]
+
+
+def acquisitions(board):
+    """The nonce of each lease creation the round made, in call order."""
+    return [_read(args["body"]) for args in board.lease_creations()]
+
+
+def _read(body):
+    fields = dict(re.findall(r"^(kind|holder|nonce|state): (.*)$", body, re.M))
+    return (
+        fields["holder"],
+        fields["nonce"],
+        frozenset(re.findall(r"^- (.*)$", body, re.M)),
+    )
+
+
+def addresses(key, kinds=GROOM_LINES):
+    return frozenset(f"{kind}|issue|{key}|" for kind in kinds)
+
+
+CRITERION_CHILD = "FIX-CHECK"
+ESCALATED = "FIX-ESCALATED"
+
+
+async def test_the_round_holds_the_whole_declared_set_before_its_first_write():
+    """Every declared kind, on every member of the snapshot, before any write.
+
+    The sibling already carries the marker, so the round spends no session
+    on it and still declares it: the set is the snapshot's, not the work
+    roster's. The same holds for the record-shaped members, which are no
+    work subject at all: a criterion child and a member carrying the
+    escalation label.
+    """
+    owner, board, _ = factory()
+    member(board, SIBLING, labels=["graph complete"])
+    member(board, CRITERION_CHILD, labels=["check"])
+    member(board, ESCALATED, labels=["graph complete", "needs decision"])
+    keys = (CLAIMED_ISSUE, SIBLING, CRITERION_CHILD, ESCALATED)
+    board.pause = lambda name, args: name == "save_issue" and "description" in args
+    task = asyncio.create_task(run_owner(owner))
+    try:
+        await asyncio.wait_for(board.reached.wait(), timeout=10)
+        declared = frozenset().union(*(addresses(key) for key in keys))
+        (nonce,) = {nonce for _, nonce, _ in acquisitions(board)}
+        assert held(board) == [(JOB, nonce, declared)] * len(keys)
+        assert sorted(args["issueId"] for args in board.lease_creations()) == sorted(
+            keys
+        )
+        for key in (CRITERION_CHILD, ESCALATED):
+            (marker,) = [
+                _read(comment.body)
+                for comment in board.grants()
+                if comment.issue_id == key
+            ]
+            assert marker == (JOB, nonce, declared)
+            assert addresses(key) <= marker[2]
+    finally:
+        board.resume.set()
+    report = await task
+    assert report.halt is None
+    assert "graph complete" in board.server.issues[CLAIMED_ISSUE].labels
+
+
+async def test_a_contended_declared_set_writes_nothing_and_opens_no_session():
+    """One address of the set held elsewhere refuses the whole acquisition."""
+    owner, board, executor = factory()
+    member(board, SIBLING)
+    rival = WritableSurface(
+        kind=SurfaceKind.ISSUE_DESCRIPTION,
+        ref=ScopeRef(kind=ScopeKind.ISSUE, key=SIBLING),
+    )
+    async with RunSurfaceLease(
+        tracker=board.tracker(),
+        job_id="rival-holder",
+        surfaces=frozenset({rival}),
+        lease_seconds=900.0,
+    ):
+        with pytest.raises(SurfaceLeaseError) as refusal:
+            await run_owner(owner)
+        assert (
+            refusal.value.surface_kind,
+            refusal.value.scope_key,
+            refusal.value.current_holder,
+        ) == (rival.kind.value, SIBLING, "rival-holder")
+        assert [holder for holder, _, _ in held(board)] == ["rival-holder"]
+    assert executor.calls == []
+    # Nothing at all beside the refused acquisition: no issue, label or
+    # comment write of the round's own.
+    assert written(board) == []
+
+
+async def test_the_pre_approval_row_declares_no_member_that_reads_approved():
+    """A member approved in its own right is outside the pre-approval round's set.
+
+    The scope is still in triage, but one member carries its own approval
+    label, so an issue-scope run may hold it. The grooming round declares
+    none of that member's lines, and a lease held elsewhere on it does not
+    refuse the round over the rest of the scope.
+    """
+    owner, board, _ = factory()
+    approved = "FIX-APPROVED"
+    member(board, approved, labels=["approved scope"])
+    rival = WritableSurface(
+        kind=SurfaceKind.ISSUE_DESCRIPTION,
+        ref=ScopeRef(kind=ScopeKind.ISSUE, key=approved),
+    )
+    async with RunSurfaceLease(
+        tracker=board.tracker(),
+        job_id="issue-scope-run",
+        surfaces=frozenset({rival}),
+        lease_seconds=900.0,
+    ):
+        report = await run_owner(owner)
+    assert report.halt is None
+    rounds = [
+        (args["issueId"], lines)
+        for args, (holder, _, lines) in zip(
+            board.lease_creations(), acquisitions(board), strict=True
+        )
+        if holder == JOB
+    ]
+    assert rounds
+    assert all(
+        key != approved and not any(f"|issue|{approved}|" in line for line in lines)
+        for key, lines in rounds
+    )
+    assert GROOM_MARKER in board.server.issues[CLAIMED_ISSUE].labels
+    assert GROOM_MARKER not in board.server.issues[approved].labels
+
+
+async def test_a_member_whose_approval_is_withdrawn_mid_round_is_not_marked_by_it(
+    monkeypatch,
+):
+    """The round marks only what it declared; a withdrawn member waits.
+
+    The member reads approved when the round declares its set, so the set
+    leaves it out. Its approval is withdrawn as the round takes that set,
+    so by the marker it reads admitted, but the round holds no address on
+    it: it keeps no marker this round, and the barrier names it owed.
+    """
+    owner, board, _ = factory()
+    approved = "FIX-APPROVED"
+    member(board, approved, labels=["approved scope"])
+    original = board.call_tool
+
+    async def withdrawing(*, name, arguments):
+        response = await original(name=name, arguments=arguments)
+        labels = board.server.issues[approved].labels
+        # The round's acquisition is the first lease record it creates.
+        if (
+            name == "save_comment"
+            and "id" not in arguments
+            and "kind: lease\n" in str(arguments.get("body", ""))
+            and "approved scope" in labels
+        ):
+            labels.remove("approved scope")
+        return response
+
+    monkeypatch.setattr(board, "call_tool", withdrawing)
+    report = await asyncio.wait_for(run_owner(owner), timeout=60)
+    assert "approved scope" not in board.server.issues[approved].labels
+    assert not any(
+        f"|issue|{approved}|" in line
+        for _, _, lines in acquisitions(board)
+        for line in lines
+    )
+    assert GROOM_MARKER in board.server.issues[CLAIMED_ISSUE].labels
+    assert GROOM_MARKER not in board.server.issues[approved].labels
+    assert not [
+        args
+        for name, args in board.calls
+        if name == "save_issue"
+        and args.get("id") == approved
+        and GROOM_MARKER in args.get("addLabels", [])
+    ]
+    assert report.halt.cause == "stage_incomplete"
+    assert report.halt.unlabelled_issue_ids == (approved,)
+    assert board.grants() == []
+
+
+def lapsing(arm, monkeypatch):
+    """The owner and board for one write arm, with a lease the session outlasts.
+
+    ``body``: the pre-approval row rewrites the subject's body. ``graph``: it
+    adds a ``blocked_by`` edge to a member. ``split``: the ticket stage
+    splits the subject into two children. ``criteria``: the criteria stage
+    creates the subject's criterion child.
+    """
+    lapse = settings(lease_seconds=60.0)
+    if arm == "split":
+        owner, board, executor = factory(
+            settings=lapse, under_approval=True, phases=lambda rows: rows[:1]
+        )
+        splitting(board, executor, monkeypatch)
+    elif arm == "criteria":
+        owner, board, executor = factory(
+            settings=lapse,
+            under_approval=True,
+            body="Prepared body grounded in the source.",
+            phases=lambda rows: rows[1:],
+        )
+        board.server.issues[CLAIMED_ISSUE].labels.append("body complete")
+    else:
+        owner, board, executor = factory(settings=lapse)
+        if arm == "graph":
+            member(board, SIBLING)
+            edging(board, executor, monkeypatch, SIBLING)
+    return owner, board, executor
+
+
+@pytest.mark.parametrize("arm", ["body", "graph", "split", "criteria"])
+async def test_a_round_whose_lease_lapsed_in_a_session_writes_nothing_more(
+    monkeypatch, arm
+):
+    """A lapse inside a session is read at the next write, never re-acquired.
+
+    Every write arm renews the round's lease before it writes, so the lapse
+    raises there and no write of the arm lands after it.
+    """
+    owner, board, executor = lapsing(arm, monkeypatch)
+    original = executor.stream
+    lapsed = []
+
+    async def stream(**kwargs):
+        if kwargs["output_format"]["schema"].get("title") == "OrganizeProposal":
+            # The board's clock crosses the whole lease while the session runs.
+            board.advance(120)
+            lapsed.append(kwargs)
+        async for event in original(**kwargs):
+            yield event
+
+    monkeypatch.setattr(executor, "stream", stream)
+    with pytest.raises(SurfaceLeaseLostError):
+        await run_owner(owner)
+    assert lapsed
+    # Nothing but the round's own lease records, before the lapse or after.
+    assert written(board) == []
+    assert len({nonce for _, nonce, _ in acquisitions(board)}) == 1
+
+
+@pytest.mark.parametrize("route", ["admission_exhausted", "human_decision"])
+async def test_no_halt_is_written_while_the_rounds_lease_is_held(route):
+    """The round's set is gone before the halt's first escalation write.
+
+    ``admission_exhausted``: the subject's refusals outlast its admission
+    rounds. ``human_decision``: its first refusal routes straight to a
+    person.
+    """
+    owner, board, _ = factory(
+        refuse_forever=True,
+        bound=1,
+        refusal={"refusal_kind": route} if route == "human_decision" else None,
+    )
+    board.pause = lambda name, args: (
+        name == "save_comment"
+        and str(args.get("body", "")).startswith("[organize-question")
+    )
+    task = asyncio.create_task(run_owner(owner))
+    try:
+        await asyncio.wait_for(board.reached.wait(), timeout=10)
+        assert not [
+            record
+            for record in held(board)
+            if record[2] & addresses(CLAIMED_ISSUE, ("issue_description",))
+        ]
+    finally:
+        board.resume.set()
+    report = await task
+    assert report.halt.cause == route
+    assert "needs decision" in board.server.issues[CLAIMED_ISSUE].labels
+
+
+TICKET_LINES = (
+    "issue_description",
+    "issue_label_set",
+    "issue_split_set",
+)
+CHILDREN = ("first-deliverable", "second-deliverable")
+
+
+def splitting(board, executor, monkeypatch):
+    """An author that proposes two children once, then judges the board fresh."""
+    original = executor.stream
+
+    async def stream(**kwargs):
+        key = re.findall(r"<issue_key>(.*?)</issue_key>", kwargs["prompt"])
+        minted = any(
+            child in issue.description
+            for issue in board.server.issues.values()
+            for child in CHILDREN
+        )
+        if key and key[-1] == CLAIMED_ISSUE and not minted:
+            schema = kwargs["output_format"]["schema"]
+            executor.calls.append(kwargs)
+            if schema.get("title") == "OrganizeProposal":
+                yield result(
+                    structured_output={
+                        "kind": "split",
+                        "issue_id": CLAIMED_ISSUE,
+                        "children": [
+                            {
+                                "deliverable_key": child,
+                                "title": f"Prepared split {index}",
+                                "body": "Prepared source-grounded child specification.",
+                            }
+                            for index, child in enumerate(CHILDREN)
+                        ],
+                    }
+                )
+            else:
+                yield result(
+                    structured_output={
+                        "issue_id": CLAIMED_ISSUE,
+                        "verdict": "not_buildable",
+                        "evidence": "The mandate calls for independent children.",
+                        "refusal_kind": "spec_gap",
+                        "invented_decision": "Prepare the specified children.",
+                    }
+                )
+            return
+        async for event in original(**kwargs):
+            yield event
+
+    monkeypatch.setattr(executor, "stream", stream)
+
+
+def opened(board):
+    """Where in the call order each round's acquisition was first written."""
+    return {
+        _read(str(args.get("body", "")))[1]: index
+        for index, (name, args) in reversed(list(enumerate(board.calls)))
+        if name == "save_comment"
+        and "id" not in args
+        and "kind: lease\n" in str(args.get("body", ""))
+    }
+
+
+def minted_keys(board):
+    return sorted(
+        issue.id
+        for issue in board.server.issues.values()
+        if issue.parent_id == CLAIMED_ISSUE
+    )
+
+
+async def test_the_declared_set_is_acquired_once_a_round_not_once_a_write(monkeypatch):
+    """Two writes of one round sit under one acquisition, and each round takes one."""
+    owner, board, executor = factory(
+        under_approval=True,
+        convergence_bound=3,
+        bound=3,
+        phases=lambda rows: rows[:1],
+    )
+    splitting(board, executor, monkeypatch)
+    report = await run_owner(owner)
+    assert report.halt is None
+    rounds = [nonce for _, nonce, _ in acquisitions(board)]
+    first, second = dict.fromkeys(rounds)
+    assert len(dict.fromkeys(rounds)) == 2
+    created = [
+        index
+        for index, (name, args) in enumerate(board.calls)
+        if name == "save_issue" and "parentId" in args
+    ]
+    assert len(created) == 2
+    assert all(
+        opened(board)[first] < index < opened(board)[second] for index in created
+    )
+
+
+async def test_a_member_the_round_mints_is_declared_by_the_next_round(monkeypatch):
+    """A split child is outside the round that minted it and inside the next."""
+    owner, board, executor = factory(
+        under_approval=True,
+        convergence_bound=3,
+        bound=3,
+        phases=lambda rows: rows[:1],
+    )
+    splitting(board, executor, monkeypatch)
+    report = await run_owner(owner)
+    assert report.halt is None
+    children = [key for key in minted_keys(board) if key != CLAIMED_ISSUE]
+    assert len(children) == 2
+    _first, second = dict.fromkeys(nonce for _, nonce, _ in acquisitions(board))
+    declared = {nonce: lines for _, nonce, lines in acquisitions(board)}
+    assert all(addresses(child, TICKET_LINES) <= declared[second] for child in children)
+    for child in children:
+        landed = min(
+            index
+            for index, (name, args) in enumerate(board.calls)
+            if name == "save_issue" and args.get("id") == child
+        )
+        assert opened(board)[second] < landed
+        assert "body complete" in board.server.issues[child].labels
+
+
+async def test_approval_landing_before_the_groom_marker_refuses_the_marker(monkeypatch):
+    """Approval that lands between two markers refuses the second one.
+
+    The scope is approved the moment the first member's marker lands, so the
+    pre-approval row's next write reads approval and is refused: the second
+    member keeps no marker, and the round's declared set is released with the
+    refusal.
+    """
+    from kodezart.domain.errors import OrganizeWriteRefusalError
+
+    owner, board, _ = factory()
+    member(board, SIBLING)
+    original = board.call_tool
+
+    async def approving(*, name, arguments):
+        response = await original(name=name, arguments=arguments)
+        if name == "save_issue" and "graph complete" in arguments.get("addLabels", []):
+            board.server.issues[CLAIMED_ISSUE].labels.append("approved scope")
+        return response
+
+    monkeypatch.setattr(board, "call_tool", approving)
+    with pytest.raises(OrganizeWriteRefusalError, match="groom is not admitted"):
+        await run_owner(owner)
+    marked = [
+        key
+        for key in (CLAIMED_ISSUE, SIBLING)
+        if "graph complete" in board.server.issues[key].labels
+    ]
+    assert len(marked) == 1
+    assert board.grants() == []
+
+
+async def test_approval_landing_inside_the_markers_renewal_refuses_the_marker(
+    monkeypatch,
+):
+    """Approval inside the marker's own renewal refuses the marker write.
+
+    The subject's body is already prepared, so the only renewal of the
+    round is the in-place edit of its lease marker that the marker write
+    makes. The scope is approved during that edit; the approval reading
+    after it refuses, and the member keeps no marker.
+    """
+    from kodezart.domain.errors import OrganizeWriteRefusalError
+
+    owner, board, _ = factory(body="Prepared body grounded in the source.")
+    original = board.call_tool
+    renewed = []
+
+    async def approving(*, name, arguments):
+        response = await original(name=name, arguments=arguments)
+        body = str(arguments.get("body", ""))
+        # A renewal is the in-place edit that restates when the hold began;
+        # the acquisition's own edit from bid to held is not one.
+        if name == "save_comment" and "since:" in body and "kind: lease\n" in body:
+            renewed.append(arguments)
+            board.server.issues[CLAIMED_ISSUE].labels.append("approved scope")
+        return response
+
+    monkeypatch.setattr(board, "call_tool", approving)
+    with pytest.raises(OrganizeWriteRefusalError, match="groom is not admitted"):
+        await run_owner(owner)
+    assert len(renewed) == 1
+    assert GROOM_MARKER not in board.server.issues[CLAIMED_ISSUE].labels
+    assert board.grants() == []
+
+
+LATE = "FIX-LATE"
+FOREIGN = "FIX-2"
+
+
+def edging(board, executor, monkeypatch, peer, *, join=None, findings=()):
+    """An author that adds one dependency edge, and a judge that waits for it.
+
+    *join* is called during each admission session, which is where a case
+    about a member the round never declared has the scope gain one. The
+    judge's refusal carries *findings*.
+    """
+    original = executor.stream
+
+    def landed():
+        return ("blockedBy", peer) in board.server.issues[CLAIMED_ISSUE].relations
+
+    async def stream(**kwargs):
+        title = kwargs["output_format"]["schema"].get("title")
+        keys = re.findall(r"<issue_key>(.*?)</issue_key>", kwargs["prompt"])
+        if title != "WriteBackFinding" and keys and keys[-1] == CLAIMED_ISSUE:
+            if not landed():
+                executor.calls.append(kwargs)
+                if title == "OrganizeProposal":
+                    yield result(
+                        structured_output={
+                            "kind": "graph",
+                            "issue_id": CLAIMED_ISSUE,
+                            "changes": [{"kind": "blocked_by", "add": [peer]}],
+                        }
+                    )
+                else:
+                    if join is not None:
+                        join()
+                    yield result(
+                        structured_output={
+                            "issue_id": CLAIMED_ISSUE,
+                            "verdict": "not_buildable",
+                            "evidence": "The recorded dependency is absent.",
+                            "refusal_kind": "spec_gap",
+                            "invented_decision": "Record the dependency.",
+                            "findings": list(findings),
+                        }
+                    )
+                return
+        async for event in original(**kwargs):
+            yield event
+
+    monkeypatch.setattr(executor, "stream", stream)
+
+
+def renewals(board, line="issue_graph|issue|"):
+    """Every renewal of the round's own lease: an edit naming its own address."""
+    return [
+        args
+        for name, args in board.calls
+        if name == "save_comment"
+        and "since:" in str(args.get("body", ""))
+        and line in str(args.get("body", ""))
+    ]
+
+
+def edge_writes(board):
+    return [
+        args
+        for name, args in board.calls
+        if name == "save_issue" and "blockedBy" in args
+    ]
+
+
+async def test_a_graph_write_inside_the_declared_set_lands(monkeypatch):
+    """Both addresses the edge needs are the round's, so the write lands."""
+    owner, board, executor = factory(convergence_bound=3, bound=3)
+    member(board, SIBLING)
+    edging(board, executor, monkeypatch, SIBLING)
+    report = await run_owner(owner)
+    assert report.halt is None
+    # The positive control for the cases that read no renewal at all.
+    assert renewals(board)
+    assert ("blockedBy", SIBLING) in board.server.issues[CLAIMED_ISSUE].relations
+    assert ("blocks", CLAIMED_ISSUE) in board.server.issues[SIBLING].relations
+    assert "graph complete" in board.server.issues[CLAIMED_ISSUE].labels
+
+
+async def test_a_graph_write_naming_a_member_that_joined_late_is_a_finding_on_it(
+    monkeypatch,
+):
+    """A member inside the scope and outside the held set is a residual.
+
+    The scope gains the member during the admission session, so the round
+    declares every address but that one. The write is refused before any
+    renewal or tracker write, and the finding is written to the member that
+    owns the address rather than to the subject the write was authored for.
+    """
+    owner, board, executor = factory(convergence_bound=1, bound=2)
+
+    def join():
+        if LATE not in board.server.issues:
+            member(board, LATE)
+
+    edging(board, executor, monkeypatch, LATE, join=join)
+    report = await run_owner(owner)
+    assert report.halt.cause == "convergence_exhausted"
+    assert [
+        (finding.issue_id, finding.defect_class)
+        for finding in report.halt.surviving_findings
+    ] == [(LATE, "undeclared_surface")]
+    assert report.halt.surviving_findings[0].evidence == (
+        f"The groom phase needed issue_graph on {LATE}, which is outside the set "
+        "it declares (issue_description, issue_graph, issue_label_set)."
+    )
+    assert edge_writes(board) == []
+    assert renewals(board) == []
+    assert "needs decision" in board.server.issues[LATE].labels
+    assert [
+        comment.body
+        for comment in board.server.comments
+        if comment.issue_id == LATE and "undeclared_surface" in comment.body
+    ]
+
+
+async def test_a_graph_write_naming_an_issue_outside_the_scope_stays_a_refusal(
+    monkeypatch,
+):
+    """A peer outside the scope is refused outright, with no finding at all."""
+    from kodezart.domain.errors import OrganizeWriteRefusalError
+
+    owner, board, executor = factory(convergence_bound=2, bound=2)
+    edging(board, executor, monkeypatch, FOREIGN)
+    with pytest.raises(OrganizeWriteRefusalError, match="outside the current admitted"):
+        await run_owner(owner)
+    assert edge_writes(board) == []
+    assert "needs decision" not in board.server.issues[CLAIMED_ISSUE].labels
+    assert board.grants() == []
+
+
+async def test_the_refused_write_lands_once_the_next_round_declares_the_member(
+    monkeypatch,
+):
+    """The next round snapshots the board again, so the repeated write lands."""
+    owner, board, executor = factory(convergence_bound=3, bound=2)
+
+    def join():
+        if LATE not in board.server.issues:
+            member(board, LATE)
+
+    edging(board, executor, monkeypatch, LATE, join=join)
+    report = await run_owner(owner)
+    assert report.halt is None
+    assert ("blockedBy", LATE) in board.server.issues[CLAIMED_ISSUE].relations
+    assert "needs decision" not in board.server.issues[LATE].labels
+    assert "graph complete" in board.server.issues[LATE].labels
+    # Two rounds, two acquisitions, and the edge lands under the second.
+    first, second = dict.fromkeys(nonce for _, nonce, _ in acquisitions(board))
+    assert first != second
+    landed = min(
+        index
+        for index, (name, args) in enumerate(board.calls)
+        if name == "save_issue" and "blockedBy" in args
+    )
+    assert opened(board)[second] < landed
+
+
+async def test_a_residual_on_a_member_reading_approved_is_recorded_on_the_subject(
+    monkeypatch,
+):
+    """A residual whose owner the row may not write is recorded on its subject.
+
+    The member carries its own approval, so the grooming round declares none
+    of its addresses and may write nothing on it, a record included. The
+    edge onto it is a residual each round; at the bound the record lands on
+    the subject, which is admitted, and its evidence names the member.
+    """
+    owner, board, executor = factory(convergence_bound=2, bound=2)
+    approved = "FIX-APPROVED"
+    member(board, approved, labels=["approved scope"])
+    edging(board, executor, monkeypatch, approved)
+    report = await run_owner(owner)
+    assert report.halt.cause == "convergence_exhausted"
+    named = (
+        f"The groom phase needed issue_graph on {approved}, which is outside the "
+        "set it declares (issue_description, issue_graph, issue_label_set)."
+    )
+    assert undeclared(report) == [(CLAIMED_ISSUE, named)]
+    assert edge_writes(board) == []
+    (record,) = escalations(board, CLAIMED_ISSUE, "undeclared_surface")
+    assert record.interim_basis == named
+    assert escalations(board, approved) == []
+    assert "needs decision" not in board.server.issues[approved].labels
+
+
+async def test_a_residual_whose_write_lands_in_the_next_round_is_never_written(
+    monkeypatch,
+):
+    """A residual the next round repairs never reaches the board, halt or not.
+
+    Round one's edge onto a member that joined mid-round is a residual on
+    that member. Round two declares it and the edge lands; a member worked
+    after the subject then halts on a human decision in that round, and the
+    repaired residual is not written.
+    """
+    owner, board, executor = factory(convergence_bound=3, bound=2)
+
+    def join():
+        if LATE not in board.server.issues:
+            member(board, LATE)
+
+    edging(board, executor, monkeypatch, LATE, join=join)
+    member(board, EARLY)
+    seen = judging(
+        board,
+        executor,
+        monkeypatch,
+        {
+            EARLY: lambda n: (
+                buildable(EARLY) if n == 1 else refusal(EARLY, "human_decision")
+            )
+        },
+    )
+    report = await run_owner(owner)
+    assert report.halt.cause == "human_decision"
+    # Assessed and refused by the dry round in round one; assessed again in
+    # round two, after the subject's edge has landed.
+    assert seen[EARLY] == 3
+    assert ("blockedBy", LATE) in board.server.issues[CLAIMED_ISSUE].relations
+    assert escalations(board, LATE) == []
+    assert "undeclared_surface" not in {
+        finding.defect_class for finding in report.halt.surviving_findings
+    }
+    assert escalations(board, EARLY)
+
+
+#: The two answers that write nothing, as the criteria stage's author gives them.
+NO_WRITE_ANSWERS = {
+    "unresolved": {
+        "kind": "unresolved",
+        "issue_id": CLAIMED_ISSUE,
+        "question": "Which declared source names the check?",
+        "evidence": "Two sources name different checks.",
+    },
+    "unavailable": {
+        "kind": "unavailable",
+        "issue_id": CLAIMED_ISSUE,
+        "capability": "criterion_edit",
+        "evidence": "The declared check needs an edit to an existing criterion.",
+    },
+}
+
+
+@pytest.mark.parametrize("answer", sorted(NO_WRITE_ANSWERS))
+async def test_an_answer_that_writes_nothing_is_not_weighed_against_the_set(
+    monkeypatch, answer
+):
+    """An answer that writes nothing keeps its own outcome on a row without the body.
+
+    The criteria stage declares no description, and neither answer needs an
+    address at all. ``unresolved`` is the human decision it always was;
+    ``unavailable`` is the landed refusal naming the capability. Neither is
+    a residual on the subject.
+    """
+    from kodezart.domain.errors import OrganizeWriteRefusalError
+
+    owner, board, executor = factory(under_approval=True)
+    original = executor.stream
+
+    async def answering(**kwargs):
+        # The first stage's marker is what admits the criteria stage, so an
+        # author session after it is that stage's.
+        staged = "body complete" in board.server.issues[CLAIMED_ISSUE].labels
+        async for event in original(**kwargs):
+            if (
+                staged
+                and kwargs["output_format"]["schema"].get("title") == "OrganizeProposal"
+            ):
+                event = result(structured_output=NO_WRITE_ANSWERS[answer])
+            yield event
+
+    monkeypatch.setattr(executor, "stream", answering)
+    if answer == "unavailable":
+        with pytest.raises(
+            OrganizeWriteRefusalError, match="unavailable capability criterion_edit"
+        ):
+            await run_owner(owner)
+        assert "body complete" in board.server.issues[CLAIMED_ISSUE].labels
+        assert escalations(board, CLAIMED_ISSUE) == []
+        assert not [
+            comment
+            for comment in board.server.comments
+            if "undeclared_surface" in comment.body
+        ]
+        return
+    report = await run_owner(owner)
+    assert [phase.value for phase in report.completed_phases] == ["ticket"]
+    assert report.halt.cause == "human_decision"
+    assert report.halt.questions[0].issue_id == CLAIMED_ISSUE
+    assert "undeclared_surface" not in {
+        finding.defect_class for finding in report.halt.surviving_findings
+    }
+
+
+STUCK = "FIX-STUCK"
+#: A halting member whose key sorts before ``SIBLING``, so a round works it
+#: first.
+EARLY = "FIX-EARLY"
+GROOM_MARKER = "graph complete"
+INTERIM = "Preparation stops; no completion marker or execution is authorized."
+PREPARED = "Prepared body grounded in the source."
+
+
+def spec_finding(owner, defect_class="missing_source", evidence=None):
+    return {
+        "issue_id": owner,
+        "defect_class": defect_class,
+        "evidence": evidence or f"{owner} cites no source for its deliverable.",
+        "role": "instance",
+    }
+
+
+def judging(board, executor, monkeypatch, answers):
+    """Judge sessions answered per subject from *answers*.
+
+    ``answers[key](n)`` is the payload of the n-th judgement of *key*
+    (counted from one), or None for the configured executor's own answer.
+    Author and verifier sessions keep the configured answers.
+    """
+    original = executor.stream
+    seen = {}
+
+    async def stream(**kwargs):
+        title = kwargs["output_format"]["schema"].get("title")
+        keys = re.findall(r"<issue_key>(.*?)</issue_key>", kwargs["prompt"])
+        if (
+            title not in {"OrganizeProposal", "WriteBackFinding"}
+            and keys
+            and keys[-1] in answers
+        ):
+            seen[keys[-1]] = seen.get(keys[-1], 0) + 1
+            payload = answers[keys[-1]](seen[keys[-1]])
+            if payload is not None:
+                executor.calls.append(kwargs)
+                yield result(structured_output=payload)
+                return
+        async for event in original(**kwargs):
+            yield event
+
+    monkeypatch.setattr(executor, "stream", stream)
+    return seen
+
+
+def buildable(key, *findings):
+    return {
+        "issue_id": key,
+        "verdict": "buildable",
+        "evidence": f"{key} is buildable from its source.",
+        "findings": list(findings),
+    }
+
+
+def refusal(key, kind, *findings):
+    return {
+        "issue_id": key,
+        "verdict": "not_buildable",
+        "evidence": f"{key} leaves a choice open.",
+        "refusal_kind": kind,
+        "invented_decision": f"Settle the open choice on {key}.",
+        "findings": list(findings),
+    }
+
+
+def escalations(board, key, question=None):
+    """The escalation records on *key*, read back as the tracker holds them."""
+    from kodezart.types.domain.run_state import LaneEscalation
+
+    records = [
+        LaneEscalation.model_validate_json(comment.body.partition("\n")[2])
+        for comment in board.server.comments
+        if comment.issue_id == key and comment.body.startswith("[organize-question:")
+    ]
+    return [
+        record for record in records if question is None or record.question == question
+    ]
+
+
+async def test_every_open_finding_is_written_to_its_own_item_before_the_halt_returns(
+    monkeypatch,
+):
+    """Each finding lands on its own item, with its evidence and the interim reading.
+
+    The two members carry the pass's marker, so only the dry round judges
+    them; the findings it forms name them rather than the subject.
+    """
+    from tests.chains.test_organize_owner import stage_report_step
+
+    owner, board, executor = factory(convergence_bound=1, bound=2)
+    first, second = "FIX-A", "FIX-B"
+    for key in (first, second):
+        member(board, key, labels=[GROOM_MARKER])
+    judging(
+        board,
+        executor,
+        monkeypatch,
+        {
+            key: (lambda _, key=key: buildable(key, spec_finding(key)))
+            for key in (first, second)
+        },
+    )
+    stage_report_step(monkeypatch, board)
+    report = await run_owner(owner)
+    assert report.halt.cause == "convergence_exhausted"
+    for key in (first, second):
+        (record,) = escalations(board, key, "missing_source")
+        assert record.issue_id == key
+        assert record.interim_basis == spec_finding(key)["evidence"]
+        assert record.interim_reading == INTERIM
+        assert "needs decision" in board.server.issues[key].labels
+    assert not escalations(board, CLAIMED_ISSUE)
+    written = [
+        index
+        for index, (name, args) in enumerate(board.calls)
+        if name == "save_comment"
+        and str(args.get("body", "")).startswith("[organize-question:")
+    ]
+    reported = [
+        index for index, (name, _) in enumerate(board.calls) if name == "stage_report"
+    ]
+    assert written
+    assert reported
+    assert max(written) < min(reported)
+
+
+@pytest.mark.parametrize(
+    "cause",
+    [
+        "human_decision",
+        "admission_exhausted",
+        "residual",
+        "residual_with_findings",
+        "removed_with_findings",
+        "residual_then_halt",
+        "author_decision",
+        "repaired_then_halt",
+    ],
+)
+async def test_a_halt_inside_a_round_carries_the_findings_left_open(monkeypatch, cause):
+    """A halt inside a round writes what earlier rounds and this one left open."""
+    owner, board, executor = factory(convergence_bound=2, bound=1)
+    if cause == "author_decision":
+        # The judgement that sends the subject to its author carries a
+        # finding on the sibling; the author answers with a question, and
+        # the halt that question raises still writes the judgement's finding.
+        member(board, SIBLING, labels=[GROOM_MARKER])
+        judging(
+            board,
+            executor,
+            monkeypatch,
+            {CLAIMED_ISSUE: lambda _: buildable(CLAIMED_ISSUE, spec_finding(SIBLING))},
+        )
+        authoring(
+            executor,
+            monkeypatch,
+            {
+                "kind": "unresolved",
+                "issue_id": CLAIMED_ISSUE,
+                "question": "Which declared source is authoritative?",
+                "evidence": "Two sources name different deliverables.",
+            },
+        )
+        report = await run_owner(owner)
+        assert report.halt.cause == "human_decision"
+        assert (SIBLING, "missing_source") in {
+            (finding.issue_id, finding.defect_class)
+            for finding in report.halt.surviving_findings
+        }
+        (record,) = escalations(board, SIBLING, "missing_source")
+        assert record.interim_basis == spec_finding(SIBLING)["evidence"]
+        (question,) = escalations(
+            board, CLAIMED_ISSUE, "Which declared source is authoritative?"
+        )
+        assert question.interim_basis == "Two sources name different deliverables."
+        return
+    if cause in ("residual", "residual_with_findings"):
+        # One subject's write needs a member that joined mid-round, then the
+        # next subject exhausts its admission rounds in the same round. In
+        # ``residual_with_findings`` the judgement that sent the subject to
+        # its author also carries a finding on the sibling, which the
+        # residual leaves behind and the halt still writes.
+        def join():
+            if LATE not in board.server.issues:
+                member(board, LATE)
+
+        carried = ()
+        if cause == "residual_with_findings":
+            member(board, SIBLING, labels=[GROOM_MARKER])
+            carried = (spec_finding(SIBLING),)
+        edging(board, executor, monkeypatch, LATE, join=join, findings=carried)
+        member(board, STUCK)
+        original = executor.stream
+
+        async def stuck(**kwargs):
+            title = kwargs["output_format"]["schema"].get("title")
+            keys = re.findall(r"<issue_key>(.*?)</issue_key>", kwargs["prompt"])
+            if title == "AdmissionJudgment" and keys and keys[-1] == STUCK:
+                yield result(structured_output=refusal(STUCK, "spec_gap"))
+                return
+            async for event in original(**kwargs):
+                yield event
+
+        monkeypatch.setattr(executor, "stream", stuck)
+        report = await run_owner(owner)
+        assert report.halt.cause == "admission_exhausted"
+        assert escalations(board, LATE, "undeclared_surface")
+        if cause == "residual":
+            assert [
+                (finding.issue_id, finding.defect_class)
+                for finding in report.halt.surviving_findings
+            ] == [(LATE, "undeclared_surface")]
+            return
+        assert [
+            (finding.issue_id, finding.defect_class)
+            for finding in report.halt.surviving_findings
+        ] == [(LATE, "undeclared_surface"), (SIBLING, "missing_source")]
+        (record,) = escalations(board, SIBLING, "missing_source")
+        assert record.interim_basis == spec_finding(SIBLING)["evidence"]
+        return
+    if cause == "removed_with_findings":
+        # The earlier member's judgement carries a finding on the sibling.
+        # Its author's write lands, the board then moves it out of the
+        # scope, and the member after it exhausts its admission rounds in
+        # the same round: the finding the removal left behind is written.
+        member(board, SIBLING, labels=[GROOM_MARKER])
+        member(board, EARLY, description="Draft awaiting preparation.")
+        member(board, STUCK)
+        judging(
+            board,
+            executor,
+            monkeypatch,
+            {
+                EARLY: lambda _: refusal(EARLY, "spec_gap", spec_finding(SIBLING)),
+                STUCK: lambda _: refusal(STUCK, "spec_gap"),
+            },
+        )
+        judged = executor.stream
+
+        async def removing(**kwargs):
+            early = board.server.issues[EARLY]
+            if early.description == PREPARED and early.parent_id == CLAIMED_ISSUE:
+                early.parent_id = None
+            async for event in judged(**kwargs):
+                yield event
+
+        monkeypatch.setattr(executor, "stream", removing)
+        report = await run_owner(owner)
+        assert report.halt.cause == "admission_exhausted"
+        assert board.server.issues[EARLY].description == PREPARED
+        assert board.server.issues[EARLY].parent_id is None
+        assert (SIBLING, "missing_source") in {
+            (finding.issue_id, finding.defect_class)
+            for finding in report.halt.surviving_findings
+        }
+        (record,) = escalations(board, SIBLING, "missing_source")
+        assert record.interim_basis == spec_finding(SIBLING)["evidence"]
+        assert escalations(board, EARLY) == []
+        return
+    if cause == "residual_then_halt":
+        # Round one's dry round forms a finding on the subject. In round two
+        # its author's write needs a member that joined mid-round, so it
+        # becomes a residual and the subject is never verified again; the
+        # member after it then halts, and the subject's finding is written.
+        member(board, STUCK)
+
+        def subject(n):
+            if n == 3 and LATE not in board.server.issues:
+                member(board, LATE)
+            if n == 2:
+                return buildable(CLAIMED_ISSUE, spec_finding(CLAIMED_ISSUE))
+            return buildable(CLAIMED_ISSUE)
+
+        seen = judging(
+            board,
+            executor,
+            monkeypatch,
+            {
+                CLAIMED_ISSUE: subject,
+                STUCK: lambda n: (
+                    buildable(STUCK) if n == 1 else refusal(STUCK, "human_decision")
+                ),
+            },
+        )
+        authoring(
+            executor,
+            monkeypatch,
+            {
+                "kind": "graph",
+                "issue_id": CLAIMED_ISSUE,
+                "changes": [{"kind": "blocked_by", "add": [LATE]}],
+            },
+        )
+        report = await run_owner(owner)
+        assert report.halt.cause == "human_decision"
+        # Assessed in round one, judged by its dry round, assessed again in
+        # round two, and never verified there.
+        assert seen[CLAIMED_ISSUE] == 3
+        assert edge_writes(board) == []
+        assert escalations(board, LATE, "undeclared_surface")
+        (record,) = escalations(board, CLAIMED_ISSUE, "missing_source")
+        assert record.interim_basis == spec_finding(CLAIMED_ISSUE)["evidence"]
+        return
+    # Round one: the dry round forms a finding on the marked sibling, and
+    # the working member is clean at admission but refused by the dry round.
+    # Round two works both again, in key order, and the sibling is clean
+    # from its second judgement on. The halting member sorts before the
+    # sibling, so it halts while the sibling's finding is still open; in
+    # ``repaired_then_halt`` it sorts after, so the round has already
+    # verified the sibling's repair when it halts.
+    stuck = STUCK if cause == "repaired_then_halt" else EARLY
+    member(board, SIBLING, labels=[GROOM_MARKER])
+    member(board, stuck)
+    kind = "spec_gap" if cause == "admission_exhausted" else "human_decision"
+    seen = judging(
+        board,
+        executor,
+        monkeypatch,
+        {
+            SIBLING: lambda n: (
+                buildable(SIBLING, spec_finding(SIBLING))
+                if n == 1
+                else buildable(SIBLING)
+            ),
+            stuck: lambda n: buildable(stuck) if n == 1 else refusal(stuck, kind),
+        },
+    )
+    report = await run_owner(owner)
+    if cause == "repaired_then_halt":
+        assert report.halt.cause == "human_decision"
+        # Judged in round one's dry round, then assessed and verified clean
+        # in round two before the halt.
+        assert seen[SIBLING] == 3
+        assert SIBLING not in {
+            finding.issue_id for finding in report.halt.surviving_findings
+        }
+        assert escalations(board, SIBLING) == []
+        assert "needs decision" not in board.server.issues[SIBLING].labels
+        return
+    assert seen[SIBLING] == 1
+    assert report.halt.cause == cause
+    assert (SIBLING, "missing_source") in {
+        (finding.issue_id, finding.defect_class)
+        for finding in report.halt.surviving_findings
+    }
+    (record,) = escalations(board, SIBLING, "missing_source")
+    assert record.interim_basis == spec_finding(SIBLING)["evidence"]
+
+
+async def test_a_residual_on_a_member_verified_clean_earlier_in_the_round_is_written(
+    monkeypatch,
+):
+    """Clearing by a clean verify never drops a residual.
+
+    On the ticket stage the subject's body is written and verified clean
+    first. The member after it then authors a dependency edge onto the
+    subject, which the stage declares no graph for, so a residual lands on
+    the subject; a member later still halts in the same round, and the
+    subject's residual is written although the subject was verified clean.
+    """
+    owner, board, executor = factory(
+        under_approval=True, bound=1, phases=lambda rows: rows[:1]
+    )
+    member(board, EARLY)
+    member(board, STUCK)
+    seen = judging(
+        board,
+        executor,
+        monkeypatch,
+        {
+            CLAIMED_ISSUE: lambda _: None,
+            EARLY: lambda _: refusal(EARLY, "spec_gap"),
+            STUCK: lambda _: refusal(STUCK, "human_decision"),
+        },
+    )
+    judged = executor.stream
+
+    async def stream(**kwargs):
+        title = kwargs["output_format"]["schema"].get("title")
+        keys = re.findall(r"<issue_key>(.*?)</issue_key>", kwargs["prompt"])
+        if title == "OrganizeProposal" and keys and keys[-1] == EARLY:
+            executor.calls.append(kwargs)
+            yield result(
+                structured_output={
+                    "kind": "graph",
+                    "issue_id": EARLY,
+                    "changes": [{"kind": "blocked_by", "add": [CLAIMED_ISSUE]}],
+                }
+            )
+            return
+        async for event in judged(**kwargs):
+            yield event
+
+    monkeypatch.setattr(executor, "stream", stream)
+    report = await run_owner(owner)
+    assert report.halt.cause == "human_decision"
+    # Assessed, written and verified clean before the residual named it.
+    assert seen[CLAIMED_ISSUE] == 2
+    assert board.server.issues[CLAIMED_ISSUE].description == PREPARED
+    assert edge_writes(board) == []
+    (record,) = escalations(board, CLAIMED_ISSUE, "undeclared_surface")
+    assert record.interim_basis == evidence("ticket", "issue_graph", TICKET_LINES)
+    assert escalations(board, EARLY, "undeclared_surface")
+
+
+async def test_an_admission_results_own_findings_are_written_at_its_halt(monkeypatch):
+    """The refusal that halts carries findings on another item; they land there."""
+    owner, board, executor = factory(convergence_bound=2, bound=1)
+    member(board, SIBLING, labels=[GROOM_MARKER])
+    member(board, STUCK)
+    judging(
+        board,
+        executor,
+        monkeypatch,
+        {STUCK: lambda _: refusal(STUCK, "human_decision", spec_finding(SIBLING))},
+    )
+    report = await run_owner(owner)
+    assert report.halt.cause == "human_decision"
+    (record,) = escalations(board, SIBLING, "missing_source")
+    assert record.interim_basis == spec_finding(SIBLING)["evidence"]
+    assert escalations(board, STUCK)
+
+
+@pytest.mark.parametrize("repair", ["repaired", "recurs"])
+async def test_a_finding_the_next_round_repairs_never_reaches_the_board(
+    monkeypatch, repair
+):
+    """Findings are held while the phase converges; only the open ones are written."""
+    owner, board, executor = factory(convergence_bound=2, bound=2)
+    member(board, SIBLING, labels=[GROOM_MARKER])
+    judging(
+        board,
+        executor,
+        monkeypatch,
+        {
+            SIBLING: lambda n: (
+                buildable(SIBLING, spec_finding(SIBLING))
+                if n == 1 or repair == "recurs"
+                else buildable(SIBLING)
+            )
+        },
+    )
+    report = await run_owner(owner)
+    if repair == "repaired":
+        assert report.halt is None
+        assert not escalations(board, SIBLING)
+        assert "needs decision" not in board.server.issues[SIBLING].labels
+        return
+    # The sibling the finding names is a subject of the next round, and a
+    # finding that keeps recurring exhausts its admission rounds there. It
+    # reaches the halt both as held and as the halting judgement's own, and
+    # is one record carrying its evidence once.
+    assert report.halt.cause == "admission_exhausted"
+    (record,) = escalations(board, SIBLING, "missing_source")
+    assert record.interim_basis == spec_finding(SIBLING)["evidence"]
+
+
+async def test_two_findings_of_different_classes_on_one_item_are_two_records(
+    monkeypatch,
+):
+    """One record per item and question: two classes are two, one class twice is one."""
+    owner, board, executor = factory(convergence_bound=1, bound=2)
+    member(board, SIBLING, labels=[GROOM_MARKER])
+    judging(
+        board,
+        executor,
+        monkeypatch,
+        {
+            SIBLING: lambda _: buildable(
+                SIBLING,
+                spec_finding(SIBLING, "missing_source", "The first source is absent."),
+                spec_finding(SIBLING, "missing_source", "The second source is absent."),
+                spec_finding(SIBLING, "ambiguous_scope", "Two deliverables share it."),
+            )
+        },
+    )
+    report = await run_owner(owner)
+    assert report.halt.cause == "convergence_exhausted"
+    assert sorted(
+        record.question
+        for record in escalations(board, SIBLING)
+        if record.question in {"missing_source", "ambiguous_scope"}
+    ) == ["ambiguous_scope", "missing_source"]
+    # The class raised twice is one record, and it carries both evidences.
+    (folded,) = escalations(board, SIBLING, "missing_source")
+    assert folded.interim_basis == (
+        "The first source is absent.\n\nThe second source is absent."
+    )
+
+
+@pytest.mark.parametrize("order", ["admitted_first", "unadmitted_first"])
+async def test_a_record_the_phase_may_not_write_is_named_unrecorded_and_the_rest_land(
+    monkeypatch, order
+):
+    """A finding on a member the row is not admitted on is never written.
+
+    The member carries its own approval label, so the pre-approval row may
+    not write it. Its record is named in the unrecorded halt, and the
+    admitted member's record lands whichever order the judge listed them.
+    """
+    owner, board, executor = factory(convergence_bound=1, bound=2)
+    admitted, unadmitted = "FIX-A", "FIX-N"
+    member(board, admitted, labels=[GROOM_MARKER])
+    member(board, unadmitted, labels=[GROOM_MARKER, "approved scope"])
+    formed = [spec_finding(admitted), spec_finding(unadmitted, "ambiguous_scope")]
+    if order == "unadmitted_first":
+        formed.reverse()
+    judging(
+        board,
+        executor,
+        monkeypatch,
+        {admitted: lambda _: buildable(admitted, *formed)},
+    )
+    report = await run_owner(owner)
+    assert report.halt.cause == "escalation_unrecorded"
+    assert report.halt.unrecorded_escalation_issue_ids == (unadmitted,)
+    (record,) = escalations(board, admitted, "missing_source")
+    assert record.interim_basis == spec_finding(admitted)["evidence"]
+    assert "needs decision" in board.server.issues[admitted].labels
+    assert escalations(board, unadmitted) == []
+    assert "needs decision" not in board.server.issues[unadmitted].labels
+
+
+async def test_a_finding_on_a_criterion_child_is_written_to_that_child(monkeypatch):
+    """The criteria row's finding on its own criterion child lands on the child.
+
+    The child carries its criterion label and never the stage's gate label,
+    which only organize subjects receive. The halt still writes the record
+    there, and keeps its own cause and bound.
+    """
+    owner, board, executor = factory(
+        under_approval=True,
+        convergence_bound=1,
+        body="Prepared body grounded in the source.",
+        phases=lambda rows: rows[1:],
+    )
+    board.server.issues[CLAIMED_ISSUE].labels.append("body complete")
+    member(board, CRITERION_CHILD, labels=["check"])
+    seen = judging(
+        board,
+        executor,
+        monkeypatch,
+        {
+            CRITERION_CHILD: lambda _: buildable(
+                CRITERION_CHILD, spec_finding(CRITERION_CHILD)
+            )
+        },
+    )
+    report = await run_owner(owner)
+    assert seen[CRITERION_CHILD] == 1
+    assert report.halt.cause == "convergence_exhausted"
+    assert (report.halt.bound.setting, report.halt.bound.rounds_used) == (
+        "organize.max_convergence_rounds",
+        1,
+    )
+    (record,) = escalations(board, CRITERION_CHILD, "missing_source")
+    assert record.interim_basis == spec_finding(CRITERION_CHILD)["evidence"]
+    assert record.interim_reading == INTERIM
+    labels = board.server.issues[CRITERION_CHILD].labels
+    assert "needs decision" in labels
+    assert "body complete" not in labels
+
+
+async def test_a_halt_record_whose_admission_went_stale_is_named_unrecorded(
+    monkeypatch,
+):
+    """The judgement behind a record changed before the halt; that record waits.
+
+    The subject's body is edited after its last judgement, so the halt's
+    record of that judgement is not written and is named unrecorded; the
+    finding it carried on another member is still written there.
+    """
+    owner, board, executor = factory(
+        refuse_forever=True, bound=1, refusal={"findings": [spec_finding(SIBLING)]}
+    )
+    member(board, SIBLING, labels=[GROOM_MARKER])
+    original = executor.stream
+    judged = []
+
+    async def stream(**kwargs):
+        async for event in original(**kwargs):
+            yield event
+        keys = re.findall(r"<issue_key>(.*?)</issue_key>", kwargs["prompt"])
+        title = kwargs["output_format"]["schema"].get("title")
+        if title == "AdmissionJudgment" and keys and keys[-1] == CLAIMED_ISSUE:
+            judged.append(kwargs)
+            if len(judged) == 2:
+                # The subject's last judgement is taken; its body moves on.
+                board.server.issues[
+                    CLAIMED_ISSUE
+                ].description = "Edited elsewhere after the last judgement."
+
+    monkeypatch.setattr(executor, "stream", stream)
+    report = await run_owner(owner)
+    assert len(judged) == 2
+    assert report.halt.cause == "escalation_unrecorded"
+    assert report.halt.unrecorded_escalation_issue_ids == (CLAIMED_ISSUE,)
+    assert escalations(board, CLAIMED_ISSUE) == []
+    assert "needs decision" not in board.server.issues[CLAIMED_ISSUE].labels
+    (record,) = escalations(board, SIBLING, "missing_source")
+    assert record.interim_basis == spec_finding(SIBLING)["evidence"]
+    assert "needs decision" in board.server.issues[SIBLING].labels
+
+
+async def test_a_tracker_failure_after_a_refused_record_names_both_unrecorded(
+    monkeypatch,
+):
+    """The tracker arm names the records skipped before it as well as its own.
+
+    The first finding's owner carries its own approval, so its record is
+    refused and skipped; the tracker then fails on the next record's
+    escalation, and the halt names both, in record order.
+    """
+    from kodezart.core.errors import McpCallUnansweredError
+
+    owner, board, executor = factory(convergence_bound=1, bound=2)
+    judged, refused, failing = "FIX-A", "FIX-N", "FIX-B"
+    member(board, judged, labels=[GROOM_MARKER])
+    member(board, refused, labels=[GROOM_MARKER, "approved scope"])
+    member(board, failing, labels=[GROOM_MARKER])
+    judging(
+        board,
+        executor,
+        monkeypatch,
+        {
+            judged: lambda _: buildable(
+                judged,
+                spec_finding(refused, "ambiguous_scope"),
+                spec_finding(failing),
+            )
+        },
+    )
+    original = board.call_tool
+
+    async def failing_escalation(*, name, arguments):
+        if (
+            name == "save_comment"
+            and arguments.get("issueId") == failing
+            and str(arguments.get("body", "")).startswith("[organize-question:")
+        ):
+            raise McpCallUnansweredError(
+                "response lost after request", server_name="fixture", tool_name=name
+            )
+        return await original(name=name, arguments=arguments)
+
+    monkeypatch.setattr(board, "call_tool", failing_escalation)
+    report = await run_owner(owner)
+    assert report.halt.cause == "escalation_unrecorded"
+    assert report.halt.unrecorded_escalation_issue_ids == (refused, failing)
+    assert escalations(board, refused) == []
+    assert escalations(board, failing) == []
+
+
+async def test_a_tracker_failure_reading_a_records_revision_is_named_unrecorded(
+    monkeypatch,
+):
+    """A record's own revision read failing is the tracker arm, not an escape.
+
+    The first member's record lands, down to its decision label; the
+    tracker then fails on the next record's first read, of the second
+    member's issue, and the halt returns naming that item rather than
+    raising out of the pass.
+    """
+    from kodezart.core.errors import McpCallUnansweredError
+
+    owner, board, executor = factory(convergence_bound=1, bound=2)
+    first, second = "FIX-A", "FIX-B"
+    for key in (first, second):
+        member(board, key, labels=[GROOM_MARKER])
+    judging(
+        board,
+        executor,
+        monkeypatch,
+        {
+            key: (lambda _, key=key: buildable(key, spec_finding(key)))
+            for key in (first, second)
+        },
+    )
+    original = board.call_tool
+    failed = []
+
+    async def failing_read(*, name, arguments):
+        # The first member's record is complete once its decision label
+        # has landed; its own writes read every member of the scope before
+        # that, so the next read of the second member is its record's own.
+        landed = "needs decision" in board.server.issues[first].labels
+        if name == "get_issue" and arguments.get("id") == second and landed:
+            failed.append(arguments)
+            raise McpCallUnansweredError(
+                "response lost after request", server_name="fixture", tool_name=name
+            )
+        return await original(name=name, arguments=arguments)
+
+    monkeypatch.setattr(board, "call_tool", failing_read)
+    report = await run_owner(owner)
+    assert len(failed) == 1
+    assert report.halt.cause == "escalation_unrecorded"
+    assert report.halt.unrecorded_escalation_issue_ids == (second,)
+    (record,) = escalations(board, first, "missing_source")
+    assert record.interim_basis == spec_finding(first)["evidence"]
+    assert escalations(board, second) == []
+
+
+async def test_approval_landing_before_a_grooming_halts_first_record_writes_nothing(
+    monkeypatch,
+):
+    """Approval between the halt's decision and its first record ends the row.
+
+    The round decides its halt, releases its set, and the scope is approved
+    before any record is written: every record re-reads approval first, so
+    none lands, and the halt names each record's item unrecorded.
+    """
+    owner, board, _ = factory(
+        refuse_forever=True, bound=1, refusal={"findings": [spec_finding(SIBLING)]}
+    )
+    member(board, SIBLING, labels=[GROOM_MARKER])
+    original = board.call_tool
+
+    async def approving(*, name, arguments):
+        response = await original(name=name, arguments=arguments)
+        # The round's own release is the first withdrawal of a lease marker.
+        labels = board.server.issues[CLAIMED_ISSUE].labels
+        if name == "delete_comment" and "approved scope" not in labels:
+            labels.append("approved scope")
+        return response
+
+    monkeypatch.setattr(board, "call_tool", approving)
+    report = await run_owner(owner)
+    assert "approved scope" in board.server.issues[CLAIMED_ISSUE].labels
+    assert report.halt.cause == "escalation_unrecorded"
+    assert report.halt.unrecorded_escalation_issue_ids == (CLAIMED_ISSUE, SIBLING)
+    for key in (CLAIMED_ISSUE, SIBLING):
+        assert escalations(board, key) == []
+        assert "needs decision" not in board.server.issues[key].labels
+    assert not [
+        args
+        for name, args in board.calls
+        if name == "save_comment"
+        and str(args.get("body", "")).startswith("[organize-question:")
+    ]
+    assert board.grants() == []
+
+
+def authoring(executor, monkeypatch, payload):
+    """Every author session of the subject answers *payload*; the rest as configured."""
+    original = executor.stream
+
+    async def stream(**kwargs):
+        title = kwargs["output_format"]["schema"].get("title")
+        keys = re.findall(r"<issue_key>(.*?)</issue_key>", kwargs["prompt"])
+        if title == "OrganizeProposal" and keys and keys[-1] == CLAIMED_ISSUE:
+            executor.calls.append(kwargs)
+            yield result(structured_output=payload)
+            return
+        async for event in original(**kwargs):
+            yield event
+
+    monkeypatch.setattr(executor, "stream", stream)
+
+
+def undeclared(report):
+    return [
+        (finding.issue_id, finding.evidence)
+        for finding in report.halt.surviving_findings
+        if finding.defect_class == "undeclared_surface"
+    ]
+
+
+def evidence(phase, kind, declared):
+    return (
+        f"The {phase} phase needed {kind} on {CLAIMED_ISSUE}, which is outside "
+        f"the set it declares ({', '.join(declared)})."
+    )
+
+
+async def test_a_split_the_pre_approval_row_authors_is_a_finding_not_a_write(
+    monkeypatch,
+):
+    """The groom row declares no split set, so a split it authors is refused.
+
+    The judge refuses the subject once and then finds nothing, so only the
+    residual can hold the round open; it does, to the bound, and the halt
+    writes it on the subject.
+    """
+    owner, board, executor = factory(convergence_bound=2, bound=2)
+    judging(
+        board,
+        executor,
+        monkeypatch,
+        {
+            CLAIMED_ISSUE: lambda n: (
+                refusal(CLAIMED_ISSUE, "spec_gap")
+                if n == 1
+                else buildable(CLAIMED_ISSUE)
+            )
+        },
+    )
+    authoring(
+        executor,
+        monkeypatch,
+        {
+            "kind": "split",
+            "issue_id": CLAIMED_ISSUE,
+            "children": [
+                {
+                    "deliverable_key": "first-deliverable",
+                    "title": "Prepared split",
+                    "body": "Prepared source-grounded child specification.",
+                }
+            ],
+        },
+    )
+    report = await run_owner(owner)
+    assert not [
+        args
+        for name, args in board.calls
+        if name == "save_issue" and "parentId" in args
+    ]
+    assert undeclared(report) == [
+        (CLAIMED_ISSUE, evidence("groom", "issue_split_set", GROOM_LINES))
+    ]
+    assert report.halt.cause == "convergence_exhausted"
+    assert GROOM_MARKER not in board.server.issues[CLAIMED_ISSUE].labels
+    assert escalations(board, CLAIMED_ISSUE, "undeclared_surface")
+
+
+OTHER = "FIX-OTHER"
+
+#: What the subject's author answers first, and what it answers as the
+#: repair once the write-back verifier refutes that first write.
+REPAIRS = {
+    "another_kind": (
+        {
+            "kind": "body",
+            "issue_id": CLAIMED_ISSUE,
+            "body": "Prepared body grounded in the source.",
+        },
+        {
+            "kind": "split",
+            "issue_id": CLAIMED_ISSUE,
+            "children": [
+                {
+                    "deliverable_key": "first-deliverable",
+                    "title": "Prepared split",
+                    "body": "Prepared source-grounded child specification.",
+                }
+            ],
+        },
+        "author returned another write surface",
+    ),
+    "another_peer_set": (
+        {
+            "kind": "graph",
+            "issue_id": CLAIMED_ISSUE,
+            "changes": [{"kind": "blocked_by", "add": [SIBLING]}],
+        },
+        {
+            "kind": "graph",
+            "issue_id": CLAIMED_ISSUE,
+            "changes": [{"kind": "blocked_by", "add": [OTHER]}],
+        },
+        "graph repair returned another set of affected surfaces",
+    ),
+}
+
+
+@pytest.mark.parametrize("repair", sorted(REPAIRS))
+async def test_a_repair_that_needs_other_addresses_is_refused_before_it_writes(
+    monkeypatch, repair
+):
+    """The bound is weighed once, so a repair may not reach past it.
+
+    The first write is weighed against the declared set. The write-back
+    verifier refutes it, and the author's repair answers with another kind
+    of write (``another_kind``) or a graph change on another peer
+    (``another_peer_set``): either needs addresses that weighing never saw,
+    so the repair is refused with the landed reason and writes nothing.
+    """
+    from kodezart.domain.errors import OrganizeWriteRefusalError
+
+    first, second, reason = REPAIRS[repair]
+    owner, board, executor = factory(convergence_bound=2, bound=2)
+    member(board, SIBLING)
+    member(board, OTHER)
+    judging(
+        board,
+        executor,
+        monkeypatch,
+        {
+            CLAIMED_ISSUE: lambda n: (
+                refusal(CLAIMED_ISSUE, "spec_gap")
+                if n == 1
+                else buildable(CLAIMED_ISSUE)
+            )
+        },
+    )
+    judged = executor.stream
+    proposals = []
+    repaired_at = []
+
+    async def stream(**kwargs):
+        title = kwargs["output_format"]["schema"].get("title")
+        keys = re.findall(r"<issue_key>(.*?)</issue_key>", kwargs["prompt"])
+        if title == "OrganizeProposal" and keys and keys[-1] == CLAIMED_ISSUE:
+            executor.calls.append(kwargs)
+            proposals.append(kwargs)
+            if len(proposals) > 1:
+                repaired_at.append(len(board.calls))
+            yield result(structured_output=first if len(proposals) == 1 else second)
+            return
+        if title == "WriteBackFinding" and not repaired_at:
+            executor.calls.append(kwargs)
+            yield result(
+                structured_output={
+                    "verdict": "refuted",
+                    "evidence": "The written artifact omits the declared source.",
+                    "cited_refs": ["tests/missing.py"],
+                }
+            )
+            return
+        async for event in judged(**kwargs):
+            yield event
+
+    monkeypatch.setattr(executor, "stream", stream)
+    with pytest.raises(OrganizeWriteRefusalError, match=reason):
+        await run_owner(owner)
+    assert len(proposals) == 2
+    (at,) = repaired_at
+    assert [args for name, args in board.calls[at:] if name == "save_issue"] == []
+    assert not [
+        args
+        for name, args in board.calls
+        if name == "save_issue" and ("parentId" in args or OTHER in str(args))
+    ]
+    assert board.grants() == []
+
+
+async def test_a_body_the_criteria_row_authors_is_a_finding_not_a_write(monkeypatch):
+    """The criteria stage declares no description, so a body it authors is refused."""
+    owner, board, executor = factory(
+        under_approval=True,
+        convergence_bound=1,
+        body="Prepared body grounded in the source.",
+        phases=lambda rows: rows[1:],
+    )
+    board.server.issues[CLAIMED_ISSUE].labels.append("body complete")
+    authoring(
+        executor,
+        monkeypatch,
+        {
+            "kind": "body",
+            "issue_id": CLAIMED_ISSUE,
+            "body": "A rewritten body the criteria stage may not write.",
+        },
+    )
+    report = await run_owner(owner)
+    assert undeclared(report) == [
+        (
+            CLAIMED_ISSUE,
+            evidence(
+                "criteria",
+                "issue_description",
+                ("criterion_child_set", "issue_label_set"),
+            ),
+        )
+    ]
+    assert (
+        board.server.issues[CLAIMED_ISSUE].description
+        == "Prepared body grounded in the source."
+    )
+
+
+async def test_criteria_the_ticket_row_authors_are_a_finding_not_a_write(monkeypatch):
+    """The ticket stage declares no criterion children, so criteria it authors wait."""
+    owner, board, executor = factory(
+        under_approval=True, convergence_bound=1, phases=lambda rows: rows[:1]
+    )
+    authoring(
+        executor,
+        monkeypatch,
+        {
+            "kind": "criteria",
+            "issue_id": CLAIMED_ISSUE,
+            "criteria": [
+                {
+                    "title": "Check prepared bytes",
+                    "check": "Check prepared bytes match the declared source.",
+                    "do": "Compare the source and check prepared bytes.",
+                }
+            ],
+        },
+    )
+    report = await run_owner(owner)
+    assert undeclared(report) == [
+        (CLAIMED_ISSUE, evidence("ticket", "criterion_child_set", TICKET_LINES))
+    ]
+    assert not [
+        issue
+        for issue in board.server.issues.values()
+        if issue.parent_id == CLAIMED_ISSUE and "check" in issue.labels
+    ]
+
+
+async def test_a_round_that_starts_blocked_writes_none_of_the_findings_it_holds(
+    monkeypatch,
+):
+    """A report-shaped halt spends no judgement and writes no finding.
+
+    Round one's dry round forms a finding on the sibling, and while it does
+    the subject is escalated, so round two starts blocked on it. That halt
+    names the member and writes nothing; the held finding is formed again by
+    the judgement of the entry that works the member.
+    """
+    owner, board, executor = factory(convergence_bound=2, bound=2)
+    member(board, SIBLING, labels=[GROOM_MARKER])
+
+    def sibling(n):
+        if n == 1:
+            board.server.issues[CLAIMED_ISSUE].labels.append("needs decision")
+            return buildable(SIBLING, spec_finding(SIBLING))
+        return buildable(SIBLING)
+
+    seen = judging(board, executor, monkeypatch, {SIBLING: sibling})
+    report = await run_owner(owner)
+    assert seen[SIBLING] == 1
+    assert report.halt.cause == "stage_incomplete"
+    assert report.halt.unlabelled_issue_ids == (CLAIMED_ISSUE,)
+    assert escalations(board, SIBLING) == []
+    assert not [
+        comment
+        for comment in board.server.comments
+        if comment.body.startswith("[organize-question:")
+    ]

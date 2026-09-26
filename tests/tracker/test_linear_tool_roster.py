@@ -1,4 +1,4 @@
-"""Nothing under ``src/`` calls a tool the live server does not have (KOD-144).
+"""Every tracker tool has a measured public declaration (KOD-144, KOD-379).
 
 The roster below is the vendor server's whole advertised tool list, probed
 on 2026-08-25 with the operation's own credential: sixty names, and
@@ -12,10 +12,17 @@ A green suite over a fake is exactly what let a dead tool call ship, so
 this module asserts against the roster rather than against any double.
 The roster is a capture: it changes when the server does, and only a fresh
 probe may change it.
+
+The separately attributed September connected-app label declarations
+extend the known contract. They do not prove that the operation's service
+credential can call the newer project-label creator. The August capture
+below stays unchanged; deployment compatibility remains unverified.
 """
 
 import re
 from pathlib import Path
+
+from tests.tracker.connected_app_label_contract import CONNECTED_APP_LABEL_TOOLS
 
 #: Every tool the live server advertises. Measured, not documented.
 LIVE_TOOL_ROSTER: frozenset[str] = frozenset(
@@ -98,7 +105,7 @@ def named_tools() -> dict[str, str]:
     found: dict[str, str] = {}
     for path in sorted(SOURCE_ROOT.rglob("*.py")):
         for match in _TOOL_CONSTANT.finditer(path.read_text()):
-            found[match.group("name")] = path.name
+            found[match.group("name")] = f"{path.parent.name}/{path.name}"
     return found
 
 
@@ -117,16 +124,17 @@ def test_the_server_offers_no_issue_history_tool() -> None:
 #: tracker tool cannot hide in one: the paired test below pins their
 #: naming shape, and their live roster is measured by the verification
 #: boot (KOD-170) the way this file's Linear roster was.
-KNOWLEDGE_TOOL_MODULES = frozenset({"notion_record_sink.py"})
+KNOWLEDGE_TOOL_MODULES = frozenset({"notion/record_sink.py"})
 
 
-def test_every_tracker_tool_this_process_names_exists_on_the_server() -> None:
+def test_every_tracker_tool_has_a_measured_public_declaration() -> None:
     named = named_tools()
     assert named, "no _TOOL_* constant was found under src/"
     absent = {
         tool: module
         for tool, module in named.items()
-        if module not in KNOWLEDGE_TOOL_MODULES and tool not in LIVE_TOOL_ROSTER
+        if module not in KNOWLEDGE_TOOL_MODULES
+        and tool not in LIVE_TOOL_ROSTER | CONNECTED_APP_LABEL_TOOLS
     }
     assert absent == {}
 

@@ -1,0 +1,4848 @@
+"""Actual tracker-to-executor admission calls preserve the fresh-source boundary.
+
+The gap guard below, from ``GAP_ARITHMETIC`` on, holds that no call site of
+the gap arithmetic reads the tracker's change stamp.  What it reads, by
+object after import: every name, attribute and callee of a definition is
+what the module's namespace after import, an import anywhere in it or an
+assignment inside the definition binds it to — an aliased import, an import
+inside the function, a relative import, a module-level rebinding, a
+``functools.partial``, a static method, a walrus, a closure over its
+enclosing function's locals — and literal names count wherever they appear:
+``getattr(x, "name")``, ``operator.attrgetter("name")``, ``vars(x)["name"]``,
+``x.__dict__["name"]``, a ``module:attr`` or ``module.attr`` string, and
+``pkgutil.resolve_name`` or ``importlib.import_module`` handed a literal.
+Outside the reach: a value handed across a function boundary, where the
+other function is not resolved at this site (returned from a helper, stored
+on an object and read elsewhere, or passed through a container built
+elsewhere); a name built at run time; and a binding made only when a
+function runs (``setattr`` or ``globals()`` inside a function body).  Each
+shape of the limit is held unseen by
+``test_a_shape_outside_the_reach_is_no_call_site``; the trap runs every
+function of a gap home, and every call site the fixtures can run, with the
+stamp trapped, so a read hidden behind such a shape inside one of them
+still reds.
+"""
+
+import ast
+import functools
+import inspect
+import sys
+from collections import Counter
+from collections.abc import AsyncIterator, Sequence
+from datetime import UTC, datetime, timedelta
+from itertools import pairwise
+
+import pytest
+import structlog.testing
+from pydantic import ValidationError
+
+from kodezart.chains.organize import OrganizeAdmission
+from kodezart.core.errors import NoStructuredOutputError, RateLimitedSoftFailureError
+from kodezart.core.prompt_namespaces import operation_bindings
+from kodezart.domain.errors import (
+    OrganizeAdmissionIdentityError,
+    OrganizeWriteRefusalError,
+    ScopeReadError,
+)
+from kodezart.domain.gap import (
+    compute_gap,
+    gap_membership,
+    open_state_kind,
+    state_membership,
+)
+from kodezart.domain.issue_tree import SubtreeClosure
+from kodezart.domain.organize import (
+    admission_route,
+    evidence_is_fillable,
+    is_admission_live,
+    is_organize_subject,
+    organize_at_rest,
+    organize_gap,
+    owes_stage_label,
+    stage_pending,
+    stage_rows,
+    stage_unlabelled,
+)
+from kodezart.services import organize_owner
+from kodezart.services.agent_service import AgentService
+from kodezart.services.audit_sessions import judge_in_workspace
+from kodezart.services.organize_context import OrganizeContextReader
+from kodezart.types.domain.agent import AgentEvent, RateLimitWarningEvent, ResultEvent
+from kodezart.types.domain.gap import CriterionGap, GapMembership
+from kodezart.types.domain.operation import CheckPrerequisite
+from kodezart.types.domain.organize import (
+    MANDATE_PHASE_ROLES,
+    AdmissionJudgment,
+    AdmissionResult,
+    AdmissionRoute,
+    AdmissionVerdict,
+    DefectRole,
+    MandateKind,
+    MandateSpec,
+    OrganizeAdmissionRequest,
+    RefusalKind,
+    ResolvedMandateSpec,
+    SpecFinding,
+)
+from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.run_records import RunIdentity
+from kodezart.types.domain.scope_address import ScopeKind, ScopeRef
+from kodezart.types.domain.session import PermissionMode, SessionType, ToolPreset
+from kodezart.types.domain.skills import SkillsSelection
+from kodezart.types.domain.subagents import (
+    NO_SUBAGENTS,
+    UNCONFIGURED_SESSION_POLICY,
+    AgentDefinition,
+    SessionPolicy,
+)
+from kodezart.types.domain.tracker import (
+    IssuePriority,
+    IssueQuery,
+    IssueRelation,
+    IssueRelationKind,
+    ReviewQuery,
+    TrackerIssue,
+    TrackerIssueRevision,
+    WorkflowStateKind,
+)
+from kodezart.types.domain.tracker_writes import DescriptionEditResult
+from tests.fakes import (
+    SUPPRESS_ALL_SKILLS,
+    FakeLinearMcpServer,
+    FakeMcpIssue,
+    FakeTrackerPort,
+    FakeWorkspaceProvider,
+    seed_fake_issue,
+    seed_server_issue,
+)
+from tests.name_resolution import (
+    call_sites,
+    defining_module,
+    loaded_values,
+    module_namespace,
+    modules_reaching,
+    parsed,
+    referencing_definitions,
+    source_tree,
+)
+from tests.prompts.sets import OPUS_SET, V5_SET
+from tests.prompts.test_organize_mandate_bindings import declared_operation
+from tests.prompts.test_prompt_wiring import load_registry
+from tests.tracker.conftest import APPROVED_ISSUE, ASSET_ISSUE, CLAIMED_ISSUE
+from tests.tracker.test_linear_mcp_tracker import tracker_over
+
+SUBJECT = "subject/42"
+REPO = "https://example.invalid/owner/repository"
+BASE = "refs/heads/selected-base"
+
+
+def issue(key: str, body: str, **changes: object) -> TrackerIssue:
+    return TrackerIssue.model_validate(
+        {
+            "issue_key": key,
+            "title": f"Title for {key}",
+            "body": body,
+            "priority": IssuePriority.NONE,
+            "state_name": "Todo",
+            "state_kind": WorkflowStateKind.UNSTARTED,
+            "queue_states": [],
+            "team_key": "engineering",
+            "created_at": datetime(2026, 1, 1, tzinfo=UTC),
+            "updated_at": datetime(2026, 1, 1, tzinfo=UTC),
+            "url": f"https://tracker.invalid/{key}",
+            **changes,
+        }
+    )
+
+
+def tracker() -> FakeTrackerPort:
+    return FakeTrackerPort(
+        issues=[
+            issue(
+                SUBJECT,
+                "Current issue body\nverbatim second line.",
+                relations=[
+                    IssueRelation(
+                        kind=IssueRelationKind.BLOCKED_BY, issue_key="linked/a"
+                    ),
+                    IssueRelation(kind=IssueRelationKind.RELATED, issue_key="linked/b"),
+                    IssueRelation(kind=IssueRelationKind.RELATED, issue_key="linked/a"),
+                    IssueRelation(kind=IssueRelationKind.RELATED, issue_key=SUBJECT),
+                ],
+            ),
+            issue("linked/a", "First linked body."),
+            issue("linked/b", "Second linked body."),
+            issue(
+                "criterion/a",
+                "First criterion body.",
+                parent_key=SUBJECT,
+                issue_labels=["criterion"],
+            ),
+            issue(
+                "criterion/b",
+                "Second criterion body.",
+                parent_key=SUBJECT,
+                issue_labels=["criterion"],
+            ),
+            issue(
+                "ordinary/child",
+                "Unlabelled child is not a criterion.",
+                parent_key=SUBJECT,
+            ),
+            issue("outside/a", "Unrelated issue stays outside the prompt."),
+        ]
+    )
+
+
+def request() -> OrganizeAdmissionRequest:
+    return OrganizeAdmissionRequest(
+        scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT),
+        issue_key=SUBJECT,
+        mandate_rubric="Apply the selected rubric.",
+        repo_url=REPO,
+        base_ref=BASE,
+        cache_key="selected-cache",
+        defect_classes=("unsupported-claim",),
+    )
+
+
+def result(**changes: object) -> ResultEvent:
+    return ResultEvent.model_validate(
+        {
+            "result": "Author rationale must never be forwarded.",
+            "session_id": "previous-agent-session",
+            "subtype": "result",
+            "duration_ms": 1,
+            "duration_api_ms": 1,
+            "is_error": False,
+            "num_turns": 1,
+            "structured_output": {
+                "issue_id": SUBJECT,
+                "verdict": "buildable",
+                "evidence": "Concrete repository evidence.",
+            },
+            **changes,
+        }
+    )
+
+
+class RecordingExecutor:
+    """The real service reaches this strict executor with all permissions visible."""
+
+    def __init__(self, events: Sequence[AgentEvent]) -> None:
+        self.events = events
+        self.calls: list[dict[str, object]] = []
+
+    async def stream(
+        self,
+        *,
+        prompt: str,
+        cwd: str,
+        permission_mode: PermissionMode,
+        allowed_tools: list[str],
+        skills: SkillsSelection,
+        session_type: SessionType,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
+        session_id: str | None = None,
+        output_format: dict[str, object] | None = None,
+        run_identity: RunIdentity | None = None,
+    ) -> AsyncIterator[AgentEvent]:
+        self.calls.append(
+            {
+                "prompt": prompt,
+                "cwd": cwd,
+                "permission_mode": permission_mode,
+                "allowed_tools": allowed_tools,
+                "skills": skills,
+                "session_type": session_type,
+                "agents": tuple(agents),
+                "session_policy": session_policy,
+                "session_id": session_id,
+                "output_format": output_format,
+                "run_identity": run_identity,
+            }
+        )
+        for event in self.events:
+            yield event
+
+
+class RecordingWorkspace(FakeWorkspaceProvider):
+    def __init__(self) -> None:
+        super().__init__()
+        self.arguments: list[dict[str, object]] = []
+
+    async def acquire(self, **kwargs):
+        self.arguments.append(kwargs)
+        return await super().acquire(**kwargs)
+
+
+def consumer(source, executor, workspace, set_name=V5_SET, bindings=None):
+    runner = AgentService(
+        executor=executor, workspace=workspace, git_base_url="https://example.invalid"
+    )
+    return OrganizeAdmission(
+        tracker=source,
+        context=OrganizeContextReader(tracker=source, operation=declared_operation()),
+        runner=runner,
+        workspace=workspace,
+        prompts=load_registry(default_set=set_name, bindings=bindings),
+        skills=SUPPRESS_ALL_SKILLS,
+    )
+
+
+@pytest.mark.parametrize("set_name", [OPUS_SET, V5_SET])
+@pytest.mark.parametrize(
+    "method,key",
+    [
+        ("assess", PromptKey.ORGANIZE_ASSESS),
+        ("verify", PromptKey.ORGANIZE_VERIFY),
+    ],
+)
+async def test_every_call_reads_full_tracker_sources_and_dispatches_fresh_at_base(
+    set_name, method, key
+):
+    source = tracker()
+    executor = RecordingExecutor([result()])
+    workspace = RecordingWorkspace()
+    admission = consumer(source, executor, workspace, set_name)
+    before = dict(source.issues)
+
+    with structlog.testing.capture_logs() as logs:
+        for _ in range(2):
+            verdict = await getattr(admission, method)(request())
+            assert verdict.verdict is AdmissionVerdict.BUILDABLE
+
+    assert len(executor.calls) == 2
+    for call in executor.calls:
+        prompt = call["prompt"]
+        for body in (
+            source.issues[SUBJECT].body,
+            "First linked body.",
+            "Second linked body.",
+            "First criterion body.",
+            "Second criterion body.",
+            "Unlabelled child is not a criterion.",
+            "Apply the selected rubric.",
+            "unsupported-claim",
+            SUBJECT,
+            BASE,
+        ):
+            assert body in prompt
+        for excluded in (
+            "Unrelated issue stays outside the prompt.",
+            "Author rationale must never be forwarded.",
+            "previous-agent-session",
+        ):
+            assert excluded not in prompt
+        assert call["session_id"] is None
+        assert call["session_type"] is SessionType.ORGANIZE_PASS
+        assert call["permission_mode"] == "plan"
+        assert call["allowed_tools"] is ToolPreset.EVALUATION
+        assert call["agents"] == ()
+        assert call["run_identity"] is None
+        assert call["skills"] == SUPPRESS_ALL_SKILLS
+        assert call["session_policy"] == load_registry(
+            default_set=set_name
+        ).session_policy(key)
+        assert call["cwd"] == "/tmp/fake-workspace"
+        assert call["output_format"]["schema"] == AdmissionJudgment.model_json_schema()
+    attempts = [log for log in logs if log["event"] == "organize_admission_attempt"]
+    assert len(attempts) == 2
+    for attempt in attempts:
+        assert attempt["session_id"] is None
+        assert attempt["resumed_session_id"] is None
+        assert attempt["prompt_key"] == key.value
+        assert attempt["base_ref"] == BASE
+    assert (
+        workspace.arguments
+        == [
+            {
+                "repo_path": None,
+                "repo_url": REPO,
+                "ref": BASE,
+                "create_branch": False,
+                "cache_key": "selected-cache",
+            }
+        ]
+        * 2
+    )
+    assert workspace.calls.count(("release", "/tmp/fake-workspace")) == 2
+    assert source.issue_reads.count("linked/a") == 2
+    assert source.issue_reads.count("linked/b") == 2
+    assert source.issues == before
+    assert source.issue_writes == source.comment_writes == source.workflow_writes == []
+    assert source.issue_creations == []
+
+
+async def test_verify_rereads_mutated_tracker_bodies_instead_of_reusing_assess_input():
+    source = tracker()
+    executor = RecordingExecutor([result()])
+    workspace = RecordingWorkspace()
+    admission = consumer(source, executor, workspace)
+    await admission.assess(request())
+    for key in (SUBJECT, "linked/a", "criterion/a"):
+        source.issues[key] = source.issues[key].model_copy(
+            update={"body": f"Fresh {key} body."}
+        )
+    await admission.verify(request())
+    first, second = [call["prompt"] for call in executor.calls]
+    for key in (SUBJECT, "linked/a", "criterion/a"):
+        assert f"Fresh {key} body." not in first
+        assert f"Fresh {key} body." in second
+
+
+async def test_surface_liveness_reads_never_retest_or_restamp():
+    source = tracker()
+    executor = RecordingExecutor([])
+    workspace = RecordingWorkspace()
+    admission = consumer(source, executor, workspace)
+    keys = (SUBJECT, "criterion/a", "criterion/b")
+    results = {}
+    for key in keys:
+        executor.events = [
+            result(
+                structured_output={
+                    "issue_id": key,
+                    "verdict": "buildable",
+                    "evidence": "Observed.",
+                }
+            )
+        ]
+        results[key] = await admission.assess(
+            request().model_copy(update={"issue_key": key})
+        )
+    original_records = {key: value.model_dump_json() for key, value in results.items()}
+    calls = len(executor.calls)
+    acquired = list(workspace.arguments)
+    original_body = source.issues["criterion/a"].body
+    seed_fake_issue(source, issue_key="criterion/a", body="An amended Check body.")
+    for key in keys:
+        assert await admission.is_live(results[key]) is False
+    assert len(executor.calls) == calls
+    assert workspace.arguments == acquired
+    assert {
+        key: value.model_dump_json() for key, value in results.items()
+    } == original_records
+    assert source.comment_writes == source.workflow_writes == []
+    assert source.issue_creations == []
+
+    executor.events = [
+        result(
+            structured_output={
+                "issue_id": "criterion/a",
+                "verdict": "buildable",
+                "evidence": "Re-tested.",
+            }
+        )
+    ]
+    renewed = await admission.verify(
+        request().model_copy(update={"issue_key": "criterion/a"})
+    )
+    assert renewed.admitted_body_digest != results["criterion/a"].admitted_body_digest
+    assert await admission.is_live(renewed) is True
+    assert await admission.is_live(results["criterion/a"]) is False
+    writes = list(source.issue_writes)
+    assert (
+        await source.edit_description(
+            target="criterion/a",
+            expected=original_body,
+            replacement="An amended Check body.",
+        )
+        is DescriptionEditResult.UNCHANGED
+    )
+    assert await admission.is_live(renewed) is True
+    assert source.issue_writes == writes
+
+
+@pytest.mark.parametrize("method", ["assess", "verify"])
+async def test_body_edit_during_session_does_not_stamp_the_later_revision(method):
+    source = tracker()
+    before = await source.read_issue_revision(issue_key=SUBJECT)
+
+    class EditingExecutor(RecordingExecutor):
+        async def stream(self, **kwargs):
+            seed_fake_issue(
+                source, issue_key=SUBJECT, body="Written after judgment input."
+            )
+            async for event in super().stream(**kwargs):
+                yield event
+
+    executor = EditingExecutor([result()])
+    admission = consumer(source, executor, RecordingWorkspace())
+    judged = await getattr(admission, method)(request())
+    assert judged.admitted_body_digest == before.body_digest
+    assert before.issue.body in executor.calls[0]["prompt"]
+    assert "Written after judgment input." not in executor.calls[0]["prompt"]
+    assert await admission.is_live(judged) is False
+    assert len(executor.calls) == 1
+
+
+async def test_agent_cannot_supply_its_own_revision_metadata():
+    output = {**result().structured_output, "admitted_body_digest": "invented-revision"}
+    workspace = RecordingWorkspace()
+    with pytest.raises(ValidationError, match="extra_forbidden"):
+        await consumer(
+            tracker(), RecordingExecutor([result(structured_output=output)]), workspace
+        ).assess(request())
+    assert workspace.calls[-1] == ("release", "/tmp/fake-workspace")
+
+
+async def test_liveness_read_refuses_missing_or_mismatched_source_identity():
+    source = tracker()
+    executor = RecordingExecutor([result()])
+    admission = consumer(source, executor, RecordingWorkspace())
+    original = await admission.assess(request())
+    saved_revision = await source.read_issue_revision(issue_key="linked/a")
+
+    async def wrong_revision(**kwargs):
+        return saved_revision
+
+    source.read_issue_revision = wrong_revision
+    with pytest.raises(OrganizeAdmissionIdentityError) as caught:
+        await admission.is_live(original)
+    assert caught.value.expected == SUBJECT
+    assert caught.value.observed == "linked/a"
+
+    async def missing_revision(**kwargs):
+        raise KeyError("missing revision")
+
+    source.read_issue_revision = missing_revision
+    with pytest.raises(KeyError, match="missing revision"):
+        await admission.is_live(original)
+    assert len(executor.calls) == 1
+
+
+@pytest.mark.parametrize("issue_key", [SUBJECT, "criterion/native"])
+async def test_real_revision_reader_lapses_the_exact_admission_surface(issue_key):
+    server = FakeLinearMcpServer(
+        issues=[
+            FakeMcpIssue(id=SUBJECT, description="Parent body."),
+            FakeMcpIssue(
+                id="criterion/native",
+                parent_id=SUBJECT,
+                labels=["acceptance-condition"],
+                description="Criterion body.",
+            ),
+        ]
+    )
+    source = tracker_over(server)
+    executor = RecordingExecutor(
+        [
+            result(
+                structured_output={
+                    "issue_id": issue_key,
+                    "verdict": "buildable",
+                    "evidence": "Observed.",
+                }
+            )
+        ]
+    )
+    admission = consumer(source, executor, RecordingWorkspace())
+    judged = await admission.verify(
+        request().model_copy(update={"issue_key": issue_key})
+    )
+    recorded = judged.model_dump_json()
+    assert await admission.is_live(judged) is True
+    await source.post_comment(issue_key=issue_key, body="A later discussion.")
+    assert await admission.is_live(judged) is True
+    seed_server_issue(server, issue_key=issue_key, title="A later title")
+    assert await admission.is_live(judged) is False
+    seed_server_issue(server, issue_key=issue_key, body="A later body")
+    assert await admission.is_live(judged) is False
+    assert judged.model_dump_json() == recorded
+    assert len(executor.calls) == 1
+
+
+@pytest.mark.parametrize("method", ["assess", "verify"])
+@pytest.mark.parametrize("missing", ["linked/a", "criterion-read"])
+async def test_incomplete_source_reads_fail_before_any_workspace_or_session(
+    method, missing
+):
+    source = tracker()
+    if missing == "criterion-read":
+
+        async def fail_read(**kwargs):
+            raise RuntimeError("criterion read failed")
+
+        source.read_criteria = fail_read
+    else:
+        del source.issues[missing]
+    executor = RecordingExecutor([result()])
+    workspace = RecordingWorkspace()
+    with pytest.raises((KeyError, RuntimeError)):
+        await getattr(consumer(source, executor, workspace), method)(request())
+    assert executor.calls == []
+    assert workspace.calls == []
+
+
+@pytest.mark.parametrize("method", ["assess", "verify"])
+@pytest.mark.parametrize(
+    "events", [[], [result(structured_output=None)], [result(is_error=True)]]
+)
+async def test_missing_or_failed_output_releases_workspace_without_admission(
+    method, events
+):
+    executor = RecordingExecutor(events)
+    workspace = RecordingWorkspace()
+    with pytest.raises(NoStructuredOutputError):
+        await getattr(consumer(tracker(), executor, workspace), method)(request())
+    assert workspace.calls[-1] == ("release", "/tmp/fake-workspace")
+
+
+async def test_rejected_rate_limit_is_not_an_admission_even_with_structured_output():
+    executor = RecordingExecutor(
+        [
+            RateLimitWarningEvent(status="rejected"),
+            result(),
+        ]
+    )
+    workspace = RecordingWorkspace()
+    with pytest.raises(RateLimitedSoftFailureError):
+        await consumer(tracker(), executor, workspace).assess(request())
+    assert workspace.calls[-1] == ("release", "/tmp/fake-workspace")
+
+
+@pytest.mark.parametrize("method", ["assess", "verify"])
+async def test_judgment_for_another_issue_is_refused_and_workspace_is_released(method):
+    wrong = result(
+        structured_output={
+            "issue_id": "other/42",
+            "verdict": "buildable",
+            "evidence": "Elsewhere.",
+        }
+    )
+    workspace = RecordingWorkspace()
+    with pytest.raises(OrganizeAdmissionIdentityError) as caught:
+        await getattr(
+            consumer(tracker(), RecordingExecutor([wrong]), workspace), method
+        )(request())
+    assert caught.value.expected == SUBJECT
+    assert caught.value.observed == "other/42"
+    assert workspace.calls[-1] == ("release", "/tmp/fake-workspace")
+
+
+@pytest.mark.parametrize(
+    "verdict,details",
+    [
+        (AdmissionVerdict.BUILDABLE, {}),
+        (
+            AdmissionVerdict.NOT_BUILDABLE,
+            {
+                "invented_decision": "Choose a response model.",
+                "refusal_kind": RefusalKind.HUMAN_DECISION,
+            },
+        ),
+        (
+            AdmissionVerdict.UNVERIFIABLE,
+            {"missing_artifact": "Generated schema.", "pending_blocker_id": "linked/a"},
+        ),
+    ],
+)
+async def test_all_three_verdicts_return_without_coercion_or_phase_writes(
+    verdict, details
+):
+    output = {
+        "issue_id": SUBJECT,
+        "verdict": verdict,
+        "evidence": "Observed.",
+        **details,
+    }
+    source = tracker()
+    actual = await consumer(
+        source,
+        RecordingExecutor([result(structured_output=output)]),
+        RecordingWorkspace(),
+    ).assess(request())
+    revision = await source.read_issue_revision(issue_key=SUBJECT)
+    assert actual == AdmissionResult.model_validate(
+        {
+            **output,
+            "admitted_body_digest": revision.body_digest,
+            "admitted_scope": actual.admitted_scope,
+            "admitted_context_digest": actual.admitted_context_digest,
+        }
+    )
+    assert source.workflow_writes == []
+
+
+async def test_session_type_is_required_by_the_actual_runner_call():
+    runner = AgentService(
+        executor=RecordingExecutor([]),
+        workspace=RecordingWorkspace(),
+        git_base_url="https://example.invalid",
+    )
+    with pytest.raises(TypeError, match="session_type"):
+        runner.stream_in_workspace(
+            prompt="fixture",
+            workspace_path="/tmp/fixture",
+            permission_mode=PermissionMode.PLAN,
+            allowed_tools=[],
+            skills=SUPPRESS_ALL_SKILLS,
+        )
+
+
+@pytest.mark.parametrize(
+    "extra", ["author_reasoning", "session_id", "resumed_session_id"]
+)
+def test_request_cannot_carry_author_context_or_a_previous_session(extra):
+    with pytest.raises(ValidationError):
+        OrganizeAdmissionRequest.model_validate(
+            {**request().model_dump(), extra: "previous-session-text"}
+        )
+
+
+@pytest.mark.parametrize("method", ["assess", "verify"])
+async def test_real_tracker_hydrates_evidence_before_real_runner_dispatch(
+    method,
+):
+    server = FakeLinearMcpServer(
+        issues=[
+            FakeMcpIssue(
+                id=SUBJECT,
+                description="Native parent body.",
+                relations=[("blockedBy", "linked/native")],
+            ),
+            FakeMcpIssue(id="linked/native", description="Native linked body."),
+            FakeMcpIssue(
+                id="criterion/native",
+                parent_id=SUBJECT,
+                labels=["acceptance-condition"],
+                description="Native Check body.",
+            ),
+        ]
+    )
+    source = tracker_over(server)
+    executor = RecordingExecutor([result()])
+    await getattr(consumer(source, executor, RecordingWorkspace()), method)(request())
+    assert len(executor.calls) == 1
+    prompt = executor.calls[0]["prompt"]
+    for body in ("Native parent body.", "Native linked body.", "Native Check body."):
+        assert body in prompt
+    reads = {call["id"] for call in server.tool_calls("get_issue")}
+    assert {SUBJECT, "linked/native", "criterion/native"} <= reads
+    assert not server.tool_calls("save_issue")
+    assert not server.tool_calls("save_comment")
+
+
+def test_the_organize_dispatch_census_names_its_type_and_read_only_policy():
+    tree = ast.parse(inspect.getsource(OrganizeAdmission))
+    shared = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "judge_in_workspace"
+    ]
+    assert len(shared) == 1
+    keywords = {argument.arg: argument.value for argument in shared[0].keywords}
+    assert ast.unparse(keywords["session_type"]) == "SessionType.ORGANIZE_PASS"
+    assert not any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr in {"stream", "stream_in_workspace", "stream_workflow"}
+        for node in ast.walk(tree)
+    )
+    tree = ast.parse(inspect.getsource(judge_in_workspace))
+    calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr in {"stream", "stream_in_workspace", "stream_workflow"}
+    ]
+    assert [node.func.attr for node in calls] == ["stream_in_workspace"]
+    keywords = {argument.arg: argument.value for argument in calls[0].keywords}
+    assert ast.unparse(keywords["session_type"]) == "session_type"
+    assert ast.unparse(keywords["permission_mode"]) == "EVAL_PERMISSION_MODE"
+    assert ast.unparse(keywords["session_id"]) == "None"
+    assert ast.unparse(keywords["agents"]) == "NO_SUBAGENTS"
+
+
+BODY_MARKER = "body_ready"
+MENTIONED = "other/17"
+
+
+def gap_revision(key, **changes):
+    return TrackerIssueRevision(
+        issue=issue(key, f"Body for {key}", **changes),
+        body_digest=f"opaque:{key}",
+    )
+
+
+def gap_admission(revision):
+    return AdmissionResult(
+        issue_id=revision.issue.issue_key,
+        verdict=AdmissionVerdict.BUILDABLE,
+        evidence="The body has a concrete implementation and verification story.",
+        admitted_body_digest=revision.body_digest,
+        admitted_scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT),
+        admitted_context_digest="fixture-context",
+    )
+
+
+def organized_family(key=SUBJECT):
+    return (
+        gap_revision(key, issue_labels=[BODY_MARKER]),
+        gap_revision(
+            f"{key}/check",
+            parent_key=key,
+            issue_labels=["criterion"],
+            state_kind=WorkflowStateKind.COMPLETED,
+            state_name="Done",
+        ),
+    )
+
+
+def gap_of(revisions, *, admissions=None, findings=(), marker=BODY_MARKER):
+    return organize_gap(
+        revisions=revisions,
+        admissions=(
+            tuple(gap_admission(revision) for revision in revisions)
+            if admissions is None
+            else admissions
+        ),
+        open_findings=findings,
+        body_marker_key=marker,
+    )
+
+
+def test_organized_scope_has_empty_gap_and_preserves_source_records():
+    revisions = (*organized_family(), *organized_family("other/17"))
+    before = tuple(revision.model_dump_json() for revision in revisions)
+    assert gap_of(revisions) == ()
+    assert tuple(revision.model_dump_json() for revision in revisions) == before
+    assert gap_of(()) == ()
+
+
+@pytest.mark.parametrize("missing", ["marker", "verdict", "criterion", "liveness"])
+def test_each_missing_organize_fact_puts_only_its_issue_in_gap(missing):
+    parent, child = organized_family()
+    sibling = organized_family("other/17")
+    if missing == "marker":
+        parent = parent.model_copy(
+            update={
+                "issue": parent.issue.model_copy(update={"issue_labels": frozenset()})
+            }
+        )
+    revisions = (parent, *((child,) if missing != "criterion" else ()), *sibling)
+    admissions = tuple(gap_admission(revision) for revision in revisions)
+    if missing == "verdict":
+        admissions = tuple(a for a in admissions if a.issue_id != SUBJECT)
+    elif missing == "liveness":
+        admissions = tuple(
+            AdmissionResult.model_validate(
+                {**a.model_dump(), "admitted_body_digest": "old body"}
+            )
+            if a.issue_id == SUBJECT
+            else a
+            for a in admissions
+        )
+    assert gap_of(revisions, admissions=admissions) == (parent.issue,)
+
+
+@pytest.mark.parametrize("role", list(DefectRole))
+def test_open_finding_of_either_role_puts_only_its_issue_in_gap(role):
+    parent, child = organized_family()
+    finding = SpecFinding(
+        issue_id=SUBJECT,
+        defect_class="unsupported-claim",
+        evidence="The recorded claim names no supporting observation.",
+        role=role,
+        mandate_text="Repeat every unsupported claim."
+        if role is DefectRole.MANDATE
+        else None,
+    )
+    revisions = (parent, child, *organized_family("other/17"))
+    assert gap_of(revisions, findings=(finding,)) == (parent.issue,)
+    assert gap_of(revisions, findings=()) == ()
+
+
+@pytest.mark.parametrize("state", list(WorkflowStateKind))
+def test_child_state_only_controls_non_canceled_existence_not_code_satisfaction(state):
+    parent, child = organized_family()
+    child = child.model_copy(
+        update={"issue": child.issue.model_copy(update={"state_kind": state})}
+    )
+    expected = (parent.issue,) if state is WorkflowStateKind.CANCELED else ()
+    assert gap_of((parent, child)) == expected
+
+
+def test_canceled_child_does_not_hide_another_live_criterion():
+    parent, child = organized_family()
+    canceled = gap_revision(
+        "old/check",
+        parent_key=SUBJECT,
+        issue_labels=["criterion"],
+        state_kind=WorkflowStateKind.CANCELED,
+    )
+    assert gap_of((parent, canceled, child)) == ()
+
+
+def test_deliverable_child_does_not_count_as_a_criterion():
+    parent, child = organized_family()
+    child = child.model_copy(
+        update={"issue": child.issue.model_copy(update={"issue_labels": frozenset()})}
+    )
+    assert gap_of((parent, child)) == (parent.issue, child.issue)
+
+
+@pytest.mark.parametrize("record_kind", ["tracker", "decision"])
+def test_record_shaped_members_are_outside_gap_even_without_markers_or_verdicts(
+    record_kind,
+):
+    record = gap_revision("record/1", issue_labels=[record_kind])
+    finding = SpecFinding(
+        issue_id="record/1",
+        defect_class="test",
+        evidence="Open finding.",
+        role=DefectRole.INSTANCE,
+    )
+    assert gap_of((record,), admissions=(), findings=(finding,)) == ()
+
+
+def test_gap_uses_the_configured_semantic_body_marker():
+    parent, child = organized_family()
+    assert gap_of((parent, child), marker="different_phase") == (parent.issue,)
+    assert gap_of((parent, child)) == ()
+
+
+def test_gap_preserves_input_order_and_exact_records():
+    parents = [gap_revision(key) for key in ("z/9", "a/1", "m/3")]
+    actual = gap_of(parents)
+    assert len(actual) == len(parents)
+    assert all(
+        result is source.issue for result, source in zip(actual, parents, strict=True)
+    )
+
+
+#: Every way one snapshot can be incoherent, and the name each is read by.
+INCOHERENT_SNAPSHOTS = [
+    "duplicate_revision",
+    "duplicate_admission",
+    "orphan_criterion",
+    "empty_marker",
+]
+
+
+def incoherent_snapshot(malformed):
+    """One incoherent snapshot: its revisions, its admissions and its marker.
+
+    The gap and the pre-query are asked the same question over the same
+    snapshot, so the snapshot is built once and read by both.
+    """
+    parent, child = organized_family()
+    revisions = (parent, child)
+    admissions = tuple(gap_admission(revision) for revision in revisions)
+    marker = BODY_MARKER
+    if malformed == "duplicate_revision":
+        revisions += (parent,)
+    elif malformed == "duplicate_admission":
+        admissions += (admissions[0],)
+    elif malformed == "orphan_criterion":
+        revisions = (child,)
+    else:
+        assert malformed == "empty_marker"
+        marker = "  "
+    return revisions, admissions, marker
+
+
+@pytest.mark.parametrize("malformed", INCOHERENT_SNAPSHOTS)
+def test_gap_refuses_incoherent_snapshots_instead_of_dropping_evidence(malformed):
+    revisions, admissions, marker = incoherent_snapshot(malformed)
+    with pytest.raises(ValueError, match="organize gap requires"):
+        gap_of(revisions, admissions=admissions, marker=marker)
+
+
+@pytest.mark.parametrize("stale", ["missing", "changed", "canceled_changed"])
+def test_child_surface_liveness_reenters_parent_without_lapsing_its_body(stale):
+    parent, child = organized_family()
+    extra = organized_family("other/17")
+    revisions = (parent, child, *extra)
+    if stale == "canceled_changed":
+        old = gap_revision(
+            "canceled/1",
+            parent_key=SUBJECT,
+            issue_labels=["criterion"],
+            state_kind=WorkflowStateKind.CANCELED,
+        )
+        revisions = (*revisions, old)
+        target = old
+    else:
+        target = child
+    admissions = tuple(gap_admission(revision) for revision in revisions)
+    if stale == "missing":
+        admissions = tuple(
+            a for a in admissions if a.issue_id != target.issue.issue_key
+        )
+    else:
+        revisions = tuple(
+            revision.model_copy(update={"body_digest": "later criterion body"})
+            if revision is target
+            else revision
+            for revision in revisions
+        )
+    before = tuple(a.model_dump_json() for a in admissions)
+    assert gap_of(revisions, admissions=admissions) == (parent.issue,)
+    assert admissions[0].admitted_body_digest == parent.body_digest
+    assert tuple(a.model_dump_json() for a in admissions) == before
+
+
+@pytest.mark.parametrize("role", list(DefectRole))
+def test_open_child_surface_finding_routes_to_parent_only(role):
+    parent, child = organized_family()
+    finding = SpecFinding(
+        issue_id=child.issue.issue_key,
+        defect_class="missing-evidence",
+        evidence="The Check references an unavailable observation.",
+        role=role,
+        mandate_text="Require the unavailable observation."
+        if role is DefectRole.MANDATE
+        else None,
+    )
+    assert gap_of(
+        (parent, child, *organized_family("other/17")), findings=(finding,)
+    ) == (parent.issue,)
+
+
+DELIVERABLE = "deliverable/child"
+SUPERSEDED = "superseded/check"
+
+
+def at_rest_of(revisions, *, admissions=None, findings=(), marker=BODY_MARKER):
+    return organize_at_rest(
+        revisions=revisions,
+        admissions=(
+            tuple(gap_admission(revision) for revision in revisions)
+            if admissions is None
+            else admissions
+        ),
+        open_findings=findings,
+        body_marker_key=marker,
+    )
+
+
+def open_criterion_family(key=SUBJECT):
+    """A specification whose one criterion has not been executed yet."""
+    parent, check = organized_family(key)
+    return parent, check.model_copy(
+        update={
+            "issue": check.issue.model_copy(
+                update={
+                    "state_kind": WorkflowStateKind.UNSTARTED,
+                    "state_name": "Todo",
+                }
+            )
+        }
+    )
+
+
+def superseded_criterion(key=SUBJECT):
+    return gap_revision(
+        SUPERSEDED,
+        parent_key=key,
+        issue_labels=["criterion"],
+        state_kind=WorkflowStateKind.CANCELED,
+    )
+
+
+def scope_fixture(name):
+    """One scope snapshot with the admissions and open findings standing over it."""
+    parent, check = organized_family()
+    deliverable = gap_revision(
+        DELIVERABLE, parent_key=SUBJECT, issue_labels=[BODY_MARKER]
+    )
+    match name:
+        case "at_rest":
+            return (*organized_family(), *organized_family("other/17")), None, ()
+        case "open_criterion":
+            return open_criterion_family(), None, ()
+        case "open_criterion_under_deliverable":
+            return (
+                (
+                    parent,
+                    check,
+                    deliverable,
+                    gap_revision(
+                        f"{DELIVERABLE}/check",
+                        parent_key=DELIVERABLE,
+                        issue_labels=["criterion"],
+                    ),
+                ),
+                None,
+                (),
+            )
+        case "deliverable_child_without_criterion":
+            return (parent, check, deliverable), None, ()
+        case "canceled_criterion_superseded":
+            return (parent, superseded_criterion(), check), None, ()
+        case "canceled_criterion_alone":
+            return (parent, superseded_criterion()), None, ()
+        case "open_finding_on_organized_scope":
+            # Organized and admitted throughout, but an open finding names
+            # its criterion child, which routes to the parent.
+            finding = SpecFinding(
+                issue_id=check.issue.issue_key,
+                defect_class="missing-evidence",
+                evidence="The Check references an unavailable observation.",
+                role=DefectRole.INSTANCE,
+            )
+            return (parent, check, *organized_family("other/17")), None, (finding,)
+    assert name == "criterion_body_moved_on"
+    judged = open_criterion_family()
+    admissions = tuple(gap_admission(revision) for revision in judged)
+    moved = judged[1].model_copy(update={"body_digest": "later criterion body"})
+    return (judged[0], moved), admissions, ()
+
+
+#: Every scope shape in the table, with the issues its gap holds.
+SCOPE_FIXTURES = {
+    "at_rest": (),
+    "open_criterion": (),
+    "open_criterion_under_deliverable": (),
+    "canceled_criterion_superseded": (),
+    "canceled_criterion_alone": (SUBJECT,),
+    "criterion_body_moved_on": (SUBJECT,),
+    "deliverable_child_without_criterion": (DELIVERABLE,),
+    "open_finding_on_organized_scope": (SUBJECT,),
+}
+
+
+@pytest.mark.parametrize("name", sorted(SCOPE_FIXTURES))
+def test_the_pre_query_answers_the_gap_cardinality_over_each_scope(name):
+    revisions, admissions, findings = scope_fixture(name)
+    before = tuple(revision.model_dump_json() for revision in revisions)
+    gap = gap_of(revisions, admissions=admissions, findings=findings)
+    assert tuple(item.issue_key for item in gap) == SCOPE_FIXTURES[name]
+    assert at_rest_of(revisions, admissions=admissions, findings=findings) is (
+        gap == ()
+    )
+    assert tuple(revision.model_dump_json() for revision in revisions) == before
+
+
+def test_the_scope_table_answers_both_ways_so_the_agreement_is_not_vacuous():
+    answered = set()
+    for name in SCOPE_FIXTURES:
+        revisions, admissions, findings = scope_fixture(name)
+        answered.add(at_rest_of(revisions, admissions=admissions, findings=findings))
+    assert answered == {True, False}
+
+
+@pytest.mark.parametrize("malformed", INCOHERENT_SNAPSHOTS)
+def test_the_pre_query_refuses_an_incoherent_snapshot_instead_of_answering_rest(
+    malformed,
+):
+    revisions, admissions, marker = incoherent_snapshot(malformed)
+    with pytest.raises(ValueError, match="organize gap requires"):
+        at_rest_of(revisions, admissions=admissions, marker=marker)
+
+
+@pytest.fixture(params=["fake", "linear"])
+def organized_port(request):
+    # *stamp_reads* makes every further read of this port move the change
+    # stamp, whichever double is underneath. The UNCHANGED replay below writes
+    # nothing, so a stamp that only a write moves cannot tell a digest taken
+    # from the body alone from one that folds the stamp into it; a stamp that
+    # moves on the read can. It is a switch rather than a constructor value
+    # because an admission session compares the whole issue across its
+    # context read and its revision read, so no session may run under it.
+    revisions = (*organized_family(), *organized_family("other/17"))
+    keys = tuple(revision.issue.issue_key for revision in revisions)
+    if request.param == "fake":
+        source = FakeTrackerPort(issues=[revision.issue for revision in revisions])
+
+        def stamp_reads() -> None:
+            source.stamp_moves_on_read = True
+
+        def seed_issue(*, issue_key: str, body: str) -> None:
+            seed_fake_issue(source, issue_key=issue_key, body=body)
+    else:
+        server = FakeLinearMcpServer(
+            issues=[
+                FakeMcpIssue(
+                    id=revision.issue.issue_key,
+                    description=revision.issue.body,
+                    parent_id=revision.issue.parent_key,
+                    status=revision.issue.state_name,
+                    status_type=revision.issue.state_kind.value,
+                    labels=["acceptance-condition"]
+                    if "criterion" in revision.issue.issue_labels
+                    else ["body-phase-finished"],
+                )
+                for revision in revisions
+            ],
+            state_types={"Todo": "unstarted", "Done": "completed"},
+        )
+        source = tracker_over(
+            server,
+            issue_labels={
+                "criterion": "acceptance-condition",
+                BODY_MARKER: "body-phase-finished",
+            },
+        )
+
+        def stamp_reads() -> None:
+            server.stamp_moves_on_read = True
+
+        def seed_issue(*, issue_key: str, body: str) -> None:
+            seed_server_issue(server, issue_key=issue_key, body=body)
+
+    return source, keys, stamp_reads, seed_issue
+
+
+async def read_gap_revisions(source, keys):
+    return tuple([await source.read_issue_revision(issue_key=key) for key in keys])
+
+
+async def test_the_organized_port_moves_its_stamp_on_read_and_not_its_body_revision(
+    organized_port,
+):
+    """Under the switch a read moves the stamp and the body revision holds.
+
+    Stated on both arms and positively, so the replay case below cannot go
+    vacuous: a revision that folded the stamp into its digest would answer two
+    reads of one unwritten body with two digests, and the digest holding still
+    across those reads is the prohibition itself.
+    """
+    source, keys, stamp_reads, _seed = organized_port
+    stamp_reads()
+    first = await source.read_issue(issue_key=keys[1])
+    second = await source.read_issue(issue_key=keys[1])
+    assert second.updated_at > first.updated_at
+    assert second.body == first.body
+    one = await source.read_issue_revision(issue_key=keys[1])
+    two = await source.read_issue_revision(issue_key=keys[1])
+    assert two.issue.updated_at > one.issue.updated_at
+    assert two.body_digest == one.body_digest
+
+
+@pytest.mark.parametrize("change", ["amended_body", "unchanged_body", "state_only"])
+async def test_port_criterion_changes_use_only_surface_digests_for_parent_gap(
+    organized_port, change
+):
+    source, keys, stamp_reads, seed_issue = organized_port
+    executor = RecordingExecutor([])
+    workspace = RecordingWorkspace()
+    admission = consumer(source, executor, workspace)
+    judged = []
+    for key in keys:
+        executor.events = [
+            result(
+                structured_output={
+                    "issue_id": key,
+                    "verdict": "buildable",
+                    "evidence": "The current body is implementable.",
+                }
+            )
+        ]
+        judged.append(
+            await admission.assess(
+                request().model_copy(
+                    update={
+                        "issue_key": key,
+                        "scope": ScopeRef(
+                            kind=ScopeKind.ISSUE,
+                            key=(await source.read_issue(issue_key=key)).parent_key
+                            or key,
+                        ),
+                    }
+                )
+            )
+        )
+    baseline = tuple(value.model_dump_json() for value in judged)
+    assert gap_of(await read_gap_revisions(source, keys), admissions=judged) == ()
+    child_key = keys[1]
+    before = await source.read_issue(issue_key=child_key)
+    if change == "amended_body":
+        seed_issue(issue_key=child_key, body="Check: revised runnable condition.")
+    elif change == "unchanged_body":
+        # The replay writes nothing, so from here the port moves its stamp on
+        # every read: that is the only way this arm can tell a body digest from
+        # one that folds the stamp in. No session runs after this point.
+        stamp_reads()
+        assert (
+            await source.edit_description(
+                target=child_key,
+                expected="prior body no longer present",
+                replacement=before.body,
+            )
+            is DescriptionEditResult.UNCHANGED
+        )
+    else:
+        assert before.state_kind is WorkflowStateKind.COMPLETED
+        moved = await source.restore_workflow_state(
+            issue_key=child_key, state_name="Todo"
+        )
+        assert moved.state_kind is WorkflowStateKind.UNSTARTED
+    calls = len(executor.calls)
+    acquisitions = list(workspace.arguments)
+    current = await read_gap_revisions(source, keys)
+    gap = gap_of(current, admissions=judged)
+    assert tuple(item.issue_key for item in gap) == (
+        (SUBJECT,) if change == "amended_body" else ()
+    )
+    assert await admission.is_live(judged[0]) is (change == "unchanged_body")
+    assert await admission.is_live(judged[1]) is (change == "unchanged_body")
+    assert await admission.is_live(judged[2]) is True
+    assert await admission.is_live(judged[3]) is True
+    assert tuple(value.model_dump_json() for value in judged) == baseline
+    assert len(executor.calls) == calls
+    assert workspace.arguments == acquisitions
+
+    if change == "amended_body":
+        executor.events = [
+            result(
+                structured_output={
+                    "issue_id": child_key,
+                    "verdict": "buildable",
+                    "evidence": "The revised body was re-tested.",
+                }
+            )
+        ]
+        judged[1] = await admission.verify(
+            request().model_copy(update={"issue_key": child_key})
+        )
+        assert gap_of(await read_gap_revisions(source, keys), admissions=judged) == ()
+        assert judged[0].model_dump_json() == baseline[0]
+
+
+def ripple_vendor_stamp(source, issue_key, instant):
+    """Move an issue's vendor change timestamp the way a mention ripple does.
+
+    The backend bumps every issue an edit merely names, leaving its body
+    byte-identical.  The port models issues, not the backend's bookkeeping,
+    so the ripple is applied to the double's own record here — the point of
+    the fixture is that a stamp which moved for no content reason is visible
+    and still reaches no admission clause.
+    """
+    issue = source.issues[issue_key]
+    source.issues[issue_key] = issue.model_copy(update={"updated_at": instant})
+
+
+async def test_mention_ripple_bumps_the_stamp_without_entering_the_gap():
+    revisions = (*organized_family(), *organized_family(MENTIONED))
+    keys = tuple(revision.issue.issue_key for revision in revisions)
+    ripple = datetime(2026, 6, 1, tzinfo=UTC)
+    source = FakeTrackerPort(
+        issues=[revision.issue for revision in revisions], clock=lambda: ripple
+    )
+    admissions = tuple(
+        gap_admission(revision) for revision in await read_gap_revisions(source, keys)
+    )
+    assert gap_of(await read_gap_revisions(source, keys), admissions=admissions) == ()
+
+    before = {key: await source.read_issue(issue_key=key) for key in keys}
+    seed_fake_issue(
+        source,
+        issue_key=SUBJECT,
+        body=f"Revised body for {SUBJECT}, which mentions {MENTIONED} and edits "
+        f"nothing there.",
+    )
+    ripple_vendor_stamp(source, MENTIONED, ripple)
+    after = {key: await source.read_issue(issue_key=key) for key in keys}
+
+    assert MENTIONED in after[SUBJECT].body
+    assert after[SUBJECT].body != before[SUBJECT].body
+    assert after[MENTIONED].body == before[MENTIONED].body
+    assert after[SUBJECT].updated_at > before[SUBJECT].updated_at
+    assert after[MENTIONED].updated_at > before[MENTIONED].updated_at
+
+    gap = gap_of(await read_gap_revisions(source, keys), admissions=admissions)
+    assert tuple(item.issue_key for item in gap) == (SUBJECT,)
+
+
+async def test_two_ticks_with_nothing_changed_between_them_leave_the_second_gap_empty():
+    """Nothing changed between two ticks, so the second tick's gap is empty.
+
+    Tick one is the sequence a tick runs: read the revisions, assess every
+    member, compute the gap.  Then the tick's own write lands — a record
+    comment on the subject that names its neighbour — and the fake stamps the
+    issue it wrote, exactly as a backend does; the mention ripple moves the
+    neighbour's stamp for a body nobody touched.  Tick two reads the same
+    bodies and the same admissions and finds the same empty gap, although
+    every stamp in the scope moved.
+
+    A witness, not a fix: ``organize_gap`` has no change-stamp clause at all
+    and says so in its own docstring, so this passes on arrival and stays to
+    say so.  It runs over the in-process fake because the ripple is written
+    onto the double's own record; the adapter arm's stamp movement under a
+    real edit is
+    ``test_port_criterion_changes_use_only_surface_digests_for_parent_gap``.
+    """
+    revisions = (*organized_family(), *organized_family(MENTIONED))
+    keys = tuple(revision.issue.issue_key for revision in revisions)
+    clock = datetime(2026, 6, 1, tzinfo=UTC)
+    source = FakeTrackerPort(
+        issues=[revision.issue for revision in revisions], clock=lambda: clock
+    )
+    executor = RecordingExecutor([])
+    workspace = RecordingWorkspace()
+    admission = consumer(source, executor, workspace)
+
+    assert gap_of(await read_gap_revisions(source, keys), admissions=()) != ()
+
+    judged = []
+    for key in keys:
+        executor.events = [
+            result(
+                structured_output={
+                    "issue_id": key,
+                    "verdict": "buildable",
+                    "evidence": "The current body is implementable.",
+                }
+            )
+        ]
+        judged.append(
+            await admission.assess(
+                request().model_copy(
+                    update={
+                        "issue_key": key,
+                        "scope": ScopeRef(
+                            kind=ScopeKind.ISSUE,
+                            key=(await source.read_issue(issue_key=key)).parent_key
+                            or key,
+                        ),
+                    }
+                )
+            )
+        )
+    baseline = tuple(value.model_dump_json() for value in judged)
+    assert gap_of(await read_gap_revisions(source, keys), admissions=judged) == ()
+
+    before = {key: await source.read_issue(issue_key=key) for key in keys}
+    await source.post_comment(
+        issue_key=SUBJECT, body=f"Organized {SUBJECT}; see {MENTIONED}."
+    )
+    ripple_vendor_stamp(source, MENTIONED, clock)
+    after = {key: await source.read_issue(issue_key=key) for key in keys}
+
+    assert after[SUBJECT].updated_at > before[SUBJECT].updated_at
+    assert after[MENTIONED].updated_at > before[MENTIONED].updated_at
+    assert all(after[key].body == before[key].body for key in keys)
+    calls = len(executor.calls)
+
+    current = await read_gap_revisions(source, keys)
+    assert {r.issue.issue_key: r.issue.updated_at for r in current} == {
+        key: after[key].updated_at for key in keys
+    }
+    assert gap_of(current, admissions=judged) == ()
+    for value in judged:
+        assert await admission.is_live(value) is True
+    assert len(executor.calls) == calls
+    assert tuple(value.model_dump_json() for value in judged) == baseline
+
+
+def test_gap_has_no_amendment_input_or_body_judgment_branch():
+    tree = ast.parse(inspect.getsource(organize_gap))
+    names = {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
+    attributes = {
+        node.attr for node in ast.walk(tree) if isinstance(node, ast.Attribute)
+    }
+    assert not any("amend" in name.lower() for name in names | attributes)
+    assert not attributes & {"body", "title", "evidence", "verdict", "state_name"}
+    assert set(inspect.signature(organize_gap).parameters) == {
+        "revisions",
+        "admissions",
+        "open_findings",
+        "body_marker_key",
+    }
+
+
+CHANGE_STAMP_FIELDS = frozenset(
+    {"updated_at", "updatedAt", "updated_since", "updatedSince"}
+)
+#: The gap arithmetic, named by the objects rather than by their words: the
+#: subtree gap and the organize gap.  Only the modules defining them are read,
+#: so every definition beside either one is inside the arithmetic whether it
+#: is named here or not — ``gap_membership`` sits beside ``compute_gap`` — and a
+#: module that builds on them, ``SubtreeClosure``'s among them, reaches them
+#: by its imports.  Each member is load-bearing: the modules reaching one of
+#: them are not the modules reaching the other, so the exact bound below
+#: reds when either is dropped.
+GAP_ARITHMETIC = (compute_gap, organize_gap)
+
+
+@functools.cache
+def gap_home_modules():
+    """The gap homes as module objects, read off the arithmetic's own ``__module__``."""
+    return tuple(
+        sys.modules[name]
+        for name in sorted({value.__module__ for value in GAP_ARITHMETIC})
+    )
+
+
+@functools.cache
+def gap_home_functions():
+    """Every function a gap home defines, read off the module objects.
+
+    The homes are the modules defining ``GAP_ARITHMETIC``; every function
+    whose ``__module__`` is one of them is inside the arithmetic — ``gap_membership``,
+    ``organize_at_rest`` and each stage helper beside them — so a definition
+    referring to any one of them is a call site of the arithmetic, and every
+    one of them is an entry point the trap below runs.
+    """
+    return tuple(
+        value
+        for home in gap_home_modules()
+        for value in vars(home).values()
+        if inspect.isfunction(value) and value.__module__ == home.__name__
+    )
+
+
+def gap_home_objects():
+    """What a call site refers to: the home modules themselves and their functions.
+
+    A definition that denotes a home module — bound by an import, by a local
+    assigned from ``pkgutil.resolve_name`` or ``importlib.import_module``,
+    or read as ``getattr(gap, "compute_gap")`` — refers to the arithmetic by
+    object as surely as one that denotes a function of it.
+    """
+    return (*gap_home_modules(), *gap_home_functions())
+
+
+#: Every supplied module the reach below finds, re-measured off the tree
+#: rather than chosen.  A change to it is a change to where the gap can be
+#: computed, which is the surface this guard speaks for.
+GAP_COMPUTATION_MODULES = frozenset(
+    {
+        "chains/audit_sweep.py",
+        "chains/authored_delivery.py",
+        "chains/authored_publication.py",
+        "chains/criteria.py",
+        "chains/delivery_coordinator.py",
+        "chains/fire_consolidation.py",
+        "chains/fire_implementation.py",
+        "chains/fire_remediation.py",
+        "chains/fire_review.py",
+        "chains/fire_specification.py",
+        "chains/lane_delivery.py",
+        "chains/native_delivery.py",
+        "chains/organize.py",
+        "chains/ralph_loop.py",
+        "chains/ralph_workflow.py",
+        "chains/remediation.py",
+        "chains/scope_walker.py",
+        "composition/audit.py",
+        "composition/delivery.py",
+        "composition/engine.py",
+        "composition/organize.py",
+        "composition/passes.py",
+        "composition/supervisor.py",
+        "domain/gap.py",
+        "domain/issue_tree.py",
+        "domain/lane_alarms.py",
+        "domain/organize.py",
+        "domain/run_alarm_table.py",
+        "domain/stream_signals.py",
+        "domain/tally_record.py",
+        "main.py",
+        "services/alarm_supervisor.py",
+        "services/audit_runtime.py",
+        "services/audit_terminal.py",
+        "services/barren_record_signals.py",
+        "services/escalation_ageing_supervisor.py",
+        "services/escalation_signals.py",
+        "services/mandate_graph.py",
+        "services/organize_owner.py",
+        "services/run_alarm_recorder.py",
+        "services/run_shape.py",
+        "services/scope_dispatcher.py",
+        "services/scope_tally.py",
+        "services/supervisor_pass.py",
+    }
+)
+#: Every module of the tree that spells the change stamp, and the reason it
+#: may.  None of them is in the gap's reach, and none holds a call site of the
+#: arithmetic found by object.  A module that newly spells the stamp arrives
+#: here as a decision with its reason written down, or reds.  The register is
+#: kept per module, so a new read inside a module already here is not seen by
+#: it: the trap below holds it when a function of a gap home, or a call site
+#: the fixtures can run, runs it; and the call-site scan holds it when the
+#: reading function refers to a gap home or a function of one by object, by
+#: the stamp's spelling or by the value a name it loads is bound to.
+CHANGE_STAMP_READERS = {
+    "adapters/linear/tracker.py": "The adapter: it reads the stamp off the wire "
+    "and exposes it, and scans by recency, which the Check allows.",
+    "adapters/linear/wire.py": "The wire models the adapter parses the stamp into.",
+    "domain/criterion_amendment.py": "Leaves the stamp out when it compares a "
+    "criterion with the record an amendment expected.",
+    "domain/fire_spec.py": "Stamps a captured fire spec with the subject version "
+    "it was read at.",
+    "services/audit_expectation.py": "Carries the observed stamp onto the record "
+    "an audit write expects back.",
+    "services/fire_dispatcher.py": "The dispatcher's exclusion memory: a lane "
+    "issue stays excluded until its own stamp moves.",
+    "services/native_amendments.py": "Leaves the stamp out when it compares a "
+    "native write with the record it expected.",
+    "services/organize_context.py": "Leaves the stamp out of the organize "
+    "context digest.",
+    "services/pass_gate.py": "The pass gate's recency cursor over issue and "
+    "review scans.",
+    "services/tracker_artifacts.py": "Leaves the stamp out of a tracker "
+    "artifact's serialised child.",
+    "types/domain/dispatch.py": "The self-write ledger: the stamp its own last "
+    "write left on an issue.",
+    "types/domain/self_writes.py": "An issue movement snapshot, kept separate "
+    "from its scan stamp.",
+    "types/domain/tracker.py": "The domain models that declare the stamp and the "
+    "recency parameter.",
+}
+
+
+def change_stamp_reads(tree):
+    """Every spelling of the tracker's change-timestamp field in parsed source.
+
+    As an attribute, a name, a keyword, a class pattern's keyword and a
+    string constant.
+    """
+    reads = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute) and node.attr in CHANGE_STAMP_FIELDS:
+            reads.add(node.attr)
+        elif isinstance(node, ast.MatchClass):
+            reads.update(CHANGE_STAMP_FIELDS.intersection(node.kwd_attrs))
+        elif isinstance(node, ast.Name) and node.id in CHANGE_STAMP_FIELDS:
+            reads.add(node.id)
+        elif isinstance(node, ast.keyword) and node.arg in CHANGE_STAMP_FIELDS:
+            reads.add(node.arg)
+        elif (
+            isinstance(node, ast.Constant)
+            and isinstance(node.value, str)
+            and node.value in CHANGE_STAMP_FIELDS
+        ):
+            reads.add(node.value)
+    return reads
+
+
+def gap_homes():
+    """The modules that define the gap arithmetic, read off the objects."""
+    return frozenset(defining_module(value) for value in GAP_ARITHMETIC)
+
+
+def gap_computation_sites(sources):
+    """Every supplied module that can compute the gap.
+
+    A module computes the gap by reaching the arithmetic, and the only static
+    way to reach a module is to import it.  So a gap site is any module whose
+    imports lead, at any depth, to a module that defines the arithmetic —
+    read through ``imported_modules``, which takes an import at the top, in a
+    function, in a class or under ``TYPE_CHECKING``, a relative import, a
+    submodule imported from its package, a dotted route through an imported
+    package, and a string constant naming a module.
+
+    Nothing here follows the gap's answer: a module that imports a helper
+    beside the arithmetic is in the reach through that import, whatever shape
+    the helper hands the answer on in.
+
+    Wider than the Check, and stated so a red is read right: a module that
+    imports the arithmetic's module for any reason, a type among them, is
+    counted as able to compute the gap.  Not in the reach: a module handed the
+    arithmetic or its answer at run time — by argument, attribute or
+    callback — without importing either.  Not seen: a module name assembled
+    at run time, a relative name handed to ``importlib.import_module`` with
+    its package, and ``eval`` or ``exec``.
+    """
+    trees = {relative: _parsed_once(source) for relative, source in sources.items()}
+    return {
+        relative: trees[relative]
+        for relative in sorted(_gap_reach(frozenset(sources.items())))
+    }
+
+
+@functools.cache
+def _parsed_once(source):
+    """One module's syntax tree, parsed once per text.
+
+    The guards below read the same unchanged tree many times over and a
+    planted case changes one or two modules, so each text is parsed once.
+    """
+    return ast.parse(source)
+
+
+@functools.cache
+def _gap_reach(sources):
+    """The reach over one frozen snapshot of the supplied modules."""
+    trees = {relative: _parsed_once(source) for relative, source in sources}
+    return modules_reaching(trees, homes=gap_homes())
+
+
+def _stamp_reads_of(source):
+    """What one module's text reads of the change stamp."""
+    return change_stamp_reads(_parsed_once(source))
+
+
+def change_stamp_readers(sources):
+    """Every supplied module that reads the change stamp, with what it reads."""
+    return {
+        relative: _stamp_reads_of(source)
+        for relative, source in sources.items()
+        if _stamp_reads_of(source)
+    }
+
+
+def gap_sites_reading_the_change_stamp(sources):
+    """The discovered gap sites that reach the tracker's change-timestamp field."""
+    return {
+        relative: _stamp_reads_of(sources[relative])
+        for relative in gap_computation_sites(sources)
+        if _stamp_reads_of(sources[relative])
+    }
+
+
+def test_no_gap_computation_call_site_reads_the_tracker_change_timestamp():
+    homes = gap_homes()
+    discovered = gap_computation_sites(source_tree())
+    assert homes
+    assert discovered
+    assert homes <= discovered.keys()
+    assert discovered.keys() <= GAP_COMPUTATION_MODULES
+    assert gap_sites_reading_the_change_stamp(source_tree()) == {}
+    assert change_stamp_reads(ast.parse(inspect.getsource(organize_gap))) == set()
+
+
+def test_the_discovered_gap_sites_are_the_upper_bound_exactly():
+    """The derived surface is the whole bound, not merely inside it.
+
+    The guard above bounds the discovered set from above, so a member dropped
+    from ``GAP_ARITHMETIC`` could take gap sites off the scanned surface while
+    it still holds: the modules reaching the subtree gap are not the modules
+    reaching the organize gap.  Equality is what reds then.
+    """
+    assert gap_computation_sites(source_tree()).keys() == GAP_COMPUTATION_MODULES
+
+
+def test_every_module_that_reads_the_change_stamp_is_registered_with_its_reason():
+    """The stamp's readers are keyed on the stamp, not on the gap's answer.
+
+    Every module that spells it is read off the tree and must be a row of the
+    register, and every row must still spell it: the adapter that exposes it,
+    the models that declare it, and the few services that keep it for a
+    purpose of their own, none of them in the gap's reach.  A module that
+    starts to spell the stamp reds here until its reason is written down
+    beside the others.
+    """
+    readers = change_stamp_readers(source_tree())
+
+    assert readers
+    assert readers.keys() == CHANGE_STAMP_READERS.keys()
+    assert readers.keys().isdisjoint(gap_computation_sites(source_tree()))
+
+
+def change_stamp_values(relative, tree, namespace, node):
+    """The stamp fields a definition reads by value: a name bound to one.
+
+    Every loaded name and attribute inside *node*, resolved through the
+    module's globals and its imports (``loaded_values``); one bound to a
+    string that is a change-stamp field is a read of it, however the name is
+    spelled — a constant in the module, or one imported from another.
+    """
+    return {
+        value
+        for value in loaded_values(relative, tree, namespace, node)
+        if isinstance(value, str) and value in CHANGE_STAMP_FIELDS
+    }
+
+
+@functools.cache
+def _arithmetic_sites_of(relative, source):
+    """One module's call sites of the arithmetic, with what each reads."""
+    tree = _parsed_once(source)
+    namespace = module_namespace(relative, source)
+    return tuple(
+        (
+            name,
+            frozenset(
+                change_stamp_reads(node)
+                | change_stamp_values(relative, tree, namespace, node)
+            ),
+        )
+        for name, node in referencing_definitions(
+            relative, tree, namespace, wanted=gap_home_objects()
+        )
+    )
+
+
+def arithmetic_call_sites(sources):
+    """``(module, definition)`` -> what it reads of the stamp, per call site.
+
+    A call site is a definition whose text refers to a gap home, or to a
+    function of one, by object (``gap_home_objects``), called or not: under
+    an aliased import, an import inside the function, a relative import, a
+    module-level rebinding, a ``functools.partial``, a static method, loaded
+    as a value and handed on, named by a string constant as ``module:attr``
+    or ``module.attr``, taken as an attribute off a call handed a string
+    naming its module or off a local assigned from one, or read as a literal
+    name off the module through ``getattr``, ``operator.attrgetter``,
+    ``vars`` or ``__dict__`` (``referencing_definitions``).  Each is scanned
+    whole for the stamp's spelling (``change_stamp_reads``) and for a loaded
+    name bound to a stamp field, in its module or through an import
+    (``change_stamp_values``).  Outside the reach: a value handed across a
+    function boundary, where the other function is not resolved at this site
+    (returned from a helper, stored on an object and read elsewhere, or
+    passed through a container built elsewhere); a name built at run time;
+    and a binding made only when a function runs (``setattr`` or
+    ``globals()`` inside a function body).  A read through a model property
+    or method is one only running the site shows; the call sites the
+    fixtures can run are run under the trap below.
+    """
+    return {
+        (relative, name): reads
+        for relative, source in sorted(sources.items())
+        for name, reads in _arithmetic_sites_of(relative, source)
+    }
+
+
+def registered_readers_holding_a_call_site(sources):
+    """The registered stamp readers that refer to the arithmetic by object."""
+    return sorted(
+        {module for module, _name in arithmetic_call_sites(sources)}
+        & CHANGE_STAMP_READERS.keys()
+    )
+
+
+def test_no_call_site_of_the_arithmetic_found_by_object_reads_the_change_stamp():
+    """The arithmetic's call sites are found by the objects, and read no stamp.
+
+    Every call site is inside the gap's reach, which ties the two readings
+    together: a site the reach misses reds here.  A string naming a function
+    of a gap home, or its module, is an import edge of the reach as well as a
+    reference, so the two readings see it alike.  No registered
+    reader of the stamp is a call site: a module kept on the register for a
+    reason of its own that starts to refer to the arithmetic reds, whatever
+    it reads.
+    """
+    sites = arithmetic_call_sites(source_tree())
+
+    assert len(gap_home_modules()) == len(gap_homes()) > 0
+    assert set(gap_home_functions()) > set(GAP_ARITHMETIC)
+    assert sites
+    assert {site for site, reads in sites.items() if reads} == set()
+    assert {module for module, _name in sites} <= GAP_COMPUTATION_MODULES
+    assert registered_readers_holding_a_call_site(source_tree()) == []
+
+
+#: Each way a definition refers to the arithmetic by object, as the module
+#: text it arrives as.  ``{READ}`` is where a change-stamp read goes.
+CALL_SITE_ROUTES = {
+    "aliased_import": "from kodezart.domain.gap import compute_gap as gap_of\n"
+    "\n"
+    "def plan(criteria, since):\n"
+    "    return [c for c in gap_of(criteria){READ}]\n",
+    "import_inside_the_function": "def plan(criteria, since):\n"
+    "    from kodezart.domain.gap import compute_gap as _g\n"
+    "\n"
+    "    return [c for c in _g(criteria){READ}]\n",
+    "module_alias_inside_the_function": "def plan(criteria, since):\n"
+    "    import kodezart.domain.gap as gap_module\n"
+    "\n"
+    "    window = gap_module.compute_gap\n"
+    "    return [c for c in window(criteria){READ}]\n",
+    "dotted_route_inside_the_function": "def plan(criteria, since):\n"
+    "    import kodezart.domain.gap\n"
+    "\n"
+    "    window = kodezart.domain.gap.compute_gap\n"
+    "    return [c for c in window(criteria){READ}]\n",
+    "relative_import_inside_the_function": "def plan(criteria, since):\n"
+    "    from ..domain.gap import compute_gap as window\n"
+    "\n"
+    "    return [c for c in window(criteria){READ}]\n",
+    "loaded_as_a_value_and_handed_on": "from kodezart.domain import gap\n"
+    "\n"
+    "def plan(criteria, since, run):\n"
+    "    return [c for c in run(gap.compute_gap, criteria){READ}]\n",
+    "module_level_rebinding": "from kodezart.domain.organize import organize_gap\n"
+    "\n"
+    "_ARITHMETIC = organize_gap\n"
+    "\n"
+    "def plan(criteria, since):\n"
+    "    return [c for c in _ARITHMETIC(**criteria){READ}]\n",
+    "module_level_partial": "import functools\n"
+    "\n"
+    "from kodezart.domain.gap import compute_gap\n"
+    "\n"
+    "_WINDOW = functools.partial(compute_gap)\n"
+    "\n"
+    "def plan(criteria, since):\n"
+    "    return [c for c in _WINDOW(criteria){READ}]\n",
+    "static_method": "from kodezart.domain.gap import compute_gap\n"
+    "\n"
+    "class Arithmetic:\n"
+    "    window = staticmethod(compute_gap)\n"
+    "\n"
+    "def plan(criteria, since):\n"
+    "    return [c for c in Arithmetic.window(criteria){READ}]\n",
+    "named_as_module_colon_attr": "import pkgutil\n"
+    "\n"
+    "def plan(criteria, since):\n"
+    "    window = pkgutil.resolve_name('kodezart.domain.gap:compute_gap')\n"
+    "    return [c for c in window(criteria){READ}]\n",
+    "named_as_module_dot_attr": "import pkgutil\n"
+    "\n"
+    "def plan(criteria, since):\n"
+    "    window = pkgutil.resolve_name('kodezart.domain.organize.organize_gap')\n"
+    "    return [c for c in window(**criteria){READ}]\n",
+    "predicate_named_as_module_colon_attr": "import pkgutil\n"
+    "\n"
+    "def plan(criteria, since):\n"
+    "    still_open = pkgutil.resolve_name('kodezart.domain.gap:open_state_kind')\n"
+    "    return [\n"
+    "        c for c in criteria if still_open(c.state_kind){READ}\n"
+    "    ]\n",
+    "attribute_off_the_resolving_call": "import pkgutil\n"
+    "\n"
+    "def plan(criteria, since):\n"
+    "    window = pkgutil.resolve_name('kodezart.domain:gap').compute_gap\n"
+    "    return [c for c in window(criteria){READ}]\n",
+    "at_rest_named_as_module_dot_attr": "import pkgutil\n"
+    "\n"
+    "def plan(criteria, since, board):\n"
+    "    at_rest = pkgutil.resolve_name('kodezart.domain.organize.organize_at_rest')\n"
+    "    return [c for c in criteria if at_rest(**board){READ}]\n",
+    "local_bound_from_resolve_name": "import pkgutil\n"
+    "\n"
+    "def plan(criteria, since):\n"
+    "    arithmetic = pkgutil.resolve_name('kodezart.domain:gap')\n"
+    "    return [\n"
+    "        c for c in arithmetic.compute_gap(criteria){READ}\n"
+    "    ]\n",
+    "local_bound_from_import_module": "import importlib\n"
+    "\n"
+    "def plan(criteria, since):\n"
+    "    arithmetic = importlib.import_module('kodezart.domain.gap')\n"
+    "    return [\n"
+    "        c for c in arithmetic.compute_gap(criteria){READ}\n"
+    "    ]\n",
+    "getattr_on_the_home_module": "def plan(criteria, since):\n"
+    "    from kodezart.domain import gap\n"
+    "\n"
+    "    window = getattr(gap, 'compute_gap')\n"
+    "    return [c for c in window(criteria){READ}]\n",
+    "attrgetter_applied_to_the_home_module": "import operator\n"
+    "\n"
+    "from kodezart.domain import gap\n"
+    "\n"
+    "def plan(criteria, since):\n"
+    "    window = operator.attrgetter('compute_gap')(gap)\n"
+    "    return [c for c in window(criteria){READ}]\n",
+    "vars_of_the_home_module": "from kodezart.domain import gap\n"
+    "\n"
+    "def plan(criteria, since):\n"
+    "    window = vars(gap)['compute_gap']\n"
+    "    return [c for c in window(criteria){READ}]\n",
+    "dict_of_the_home_module": "from kodezart.domain import gap\n"
+    "\n"
+    "def plan(criteria, since):\n"
+    "    window = gap.__dict__['compute_gap']\n"
+    "    return [c for c in window(criteria){READ}]\n",
+    "home_module_bound_to_a_local_and_handed_on": "from kodezart.domain import gap\n"
+    "\n"
+    "def plan(criteria, since, run):\n"
+    "    arithmetic = gap\n"
+    "    return [c for c in run(arithmetic, criteria){READ}]\n",
+    "organize_home_named_by_a_string_and_handed_on": "import pkgutil\n"
+    "\n"
+    "def plan(criteria, since, run):\n"
+    "    home = pkgutil.resolve_name('kodezart.domain:organize')\n"
+    "    return [c for c in run(home, criteria){READ}]\n",
+}
+#: The module every call-site route is planted into: inside the gap's reach
+#: already and not on the stamp register, so the route alone is what makes
+#: the planted definition a site, never a new import edge.
+CALL_SITE_HOST = "services/run_shape.py"
+
+
+@pytest.mark.parametrize("reads", [True, False])
+@pytest.mark.parametrize("route", sorted(CALL_SITE_ROUTES))
+def test_a_call_site_of_the_arithmetic_is_found_by_object_and_scanned(route, reads):
+    """A definition referring to the arithmetic by any route is a scanned site.
+
+    One row per route, each with and without the read, appended to a module
+    already in the reach.  The read-free rows redden the moment resolution
+    stops following that route, because the planted definition drops out of
+    the sites; the reading rows redden the scan.  An import at the top of a
+    module binds its name in the module's globals, which the module-level
+    rebinding row reads; the rows importing inside the function are what
+    reads an import the globals never hold, relative, aliased or dotted.  The
+    partial and static-method rows are what unwraps a stand-in, the string
+    rows what resolves a named object, the two local rows what follows a
+    local assigned from a resolving call, the four literal-name rows what
+    reads ``getattr``, ``attrgetter``, ``vars`` and ``__dict__`` off the
+    home module, and the two handed-on rows what makes a home module itself
+    a referent: they denote no function of it.
+    """
+    assert CALL_SITE_HOST in GAP_COMPUTATION_MODULES
+    assert CALL_SITE_HOST not in CHANGE_STAMP_READERS
+    planted = CALL_SITE_ROUTES[route].replace(
+        "{READ}", " if c.updated_at > since" if reads else ""
+    )
+    sources = source_tree()
+    sources[CALL_SITE_HOST] += "\n\n" + planted
+    sites = arithmetic_call_sites(sources)
+
+    assert sites[(CALL_SITE_HOST, "plan")] == (
+        frozenset({"updated_at"}) if reads else frozenset()
+    )
+
+
+#: Each shape outside the reach, as the text it would arrive as in
+#: ``CALL_SITE_HOST``, with the definitions in it that are call sites: a value
+#: handed across a function boundary (an argument, a helper's answer, an
+#: attribute of an instance, a container built elsewhere), a name built at run
+#: time, and a binding made only when a function runs.  ``plan`` reaches the
+#: arithmetic only across the boundary, so it is no site; the definition that
+#: binds the arithmetic, where the text has one, is.
+UNSEEN_CALL_SITE_SHAPES = {
+    "an argument": (
+        "def plan(criteria, since, window):\n"
+        "    return [c for c in window(criteria){READ}]\n",
+        (),
+    ),
+    "returned from a helper": (
+        "from kodezart.domain import gap\n"
+        "\n"
+        "def arithmetic():\n"
+        "    return gap.compute_gap\n"
+        "\n"
+        "def plan(criteria, since):\n"
+        "    return [c for c in arithmetic()(criteria){READ}]\n",
+        ("arithmetic",),
+    ),
+    "stored on an object and read elsewhere": (
+        "from kodezart.domain import gap\n"
+        "\n"
+        "class Holder:\n"
+        "    def __init__(self):\n"
+        "        self.window = gap.compute_gap\n"
+        "\n"
+        "def plan(criteria, since, holder):\n"
+        "    return [c for c in holder.window(criteria){READ}]\n",
+        ("Holder.__init__",),
+    ),
+    "passed through a container built elsewhere": (
+        "from kodezart.domain import gap\n"
+        "\n"
+        "def table():\n"
+        "    return {'window': gap.compute_gap}\n"
+        "\n"
+        "def plan(criteria, since):\n"
+        "    return [\n"
+        "        c for c in table()['window'](criteria){READ}\n"
+        "    ]\n",
+        ("table",),
+    ),
+    "a name built at run time": (
+        "import pkgutil\n"
+        "\n"
+        "def plan(criteria, since):\n"
+        "    home = pkgutil.resolve_name('kodezart.domain' + ':gap')\n"
+        "    return [\n"
+        "        c for c in home.compute_gap(criteria){READ}\n"
+        "    ]\n",
+        (),
+    ),
+    "globals() bound inside a function": (
+        "from kodezart.domain import gap\n"
+        "\n"
+        "def bind():\n"
+        "    globals()['window'] = gap.compute_gap\n"
+        "\n"
+        "def plan(criteria, since):\n"
+        "    return [c for c in window(criteria){READ}]\n",
+        ("bind",),
+    ),
+    "setattr inside a function": (
+        "import sys\n"
+        "\n"
+        "from kodezart.domain import gap\n"
+        "\n"
+        "def bind():\n"
+        "    setattr(sys.modules[__name__], 'window', gap.compute_gap)\n"
+        "\n"
+        "def plan(criteria, since):\n"
+        "    return [c for c in window(criteria){READ}]\n",
+        ("bind",),
+    ),
+}
+
+
+@pytest.mark.parametrize("shape", sorted(UNSEEN_CALL_SITE_SHAPES))
+def test_a_shape_outside_the_reach_is_no_call_site(shape):
+    """The stated limit, held: ``plan`` is no call site in any shape of it.
+
+    Planted with a stamp read, which the scan therefore never sees: this is
+    the limit the module docstring states, and the trap below is where such
+    a read dies when the function is one the trap runs.  Where the text
+    binds the arithmetic elsewhere — in the helper, the holder, the table or
+    the binder — that definition is the call site, so the plant is real and
+    the boundary, not the module, is what hides ``plan``.
+    """
+    text, sites_in_it = UNSEEN_CALL_SITE_SHAPES[shape]
+    planted = text.replace("{READ}", " if c.updated_at > since")
+    sources = source_tree()
+    before = {
+        name
+        for module, name in arithmetic_call_sites(sources)
+        if module == CALL_SITE_HOST
+    }
+    sources[CALL_SITE_HOST] += "\n\n" + planted
+    sites = arithmetic_call_sites(sources)
+
+    assert (CALL_SITE_HOST, "plan") not in sites
+    assert {name for module, name in sites if module == CALL_SITE_HOST} - before == set(
+        sites_in_it
+    )
+
+
+#: Each way a registered reader can name a function of a gap home without
+#: importing it: the text that binds ``window`` inside the planted function.
+REGISTERED_READER_REFERENCES = {
+    "compute_gap as module:attr": "pkgutil.resolve_name("
+    "'kodezart.domain.gap:compute_gap')",
+    "gap_membership as module:attr": "pkgutil.resolve_name("
+    "'kodezart.domain.gap:gap_membership')",
+    "organize_at_rest as module.attr": "pkgutil.resolve_name("
+    "'kodezart.domain.organize.organize_at_rest')",
+    "attribute off the call naming its module": "pkgutil.resolve_name("
+    "'kodezart.domain:gap').compute_gap",
+}
+
+
+@pytest.mark.parametrize("reference", sorted(REGISTERED_READER_REFERENCES))
+def test_a_registered_reader_that_refers_to_the_arithmetic_is_a_call_site(reference):
+    """A module on the register reds the moment it refers to the arithmetic.
+
+    The planted function names a function of a gap home by a string
+    constant, so it imports nothing, and it sits in a module that already
+    spells the stamp, so the register's keys do not move.  Found by object,
+    it is a call site, which a registered reader may not hold; and the
+    string names the home's module, so the reach takes the reader in too.
+    """
+    sources = source_tree()
+    sources["services/pass_gate.py"] += (
+        "\n\n"
+        "def recent_gap(criteria, since):\n"
+        "    import pkgutil\n"
+        "\n"
+        f"    window = {REGISTERED_READER_REFERENCES[reference]}\n"
+        "    return [c for c in criteria if window and c.updated_at > since]\n"
+    )
+
+    assert registered_readers_holding_a_call_site(sources) == ["services/pass_gate.py"]
+    assert arithmetic_call_sites(sources)[
+        ("services/pass_gate.py", "recent_gap")
+    ] == frozenset({"updated_at"})
+    assert "services/pass_gate.py" in gap_computation_sites(sources)
+
+
+#: Each way a call site reads a stamp field through a name bound to it, as
+#: the definition text; ``{FIELD}`` is where a constant is named, and the
+#: rows' second text is the same definition naming a field that is no stamp.
+STAMP_VALUE_ROUTES = {
+    "constant in the module": (
+        "STAMP_FIELD = 'updated_at'\n"
+        "\n"
+        "def plan(criteria):\n"
+        "    return sorted(\n"
+        "        compute_gap(criteria),\n"
+        "        key=lambda c: getattr(c, STAMP_FIELD),\n"
+        "    )\n",
+        "updated_at",
+    ),
+    "constant imported inside the function": (
+        "def plan(criteria):\n"
+        "    from kodezart.adapters.linear.tracker import _ORDER_BY_UPDATED_AT\n"
+        "\n"
+        "    return [\n"
+        "        getattr(c, _ORDER_BY_UPDATED_AT)\n"
+        "        for c in compute_gap(criteria)\n"
+        "    ]\n",
+        "updatedAt",
+    ),
+    "attribute of an imported module": (
+        "import kodezart.adapters.linear.tracker as wire\n"
+        "\n"
+        "def plan(criteria):\n"
+        "    return [\n"
+        "        getattr(c, wire._ORDER_BY_UPDATED_AT)\n"
+        "        for c in compute_gap(criteria)\n"
+        "    ]\n",
+        "updatedAt",
+    ),
+}
+
+
+@pytest.mark.parametrize("route", sorted(STAMP_VALUE_ROUTES))
+def test_a_call_site_reading_the_stamp_through_a_bound_name_reads_it(route):
+    """A name bound to a stamp field is a read of the field, by its value.
+
+    Planted beside an import of the arithmetic, so the definition is a call
+    site; its own text never spells the stamp.  The same definition with
+    the name bound to a field that is no stamp reads nothing.
+    """
+    text, field = STAMP_VALUE_ROUTES[route]
+    header = "from kodezart.domain.gap import compute_gap\n\n"
+    other = text.replace("'updated_at'", "'body_digest'").replace(
+        "_ORDER_BY_UPDATED_AT", "_ORDER_BY_BODY"
+    )
+    planted = {**source_tree(), "services/planted.py": header + text}
+    control = {**source_tree(), "services/planted.py": header + other}
+
+    definition = next(
+        node for node in ast.walk(ast.parse(text)) if isinstance(node, ast.FunctionDef)
+    )
+    assert change_stamp_reads(definition) == set()
+    assert arithmetic_call_sites(planted)[("services/planted.py", "plan")] == {field}
+    assert arithmetic_call_sites(control)[("services/planted.py", "plan")] == set()
+
+
+class ChangeStampRead(BaseException):
+    """An operation on a trapped change stamp: the arithmetic read it.
+
+    Not an ``Exception``, so no ``except Exception`` in the arithmetic can
+    turn a read into an answer.
+    """
+
+
+#: Every operation a value can be put to that could let it decide an answer.
+TRAPPED_OPERATIONS = (
+    "__eq__",
+    "__ne__",
+    "__lt__",
+    "__le__",
+    "__gt__",
+    "__ge__",
+    "__hash__",
+    "__bool__",
+    "__str__",
+    "__repr__",
+    "__format__",
+    "__add__",
+    "__radd__",
+    "__sub__",
+    "__rsub__",
+    "__int__",
+    "__float__",
+    "__index__",
+    "__len__",
+    "__iter__",
+    "__contains__",
+    "__getitem__",
+    "__call__",
+    "__getattribute__",
+)
+
+
+def change_stamp_trap(reads):
+    """A change stamp whose every operation is recorded in *reads* and raises.
+
+    Comparison, hashing, truth, text, arithmetic, attribute access: each one
+    appends its name and raises ``ChangeStampRead``.  The record is kept even
+    when something swallows the raise.
+    """
+
+    def sprung(operation):
+        def operate(*_arguments):
+            reads.append(operation)
+            raise ChangeStampRead(operation)
+
+        return operate
+
+    trap = type(
+        "ChangeStampTrap",
+        (),
+        {operation: sprung(operation) for operation in TRAPPED_OPERATIONS},
+    )
+    return trap()
+
+
+def arithmetic_cases(stamp):
+    """Each entry point of the arithmetic over boards reaching every arm it has.
+
+    ``case -> (entry point, keyword arguments, records)``; every record's
+    change stamp is ``stamp(n)`` for the n-th record the case builds, and an
+    answer is read as the positions of its records among *records*, or as
+    itself when it is a truth value, a route or ``None``.  Every function of
+    a gap home has a case here, so the trap runs each one on its own.
+
+    The arms reached.  ``compute_gap`` and the ``gap_membership`` it runs:
+    every workflow state kind, each plain and carrying a supersession note
+    the arithmetic does not read, so an open criterion, a completed one, and
+    a canceled and a duplicate one, each excluded on its state alone; an
+    empty board; its two refusals — a criterion twice, a record that is no
+    criterion; and a criterion carrying a blank supersession note, which
+    refuses nothing because the arithmetic takes no supersession input.
+    ``gap_membership`` on its own: an open criterion, a completed one, a
+    canceled one with and without a note, its refusal of a record that is no
+    criterion, and an open one carrying a blank note.  ``state_membership``
+    takes a workflow kind and no record: every kind.  The organize
+    gap, asked by ``organize_gap`` and by ``organize_at_rest``: a board with a
+    subject at rest, a nested subtree (a deliverable child under it holding
+    its own criterion), a subject without its marker, one without an
+    admission, one whose admission is stale, one whose criterion child's
+    admission is stale, one whose only criterion is canceled, one with an
+    open finding, one whose criterion child has one, and a tracker record and
+    a decision record that are no subject; a board at rest; an empty board;
+    and its four refusals — a blank marker, a revision twice, an admission
+    twice, a criterion without its parent.  ``admission_route``: a buildable
+    result, an unverifiable one whose blocker is a blocked-by edge inside the
+    scope and one whose blocker is outside it, a refusal needing a human
+    decision and one over a specification gap, and its refusal of a result
+    for another issue.  ``is_organize_subject`` and ``owes_stage_label``: a
+    work subject, a criterion, an escalated member and a tracker record.
+    ``stage_unlabelled``: a member owing the marker, one carrying it, and a
+    criterion and a tracker record that owe none; and its two refusals, a
+    blank marker and a member twice.  ``stage_pending``: a run stage, a
+    pre-approval phase with an admitted member, and one admitting nobody.
+    ``stage_rows``: the rows under approval, which is every row the table
+    has, and the rows before it, which is none.  ``is_admission_live``
+    takes two digests and no record, so the stamp cannot reach it: the same
+    digest, a changed one, and its refusal of a blank one.
+    ``open_state_kind`` takes a workflow kind and no record either: the kind
+    of every criterion above, plain and carrying a note, which answers alike,
+    and the kind of one carrying a blank note.  ``evidence_is_fillable``
+    takes two names and no record: a
+    runnable test named, an observation named, nothing named, and only blank
+    names.
+    """
+    built = iter(range(1_000))
+
+    def record(key, **changes):
+        fixture = issue(key, f"Body for {key}", **changes)
+        return fixture.model_copy(update={"updated_at": stamp(next(built))})
+
+    def revision(key, **changes):
+        return TrackerIssueRevision(
+            issue=issue(key, f"Body for {key}"), body_digest=f"opaque:{key}"
+        ).model_copy(update={"issue": record(key, **changes)})
+
+    def criterion(key, kind, parent=SUBJECT):
+        return record(
+            key,
+            parent_key=parent,
+            issue_labels=["criterion"],
+            state_kind=kind,
+            state_name=kind.value,
+        )
+
+    def noted(each, successor="superseding/1"):
+        """*each* carrying a supersession note in its body and as a label."""
+        return each.model_copy(
+            update={
+                "body": f"{each.body}\n\nSuperseded by {successor}.",
+                "issue_labels": each.issue_labels | {"superseded"},
+            }
+        )
+
+    kinds = [
+        each
+        for kind in WorkflowStateKind
+        for each in (
+            criterion(f"criterion/{kind.value}", kind),
+            noted(criterion(f"criterion/{kind.value}/superseded", kind)),
+        )
+    ]
+    blank_note = noted(criterion("criterion/blank-note", WorkflowStateKind.TRIAGE), " ")
+
+    def subtree(criteria):
+        return (compute_gap, {"criteria": criteria}, criteria)
+
+    def family(key, *, marker=True, child=WorkflowStateKind.COMPLETED, parent=None):
+        return (
+            revision(
+                key,
+                issue_labels=[BODY_MARKER] if marker else [],
+                **({"parent_key": parent} if parent else {}),
+            ),
+            revision(
+                f"{key}/check",
+                parent_key=key,
+                issue_labels=["criterion"],
+                state_kind=child,
+                state_name=child.value,
+            ),
+        )
+
+    at_rest = family(SUBJECT)
+    nested = family(f"{SUBJECT}/deliverable", parent=SUBJECT)
+    unmarked = family("unmarked/1", marker=False)
+    unadmitted = family("unadmitted/1")
+    stale = family("stale/1")
+    stale_child = family("stale-child/1")
+    uncriterioned = family("uncriterioned/1", child=WorkflowStateKind.CANCELED)
+    found = family("found/1")
+    found_child = family("found-child/1")
+    records = (
+        revision("tracker/1", issue_labels=["tracker"]),
+        revision("decision/1", issue_labels=["decision"]),
+    )
+    board = (
+        *at_rest,
+        *nested,
+        *unmarked,
+        *unadmitted,
+        *stale,
+        *stale_child,
+        *uncriterioned,
+        *found,
+        *found_child,
+        *records,
+    )
+    lapsed = {stale[0].issue.issue_key, stale_child[1].issue.issue_key}
+    admissions = tuple(
+        AdmissionResult.model_validate(
+            {
+                **gap_admission(each).model_dump(),
+                "admitted_body_digest": "opaque:before"
+                if each.issue.issue_key in lapsed
+                else each.body_digest,
+            }
+        )
+        for each in board
+        if each.issue.issue_key not in {unadmitted[0].issue.issue_key}
+    )
+    findings = tuple(
+        SpecFinding(
+            issue_id=key,
+            defect_class="unsupported-claim",
+            evidence="The recorded claim names no supporting observation.",
+            role=DefectRole.INSTANCE,
+        )
+        for key in (found[0].issue.issue_key, found_child[1].issue.issue_key)
+    )
+    orphan = revision("orphan/check", parent_key="absent/1", issue_labels=["criterion"])
+    open_criterion = criterion("member/open", WorkflowStateKind.UNSTARTED)
+    completed = criterion("member/completed", WorkflowStateKind.COMPLETED)
+    canceled = criterion("member/canceled", WorkflowStateKind.CANCELED)
+    plain = record("member/plain")
+
+    def membership(each):
+        return gap_membership, {"criterion": each}, (each,)
+
+    blocked = record(
+        SUBJECT,
+        relations=[
+            IssueRelation(kind=IssueRelationKind.BLOCKED_BY, issue_key="blocker/1")
+        ],
+    )
+
+    def admission(**fields):
+        return AdmissionResult.model_validate(
+            {
+                "issue_id": SUBJECT,
+                "evidence": "Concrete repository evidence.",
+                "admitted_body_digest": "opaque:subject",
+                "admitted_scope": {"kind": "issue", "key": SUBJECT},
+                "admitted_context_digest": "fixture-context",
+                **fields,
+            }
+        )
+
+    unverifiable = admission(
+        verdict=AdmissionVerdict.UNVERIFIABLE,
+        missing_artifact="The schema the named blocker produces.",
+        pending_blocker_id="blocker/1",
+    )
+
+    def refusal(kind):
+        return admission(
+            verdict=AdmissionVerdict.NOT_BUILDABLE,
+            invented_decision="Which store holds the record.",
+            refusal_kind=kind,
+        )
+
+    def route(result, scope):
+        return (
+            admission_route,
+            {"result": result, "issue": blocked, "scope_issue_keys": frozenset(scope)},
+            (blocked,),
+        )
+
+    members = (
+        record("member/1"),
+        record("marked/1", issue_labels=[BODY_MARKER]),
+        record("tracker/1", issue_labels=["tracker"]),
+        kinds[0],
+        record("unmarked/1"),
+    )
+    escalated = record("escalated/1", issue_labels=["decision"])
+    owed = (record("owed/1"), record("owed/2"))
+
+    def pending(admitted, under_approval):
+        return (
+            stage_pending,
+            {
+                "unlabelled": tuple(each.issue_key for each in owed),
+                "admitted": admitted,
+                "under_approval": under_approval,
+            },
+            owed,
+        )
+
+    def mandate_row(kind):
+        return ResolvedMandateSpec(
+            spec=MandateSpec(
+                kind=kind,
+                gate_label_key="scope_labels.gate",
+                rubric_prompt_key=PromptKey.ORGANIZE_ASSESS,
+                admission_prompt_key=PromptKey.ORGANIZE_ASSESS,
+                terminal_marker_key=f"issue_labels.{kind.value}",
+            ),
+            gate_label="gate",
+            terminal_marker=kind.value,
+            role=MANDATE_PHASE_ROLES[kind],
+            marker_source=f"issue_labels.{kind.value}",
+        )
+
+    table = tuple(mandate_row(kind) for kind in MandateKind)
+
+    def liveness(admitted, current):
+        return (
+            is_admission_live,
+            {"admitted_body_digest": admitted, "current_body_digest": current},
+            (),
+        )
+
+    def organize(revisions, *, admitted=None, open_findings=(), marker=BODY_MARKER):
+        return {
+            "revisions": revisions,
+            "admissions": tuple(gap_admission(each) for each in revisions)
+            if admitted is None
+            else admitted,
+            "open_findings": open_findings,
+            "body_marker_key": marker,
+        }
+
+    organize_boards = {
+        "every arm": organize(board, admitted=admissions, open_findings=findings),
+        "at rest": organize(at_rest),
+        "empty board": organize(()),
+        "refuses a blank marker": organize(at_rest, marker=" "),
+        "refuses a revision twice": organize((*at_rest, at_rest[0])),
+        "refuses an admission twice": organize(
+            at_rest,
+            admitted=tuple(gap_admission(each) for each in (*at_rest, at_rest[0])),
+        ),
+        "refuses a criterion without its parent": organize((*at_rest, orphan)),
+    }
+    return {
+        "subtree gap: every state kind": subtree(kinds),
+        "subtree gap: empty board": subtree(()),
+        "subtree gap refuses a criterion twice": subtree((kinds[0], kinds[0])),
+        "subtree gap refuses a record that is no criterion": subtree(
+            (record("plain/1"),)
+        ),
+        "subtree gap takes no supersession input: a blank note refuses nothing": (
+            subtree((blank_note,))
+        ),
+        **{
+            f"{entry.__name__}: {name}": (
+                entry,
+                arguments,
+                tuple(each.issue for each in arguments["revisions"]),
+            )
+            for name, arguments in organize_boards.items()
+            for entry in (organize_gap, organize_at_rest)
+        },
+        "gap_membership: an open criterion": membership(open_criterion),
+        "gap_membership: a completed criterion": membership(completed),
+        "gap_membership: a canceled criterion superseded": membership(
+            noted(canceled, "over/1")
+        ),
+        "gap_membership: a canceled criterion unsuperseded": membership(canceled),
+        "gap_membership refuses a record that is no criterion": membership(plain),
+        "gap_membership takes no supersession input: a blank note": membership(
+            noted(open_criterion, " ")
+        ),
+        **{
+            f"state_membership: {kind.value}": (
+                state_membership,
+                {"state_kind": kind},
+                (),
+            )
+            for kind in WorkflowStateKind
+        },
+        "admission_route: a buildable result": route(
+            admission(verdict=AdmissionVerdict.BUILDABLE), {SUBJECT}
+        ),
+        "admission_route: an unverifiable result blocked inside the scope": route(
+            unverifiable, {SUBJECT, "blocker/1"}
+        ),
+        "admission_route: an unverifiable result blocked outside the scope": route(
+            unverifiable, {SUBJECT}
+        ),
+        "admission_route: a refusal needing a human decision": route(
+            refusal(RefusalKind.HUMAN_DECISION), {SUBJECT}
+        ),
+        "admission_route: a refusal over a specification gap": route(
+            refusal(RefusalKind.SPEC_GAP), {SUBJECT}
+        ),
+        "admission_route refuses a result for another issue": route(
+            admission(issue_id="other/1", verdict=AdmissionVerdict.BUILDABLE),
+            {SUBJECT},
+        ),
+        "is_organize_subject: a work subject": (
+            is_organize_subject,
+            {"issue": members[0]},
+            (members[0],),
+        ),
+        "is_organize_subject: a criterion": (
+            is_organize_subject,
+            {"issue": kinds[0]},
+            (kinds[0],),
+        ),
+        "owes_stage_label: an escalated member": (
+            owes_stage_label,
+            {"issue": escalated},
+            (escalated,),
+        ),
+        "owes_stage_label: a tracker record": (
+            owes_stage_label,
+            {"issue": members[2]},
+            (members[2],),
+        ),
+        "stage_unlabelled: owing, carrying and exempt members": (
+            stage_unlabelled,
+            {"issues": members, "marker": BODY_MARKER},
+            members,
+        ),
+        "stage_unlabelled refuses a blank marker": (
+            stage_unlabelled,
+            {"issues": members, "marker": " "},
+            members,
+        ),
+        "stage_unlabelled refuses a member twice": (
+            stage_unlabelled,
+            {"issues": (*members, members[0]), "marker": BODY_MARKER},
+            members,
+        ),
+        "stage_pending: a run stage owes every unlabelled member": pending(
+            {"owed/1": False}, True
+        ),
+        "stage_pending: a pre-approval phase owes the admitted members": pending(
+            {"owed/1": True, "owed/2": False}, False
+        ),
+        "stage_pending: a pre-approval phase admitting nobody is not open": pending(
+            {}, False
+        ),
+        "stage_rows: the rows under approval": (
+            stage_rows,
+            {"rows": table, "under_approval": True},
+            table,
+        ),
+        "stage_rows: the rows before approval": (
+            stage_rows,
+            {"rows": table, "under_approval": False},
+            table,
+        ),
+        "is_admission_live: the same digest": liveness("opaque:1", "opaque:1"),
+        "is_admission_live: a changed digest": liveness("opaque:1", "opaque:2"),
+        "is_admission_live refuses a blank digest": liveness("opaque:1", " "),
+        **{
+            "open_state_kind: "
+            + each.state_kind.value
+            + (" superseded" if "superseded" in each.issue_labels else ""): (
+                open_state_kind,
+                {"state_kind": each.state_kind},
+                (each,),
+            )
+            for each in kinds
+        },
+        "open_state_kind takes no supersession input: a blank note": (
+            open_state_kind,
+            {"state_kind": blank_note.state_kind},
+            (blank_note,),
+        ),
+        "evidence_is_fillable: a runnable test named": (
+            evidence_is_fillable,
+            {"runnable_test": "tests/test_bytes.py", "named_observation": None},
+            (),
+        ),
+        "evidence_is_fillable: an observation named": (
+            evidence_is_fillable,
+            {"runnable_test": None, "named_observation": OBSERVATION},
+            (),
+        ),
+        "evidence_is_fillable: nothing named": (
+            evidence_is_fillable,
+            {"runnable_test": None, "named_observation": None},
+            (),
+        ),
+        "evidence_is_fillable: only blank names": (
+            evidence_is_fillable,
+            {"runnable_test": " ", "named_observation": ""},
+            (),
+        ),
+    }
+
+
+def arithmetic_outcome(entry, arguments, records):
+    """What one entry point answers: its records by position, or its refusal.
+
+    A record answered by its key is read at the position of the record
+    carrying that key; a gap read is read as its two halves, the owed records
+    and the keys set aside beside them; a truth value, a membership, a route
+    and ``None`` are read as themselves; a subtree read refuses as a scope
+    read error.
+    """
+    try:
+        answer = entry(**arguments)
+    except (ValueError, ScopeReadError) as refusal:
+        return ("refused", str(refusal))
+    if isinstance(answer, bool | str) or answer is None:
+        return ("answered", answer)
+
+    def positions(items):
+        return tuple(
+            position
+            for item in items
+            for position, each in enumerate(records)
+            if each is item or (isinstance(item, str) and each.issue_key == item)
+        )
+
+    if isinstance(answer, CriterionGap):
+        return (
+            "answered",
+            {"owed": positions(answer.owed), "excluded": positions(answer.excluded)},
+        )
+    return ("answered", positions(answer))
+
+
+#: The stamp every record carries in the baseline reading.
+BASELINE_STAMP = datetime(2026, 1, 1, tzinfo=UTC)
+#: What each case answers over records carrying ``BASELINE_STAMP``.  Written
+#: out, so a board that stops reaching the arm it was built for reds.
+ARITHMETIC_OUTCOMES = {
+    "subtree gap: every state kind": (
+        "answered",
+        {"owed": (0, 1, 2, 3, 4, 5, 6, 7), "excluded": (10, 11, 12, 13)},
+    ),
+    "subtree gap: empty board": ("answered", {"owed": (), "excluded": ()}),
+    "subtree gap refuses a criterion twice": (
+        "refused",
+        "a criterion identity appears more than once",
+    ),
+    "subtree gap refuses a record that is no criterion": (
+        "refused",
+        "gap membership requires a criterion sub-issue",
+    ),
+    "subtree gap takes no supersession input: a blank note refuses nothing": (
+        "answered",
+        {"owed": (0,), "excluded": ()},
+    ),
+    "organize_gap: every arm": ("answered", (4, 6, 8, 10, 12, 14, 16)),
+    "organize_at_rest: every arm": ("answered", False),
+    "organize_gap: at rest": ("answered", ()),
+    "organize_at_rest: at rest": ("answered", True),
+    "organize_gap: empty board": ("answered", ()),
+    "organize_at_rest: empty board": ("answered", True),
+    **{
+        f"{entry.__name__}: refuses {what}": ("refused", refusal)
+        for what, refusal in {
+            "a blank marker": "organize gap requires a body phase marker key",
+            "a revision twice": "organize gap requires one revision per issue",
+            "an admission twice": "organize gap requires one admission per surface",
+            "a criterion without its parent": "organize gap requires each "
+            "criterion's parent",
+        }.items()
+        for entry in (organize_gap, organize_at_rest)
+    },
+    "gap_membership: an open criterion": ("answered", GapMembership.OWED),
+    "gap_membership: a completed criterion": ("answered", GapMembership.DISCHARGED),
+    "gap_membership: a canceled criterion superseded": (
+        "answered",
+        GapMembership.EXCLUDED,
+    ),
+    "gap_membership: a canceled criterion unsuperseded": (
+        "answered",
+        GapMembership.EXCLUDED,
+    ),
+    "gap_membership refuses a record that is no criterion": (
+        "refused",
+        "gap membership requires a criterion sub-issue",
+    ),
+    "gap_membership takes no supersession input: a blank note": (
+        "answered",
+        GapMembership.OWED,
+    ),
+    "state_membership: triage": ("answered", GapMembership.OWED),
+    "state_membership: backlog": ("answered", GapMembership.OWED),
+    "state_membership: unstarted": ("answered", GapMembership.OWED),
+    "state_membership: started": ("answered", GapMembership.OWED),
+    "state_membership: completed": ("answered", GapMembership.DISCHARGED),
+    "state_membership: canceled": ("answered", GapMembership.EXCLUDED),
+    "state_membership: duplicate": ("answered", GapMembership.EXCLUDED),
+    "admission_route: a buildable result": ("answered", AdmissionRoute.MARK_COMPLETE),
+    "admission_route: an unverifiable result blocked inside the scope": (
+        "answered",
+        AdmissionRoute.MARK_COMPLETE,
+    ),
+    "admission_route: an unverifiable result blocked outside the scope": (
+        "answered",
+        AdmissionRoute.REAUTHOR,
+    ),
+    "admission_route: a refusal needing a human decision": (
+        "answered",
+        AdmissionRoute.ESCALATE,
+    ),
+    "admission_route: a refusal over a specification gap": (
+        "answered",
+        AdmissionRoute.REAUTHOR,
+    ),
+    "admission_route refuses a result for another issue": (
+        "refused",
+        f"admission issue other/1 does not match tracker issue {SUBJECT}",
+    ),
+    "is_organize_subject: a work subject": ("answered", True),
+    "is_organize_subject: a criterion": ("answered", False),
+    "owes_stage_label: an escalated member": ("answered", True),
+    "owes_stage_label: a tracker record": ("answered", False),
+    "stage_unlabelled: owing, carrying and exempt members": ("answered", (0, 4)),
+    "stage_unlabelled refuses a blank marker": (
+        "refused",
+        "a stage roster requires a nonempty marker key",
+    ),
+    "stage_unlabelled refuses a member twice": (
+        "refused",
+        "a stage roster requires one record per issue",
+    ),
+    "stage_pending: a run stage owes every unlabelled member": ("answered", (0, 1)),
+    "stage_pending: a pre-approval phase owes the admitted members": (
+        "answered",
+        (0,),
+    ),
+    "stage_pending: a pre-approval phase admitting nobody is not open": (
+        "answered",
+        None,
+    ),
+    "stage_rows: the rows under approval": ("answered", (0, 1)),
+    "stage_rows: the rows before approval": ("answered", ()),
+    "is_admission_live: the same digest": ("answered", True),
+    "is_admission_live: a changed digest": ("answered", False),
+    "is_admission_live refuses a blank digest": (
+        "refused",
+        "admission liveness requires both nonempty body digests",
+    ),
+    "open_state_kind: triage": ("answered", True),
+    "open_state_kind: triage superseded": ("answered", True),
+    "open_state_kind: backlog": ("answered", True),
+    "open_state_kind: backlog superseded": ("answered", True),
+    "open_state_kind: unstarted": ("answered", True),
+    "open_state_kind: unstarted superseded": ("answered", True),
+    "open_state_kind: started": ("answered", True),
+    "open_state_kind: started superseded": ("answered", True),
+    "open_state_kind: completed": ("answered", False),
+    "open_state_kind: completed superseded": ("answered", False),
+    "open_state_kind: canceled": ("answered", False),
+    "open_state_kind: canceled superseded": ("answered", False),
+    "open_state_kind: duplicate": ("answered", False),
+    "open_state_kind: duplicate superseded": ("answered", False),
+    "open_state_kind takes no supersession input: a blank note": ("answered", True),
+    "evidence_is_fillable: a runnable test named": ("answered", True),
+    "evidence_is_fillable: an observation named": ("answered", True),
+    "evidence_is_fillable: nothing named": ("answered", False),
+    "evidence_is_fillable: only blank names": ("answered", False),
+}
+#: Each change stamp the records are read under besides the baseline: a trap
+#: that raises on any operation, and two readings far apart whose order runs
+#: opposite ways across the records, so a filter or a sort keyed on the stamp
+#: answers differently under one of them.
+STAMP_VARIANTS = ("trapped", "far past, ascending", "far future, descending")
+
+
+def stamp_variant(variant, reads):
+    """The stamp each record carries under *variant*, by the order it is built."""
+    if variant == "trapped":
+        trap = change_stamp_trap(reads)
+        return lambda _position: trap
+    if variant == "far past, ascending":
+        return lambda position: datetime(1, 1, 1, tzinfo=UTC) + timedelta(days=position)
+    return lambda position: (
+        datetime(9999, 12, 31, tzinfo=UTC) - timedelta(days=position)
+    )
+
+
+def arithmetic_entry_points():
+    """Every function of a gap home, and every definition there referring to one.
+
+    Derived from ``gap_home_functions``, the way the call sites are, so a
+    function added beside the arithmetic — one that hands on its answer, or
+    one that reads a record on its own, as ``admission_route`` does — is an
+    entry point the trap has to run, whether or not the arithmetic runs it.
+    """
+    points = {id(value): value for value in gap_home_functions()}
+    for home in sorted(gap_homes()):
+        source = source_tree()[home]
+        namespace = module_namespace(home, source)
+        for name, _node in referencing_definitions(
+            home, ast.parse(source), namespace, wanted=gap_home_functions()
+        ):
+            if name == "<module>":
+                continue
+            value = functools.reduce(
+                getattr, name.split(".")[1:], namespace[name.split(".")[0]]
+            )
+            points[id(value)] = value
+    return points
+
+
+def test_the_trapped_boards_run_every_entry_point_and_reach_every_arm():
+    """The boards the trap runs over are the ones the arithmetic answers.
+
+    Every entry point is run, and nothing else is, so a function added to a
+    gap home reds here until it has a case; each case answers what it was
+    built for over the baseline stamp, so a board that stops reaching its
+    arm — a refusal where an answer was meant, an empty gap where a member
+    was — reds here rather than turning the trap into a vacuous pass.
+    """
+    points = arithmetic_entry_points()
+    cases = arithmetic_cases(lambda _position: BASELINE_STAMP)
+
+    assert points.keys() > {id(value) for value in GAP_ARITHMETIC}
+    assert {id(entry) for entry, _arguments, _records in cases.values()} == (
+        points.keys()
+    )
+    assert {
+        case: arithmetic_outcome(*arguments) for case, arguments in cases.items()
+    } == ARITHMETIC_OUTCOMES
+
+
+@pytest.mark.parametrize("variant", STAMP_VARIANTS)
+@pytest.mark.parametrize("case", sorted(ARITHMETIC_OUTCOMES))
+def test_the_arithmetic_answers_alike_whatever_the_change_stamp_holds(case, variant):
+    """The arithmetic runs with the change stamp trapped, and never reads it.
+
+    The reach of the Check, shown by running it: every function of a gap
+    home, together with everything it executes — a model method, a helper in
+    a module it imports, a class pattern — answers every case the same with
+    the stamp trapped, far in the past and far in the future, and no
+    operation touches the trap.  An identity test against the trap (``is``)
+    is no operation it can see, and cannot move an answer either.
+    """
+    reads = []
+    entry, arguments, records = arithmetic_cases(stamp_variant(variant, reads))[case]
+
+    assert arithmetic_outcome(entry, arguments, records) == ARITHMETIC_OUTCOMES[case]
+    assert reads == []
+
+
+def call_site_cases(stamp):
+    """Each call site found by object that runs on the arithmetic's fixtures.
+
+    ``case -> (call site, keyword arguments, records)``, read as
+    ``arithmetic_cases`` is, every record's change stamp ``stamp(n)``.  The
+    arms reached.  ``SubtreeClosure._walk``, the criterion leaf of the
+    subtree gap, walking a subject over a criterion of every state kind, two
+    of each so an order the stamp imposes shows.  ``SubtreeClosure.scope_gap``
+    over open and completed criteria, over a subject with no criterion, over
+    a criterion of every state kind, and over canceled and duplicate criteria
+    alone, which are excluded on their state and named, never refused.
+    """
+    built = iter(range(1_000))
+
+    def record(key, **changes):
+        fixture = issue(key, f"Body for {key}", **changes)
+        return fixture.model_copy(update={"updated_at": stamp(next(built))})
+
+    kinds = tuple(
+        record(
+            f"criterion/{kind.value}/{copy}",
+            parent_key=SUBJECT,
+            issue_labels=["criterion"],
+            state_kind=kind,
+            state_name=kind.value,
+        )
+        for kind in WorkflowStateKind
+        for copy in (1, 2)
+    )
+    settled = tuple(
+        each
+        for each in kinds
+        if each.state_kind
+        not in {WorkflowStateKind.CANCELED, WorkflowStateKind.DUPLICATE}
+    )
+    excluded = tuple(each for each in kinds if each not in settled)
+    subject = record(SUBJECT)
+    ref = ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT)
+
+    def closure(criteria):
+        return SubtreeClosure(
+            facts={each.issue_key: each for each in (subject, *criteria)}, ref=ref
+        )
+
+    def scope_gap(criteria):
+        return (
+            SubtreeClosure.scope_gap,
+            {"self": closure(criteria)},
+            (subject, *criteria),
+        )
+
+    return {
+        "SubtreeClosure._walk: every state kind": (
+            SubtreeClosure._walk,
+            {"self": closure(kinds), "key": SUBJECT},
+            (subject, *kinds),
+        ),
+        "SubtreeClosure.scope_gap: open and completed criteria": scope_gap(settled),
+        "SubtreeClosure.scope_gap: an empty family": scope_gap(()),
+        "SubtreeClosure.scope_gap: canceled and duplicate criteria alone": (
+            scope_gap(excluded)
+        ),
+        "SubtreeClosure.scope_gap: every state kind": scope_gap(kinds),
+    }
+
+
+#: What each call-site case answers over records carrying ``BASELINE_STAMP``,
+#: written out as ``ARITHMETIC_OUTCOMES`` is.
+CALL_SITE_OUTCOMES = {
+    "SubtreeClosure._walk: every state kind": ("answered", None),
+    "SubtreeClosure.scope_gap: open and completed criteria": (
+        "answered",
+        {"owed": (1, 2, 3, 4, 5, 6, 7, 8), "excluded": ()},
+    ),
+    "SubtreeClosure.scope_gap: an empty family": (
+        "answered",
+        {"owed": (), "excluded": ()},
+    ),
+    "SubtreeClosure.scope_gap: canceled and duplicate criteria alone": (
+        "answered",
+        {"owed": (), "excluded": (1, 2, 3, 4)},
+    ),
+    "SubtreeClosure.scope_gap: every state kind": (
+        "answered",
+        {"owed": (1, 2, 3, 4, 5, 6, 7, 8), "excluded": (11, 12, 13, 14)},
+    ),
+}
+#: The call sites found by object that the arithmetic's fixtures cannot run,
+#: each with why; the trap does not reach them, and the call-site scan above
+#: is what reads them.
+CALL_SITES_NOT_RUN = {
+    ("chains/criteria.py", "TrackerCriteria._finished"): "A method of the "
+    "criteria reader, run on a reading its tracker port took; it hands the "
+    "family to compute_gap and each record to gap_membership, which the trap "
+    "runs as entry points.",
+    ("chains/organize.py", "OrganizeAdmission.is_live"): "Async; reads the "
+    "current revision through the tracker port.",
+    ("domain/stream_signals.py", "lapse_undischarged"): "Folds alarm "
+    "readings, a workflow kind among them, and takes no tracker record, so no "
+    "record's change stamp reaches it for the trap to hold.",
+    ("services/mandate_graph.py", "observe_ruling_growth"): "Async; reads "
+    "criteria and ruling projections through the tracker port.",
+    ("services/organize_owner.py", "OrganizeOwner._author_write"): "Async; a "
+    "method of the organize service, authoring a write through its ports.",
+    ("services/organize_owner.py", "OrganizeOwner._author_write.apply"): "Async; "
+    "the write step nested in _author_write, run on its author and ports.",
+    ("services/organize_owner.py", "OrganizeOwner._converge"): "Async; a method "
+    "of the organize service, running a phase's rounds over its ports.",
+    ("services/organize_owner.py", "OrganizeOwner._proof_live"): "Async; a "
+    "method of the organize service, reading a snapshot through its ports.",
+    ("services/organize_owner.py", "OrganizeOwner._roster"): "A method of the "
+    "organize service, run on its resolved mandate and configuration.",
+    ("services/organize_owner.py", "OrganizeOwner._route"): "Async; a method "
+    "of the organize service, routing through its ports.",
+    ("services/organize_owner.py", "OrganizeOwner.run"): "Async; the organize "
+    "service's whole pass over its tracker, agent and gate ports.",
+    ("services/audit_terminal.py", "AuditTerminalReader.observe"): "Async; a "
+    "method of the audit terminal reader, reading the issue and its criterion "
+    "family through the tracker port and the branch and pull request through "
+    "the git and forge ports.",
+    ("services/run_shape.py", "read_barren_tick"): "Async; reads criteria "
+    "through the tracker port.",
+    ("services/scope_tally.py", "observe_scope_tally"): "Async; reads the "
+    "scope through the tracker port.",
+}
+
+
+def call_site_objects(sources):
+    """Each call site found by object, as the object its module binds it to."""
+    found = {}
+    for module, name in arithmetic_call_sites(sources):
+        head, *rest = name.split(".")
+        found[(module, name)] = functools.reduce(
+            lambda value, part: getattr(value, part, None),
+            rest,
+            module_namespace(module, sources[module]).get(head),
+        )
+    return found
+
+
+def test_every_call_site_the_fixtures_can_run_is_run_under_the_trap():
+    """The call sites outside the entry points are run where the fixtures can run them.
+
+    Every call site found by object that is not an entry point the trap
+    already runs is either a case of ``call_site_cases`` —
+    ``SubtreeClosure._walk`` and ``SubtreeClosure.scope_gap`` — or named in
+    ``CALL_SITES_NOT_RUN`` with why: the criteria reader's ``_finished``,
+    ``OrganizeAdmission.is_live``,
+    ``observe_ruling_growth``, the organize service's ``_author_write`` and
+    the ``apply`` nested in it, ``_converge``, ``_proof_live``, ``_roster``,
+    ``_route`` and ``run``, ``read_barren_tick``, ``observe_scope_tally`` and
+    the audit terminal reader's ``observe``, each of which needs a tracker
+    port, a service instance or the composition's wiring; and
+    ``lapse_undischarged``, which takes alarm readings and no tracker
+    record.  A new call site reds here until it is one or the other.  Each
+    case answers what it was built for over the baseline stamp.
+    """
+    points = arithmetic_entry_points()
+    cases = call_site_cases(lambda _position: BASELINE_STAMP)
+    run = {id(entry) for entry, _arguments, _records in cases.values()}
+    sites = call_site_objects(source_tree())
+    outside = {site for site, value in sites.items() if id(value) not in points}
+
+    assert run <= {id(sites[site]) for site in outside}
+    assert {site for site in outside if id(sites[site]) not in run} == (
+        CALL_SITES_NOT_RUN.keys()
+    )
+    assert {
+        case: arithmetic_outcome(*arguments) for case, arguments in cases.items()
+    } == CALL_SITE_OUTCOMES
+
+
+@pytest.mark.parametrize("variant", STAMP_VARIANTS)
+@pytest.mark.parametrize("case", sorted(CALL_SITE_OUTCOMES))
+def test_a_call_site_answers_alike_whatever_the_change_stamp_holds(case, variant):
+    """A call site the fixtures can run never reads the change stamp.
+
+    Run the way the arithmetic is: with the stamp trapped, far in the past
+    and far in the future, each answers the same and no operation touches
+    the trap.
+    """
+    reads = []
+    entry, arguments, records = call_site_cases(stamp_variant(variant, reads))[case]
+
+    assert arithmetic_outcome(entry, arguments, records) == CALL_SITE_OUTCOMES[case]
+    assert reads == []
+
+
+@pytest.mark.parametrize(
+    ("relative", "anchor", "planted"),
+    [
+        (
+            "domain/gap.py",
+            "    return CriterionGap(\n",
+            "    if any(criterion.updated_at for criterion in criteria):\n"
+            '        raise ValueError("a criterion changed")\n'
+            "    return CriterionGap(\n",
+        ),
+        (
+            "services/run_shape.py",
+            "    open_keys = {criterion.issue_key",
+            "    if any(criterion.updated_at for criterion in criteria):\n"
+            '        raise ValueError("a criterion changed")\n'
+            "    open_keys = {criterion.issue_key",
+        ),
+    ],
+)
+def test_the_guard_reddens_when_a_discovered_gap_site_reads_the_field(
+    relative, anchor, planted
+):
+    sources = source_tree()
+    assert sources[relative].count(anchor) == 1
+    sources[relative] = sources[relative].replace(anchor, planted)
+    assert gap_sites_reading_the_change_stamp(sources) == {relative: {"updated_at"}}
+
+
+#: Each static way a module can reach the arithmetic's module, as the module
+#: text it arrives as.  ``{READ}`` is where a change-stamp read goes.  The
+#: two-hop row reaches it through a planted helper module that imports it,
+#: so the reach is pinned as a closure and not as one import deep.
+IMPORT_ROUTES = {
+    "aliased_import": "from kodezart.domain.gap import compute_gap as gap_of\n"
+    "\n"
+    "def plan(criteria, since):\n"
+    "    return gap_of([c for c in criteria{READ}])\n",
+    "module_attribute": "import kodezart.domain.gap as gap_module\n"
+    "\n"
+    "def plan(criteria, since):\n"
+    "    return gap_module.compute_gap([c for c in criteria{READ}])\n",
+    "import_inside_the_function": "def plan(criteria, since):\n"
+    "    from kodezart.domain.gap import compute_gap as _g\n"
+    "\n"
+    "    return _g([c for c in criteria{READ}])\n",
+    "relative_import": "from ..domain.gap import compute_gap\n"
+    "\n"
+    "def plan(criteria, since):\n"
+    "    return compute_gap([c for c in criteria{READ}])\n",
+    "submodule_from_its_package": "from kodezart.domain import gap\n"
+    "\n"
+    "def plan(criteria, since):\n"
+    "    return gap.compute_gap([c for c in criteria{READ}])\n",
+    "route_through_the_package": "import kodezart\n"
+    "\n"
+    "def plan(criteria, since):\n"
+    "    return kodezart.domain.organize.organize_gap([c for c in criteria{READ}])\n",
+    "route_through_an_imported_package": "from kodezart import domain\n"
+    "\n"
+    "def plan(criteria, since):\n"
+    "    return domain.gap.compute_gap([c for c in criteria{READ}])\n",
+    "type_checking_import": "from typing import TYPE_CHECKING\n"
+    "\n"
+    "if TYPE_CHECKING:\n"
+    "    from kodezart.domain.issue_tree import SubtreeClosure\n"
+    "\n"
+    "def plan(closure: 'SubtreeClosure', since):\n"
+    "    return [c for c in closure.scope_gap().owed{READ}]\n",
+    "module_named_by_a_string": "import importlib\n"
+    "\n"
+    "def plan(criteria, since):\n"
+    "    gap = importlib.import_module('kodezart.domain.gap')\n"
+    "    return gap.compute_gap([c for c in criteria{READ}])\n",
+    "module_named_as_package_colon_module": "import pkgutil\n"
+    "\n"
+    "def plan(criteria, since):\n"
+    "    arithmetic = pkgutil.resolve_name('kodezart.domain:gap')\n"
+    "    return arithmetic.compute_gap([c for c in criteria{READ}])\n",
+    "object_named_as_module_colon_attr": "import pkgutil\n"
+    "\n"
+    "def plan(criteria, since):\n"
+    "    still_open = pkgutil.resolve_name('kodezart.domain.gap:open_state_kind')\n"
+    "    return [c for c in criteria if still_open(c.state_kind){READ}]\n",
+    "two_hops": "from kodezart.services.planted_helper import window\n"
+    "\n"
+    "def plan(criteria, since):\n"
+    "    return [c for c in window(criteria){READ}]\n",
+    "relative_import_in_a_package_init": "from kodezart.domain.planted import window\n"
+    "\n"
+    "def plan(criteria, since):\n"
+    "    return [c for c in window(criteria){READ}]\n",
+}
+#: The modules the routes above import that are not in the tree: the helper
+#: the two-hop row imports, a module of its own that reaches the arithmetic
+#: and reads nothing, and a package whose ``__init__`` re-exports the
+#: arithmetic through a relative import, resolved against the package itself.
+PLANTED_HELPERS = {
+    "services/planted_helper.py": "from kodezart.domain.issue_tree import"
+    " SubtreeClosure\n"
+    "\n"
+    "def window(closure: SubtreeClosure):\n"
+    "    return closure.scope_gap().owed\n",
+    "domain/planted/__init__.py": "from ..gap import compute_gap as window\n",
+}
+
+
+@pytest.mark.parametrize("reads", [True, False])
+@pytest.mark.parametrize("route", sorted(IMPORT_ROUTES))
+def test_a_gap_site_reached_under_another_spelling_is_discovered_and_scanned(
+    route, reads
+):
+    """A module that reaches the arithmetic by any static route is a gap site.
+
+    One row per route ``imported_modules`` reads, each with and without the
+    read.  The read-free rows redden the moment the reach stops following
+    that route, because the planted module drops out of the discovered set;
+    the reading rows redden the guard itself.
+    """
+    planted = IMPORT_ROUTES[route].replace(
+        "{READ}", " if c.updated_at > since" if reads else ""
+    )
+    sources = {**source_tree(), **PLANTED_HELPERS, "services/planted.py": planted}
+
+    assert "services/planted.py" in gap_computation_sites(sources)
+    assert gap_sites_reading_the_change_stamp(sources) == (
+        {"services/planted.py": {"updated_at"}} if reads else {}
+    )
+
+
+def test_a_module_that_only_quotes_a_seed_name_is_not_a_gap_site():
+    """A quoted arithmetic name is a value, and an import runs one way.
+
+    What bounds the reach from above: a module whose only mention of the
+    arithmetic is a quoted word — a vocabulary label, a log field, a
+    serialised key — reaches no module by it, and a module the arithmetic
+    itself imports is not thereby able to compute it.  The planted module
+    does both: it quotes each arithmetic name and imports the tracker models
+    ``domain/gap.py`` imports, and reads the stamp.  Planted rather than read
+    off a module of the tree, so the negative holds whatever the tree's own
+    prose happens to quote.
+    """
+    sources = source_tree()
+    sources["services/planted.py"] = (
+        "from kodezart.types.domain.tracker import TrackerIssue\n"
+        "\n"
+        "GAP_LABEL = 'gap_membership'\n"
+        "COLUMNS = ('compute_gap', 'organize_gap', 'SubtreeClosure')\n"
+        "\n"
+        "def label(row: TrackerIssue):\n"
+        "    return {GAP_LABEL: row.updated_at} if GAP_LABEL in COLUMNS else {}\n"
+    )
+
+    assert "services/planted.py" not in gap_computation_sites(sources)
+    assert gap_sites_reading_the_change_stamp(sources) == {}
+    assert "services/planted.py" in change_stamp_readers(sources)
+
+
+@pytest.mark.parametrize("field", sorted(CHANGE_STAMP_FIELDS))
+@pytest.mark.parametrize(
+    "form", ["attribute", "name", "keyword", "wire_key", "class_pattern"]
+)
+def test_change_stamp_detector_flags_a_gap_site_that_reads_the_field(field, form):
+    snippet = {
+        "attribute": f"def gap(rows, since):\n"
+        f"    return [row for row in rows if row.{field} > since]\n",
+        "name": f"def gap(rows, {field}):\n"
+        f"    return [row for row in rows if row.body_digest != {field}]\n",
+        "keyword": f"def gap(tracker):\n    return tracker.query({field}=MARK)\n",
+        "wire_key": f"def gap(row):\n    return row['{field}']\n",
+        "class_pattern": f"def gap(row, since):\n"
+        f"    match row:\n"
+        f"        case Row({field}=stamp):\n"
+        f"            return stamp > since\n",
+    }[form]
+    assert change_stamp_reads(ast.parse(snippet)) == {field}
+    assert change_stamp_reads(ast.parse(snippet.replace(field, "body_digest"))) == set()
+
+
+#: Where the change stamp is stated: the domain issue's own field, and the
+#: recency parameter both domain queries state it as.  Each is spelled twice —
+#: under its field name and under the alias the model reads and writes it by.
+CHANGE_STAMP_HOMES = (
+    (TrackerIssue, "updated_at"),
+    (IssueQuery, "updated_since"),
+    (ReviewQuery, "updated_since"),
+)
+
+
+def test_the_change_stamp_surface_names_every_spelling_of_the_one_field():
+    """The scanned spellings are exactly the ones the models state.
+
+    The detector's rows above are parametrised over this set, so a spelling
+    dropped out of it takes its own row away with it and nothing reds, and a
+    spelling the models gain is never scanned.  The set is therefore derived
+    from the models themselves — each home's field name, which a rename turns
+    into a lookup that fails, and the alias the model carries it under — and
+    the constant must equal that derivation, so it can neither lose a spelling
+    nor miss one.
+    """
+    derived = {
+        spelling
+        for model, field in CHANGE_STAMP_HOMES
+        for spelling in (field, model.model_fields[field].alias)
+    }
+
+    assert None not in derived
+    assert CHANGE_STAMP_FIELDS == derived
+
+
+#: The module that defines the gap arithmetic. Its own calls of its own
+#: functions are the arithmetic, not a call site into it.
+GAP_HOME = "domain/organize.py"
+
+
+def called_names(node):
+    """Every name a parsed definition calls, in either form it can call it."""
+    names = set()
+    for inner in ast.walk(node):
+        if isinstance(inner, ast.Call):
+            callee = inner.func
+            if isinstance(callee, ast.Name):
+                names.add(callee.id)
+            elif isinstance(callee, ast.Attribute):
+                names.add(callee.attr)
+    return names
+
+
+def gap_callees(source):
+    """Every function of *source* that reaches the gap arithmetic when called.
+
+    Derived, not listed: a helper added beside the gap that hands back the
+    gap's own answer is a gap computation whatever it is named, and a list
+    written here would not know about it.  The walk grows a set that only
+    ever grows, so one round per definition is more than it can need.
+    """
+    tree = ast.parse(source)
+    defined = {
+        node.name: node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+    }
+    reached = {"organize_gap"}
+    for _round in range(len(defined) + 1):
+        grown = {name for name, node in defined.items() if called_names(node) & reached}
+        if grown <= reached:
+            break
+        reached |= grown
+    return frozenset(reached)
+
+
+def gap_call_sites(sources, callees):
+    """Every call of a gap-computing function, outside the module defining it.
+
+    An import renames but does not call: the local name a ``from`` import
+    binds is resolved back to the imported one, so an aliased import is the
+    same site under another spelling and an import on its own is no site.
+    """
+    trees = parsed(
+        {
+            relative: source
+            for relative, source in sources.items()
+            if relative != GAP_HOME
+        }
+    )
+    return tuple(
+        (site.module, site.line, site.name) for site in call_sites(trees, names=callees)
+    )
+
+
+def test_exactly_one_production_call_site_computes_the_organize_gap():
+    """One arithmetic, computed in one place, for every entry into a stage.
+
+    The set of callees is read out of the defining module rather than
+    written here, so the pre-query counts as a gap computation without
+    being named: ``organize_at_rest`` hands back the gap's own cardinality.
+    The count is one because the pre-query has no production caller.  An
+    owner that later asks it too makes this check read two, and the
+    reconciliation is to drop the pre-query call, not to raise the count.
+    """
+    sources = source_tree()
+    callees = gap_callees(sources[GAP_HOME])
+    assert {"organize_gap", "organize_at_rest"} <= callees
+    assert [
+        (relative, name) for relative, _line, name in gap_call_sites(sources, callees)
+    ] == [("services/organize_owner.py", "organize_gap")]
+
+
+def test_the_derivation_reaches_a_helper_that_hands_back_the_gaps_answer():
+    snippet = (
+        "def organize_gap(*, revisions):\n"
+        "    return tuple(revisions)\n"
+        "\n"
+        "def at_rest(*, revisions):\n"
+        "    return not organize_gap(revisions=revisions)\n"
+        "\n"
+        "def unrelated(*, revisions):\n"
+        "    return len(revisions)\n"
+    )
+    assert gap_callees(snippet) == frozenset({"organize_gap", "at_rest"})
+
+
+@pytest.mark.parametrize(
+    ("form", "body", "expected"),
+    [
+        (
+            "plain",
+            "from kodezart.domain.organize import organize_gap\n"
+            "\n"
+            "def plan(revisions):\n"
+            "    return organize_gap(revisions=revisions)\n",
+            1,
+        ),
+        (
+            "aliased",
+            "from kodezart.domain.organize import organize_gap as _gap\n"
+            "\n"
+            "def plan(revisions):\n"
+            "    return _gap(revisions=revisions)\n",
+            1,
+        ),
+        (
+            "attribute",
+            "import kodezart.domain.organize as organize\n"
+            "\n"
+            "def plan(revisions):\n"
+            "    return organize.organize_gap(revisions=revisions)\n",
+            1,
+        ),
+        (
+            "pre_query",
+            "from kodezart.domain.organize import organize_at_rest\n"
+            "\n"
+            "def plan(revisions):\n"
+            "    return organize_at_rest(revisions=revisions)\n",
+            1,
+        ),
+        ("import_alone", "from kodezart.domain.organize import organize_gap\n", 0),
+    ],
+)
+def test_the_call_site_count_reads_each_form_the_call_can_take(form, body, expected):
+    sources = source_tree()
+    callees = gap_callees(sources[GAP_HOME])
+    planted = gap_call_sites({"services/planted.py": body}, callees)
+    assert len(planted) == expected
+    assert all(relative == "services/planted.py" for relative, _line, _name in planted)
+    assert all(name in callees for _relative, _line, name in planted)
+
+
+def owner_harness():
+    """The owner harness module, imported at call time.
+
+    That module imports this one for its fixtures, so the edge back cannot be
+    a module-level import. Every owner-driven case here reaches the harness
+    through this function and through nothing else.
+    """
+    from tests.chains import test_organize_owner
+
+    return test_organize_owner
+
+
+def admit_as(monkeypatch, executor, *, key, payload, verify_only=False):
+    """Every admission judgment for *key* answers *payload*, replacing it whole.
+
+    Replaced rather than merged: the harness's own refusal payload always
+    carries fields another verdict forbids. Every other session passes
+    through untouched. With *verify_only*, only the verification sessions
+    are replaced and the assessment keeps the harness's own answer. Returns
+    every answer given for *key*, in order.
+    """
+    import re
+
+    h = owner_harness()
+    answered = []
+    original = executor.stream
+
+    async def scripted(**kwargs):
+        title = kwargs["output_format"]["schema"].get("title")
+        keys = re.findall(r"<issue_key>(.*?)</issue_key>", kwargs["prompt"])
+        chosen = not verify_only or h.VERIFY_OPENING in kwargs["prompt"]
+        async for event in original(**kwargs):
+            if title == "AdmissionJudgment" and keys[-1:] == [key] and chosen:
+                answer = {"issue_id": key, **payload}
+                answered.append(answer)
+                event = result(structured_output=answer)
+            yield event
+
+    monkeypatch.setattr(executor, "stream", scripted)
+    return answered
+
+
+UNVERIFIABLE_EVIDENCE = (
+    "The named blocker produces the schema this issue reads; it cannot be "
+    "examined until that issue lands."
+)
+MISSING_ARTIFACT = "The schema the named blocker produces."
+
+
+@pytest.mark.parametrize("route", ["edge_in_scope", "no_edge", "out_of_scope"])
+async def test_an_unverifiable_admission_marks_the_ticket_only_on_a_real_in_scope_edge(
+    monkeypatch, route
+):
+    """The marker follows the edge and the scope, never the prose.
+
+    The three rows answer the same words; they differ only by the relation
+    planted on the subject and the blocker it names. A real ``blockedBy``
+    edge to a scope member marks the stage; a named blocker with no edge, or
+    one outside the scope, is re-authored, and the verdict survives the
+    bounded halt unchanged.
+    """
+    h = owner_harness()
+    owner, board, executor = h.two_lane_board(
+        phases=h.ticket_only, body=h.PREPARED_BODY, bound=1
+    )
+    # The out-of-scope blocker is a board issue with no parent and no edge of
+    # its own, so reading it into the graph context reaches nothing missing.
+    named = ASSET_ISSUE if route == "out_of_scope" else "second"
+    board.server.issues[CLAIMED_ISSUE].relations = (
+        [] if route == "no_edge" else [("blockedBy", named)]
+    )
+    answered = admit_as(
+        monkeypatch,
+        executor,
+        key=CLAIMED_ISSUE,
+        payload={
+            "verdict": "unverifiable",
+            "evidence": UNVERIFIABLE_EVIDENCE,
+            "missing_artifact": MISSING_ARTIFACT,
+            "pending_blocker_id": named,
+        },
+    )
+    # The owner's own routing call, observed: the verdict it was handed and
+    # the route it chose, so a row passes only on the route the edge earns.
+    routed = []
+    choose = organize_owner.admission_route
+
+    def observed_route(result, **kwargs):
+        route_taken = choose(result, **kwargs)
+        routed.append((result.issue_id, result.verdict, route_taken))
+        return route_taken
+
+    monkeypatch.setattr(organize_owner, "admission_route", observed_route)
+    report = await h.run_owner(owner)
+    labels = board.server.issues[CLAIMED_ISSUE].labels
+    escalations = [
+        comment
+        for comment in board.server.comments
+        if comment.body.startswith(h.ESCALATION_MARKER)
+    ]
+    _assessed, _verified, authored = h.sessions(executor, 0)
+    assert answered
+    expected_route = (
+        AdmissionRoute.MARK_COMPLETE
+        if route == "edge_in_scope"
+        else AdmissionRoute.REAUTHOR
+    )
+    assert [entry for entry in routed if entry[0] == CLAIMED_ISSUE] and all(
+        entry == (CLAIMED_ISSUE, AdmissionVerdict.UNVERIFIABLE, expected_route)
+        for entry in routed
+        if entry[0] == CLAIMED_ISSUE
+    )
+    if route == "edge_in_scope":
+        assert report.halt is None
+        assert report.completed_phases == (MandateKind.TICKET,)
+        assert "body complete" in labels
+        assert CLAIMED_ISSUE not in authored
+        assert escalations == []
+        return
+    assert report.halt.cause == "admission_exhausted"
+    assert report.halt.bound.setting == "organize.max_admission_rounds"
+    assert report.halt.bound.value == report.halt.bound.rounds_used == 1
+    assert [r.verdict for r in report.halt.admission_results] == [
+        AdmissionVerdict.UNVERIFIABLE
+    ]
+    assert report.halt.admission_results[0].pending_blocker_id == named
+    assert "body complete" not in labels
+    assert CLAIMED_ISSUE in authored
+    assert [
+        comment.issue_id for comment in escalations if MISSING_ARTIFACT in comment.body
+    ] == [CLAIMED_ISSUE]
+    assert len(escalations) == 1
+
+
+async def test_an_unverifiable_verdict_first_met_in_verification_reaches_the_halt(
+    monkeypatch,
+):
+    """A verdict the assessment never gave is still carried to the halt.
+
+    The assessment answers buildable, so the round authors nothing and the
+    subject reaches the dry verification. That verification answers
+    unverifiable, naming a blocker the subject has no edge to. The route is a
+    re-author, so the round is not dry and the one convergence round is spent:
+    the halt carries the verdict and its escalation quotes the missing artifact.
+    """
+    h = owner_harness()
+    owner, board, executor = h.factory(
+        under_approval=True,
+        phases=h.ticket_only,
+        body=h.PREPARED_BODY,
+        convergence_bound=1,
+    )
+    answered = admit_as(
+        monkeypatch,
+        executor,
+        key=CLAIMED_ISSUE,
+        payload={
+            "verdict": "unverifiable",
+            "evidence": UNVERIFIABLE_EVIDENCE,
+            "missing_artifact": MISSING_ARTIFACT,
+            "pending_blocker_id": "second",
+        },
+        verify_only=True,
+    )
+    report = await h.run_owner(owner)
+    escalations = [
+        comment
+        for comment in board.server.comments
+        if comment.body.startswith(h.ESCALATION_MARKER)
+    ]
+    assessed, verified, _authored = h.sessions(executor, 0)
+    assert CLAIMED_ISSUE in assessed
+    assert CLAIMED_ISSUE in verified
+    assert answered
+    assert report.halt.cause == "convergence_exhausted"
+    assert report.halt.bound.value == report.halt.bound.rounds_used == 1
+    assert [
+        (r.issue_id, r.verdict, r.pending_blocker_id)
+        for r in report.halt.admission_results
+    ] == [(CLAIMED_ISSUE, AdmissionVerdict.UNVERIFIABLE, "second")]
+    assert [
+        comment.issue_id for comment in escalations if MISSING_ARTIFACT in comment.body
+    ] == [CLAIMED_ISSUE]
+    assert "body complete" not in board.server.issues[CLAIMED_ISSUE].labels
+
+
+SECOND_SURFACE = "second-surface"
+
+
+def second_surface_regrowth(monkeypatch, *, body, convergence_bound=2):
+    """A ticket stage whose fix defects a surface the round did not author.
+
+    The subject's assessment names the class on the subject while its body
+    is still the draft. The author carries any mandating sentence forward.
+    The criterion child is named with the same class only when its
+    verification reads a parent that holds both the grounded body and the
+    mandating sentence, that is, only once the carried sentence has landed.
+    Every scripted finding is recorded as ``(issue_id, defect_class)``, and
+    the parent's description is recorded at every verification of the
+    criterion child, whether or not it is named.
+    """
+    import re
+
+    h = owner_harness()
+    owner, board, executor = h.factory(
+        under_approval=True,
+        phases=h.ticket_only,
+        body=body,
+        convergence_bound=convergence_bound,
+    )
+    board.server.issues[SECOND_SURFACE] = FakeMcpIssue(
+        id=SECOND_SURFACE,
+        parent_id=CLAIMED_ISSUE,
+        description=h.RESTATING_BODY,
+        labels=["check"],
+    )
+    observed = []
+    examined = []
+    original = executor.stream
+
+    def mandate_finding(issue_id):
+        observed.append((issue_id, h.REGROWTH_CLASS))
+        return {
+            "issue_id": issue_id,
+            "defect_class": h.REGROWTH_CLASS,
+            "evidence": "The surface restates the source version in its prose.",
+            "role": "mandate",
+            "mandate_text": h.MANDATE_SENTENCE,
+        }
+
+    async def scripted(**kwargs):
+        title = kwargs["output_format"]["schema"].get("title")
+        keys = re.findall(r"<issue_key>(.*?)</issue_key>", kwargs["prompt"])
+        parent = board.server.issues[CLAIMED_ISSUE].description
+        verifies_second = (
+            title == "AdmissionJudgment"
+            and keys[-1:] == [SECOND_SURFACE]
+            and h.VERIFY_OPENING in kwargs["prompt"]
+        )
+        if verifies_second:
+            examined.append(parent)
+        async for event in original(**kwargs):
+            payload = event.structured_output
+            if title == "OrganizeProposal" and payload.get("kind") == "body":
+                source = board.server.issues[payload["issue_id"]].description
+                carried = (
+                    f"{h.MANDATE_SENTENCE} " if h.MANDATE_SENTENCE in source else ""
+                )
+                event = result(
+                    structured_output={
+                        **payload,
+                        "body": f"{carried}{h.GROUNDED_BODY}",
+                    }
+                )
+            elif (
+                title == "AdmissionJudgment"
+                and keys[-1:] == [CLAIMED_ISSUE]
+                and h.DRAFT_BODY in parent
+            ):
+                event = result(
+                    structured_output={
+                        "issue_id": CLAIMED_ISSUE,
+                        "verdict": "not_buildable",
+                        "evidence": "The hand-drafted source is not prepared.",
+                        "refusal_kind": "spec_gap",
+                        "invented_decision": "Prepare the drafted source.",
+                        "findings": [mandate_finding(CLAIMED_ISSUE)],
+                    }
+                )
+            elif (
+                verifies_second
+                and h.GROUNDED_BODY in parent
+                and h.MANDATE_SENTENCE in parent
+            ):
+                event = result(
+                    structured_output={
+                        **payload,
+                        "findings": [mandate_finding(SECOND_SURFACE)],
+                    }
+                )
+            yield event
+
+    monkeypatch.setattr(executor, "stream", scripted)
+    return owner, board, executor, observed, examined
+
+
+def subject_proposals(executor):
+    """Every author prompt spent on the subject, in order."""
+    import re
+
+    return [
+        call["prompt"]
+        for call in executor.calls
+        if call["output_format"]["schema"].get("title") == "OrganizeProposal"
+        and re.findall(r"<issue_key>(.*?)</issue_key>", call["prompt"])[-1:]
+        == [CLAIMED_ISSUE]
+    ]
+
+
+async def test_a_fix_that_defects_a_second_surface_is_worked_in_the_next_round(
+    monkeypatch,
+):
+    """Round one's fix is not taken as done: the dry round finds the class again.
+
+    The class the assessment named on the subject is repaired, and the fix
+    carries the mandating sentence that makes the criterion child restate
+    the class. The criterion child is first verified over the landed fix,
+    never over the draft, so its finding is one the fix introduced; it is
+    worked in round two, and a mandate that keeps regrowing halts at the
+    convergence bound with its surviving finding.
+    """
+    h = owner_harness()
+    owner, board, executor, observed, examined = second_surface_regrowth(
+        monkeypatch, body=f"{h.MANDATE_SENTENCE} {h.DRAFT_BODY}"
+    )
+    report = await h.run_owner(owner)
+    fixed = f"{h.MANDATE_SENTENCE} {h.GROUNDED_BODY}"
+    assert examined[0] == fixed
+    assert board.server.issues[CLAIMED_ISSUE].description == fixed
+    assert observed == [
+        (CLAIMED_ISSUE, h.REGROWTH_CLASS),
+        (SECOND_SURFACE, h.REGROWTH_CLASS),
+        (SECOND_SURFACE, h.REGROWTH_CLASS),
+    ]
+    later = subject_proposals(executor)[1:]
+    assert any(
+        h.REGROWTH_CLASS
+        in prompt.split("<defect_classes>", 1)[1].split("</defect_classes>", 1)[0]
+        for prompt in later
+    )
+    halt = report.halt
+    assert halt.cause == "convergence_exhausted"
+    assert halt.bound.setting == "organize.max_convergence_rounds"
+    assert halt.bound.loop == "convergence"
+    assert halt.bound.value == halt.bound.rounds_used == 2
+    assert [
+        (f.issue_id, f.role, f.mandate_text, f.defect_class)
+        for f in halt.surviving_findings
+    ] == [(SECOND_SURFACE, DefectRole.MANDATE, h.MANDATE_SENTENCE, h.REGROWTH_CLASS)]
+    assert report.completed_phases == ()
+    assert not {"body complete", "criteria complete"} & set(
+        board.server.issues[CLAIMED_ISSUE].labels
+    )
+
+
+async def test_a_round_that_writes_nothing_does_not_terminate(monkeypatch):
+    """An author round with nothing to write is not a dry verification round.
+
+    Round one opens no author session: the subject is admitted as it stands,
+    and its dry verification names the class on the criterion child. Round
+    two authors the subject and its proposal equals the board, so it writes
+    nothing; its own verification still names the class, and round three
+    follows it with a further author session and a further verification.
+    The loop ends only at the bound, never on the quiet round.
+    """
+    h = owner_harness()
+    body = f"{h.MANDATE_SENTENCE} {h.GROUNDED_BODY}"
+    owner, board, executor, observed, _examined = second_surface_regrowth(
+        monkeypatch, body=body, convergence_bound=3
+    )
+    report = await h.run_owner(owner)
+    assert len(subject_proposals(executor)) == 2
+    assert observed == [(SECOND_SURFACE, h.REGROWTH_CLASS)] * 3
+    assert [
+        args
+        for name, args in board.calls
+        if name == "save_issue" and "description" in args
+    ] == []
+    assert board.server.issues[CLAIMED_ISSUE].description == body
+    assert report.halt.cause == "convergence_exhausted"
+    assert report.halt.bound.rounds_used == 3
+    assert report.completed_phases == ()
+
+
+async def test_an_empty_work_set_still_spends_its_dry_round_and_goes_round_again(
+    monkeypatch,
+):
+    """An empty gap is not convergence: the round it answers still verifies.
+
+    On the refutation entry the criteria stage's first round owes no lane.
+    That round opens no author session but verifies every lane once, and a
+    further round follows it, because the verification found the refuted
+    claim.
+    """
+    h = owner_harness()
+    spy, _board, _executor, report = await h.entry_refutation(monkeypatch)
+    rounds = spy.rounds()
+    empty = [index for index, (work, _, _) in enumerate(rounds) if not work]
+    assert empty
+    for index in empty:
+        _work, judged, authored = rounds[index]
+        assert judged == dict.fromkeys(sorted(h.LANES), 1)
+        assert authored == {}
+        assert index + 1 < len(rounds)
+    assert report.halt is None
+
+
+LEAVING_MEMBER = "leaving-member"
+DONE_SIBLING = "done-sibling"
+DONE_SIBLING_CHECK = "done-sibling-check"
+
+
+def moved_out_by_another_actor(board, session):
+    """Re-parent the leaving member out of the scope, as a person would.
+
+    A run-stage author's graph proposal is refused and reported, never
+    applied (KOD-561), so a run-stage round cannot empty its own roster.
+    Called on every session of a ticket-row case: when *session* judges the
+    leaving member's landed body, the member is re-parented on the board
+    itself, not through the owner. That is after the round's own write and
+    before the round's re-read of the scope once that write holds, so the
+    round sees the member gone. Returns whether this session made the edit.
+    """
+    import json
+    import re
+
+    if session["output_format"]["schema"].get("title") != "WriteBackFinding":
+        return False
+    written = re.search(
+        r"<written_artifact>\s*(.*?)\s*</written_artifact>", session["prompt"], re.S
+    )
+    surface = json.loads(written[1])["surface"]
+    member = board.server.issues[LEAVING_MEMBER]
+    if (
+        surface["kind"] != "issue_description"
+        or surface["ref"]["key"] != LEAVING_MEMBER
+        or member.parent_id is None
+    ):
+        return False
+    member.parent_id = None
+    return True
+
+
+async def test_a_roster_emptied_by_another_actors_edit_still_spends_its_dry_round(
+    monkeypatch,
+):
+    """A finding left live when another actor's edit empties the roster halts.
+
+    A run-stage author's graph proposal is refused and reported (KOD-561),
+    so on a run-stage row the roster can only empty through an edit made
+    outside the round. The ticket stage's only unlabelled member is authored
+    in round one with a body; while that write is judged, another actor
+    re-parents the member out of the scope, and the round's re-read after
+    the write sees it gone. The labelled sibling's criterion child is named
+    with a class once that member has gone. Round two then has no subject,
+    because a child's finding keeps no subject of its own, yet the finding
+    is live: the round still verifies, the finding survives, and the pass
+    halts at the convergence bound naming it instead of completing the
+    stage.
+    """
+    import re
+
+    h = owner_harness()
+    owner, board, executor = h.factory(
+        under_approval=True,
+        phases=h.ticket_only,
+        body=h.PREPARED_BODY,
+        convergence_bound=2,
+    )
+    board.server.issues[CLAIMED_ISSUE].labels.append("body complete")
+    board.server.issues[LEAVING_MEMBER] = FakeMcpIssue(
+        id=LEAVING_MEMBER,
+        parent_id=CLAIMED_ISSUE,
+        description="Missing specification",
+    )
+    board.server.issues[DONE_SIBLING] = FakeMcpIssue(
+        id=DONE_SIBLING,
+        parent_id=CLAIMED_ISSUE,
+        description=h.PREPARED_BODY,
+        labels=["body complete", "criteria complete"],
+    )
+    board.server.issues[DONE_SIBLING_CHECK] = FakeMcpIssue(
+        id=DONE_SIBLING_CHECK,
+        parent_id=DONE_SIBLING,
+        description=h.REFERENCING_BODY,
+        labels=["check"],
+    )
+    named = []
+    moved = []
+    original = executor.stream
+
+    async def scripted(**kwargs):
+        title = kwargs["output_format"]["schema"].get("title")
+        keys = re.findall(r"<issue_key>(.*?)</issue_key>", kwargs["prompt"])
+        if moved_out_by_another_actor(board, kwargs):
+            moved.append(LEAVING_MEMBER)
+        async for event in original(**kwargs):
+            if title == "OrganizeProposal" and keys[-1:] == [LEAVING_MEMBER]:
+                event = result(
+                    structured_output={
+                        "kind": "body",
+                        "issue_id": LEAVING_MEMBER,
+                        "body": h.PREPARED_BODY,
+                    }
+                )
+            elif (
+                title == "AdmissionJudgment"
+                and keys[-1:] == [DONE_SIBLING_CHECK]
+                and h.VERIFY_OPENING in kwargs["prompt"]
+                and board.server.issues[LEAVING_MEMBER].parent_id is None
+            ):
+                named.append(DONE_SIBLING_CHECK)
+                event = result(
+                    structured_output={
+                        **event.structured_output,
+                        "findings": [
+                            {
+                                "issue_id": DONE_SIBLING_CHECK,
+                                "defect_class": h.REGROWTH_CLASS,
+                                "evidence": "The check reads a deliverable gone.",
+                                "role": "instance",
+                            }
+                        ],
+                    }
+                )
+            yield event
+
+    monkeypatch.setattr(executor, "stream", scripted)
+    report = await h.run_owner(owner)
+    assert board.server.issues[LEAVING_MEMBER].parent_id is None
+    assert moved == [LEAVING_MEMBER]
+    assert board.server.issues[LEAVING_MEMBER].description == h.PREPARED_BODY
+    assert [
+        args
+        for name, args in board.calls
+        if name == "save_issue" and "parentId" in args
+    ] == []
+    assert named == [DONE_SIBLING_CHECK] * 2
+    halt = report.halt
+    assert halt is not None
+    assert halt.cause == "convergence_exhausted"
+    assert halt.bound.setting == "organize.max_convergence_rounds"
+    assert halt.bound.value == halt.bound.rounds_used == 2
+    assert [(f.issue_id, f.defect_class) for f in halt.surviving_findings] == [
+        (DONE_SIBLING_CHECK, h.REGROWTH_CLASS)
+    ]
+    assert report.completed_phases == ()
+
+
+def leaving_member_scope(monkeypatch, *, answer):
+    """The board of the round-emptying case, on the ticket row.
+
+    The root and the labelled sibling carry the row's marker and the leaving
+    member carries none. The leaving member's proposal is a body, since a
+    run-stage author's graph proposal is refused and reported (KOD-561), and
+    another actor re-parents it out of the scope while that write is judged.
+    Once that member has no parent, every verification of the sibling's
+    criterion child is answered by ``answer(payload)``, where *payload* is
+    the harness's own answer. Returns the owner, the board and the key of
+    every verification so answered.
+    """
+    import re
+
+    h = owner_harness()
+    owner, board, executor = h.factory(
+        under_approval=True,
+        phases=h.ticket_only,
+        body=h.PREPARED_BODY,
+        convergence_bound=2,
+    )
+    markers = ["body complete", "criteria complete"]
+    board.server.issues[CLAIMED_ISSUE].labels.append(markers[0])
+    board.server.issues[LEAVING_MEMBER] = FakeMcpIssue(
+        id=LEAVING_MEMBER,
+        parent_id=CLAIMED_ISSUE,
+        description="Missing specification",
+    )
+    board.server.issues[DONE_SIBLING] = FakeMcpIssue(
+        id=DONE_SIBLING,
+        parent_id=CLAIMED_ISSUE,
+        description=h.PREPARED_BODY,
+        labels=list(markers),
+    )
+    board.server.issues[DONE_SIBLING_CHECK] = FakeMcpIssue(
+        id=DONE_SIBLING_CHECK,
+        parent_id=DONE_SIBLING,
+        description=h.REFERENCING_BODY,
+        labels=["check"],
+    )
+    answered = []
+    original = executor.stream
+    proposal = {"kind": "body", "issue_id": LEAVING_MEMBER, "body": h.PREPARED_BODY}
+
+    async def scripted(**kwargs):
+        title = kwargs["output_format"]["schema"].get("title")
+        keys = re.findall(r"<issue_key>(.*?)</issue_key>", kwargs["prompt"])
+        moved_out_by_another_actor(board, kwargs)
+        async for event in original(**kwargs):
+            if title == "OrganizeProposal" and keys[-1:] == [LEAVING_MEMBER]:
+                event = result(structured_output=proposal)
+            elif (
+                title == "AdmissionJudgment"
+                and keys[-1:] == [DONE_SIBLING_CHECK]
+                and h.VERIFY_OPENING in kwargs["prompt"]
+                and board.server.issues[LEAVING_MEMBER].parent_id is None
+            ):
+                answered.append(DONE_SIBLING_CHECK)
+                event = result(structured_output=answer(event.structured_output))
+            yield event
+
+    monkeypatch.setattr(executor, "stream", scripted)
+    return owner, board, answered
+
+
+REFUSED_CHECK = {
+    "issue_id": DONE_SIBLING_CHECK,
+    "verdict": "not_buildable",
+    "evidence": "The check reads a deliverable that has left the scope.",
+    "refusal_kind": "spec_gap",
+    "invented_decision": "Name the deliverable the check now reads.",
+    "findings": [],
+}
+
+
+async def test_a_refusal_with_no_finding_after_the_roster_empties_still_halts(
+    monkeypatch,
+):
+    """A dry round that fails on a refusal alone is not followed by a completion.
+
+    A run-stage author's graph proposal is refused and reported (KOD-561),
+    so on a run-stage row the roster can only empty through an edit made
+    outside the round. The ticket stage's round one writes the leaving
+    member's body, and another actor re-parents that member out of the
+    scope while the write is judged. The round's dry round then refuses the
+    sibling's criterion child and names no finding, so round two has no
+    subject and no live finding, yet the dry round before it did not hold.
+    Round two verifies again, the refusal stands, and the pass halts at the
+    convergence bound carrying it.
+    """
+    h = owner_harness()
+    owner, board, answered = leaving_member_scope(
+        monkeypatch, answer=lambda _payload: REFUSED_CHECK
+    )
+    report = await h.run_owner(owner)
+    assert board.server.issues[LEAVING_MEMBER].parent_id is None
+    assert board.server.issues[LEAVING_MEMBER].description == h.PREPARED_BODY
+    assert [
+        args
+        for name, args in board.calls
+        if name == "save_issue" and "parentId" in args
+    ] == []
+    assert answered == [DONE_SIBLING_CHECK] * 2
+    halt = report.halt
+    assert halt is not None
+    assert halt.cause == "convergence_exhausted"
+    assert halt.bound.value == halt.bound.rounds_used == 2
+    assert halt.surviving_findings == ()
+    assert [(r.issue_id, r.verdict) for r in halt.admission_results] == [
+        (DONE_SIBLING_CHECK, AdmissionVerdict.NOT_BUILDABLE)
+    ]
+    assert report.completed_phases == ()
+
+
+def escalated(board):
+    """Every escalation record on the board, as the comments carrying it."""
+    h = owner_harness()
+    return [
+        comment
+        for comment in board.server.comments
+        if comment.body.startswith(h.ESCALATION_MARKER)
+    ]
+
+
+async def test_a_finding_outside_the_admitted_scope_stays_a_refusal(monkeypatch):
+    """A finding naming an issue the scope does not hold is refused, not owned.
+
+    There is no issue inside the scope for the stage to escalate on, so the
+    write refusal stands where it is: nothing is escalated, the named issue
+    is not classified, and no marker lands.
+    """
+    h = owner_harness()
+    owner, board, executor = h.factory(
+        under_approval=True, phases=h.ticket_only, body=h.PREPARED_BODY
+    )
+    admit_as(
+        monkeypatch,
+        executor,
+        key=CLAIMED_ISSUE,
+        payload={
+            "verdict": "buildable",
+            "evidence": "The prepared body carries its own source.",
+            "findings": [
+                {
+                    "issue_id": APPROVED_ISSUE,
+                    "defect_class": h.REGROWTH_CLASS,
+                    "evidence": "The named issue restates the source version.",
+                    "role": "mandate",
+                    "mandate_text": h.MANDATE_SENTENCE,
+                }
+            ],
+        },
+    )
+    with pytest.raises(OrganizeWriteRefusalError, match="outside the admitted scope"):
+        await h.run_owner(owner)
+    assert not [
+        comment
+        for comment in board.server.comments
+        if comment.body.startswith(h.ESCALATION_MARKER)
+    ]
+    assert "needs decision" not in board.server.issues[APPROVED_ISSUE].labels
+    assert not {"body complete", "criteria complete"} & set(
+        board.server.issues[CLAIMED_ISSUE].labels
+    )
+
+
+def board_tally(board):
+    """Every board call on the log, counted by name; the log is then cleared."""
+    tally = Counter(name for name, _ in board.calls)
+    board.calls.clear()
+    return tally
+
+
+def scaled(tally, times):
+    """*tally* read *times* over, name by name."""
+    return Counter({name: count * times for name, count in tally.items()})
+
+
+class RosterReads:
+    """Every ``organize_gap`` call the owner makes, over the reads before it.
+
+    At each call every board call already on the board's log is counted by
+    its name, whatever the name, so any board read made between a stage's
+    snapshot and its gap call shows up in the tally: the snapshot's own
+    reads, the stage's gate reading and each retained admission's freshness
+    read are what a caller subtracts to see anything else. The inputs and the
+    answer are kept whole, so the pre-query can be asked the same question
+    the gap was asked.
+    """
+
+    def __init__(self, monkeypatch, board):
+        self.at_gap = []
+        self.inputs = []
+        self.answers = []
+        computed = organize_owner.organize_gap
+
+        def recorded(**kwargs):
+            answer = computed(**kwargs)
+            self.at_gap.append(Counter(name for name, _ in board.calls))
+            self.inputs.append(kwargs)
+            self.answers.append(tuple(answer))
+            return answer
+
+        monkeypatch.setattr(organize_owner, "organize_gap", recorded)
+
+
+@pytest.mark.parametrize("entry", ["fresh", "retained"])
+async def test_one_tick_asks_the_gap_once_per_round_over_its_one_roster_read(
+    monkeypatch, entry
+):
+    """The tick reads the roster once per stage and asks the gap over it.
+
+    A heartbeat over a converged scope. The tick lists the roster four
+    times: the ticket snapshot, the ticket barrier, the criteria snapshot and
+    the criteria barrier. Each stage asks the gap over exactly its own
+    snapshot. The obligation read the gap is built from is that listing and
+    the snapshot's revision reads, with the stage's gate reading. The
+    pre-query is
+    not a second read — it is the cardinality of the answer the gap already
+    gave.
+
+    Every board call before each gap is counted by name, and the tally is
+    asserted whole on both rows. The units are measured here with the real
+    reader: one snapshot (the listing, one revision read per member and the
+    stage's gate reading) and one freshness read (one issue's revision, then the
+    scope's context over the listed members, with every call name that
+    context read makes, its comment reads included).
+
+    The fresh row is a new owner over the converged board, so the ticket
+    gap has one snapshot before it and the criteria gap three (the ticket
+    snapshot and barrier, then the criteria snapshot). The retained row runs
+    the owner that converged it again, so its admissions are still standing:
+    each gap also has one freshness read per retained admission whose body
+    is still live, compared against the round's own roster and never a
+    listing of its own. Any other board read between a snapshot and its gap,
+    of any name, breaks the tally.
+    """
+    h = owner_harness()
+    owner, board, converged = h.two_lane_board()
+    assert (await h.run_owner(owner)).halt is None
+    second, board, executor = h.factory(under_approval=True, board=board)
+    scope = ScopeRef(kind=ScopeKind.ISSUE, key=CLAIMED_ISSUE)
+    reader = board.tracker()
+    board.calls.clear()
+    members = await reader.scope_issues(ref=scope)
+    listing = board_tally(board)
+    per_read = listing["list_issues"]
+    for member in members:
+        await reader.read_issue_revision(issue_key=member.issue_key)
+    revisions = board_tally(board)
+    # Each run stage's gate, read the way the owner reads it. Both stages
+    # here gate on approval or on an issue classification, which the owner
+    # answers from the cascade and from each member's own labels, so the
+    # gate reading reads nothing of the board.
+    for phase in second._phases:
+        await second._carried_members(scope, phase)
+        assert board_tally(board) == Counter()
+    # One read per member: the unit a re-read of the snapshot would add.
+    assert revisions["get_issue"] == len(members)
+    snapshot = listing + revisions
+    # One retained admission's freshness read: its revision, then the
+    # scope's context over the roster the round already holds.
+    await reader.read_issue_revision(issue_key=CLAIMED_ISSUE)
+    await OrganizeContextReader(tracker=reader, operation=declared_operation()).read(
+        scope=scope, member_keys=[member.issue_key for member in members]
+    )
+    liveness = board_tally(board)
+    assert liveness["get_issue"] > 1
+    # The freshness read also reads comments, so the tally counts names the
+    # snapshot never makes.
+    assert liveness["list_comments"] > snapshot["list_comments"]
+    ran, spent = (second, executor) if entry == "fresh" else (owner, converged)
+    spent.calls.clear()
+    probe = RosterReads(monkeypatch, board)
+    report = await h.run_owner(ran)
+
+    assert report.halt is None
+    assert per_read >= 1
+    # The stage's own snapshot, then that stage's barrier and the next
+    # stage's snapshot: no listing sits between a snapshot and its gap call.
+    assert [tally["list_issues"] for tally in probe.at_gap] == [
+        per_read,
+        3 * per_read,
+    ]
+    assert [name for name, _ in board.calls].count("list_issues") == 4 * per_read
+    assert len(probe.at_gap) == len(report.completed_phases) == 2
+    assert all(
+        organize_at_rest(**inputs) is (answer == ())
+        for inputs, answer in zip(probe.inputs, probe.answers, strict=True)
+    )
+    assert spent.calls == []
+    assert not [name for name, _ in board.calls if name.startswith("save_")]
+    if entry == "fresh":
+        assert probe.at_gap == [snapshot, scaled(snapshot, 3)]
+        assert probe.answers[0] != ()
+        return
+    # The ticket stage converged before any criterion child existed, so it
+    # retains its two lanes; the criteria stage then gave each lane a child
+    # and its dry round verified every member, so it retains them all. No
+    # retained body has changed since, so each costs one full freshness read
+    # before its stage's gap. The ticket admissions judged a context without
+    # the children, so none of them is still live and none reaches the gap;
+    # every criteria admission does.
+    ticket_retained = [m for m in members if m.issue_key in h.LANES]
+    criteria_retained = list(members)
+    assert [len(inputs["admissions"]) for inputs in probe.inputs] == [
+        0,
+        len(criteria_retained),
+    ]
+    assert len(ticket_retained) < len(criteria_retained)
+    ticket_fresh = scaled(liveness, len(ticket_retained))
+    criteria_fresh = scaled(liveness, len(criteria_retained))
+    assert probe.at_gap == [
+        snapshot + ticket_fresh,
+        scaled(snapshot, 3) + ticket_fresh + criteria_fresh,
+    ]
+    # A retained admission still standing answers a stage at rest, so the
+    # pre-query's True side is reached at tick level.
+    assert () in probe.answers
+
+
+async def test_a_later_round_lists_the_roster_once_before_its_gap(monkeypatch):
+    """A second round of one stage opens on one roster read, like the first.
+
+    The refutation entry re-runs the owner that converged the scope, so its
+    admissions are retained, and its criteria stage takes two rounds. Every
+    board call the backend serves is counted by name at each gap call. The
+    listings between two gap calls are exact multiples of one read.
+
+    Between the two criteria gaps, round one's sessions and its dry pass
+    read the board, and then round two opens on its snapshot. From that
+    snapshot to round two's gap the whole tally is one snapshot (the
+    listing, one revision read per member and the stage's gate reading), one
+    approval reading per lane in the round's roster, and one freshness read
+    per body-live retained admission, each unit measured here by running the
+    real reader. Any other board read before round two's gap, of any name,
+    breaks the tally.
+    """
+    h = owner_harness()
+    served = []
+    serve = FakeLinearMcpServer.call_tool
+
+    async def counted(self, *, name, arguments):
+        served.append(name)
+        return await serve(self, name=name, arguments=arguments)
+
+    monkeypatch.setattr(FakeLinearMcpServer, "call_tool", counted)
+    snapshot_at = []
+    taken = organize_owner.OrganizeOwner._snapshot
+
+    async def snapshotting(self, scope):
+        snapshot_at.append(len(served))
+        return await taken(self, scope)
+
+    monkeypatch.setattr(organize_owner.OrganizeOwner, "_snapshot", snapshotting)
+    round_start = []
+    unlabelled = organize_owner.stage_unlabelled
+
+    def opening(**kwargs):
+        # The loop reads the stage's unlabelled members right after its own
+        # snapshot and gate reading, so that snapshot opens the round.
+        round_start.append(snapshot_at[-1])
+        return unlabelled(**kwargs)
+
+    monkeypatch.setattr(organize_owner, "stage_unlabelled", opening)
+    at_gap = []
+    since_round_start = []
+    admitted = []
+    computed = organize_owner.organize_gap
+
+    def recorded(**kwargs):
+        at_gap.append(Counter(served))
+        since_round_start.append(Counter(served[round_start[-1] :]))
+        admitted.append({result.issue_id for result in kwargs["admissions"]})
+        return computed(**kwargs)
+
+    monkeypatch.setattr(organize_owner, "organize_gap", recorded)
+    spy, board, _executor, report = await h.entry_refutation(monkeypatch)
+    scope = ScopeRef(kind=ScopeKind.ISSUE, key=CLAIMED_ISSUE)
+    reader = board.tracker()
+    gated, _board, _gated_executor = h.factory(under_approval=True, board=board)
+    board.calls.clear()
+    members = await reader.scope_issues(ref=scope)
+    listing = board_tally(board)
+    per_read = listing["list_issues"]
+    for member in members:
+        await reader.read_issue_revision(issue_key=member.issue_key)
+    snapshot = listing + board_tally(board)
+    # Each run stage's gate, read the way the owner reads it: approval or an
+    # issue classification, answered from the cascade and from each member's
+    # own labels, so the gate reading reads nothing of the board.
+    for phase in gated._phases:
+        await gated._carried_members(scope, phase)
+        assert board_tally(board) == Counter()
+    approval = Counter()
+    for lane in h.LANES:
+        await reader.execution_approved(issue_key=lane)
+        approval += board_tally(board)
+    await reader.read_issue_revision(issue_key=CLAIMED_ISSUE)
+    await OrganizeContextReader(tracker=reader, operation=declared_operation()).read(
+        scope=scope, member_keys=[member.issue_key for member in members]
+    )
+    liveness = board_tally(board)
+    rounds = at_gap[-len(spy.calls) :]
+    assert report.halt is None
+    assert per_read >= 1
+    # Ticket gap to criteria round one: the ticket barrier and the criteria
+    # snapshot. Round one to round two: the listings round one's sessions and
+    # its dry pass make, measured by running, then round two's one snapshot.
+    # A further listing anywhere before round two's gap adds one read.
+    assert [
+        later["list_issues"] - earlier["list_issues"]
+        for earlier, later in pairwise(rounds)
+    ] == [
+        2 * per_read,
+        17 * per_read,
+    ]
+    # Round one re-authored the lane the refutation took the label from, so
+    # its admission is spent; every other member's is retained, and none of
+    # their bodies has changed since.
+    reopened = "second"
+    assert admitted[-2:] == [
+        {member.issue_key for member in members},
+        {member.issue_key for member in members} - {reopened},
+    ]
+    # Round two's roster is both lanes: the one still owing the label and
+    # the one the refutation's finding names.
+    assert since_round_start[-1] == (
+        snapshot + approval + scaled(liveness, len(admitted[-1]))
+    )
+
+
+def unavailable_network_operation():
+    """The declared operation, its first repository denying the network.
+
+    The same repository declares its history available; the second declares
+    no runner environment at all.
+    """
+    operation = declared_operation()
+    repo = operation.repos[0].model_copy(
+        update={
+            "runner_environment": {
+                CheckPrerequisite.NETWORK: False,
+                CheckPrerequisite.REPOSITORY_HISTORY: True,
+            }
+        }
+    )
+    return operation.model_copy(update={"repos": (repo, *operation.repos[1:])})
+
+
+GRADABILITY_SENTENCE = "Ask gradability as well as buildability"
+#: The operative phrases of the gradability paragraph, read over the prompt
+#: with its line breaks folded to spaces.
+GRADABILITY_PHRASES = (
+    "can demonstrate is not_buildable with a repairable spec_gap",
+    "no declared environment can demonstrate is not_buildable with a repairable "
+    "spec_gap",
+    "name in the evidence the demonstration that cannot run",
+    "where it has to move to",
+    "never admit it for a later run to absorb",
+    "Do not assume a command, service or credential the declarations do not state",
+)
+
+
+@pytest.mark.parametrize("declared", ["declared", "no_checks", "no_repository"])
+@pytest.mark.parametrize("method", ["assess", "verify"])
+@pytest.mark.parametrize("set_name", [OPUS_SET, V5_SET])
+async def test_both_sets_put_the_declared_environments_in_front_of_the_admission(
+    set_name, method, declared
+):
+    """Both admission roles of both sets carry the operation's environments.
+
+    The check chain and the runner environment arrive as data, beside the
+    instruction that makes an undemonstrable deliverable a repairable
+    refusal. A repository declaring no check chain renders its named
+    absence, an operation declaring no repository renders the same prompt
+    without the block, and no state leaves an unrendered placeholder.
+    """
+    operation = unavailable_network_operation()
+    if declared == "no_checks":
+        operation = operation.model_copy(
+            update={
+                "repos": tuple(
+                    repo.model_copy(update={"checks": ()}) for repo in operation.repos
+                )
+            }
+        )
+    if declared == "no_repository":
+        operation = operation.model_copy(update={"repos": ()})
+    executor = RecordingExecutor([result()])
+    boundary = consumer(
+        tracker(),
+        executor,
+        RecordingWorkspace(),
+        set_name=set_name,
+        bindings=operation_bindings(operation),
+    )
+    await getattr(boundary, method)(request())
+    prompt = executor.calls[0]["prompt"]
+    folded = " ".join(prompt.split())
+    assert GRADABILITY_SENTENCE in prompt
+    assert [phrase for phrase in GRADABILITY_PHRASES if phrase in folded] == list(
+        GRADABILITY_PHRASES
+    )
+    assert "{{" not in prompt
+    history = f"{CheckPrerequisite.REPOSITORY_HISTORY.value}: available"
+    if declared == "declared":
+        step = unavailable_network_operation().repos[0].checks[0]
+        assert f"check {step.name}: `{step.command}`" in prompt
+        assert f"{CheckPrerequisite.NETWORK.value}: unavailable" in prompt
+        assert history in prompt
+        # The second repository declares no runner environment fact.
+        assert "no runner environment fact is declared" in prompt
+        return
+    if declared == "no_checks":
+        assert "no check chain is declared" in prompt
+        assert f"{CheckPrerequisite.NETWORK.value}: unavailable" in prompt
+        assert history in prompt
+        return
+    assert "declared_environments" not in prompt
+
+
+#: The operative phrases of the criteria author's Evidence naming paragraph,
+#: read over the prompt with its line breaks folded to spaces.
+EVIDENCE_NAMING_PHRASES = (
+    "Name what will fill each criterion's Evidence",
+    "the exact runnable test",
+    "the observation that will be recorded instead",
+    "refused before it is created",
+)
+
+
+@pytest.mark.parametrize("set_name", [OPUS_SET, V5_SET])
+def test_both_sets_tell_the_criteria_author_to_name_what_fills_the_evidence(
+    set_name,
+):
+    """The criteria author is told what a criterion must name before it exists."""
+    from tests.prompts.test_organize_call_bindings import variables
+
+    rendered = (
+        load_registry(default_set=set_name)
+        .template_for(PromptKey.ORGANIZE_CRITERIA_AUTHOR)
+        .render({**variables(), "base_ref": "main", "issue_key": "external/42"})
+    )
+    folded = " ".join(rendered.split())
+    assert [phrase for phrase in EVIDENCE_NAMING_PHRASES if phrase in folded] == list(
+        EVIDENCE_NAMING_PHRASES
+    )
+
+
+#: The criteria author's reading of the declared environments, read over the
+#: prompt with its line breaks folded to spaces.
+CRITERIA_ENVIRONMENT_PHRASES = (
+    "A named test is one runnable through a check the repository declares",
+    "a named observation is one its declared runner environment can make",
+    "Do not assume a command, service or credential the declarations do not state",
+)
+
+
+@pytest.mark.parametrize("declared", ["declared", "no_checks", "no_repository"])
+@pytest.mark.parametrize("set_name", [OPUS_SET, V5_SET])
+def test_both_sets_put_the_declared_environments_in_front_of_the_criteria_author(
+    set_name, declared
+):
+    """The criteria author reads the environments a named demonstration needs.
+
+    The same guarded block the admission roles carry: the check chain and
+    the runner environment as data, a repository declaring no check chain
+    rendered as its named absence, and an operation declaring no repository
+    rendering the prompt without the block. Whether a named test or
+    observation can run there is the author's judgement under this prompt;
+    the refusal before creation asks only that one is named.
+    """
+    from tests.prompts.test_organize_call_bindings import variables
+
+    operation = unavailable_network_operation()
+    if declared == "no_checks":
+        operation = operation.model_copy(
+            update={
+                "repos": tuple(
+                    repo.model_copy(update={"checks": ()}) for repo in operation.repos
+                )
+            }
+        )
+    if declared == "no_repository":
+        operation = operation.model_copy(update={"repos": ()})
+    rendered = (
+        load_registry(default_set=set_name, bindings=operation_bindings(operation))
+        .template_for(PromptKey.ORGANIZE_CRITERIA_AUTHOR)
+        .render({**variables(), "base_ref": "main", "issue_key": "external/42"})
+    )
+    folded = " ".join(rendered.split())
+    assert [
+        phrase for phrase in CRITERIA_ENVIRONMENT_PHRASES if phrase in folded
+    ] == list(CRITERIA_ENVIRONMENT_PHRASES)
+    assert "{{" not in rendered
+    history = f"{CheckPrerequisite.REPOSITORY_HISTORY.value}: available"
+    if declared == "declared":
+        step = unavailable_network_operation().repos[0].checks[0]
+        assert f"check {step.name}: `{step.command}`" in rendered
+        assert f"{CheckPrerequisite.NETWORK.value}: unavailable" in rendered
+        assert history in rendered
+        assert "no runner environment fact is declared" in rendered
+        return
+    if declared == "no_checks":
+        assert "no check chain is declared" in rendered
+        assert f"{CheckPrerequisite.NETWORK.value}: unavailable" in rendered
+        assert history in rendered
+        return
+    assert "declared_environments" not in rendered
+
+
+UNDEMONSTRABLE_EVIDENCE = "No declared environment can run the demonstration."
+RELOCATION = "Move the demonstration onto a declared check."
+
+
+async def test_an_undemonstrable_deliverable_is_refused_and_relocated_on_the_board(
+    monkeypatch,
+):
+    """A deliverable no declared environment can demonstrate is not admitted.
+
+    The stage's own prompt carries the declared check chain. The refusal is
+    scripted: a repairable spec gap whose evidence names the relocation, as
+    the admission prompt asks. The relocation is put to the author as the
+    repair through that evidence, and it is readable back on the board as
+    the escalation of the bounded halt. Nothing is marked and no criterion
+    child is created.
+    """
+    h = owner_harness()
+    owner, board, executor = h.factory(
+        under_approval=True, phases=h.ticket_only, body=h.PREPARED_BODY, bound=1
+    )
+    admit_as(
+        monkeypatch,
+        executor,
+        key=CLAIMED_ISSUE,
+        payload={
+            "verdict": "not_buildable",
+            "refusal_kind": "spec_gap",
+            "evidence": f"{UNDEMONSTRABLE_EVIDENCE} {RELOCATION}",
+            "invented_decision": RELOCATION,
+        },
+    )
+    report = await h.run_owner(owner)
+    assessed = [
+        call["prompt"]
+        for call in executor.calls
+        if call["output_format"]["schema"].get("title") == "AdmissionJudgment"
+    ]
+    assert declared_operation().repos[0].checks[0].command in assessed[0]
+    halt = report.halt
+    assert halt.cause == "admission_exhausted"
+    assert halt.bound.value == halt.bound.rounds_used == 1
+    assert [r.refusal_kind for r in halt.admission_results] == [RefusalKind.SPEC_GAP]
+    # The re-author is put the refusal's own evidence, and the evidence names
+    # the relocation, so the role whose repair it is reads where the
+    # demonstration has to move to.
+    assert any(RELOCATION in prompt for prompt in subject_proposals(executor))
+    escalations = [
+        comment
+        for comment in board.server.comments
+        if comment.body.startswith(h.ESCALATION_MARKER)
+        and comment.issue_id == CLAIMED_ISSUE
+    ]
+    assert len(escalations) == 1
+    assert RELOCATION in escalations[0].body
+    assert "body complete" not in board.server.issues[CLAIMED_ISSUE].labels
+    assert not [
+        native
+        for native in board.server.issues.values()
+        if native.parent_id == CLAIMED_ISSUE
+    ]
+
+
+OBSERVATION = "The recorded observation of the prepared bytes."
+
+
+def rename_criteria(monkeypatch, executor, rename):
+    """Every scripted criteria proposal, each of its items passed through *rename*."""
+    original = executor.stream
+
+    async def renamed(**kwargs):
+        async for event in original(**kwargs):
+            payload = event.structured_output
+            if payload.get("kind") == "criteria":
+                event = result(
+                    structured_output={
+                        **payload,
+                        "criteria": [
+                            rename(dict(item)) for item in payload["criteria"]
+                        ],
+                    }
+                )
+            yield event
+
+    monkeypatch.setattr(executor, "stream", renamed)
+
+
+def naming_nothing(item):
+    return {
+        name: value
+        for name, value in item.items()
+        if name not in ("runnable_test", "named_observation")
+    }
+
+
+def naming_an_observation(item):
+    return {**naming_nothing(item), "named_observation": OBSERVATION}
+
+
+def criterion_children(board):
+    return [
+        native
+        for native in board.server.issues.values()
+        if native.parent_id == CLAIMED_ISSUE
+    ]
+
+
+MIXED_CRITERIA = ("Check first bytes", "Check second bytes")
+
+
+@pytest.mark.parametrize(
+    "named", ["none", "test", "observation", "first_unnamed", "second_unnamed"]
+)
+async def test_a_criterion_naming_no_demonstration_is_refused_before_it_is_created(
+    monkeypatch, named
+):
+    """A criterion child is created only once something can fill its Evidence.
+
+    The author names the runnable test that will demonstrate the criterion,
+    names only the observation that will be recorded instead, or names
+    nothing; naming nothing is refused before the child exists. Either name
+    alone is enough, and the created child's Evidence row is still empty.
+
+    Fillability is asked of every criterion the step would create: in the
+    mixed rows one of two new criteria names its runnable test and the other,
+    first or second, names nothing, and the whole step is refused before
+    either child exists.
+    """
+    h = owner_harness()
+    mixed = named in ("first_unnamed", "second_unnamed")
+    owner, board, executor = h.factory(
+        under_approval=True,
+        body=h.PREPARED_BODY,
+        **({"criteria": MIXED_CRITERIA} if mixed else {}),
+    )
+    if named == "none":
+        rename_criteria(monkeypatch, executor, naming_nothing)
+    elif named == "observation":
+        rename_criteria(monkeypatch, executor, naming_an_observation)
+    elif mixed:
+        unnamed = MIXED_CRITERIA[0 if named == "first_unnamed" else 1]
+        rename_criteria(
+            monkeypatch,
+            executor,
+            lambda item: naming_nothing(item) if item["title"] == unnamed else item,
+        )
+
+    if named == "none" or mixed:
+        with pytest.raises(OrganizeWriteRefusalError, match="names no demonstration"):
+            await h.run_owner(owner)
+        assert criterion_children(board) == []
+        assert not [
+            args
+            for name, args in board.calls
+            if name == "save_issue" and args.get("parentId") == CLAIMED_ISSUE
+        ]
+        return
+    assert (await h.run_owner(owner)).halt is None
+    created = criterion_children(board)
+    assert [native.description.endswith("**Evidence:**\n") for native in created] == [
+        True
+    ]
+
+
+async def test_a_replayed_child_naming_nothing_stays_dry_beside_a_new_named_one(
+    monkeypatch,
+):
+    """Only the criteria a step is about to create must name a demonstration.
+
+    The criteria stage converges, its marker is then removed, and one
+    spec_gap re-author is forced. The re-author proposes the existing child
+    again naming nothing, beside a new child naming its runnable test.
+    Nothing is refused: the new child is created and the existing one is
+    left exactly as it was.
+    """
+    import re
+
+    h = owner_harness()
+    owner, board, _executor = h.factory(under_approval=True, body=h.PREPARED_BODY)
+    assert (await h.run_owner(owner)).halt is None
+    (existing,) = criterion_children(board)
+    before = (existing.title, existing.description, list(existing.labels))
+    board.server.issues[CLAIMED_ISSUE].labels.remove("criteria complete")
+    again, board, executor = h.factory(
+        under_approval=True,
+        body=h.PREPARED_BODY,
+        board=board,
+        criteria=(existing.title, "Check second bytes"),
+    )
+    rename_criteria(
+        monkeypatch,
+        executor,
+        lambda item: naming_nothing(item) if item["title"] == existing.title else item,
+    )
+    renamed = executor.stream
+    refused = []
+
+    async def refuse_once(**kwargs):
+        title = kwargs["output_format"]["schema"].get("title")
+        keys = re.findall(r"<issue_key>(.*?)</issue_key>", kwargs["prompt"])
+        async for event in renamed(**kwargs):
+            if title == "AdmissionJudgment" and keys[-1:] == [CLAIMED_ISSUE]:
+                if not refused:
+                    refused.append(kwargs["prompt"])
+                    event = result(
+                        structured_output={
+                            "issue_id": CLAIMED_ISSUE,
+                            "verdict": "not_buildable",
+                            "refusal_kind": "spec_gap",
+                            "evidence": "A second criterion is owed.",
+                            "invented_decision": "Add the second criterion.",
+                        }
+                    )
+            yield event
+
+    monkeypatch.setattr(executor, "stream", refuse_once)
+    board.calls.clear()
+    report = await h.run_owner(again)
+    assert refused
+    assert [
+        call
+        for call in executor.calls
+        if "Author criterion sub-issue proposals" in call["prompt"]
+    ]
+    assert report.halt is None
+    assert [native.title for native in criterion_children(board)] == [
+        existing.title,
+        "Check second bytes",
+    ]
+    assert (existing.title, existing.description, list(existing.labels)) == before
+    assert not [
+        args
+        for name, args in board.calls
+        if name == "save_issue" and args.get("id") == existing.id
+    ]

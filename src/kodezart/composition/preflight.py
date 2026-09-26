@@ -1,11 +1,11 @@
-"""Boot-time validation of the skills surface.
+"""Boot-time validation of the skills surface, and the host-MCP opt-in's warning.
 
 Moved verbatim from the composition root, which imports and wires rather
 than defines.
 """
 
 from kodezart.adapters.host_skill_inventory import HostSkillInventory
-from kodezart.core.config import AppConfig
+from kodezart.config.agent import AgentSettings
 from kodezart.core.errors import SkillPreflightError
 from kodezart.core.logging import BoundLogger
 from kodezart.core.protocols import (
@@ -71,7 +71,7 @@ def preflight_prompt_skill_loadouts(
 
 async def boot_skills(
     *,
-    config: AppConfig,
+    settings: AgentSettings,
     prompts: PromptProvider,
     log: BoundLogger,
 ) -> SkillsSelection:
@@ -82,13 +82,46 @@ async def boot_skills(
     saying so, and a loadout naming an unregistered skill renders a prompt
     that quietly loads nothing.
     """
-    skills = config.skills_selection()
-    preflight_skills(skills, HostSkillInventory(home_dir=config.claude_home_dir))
+    skills = settings.skills
+    preflight_skills(skills, HostSkillInventory(home_dir=settings.home_dir))
     preflight_prompt_skill_loadouts(skills, prompts)
     await log.ainfo(
         "skills_selection_resolved",
         mode=skills.mode.value,
         allowlist=list(skills.allowlist),
-        setting_sources=config.setting_sources,
+        setting_sources=settings.setting_sources,
     )
     return skills
+
+
+#: The event boot logs, once, when the working-directory MCP guard is off.
+HOST_MCP_ALLOWED_EVENT = "host_mcp_allowed_dangerously"
+
+
+async def warn_host_mcp_opt_in(
+    *,
+    settings: AgentSettings,
+    log: BoundLogger,
+) -> None:
+    """Say at boot, once and as a warning, that the MCP guard is off.
+
+    Off is the shipped state and logs nothing: there is no risk to name.
+    On means every session this process starts also loads the servers the
+    operator's own Claude configuration declares and any server its working
+    directory declares, so a cloned repository can start a command on this
+    machine through a session, and a tracker write made through the host's
+    stored login carries the operator's user rather than this deployment's
+    key.  The startup log is where an operator reads what a boot decided,
+    so that is where the decision is named.
+    """
+    if not settings.dangerously_allow_host_mcp:
+        return
+    await log.awarning(
+        HOST_MCP_ALLOWED_EVENT,
+        risk=(
+            "strict_mcp_config is off for every session: a working "
+            "directory's .mcp.json can start a command on this machine, and "
+            "the host's user-level MCP servers run under the operator's "
+            "stored login"
+        ),
+    )

@@ -1,0 +1,220 @@
+"""The scope tally is replayable arithmetic over explicit roster readings."""
+
+import pytest
+from pydantic import ValidationError
+
+from kodezart.domain.errors import RunShapeReadError
+from kodezart.domain.run_shape import (
+    CRITERIA_MARKER_SOURCE,
+    TICKET_MARKER_SOURCE,
+    tally_unmoved,
+)
+from kodezart.types.domain.run_alarm import (
+    AlarmReading,
+    AlarmSignal,
+    LabelsEvidence,
+    LaneSubject,
+    ReferencesEvidence,
+    ScopeEvidence,
+    ScopeSubject,
+    TextEvidence,
+)
+from kodezart.types.domain.scope import ScopeKind, ScopeRef
+
+SCOPE = ScopeRef(kind=ScopeKind.PROJECT, key="scope/opaque")
+SUBJECT = ScopeSubject(scope_key=SCOPE.key)
+
+
+def reading(source, value):
+    return AlarmReading(source_ref=source, value=value)
+
+
+def inputs(*, roster=("one", "two"), labels=None):
+    labels = {"one": ["criteria-ready"], "two": []} if labels is None else labels
+    return (
+        reading(TICKET_MARKER_SOURCE, TextEvidence(value="issue_labels.body-ready")),
+        reading(
+            CRITERIA_MARKER_SOURCE, TextEvidence(value="issue_labels.criteria-ready")
+        ),
+        AlarmReading(source_ref=SCOPE.key, value=ScopeEvidence(value=SCOPE)),
+        reading(SCOPE.key, ReferencesEvidence(value=roster)),
+        *(
+            reading(key, LabelsEvidence(value=None if value is None else tuple(value)))
+            for key, value in labels.items()
+        ),
+    )
+
+
+#: The scope arm of ``TALLY_UNMOVED`` as a pair one fact apart: one member has
+#: entered the next stage while the other carries no marker of the current
+#: one, and the quiet twin differs only in that member carrying the current
+#: stage's marker too. Named here so the arm's own module owns the pair every
+#: other test reads.
+SCOPE_ARM_PAIR = (
+    SUBJECT,
+    inputs(labels={"one": ["criteria-ready", "body-ready"], "two": []}),
+    inputs(labels={"one": ["criteria-ready", "body-ready"], "two": ["body-ready"]}),
+)
+
+
+def observe(readings, subject=SUBJECT):
+    return tally_unmoved(
+        subject=subject,
+        readings=readings,
+        raised_at_sha="tick-sha",
+        raised_by="supervisor/holder",
+    )
+
+
+@pytest.mark.parametrize(
+    "readings",
+    [
+        inputs(labels={"one": ["criteria-ready"], "two": []}),
+        # The scope arm's own firing half.
+        SCOPE_ARM_PAIR[1],
+        inputs(labels={"one": ["criteria-ready"], "two": None}),
+        inputs(labels={"one": ["criteria-ready"]}),
+        # The only member not carrying is the one whose read is empty or
+        # missing, so a missing read counted as carrying would close these.
+        inputs(labels={"one": ["criteria-ready", "body-ready"], "two": None}),
+        inputs(labels={"one": ["criteria-ready", "body-ready"]}),
+    ],
+    ids=[f"labels{index}" for index in range(6)],
+)
+async def test_zero_partial_empty_and_missing_marker_reads_remain_open(readings):
+    alarm = observe(readings)
+    assert alarm is not None
+    assert alarm.subject == SUBJECT
+    assert alarm.signal is AlarmSignal.TALLY_UNMOVED
+    assert alarm.bound is None
+    assert alarm.readings == readings
+    assert alarm.raised_at_sha == "tick-sha"
+    assert alarm.raised_by == "supervisor/holder"
+    assert observe(alarm.readings) == alarm
+
+
+@pytest.mark.parametrize(
+    "readings",
+    [
+        # The scope arm's own quiet half.
+        SCOPE_ARM_PAIR[2],
+        inputs(labels={"one": ["body-ready"], "two": ["body-ready"]}),
+        inputs(labels={"one": [], "two": []}),
+        inputs(labels={"one": None}),
+        inputs(labels={}),
+    ],
+    ids=[f"labels{index}" for index in range(5)],
+)
+def test_complete_marker_roster_or_no_entry_is_quiet(readings):
+    assert observe(readings) is None
+
+
+def test_empty_roster_is_quiet():
+    assert observe(inputs(roster=(), labels={})) is None
+
+
+def test_duplicate_label_values_never_multiply_member_count():
+    assert (
+        observe(inputs(labels={"one": ["criteria-ready", "body-ready", "body-ready"]}))
+        is not None
+    )
+
+
+@pytest.mark.parametrize(
+    "damage",
+    [
+        "short",
+        "wrong-current-source",
+        "wrong-next-source",
+        "wrong-scope-source",
+        "wrong-roster-source",
+        "wrong-scope-key",
+        "duplicate-roster",
+        "foreign-member",
+        "duplicate-member",
+        "malformed-member",
+        "string-members",
+        "empty-member-key",
+        "same-marker",
+        "scope-marker",
+        "malformed-marker",
+        "unqualified-marker",
+    ],
+)
+def test_incomplete_malformed_or_foreign_data_refuses(damage):
+    values = list(inputs())
+    if damage == "short":
+        values = values[:3]
+    elif damage == "wrong-current-source":
+        values[0] = reading("elsewhere", TextEvidence(value="issue_labels.body-ready"))
+    elif damage == "wrong-next-source":
+        values[1] = reading(
+            "elsewhere", TextEvidence(value="issue_labels.criteria-ready")
+        )
+    elif damage == "wrong-scope-source":
+        values[2] = values[2].model_copy(update={"source_ref": "elsewhere"})
+    elif damage == "wrong-roster-source":
+        values[3] = reading("elsewhere", ReferencesEvidence(value=("one", "two")))
+    elif damage == "wrong-scope-key":
+        values[2] = reading(
+            SCOPE.key,
+            ScopeEvidence(value=ScopeRef(kind=ScopeKind.PROJECT, key="foreign")),
+        )
+    elif damage == "duplicate-roster":
+        values[3] = reading(SCOPE.key, ReferencesEvidence(value=("one", "two", "one")))
+    elif damage == "foreign-member":
+        values.append(reading("foreign", LabelsEvidence(value=("criteria-ready",))))
+    elif damage == "duplicate-member":
+        values.append(values[4])
+    elif damage == "malformed-member":
+        values[4] = AlarmReading(
+            source_ref="one", value=TextEvidence(value="wrong evidence arm")
+        )
+    elif damage == "string-members":
+        values[3] = reading(SCOPE.key, TextEvidence(value="one"))
+    elif damage == "empty-member-key":
+        with pytest.raises(ValidationError):
+            reading(SCOPE.key, ReferencesEvidence(value=("",)))
+        return
+    elif damage == "same-marker":
+        values[1] = reading(
+            CRITERIA_MARKER_SOURCE, TextEvidence(value="issue_labels.body-ready")
+        )
+    elif damage == "scope-marker":
+        values[0] = reading(
+            TICKET_MARKER_SOURCE, TextEvidence(value="scope_labels.approved")
+        )
+    elif damage == "malformed-marker":
+        values[0] = reading(TICKET_MARKER_SOURCE, LabelsEvidence(value=()))
+    elif damage == "unqualified-marker":
+        values[0] = reading(TICKET_MARKER_SOURCE, TextEvidence(value="body-ready"))
+    with pytest.raises(RunShapeReadError) as caught:
+        observe(tuple(values))
+    assert caught.value.signal == AlarmSignal.TALLY_UNMOVED.value
+
+
+def test_scope_shaped_readings_under_a_lane_subject_refuse_within_the_same_signal():
+    """Both arms are this member's; neither answers from the other's readings."""
+    subject = LaneSubject(scope_key=SCOPE.key, lane_key="lane/one")
+    with pytest.raises(RunShapeReadError) as caught:
+        observe(inputs(), subject=subject)
+    assert caught.value.signal == AlarmSignal.TALLY_UNMOVED.value
+
+
+def test_a_reversed_pair_is_not_the_governed_transition():
+    """The one transition is ticket then criteria; its reverse reads as none.
+
+    The organize table has two stages, so the tally observes one barrier and
+    refuses a reading whose two marker sources are not that pair in that
+    order, rather than tallying a transition the table does not govern.
+    """
+    values = list(inputs())
+    values[0], values[1] = values[1], values[0]
+    with pytest.raises(RunShapeReadError, match="phase marker sources"):
+        observe(tuple(values))
+
+
+def test_consistent_recorded_scope_cannot_be_replayed_under_a_foreign_subject():
+    foreign = ScopeSubject(scope_key="different/scope")
+    with pytest.raises(RunShapeReadError, match="scope identity disagrees"):
+        observe(inputs(), subject=foreign)

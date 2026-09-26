@@ -25,13 +25,13 @@ from collections.abc import AsyncIterator
 
 from kodezart.adapters.asyncio_job_queue import AsyncioJobQueue
 from kodezart.composition.passes import build_dispatch_passes
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.errors import NoStructuredOutputError
 from kodezart.services.run_recorder import RunRecorder
 from kodezart.types.domain.agent import (
     AgentEvent,
     AssistantTextEvent,
-    WorkflowCompleteEvent,
+    AuthoredWorkflowCompleteEvent,
     WorkflowPREvent,
 )
 from kodezart.types.domain.branch import BaseSpec
@@ -50,6 +50,8 @@ from tests.fakes import (
     make_tracker_issue,
 )
 from tests.services.test_dispatch_pass import (
+    DISPATCH_INTERVAL_SECONDS,
+    DISPATCH_TIMEOUT_SECONDS,
     INTEGRATION_DIR,
     operation_config,
 )
@@ -96,7 +98,7 @@ class _MergingEngine:
             feature_tip_sha=FEATURE_TIP_SHA,
             delivered=True,
         )
-        yield WorkflowCompleteEvent(
+        yield AuthoredWorkflowCompleteEvent(
             feature_branch=FEATURE_BRANCH,
             ralph_branch="kodezart/k-1-ralph",
             total_iterations=1,
@@ -135,18 +137,21 @@ async def _until(condition: object, *, timeout: float = SETTLE_TIMEOUT) -> None:
 
 
 async def test_an_approved_issue_walks_the_whole_chain_back_to_its_ticket() -> None:
-    config = AppConfig()
+    config = AppConfig(
+        dispatch_pass_interval_seconds=DISPATCH_INTERVAL_SECONDS,
+        dispatch_pass_timeout_seconds=DISPATCH_TIMEOUT_SECONDS,
+    )
     tracker = FakeTrackerPort(
         issues=[make_tracker_issue(ISSUE)],
     )
     engine = _MergingEngine()
     queue = AsyncioJobQueue(
         engine=engine,
-        max_concurrent_runs_per_lane=config.queue_max_concurrent_runs_per_lane,
-        max_depth_per_lane=config.queue_max_depth_per_lane,
-        terminal_retention_seconds=config.queue_terminal_retention_seconds,
-        event_buffer_retention_seconds=config.queue_event_buffer_retention_seconds,
-        event_buffer_capacity=config.queue_event_buffer_capacity,
+        max_concurrent_runs_per_lane=config.queue.max_concurrent_runs_per_lane,
+        max_depth_per_lane=config.queue.max_depth_per_lane,
+        terminal_retention_seconds=config.queue.terminal_retention_seconds,
+        event_buffer_retention_seconds=config.queue.event_buffer_retention_seconds,
+        event_buffer_capacity=config.queue.event_buffer_capacity,
     )
     await queue.start()
     try:
@@ -177,12 +182,12 @@ async def test_an_approved_issue_walks_the_whole_chain_back_to_its_ticket() -> N
         # 2. the fire reached the queue, on the base the graph implied
         assert engine.base_branches == [operation_config().repos[0].trunk]
 
-        # 3. the lifecycle walked, in the run's own order
+        # 3. the lifecycle reached review; delivery retires only the queue label.
         assert tracker.workflow_writes == [
             (ISSUE, LifecycleStage.IN_PROGRESS),
             (ISSUE, LifecycleStage.IN_REVIEW),
-            (ISSUE, LifecycleStage.DONE),
         ]
+        assert (ISSUE, LifecycleStage.DONE) not in tracker.workflow_writes
         assert tracker.queue_writes == [(ISSUE, QueueState.DONE)]
 
         # 4. the terminal outcome is on the ticket, naming the run's outcome
@@ -206,17 +211,20 @@ async def test_the_chain_never_sets_the_approved_state_itself() -> None:
     the whole chain makes is recorded, so a write of APPROVED anywhere would
     show up here.
     """
-    config = AppConfig()
+    config = AppConfig(
+        dispatch_pass_interval_seconds=DISPATCH_INTERVAL_SECONDS,
+        dispatch_pass_timeout_seconds=DISPATCH_TIMEOUT_SECONDS,
+    )
     tracker = FakeTrackerPort(
         issues=[make_tracker_issue(ISSUE, queue_states=[QueueState.PROPOSED])],
     )
     queue = AsyncioJobQueue(
         engine=_MergingEngine(),
-        max_concurrent_runs_per_lane=config.queue_max_concurrent_runs_per_lane,
-        max_depth_per_lane=config.queue_max_depth_per_lane,
-        terminal_retention_seconds=config.queue_terminal_retention_seconds,
-        event_buffer_retention_seconds=config.queue_event_buffer_retention_seconds,
-        event_buffer_capacity=config.queue_event_buffer_capacity,
+        max_concurrent_runs_per_lane=config.queue.max_concurrent_runs_per_lane,
+        max_depth_per_lane=config.queue.max_depth_per_lane,
+        terminal_retention_seconds=config.queue.terminal_retention_seconds,
+        event_buffer_retention_seconds=config.queue.event_buffer_retention_seconds,
+        event_buffer_capacity=config.queue.event_buffer_capacity,
     )
     await queue.start()
     try:
@@ -273,7 +281,10 @@ async def test_a_fire_that_crashes_puts_its_issue_back_and_says_why() -> None:
     and the board asserted a run that was not running, indefinitely, with
     no record that anything had been attempted.
     """
-    config = AppConfig()
+    config = AppConfig(
+        dispatch_pass_interval_seconds=DISPATCH_INTERVAL_SECONDS,
+        dispatch_pass_timeout_seconds=DISPATCH_TIMEOUT_SECONDS,
+    )
     tracker = FakeTrackerPort(
         issues=[
             make_tracker_issue(
@@ -285,11 +296,11 @@ async def test_a_fire_that_crashes_puts_its_issue_back_and_says_why() -> None:
     )
     queue = AsyncioJobQueue(
         engine=_CrashingEngine(),
-        max_concurrent_runs_per_lane=config.queue_max_concurrent_runs_per_lane,
-        max_depth_per_lane=config.queue_max_depth_per_lane,
-        terminal_retention_seconds=config.queue_terminal_retention_seconds,
-        event_buffer_retention_seconds=config.queue_event_buffer_retention_seconds,
-        event_buffer_capacity=config.queue_event_buffer_capacity,
+        max_concurrent_runs_per_lane=config.queue.max_concurrent_runs_per_lane,
+        max_depth_per_lane=config.queue.max_depth_per_lane,
+        terminal_retention_seconds=config.queue.terminal_retention_seconds,
+        event_buffer_retention_seconds=config.queue.event_buffer_retention_seconds,
+        event_buffer_capacity=config.queue.event_buffer_capacity,
     )
     await queue.start()
     try:

@@ -32,14 +32,13 @@ V5_SET_DIR = default_sets_root() / V5_SET
 #: test that hard-codes the sequence states the ordering twice.
 LADDER: tuple[SessionEffort, ...] = tuple(SessionEffort)
 
-#: The set's own declared role → effort, as the fire-time ruling FR-2 fixed
-#: it: the harness default named, one level below it for judgment, and the
-#: floor for the roles that emit a name or a message.
+#: The set's own declared role → effort. The judgment roles run at the
+#: maximum and the question role at the floor (owner ruling of 2026-09-24);
+#: the maximum replaced the fire-time ruling FR-2 that ran judgment one
+#: level below authoring.
 EXPECTED_EFFORT: dict[SessionRole, SessionEffort] = {
-    SessionRole.GENERATIVE: SessionEffort.XHIGH,
-    SessionRole.IMPLEMENTATION: SessionEffort.XHIGH,
-    SessionRole.EVALUATIVE: SessionEffort.HIGH,
-    SessionRole.UTILITY: SessionEffort.LOW,
+    **dict.fromkeys(SessionRole, SessionEffort.MAX),
+    SessionRole.QUESTION: SessionEffort.LOW,
 }
 
 
@@ -49,11 +48,6 @@ def v5_metadata() -> PromptSetMetadata:
 
     raw = (V5_SET_DIR / "set.toml").read_text(encoding="utf-8")
     return PromptSetMetadata.model_validate(tomllib.loads(raw))
-
-
-def rank(effort: SessionEffort) -> int:
-    """Where *effort* sits on the ladder."""
-    return LADDER.index(effort)
 
 
 # ---------------------------------------------------------------------------
@@ -101,14 +95,24 @@ def test_the_registry_serves_each_key_the_effort_of_its_role(key: PromptKey) -> 
     assert registry.session_policy(key).effort is metadata.session_roles[role].effort
 
 
-def test_judgment_sits_strictly_below_authoring_on_the_ladder() -> None:
-    """The substance of the policy: grading is cheaper work than authoring."""
-    assert rank(EXPECTED_EFFORT[SessionRole.EVALUATIVE]) < rank(
-        EXPECTED_EFFORT[SessionRole.GENERATIVE],
-    )
-    assert rank(EXPECTED_EFFORT[SessionRole.UTILITY]) < rank(
-        EXPECTED_EFFORT[SessionRole.EVALUATIVE],
-    )
+def test_every_role_runs_at_the_top_of_the_ladder() -> None:
+    """The substance of the policy since 2026-09-24: no judgment role thinks
+    less; the three board questions and the pull-request description alone run
+    at the floor (owner rulings of 2026-09-24 and 2026-09-25)."""
+    top = LADDER[-1]
+    assert top is SessionEffort.MAX
+    metadata = v5_metadata()
+    declared = {role: policy.effort for role, policy in metadata.session_roles.items()}
+    assert declared == {
+        **dict.fromkeys(SessionRole, top),
+        SessionRole.QUESTION: LADDER[0],
+    }
+    assert set(metadata.session_roles[SessionRole.QUESTION].keys) == {
+        PromptKey.PASS_GATE.value,
+        PromptKey.SCOPE_SCAN.value,
+        PromptKey.SCOPE_DONE.value,
+        PromptKey.PR_DESCRIPTION.value,
+    }
 
 
 def test_a_key_no_role_claims_is_a_typed_boot_error(tmp_path: Path) -> None:
@@ -278,7 +282,7 @@ SWEPT_TREES = ("chains", "adapters")
 #: translation of the effort enum onto the SDK's accepted literal type.
 #: Pinned by module AND by exhaustiveness — a table that must carry all
 #: five levels cannot express a choice between them.
-TRANSLATION_MODULE = "_agents_mapping.py"
+TRANSLATION_MODULE = "agents_mapping.py"
 
 
 def swept_sources() -> list[tuple[str, str]]:

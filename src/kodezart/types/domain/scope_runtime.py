@@ -1,0 +1,113 @@
+"""Point-in-time scope execution observations, never terminal judgments."""
+
+from typing import Annotated, Literal
+
+from pydantic import ConfigDict, Field
+
+from kodezart.types.base import CamelCaseModel
+from kodezart.types.domain.agent import AgentEvent, ErrorEvent, NativeFireProgressEvent
+from kodezart.types.domain.dispatch import IssueExclusion
+from kodezart.types.domain.native_delivery import LaneDeliveryEvent
+from kodezart.types.domain.scope import ScopeRef
+from kodezart.types.domain.scope_ready import UnreachableCriterion
+
+
+class LaneFailure(CamelCaseModel):
+    """One lane's own failure, as the walk that contained it reports it.
+
+    The error is the same typed egress value a job failure carries, so a
+    reader tells one lane's fault from the walk's by WHERE it is reported
+    and not by how it is shaped.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    issue_key: str = Field(min_length=1)
+    error: ErrorEvent
+
+
+class GapMeasurement(CamelCaseModel):
+    """One ready lane's open subtree criteria, as one read of the board saw them.
+
+    Point-in-time only: the keys are what that lane owed at that read, built
+    fresh on every tick from the ready set and kept nowhere. Nothing durable
+    carries it, because a criterion key list written down is a claim about a
+    board that has since moved.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    lane_key: str = Field(min_length=1)
+    criterion_keys: tuple[str, ...]
+
+
+class ScopeWalkObservation(CamelCaseModel):
+    """Facts from a fresh walk, including obligations selection cannot discharge.
+
+    An empty ready set says only that this invocation can launch nothing.
+    It does not establish scope convergence or settle residual ownership.
+
+    ``failed_lanes`` carries the lanes whose own work raised. A walk that
+    contains one lane's failure reports it here and keeps going, so an empty
+    ready set with entries here is a walk that stopped offering lanes rather
+    than a scope at rest.
+
+    ``dispatched`` carries one entry per fire, so a lane named twice is a lane
+    fired twice in this invocation. ``rested_lanes`` carries the lanes the walk
+    will not offer again in it — one whose fire closed none of what it owed,
+    one the facts left nothing to do, one whose own work raised — so an empty
+    ready set beside entries here says which lanes stopped being offered and
+    which of them were never offered at all.
+
+    ``unreachable_criteria`` names the open criteria whose own issues the
+    scope's filter never carried, under any member, approved or not, blocked
+    or not; the walk fires only a lane that is ready (approved and unblocked)
+    for them.
+
+    ``gaps`` carries one entry per ready lane, in the same order, naming the
+    criteria that lane owed at this read. The measurement lives here and on no
+    durable write the run makes.
+
+    An open criterion the scope's own filter cannot address in its own right
+    is also named among ``exclusions`` with the reason the filter gives, for
+    READY lanes only, read off ``unreachable_criteria`` and never computed a
+    second time: one under a blocked or unapproved member stays named on
+    ``unreachable_criteria`` alone and joins ``exclusions`` when its lane
+    becomes ready.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    scope: ScopeRef
+    tick: int = Field(ge=1)
+    ready: tuple[str, ...]
+    gaps: tuple[GapMeasurement, ...] = ()
+    dispatched: tuple[str, ...]
+    skipped_lanes: tuple[str, ...] = ()
+    failed_lanes: tuple[LaneFailure, ...] = ()
+    rested_lanes: tuple[str, ...] = ()
+    unresolved_criteria: tuple[str, ...]
+    unreachable_criteria: tuple[UnreachableCriterion, ...]
+    excluded_criteria: tuple[str, ...] = ()
+    unapproved_lanes: tuple[str, ...]
+    exclusions: tuple[IssueExclusion, ...]
+
+
+class ScopeWalkEvent(AgentEvent):
+    """A scope job reports observations separately from an inner fire's terminal."""
+
+    type: Literal["scope_walk"] = "scope_walk"
+    observation: ScopeWalkObservation
+
+
+type ScopeLaneProgress = Annotated[
+    NativeFireProgressEvent | LaneDeliveryEvent, Field(discriminator="type")
+]
+
+
+class ScopeLaneEvent(AgentEvent):
+    """Lane identity accompanies progress without creating another queue job."""
+
+    type: Literal["scope_lane"] = "scope_lane"
+    lane_key: str = Field(min_length=1)
+    event: ScopeLaneProgress

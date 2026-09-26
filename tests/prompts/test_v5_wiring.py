@@ -44,7 +44,48 @@ from tests.prompts.test_prompt_wiring import load_registry
 #: shared fixture case, so the expectation is stated per rendering rather
 #: than per key — the regeneration round injects one the first round does
 #: not, and that difference is the point of listing them separately.
+ORGANIZE_INPUT_TAGS = (
+    "mandate_rubric",
+    "issue_key",
+    "organize_context",
+    "issue_body",
+    "linked_issue_bodies",
+    "linked_issue",
+    "criterion_issue_bodies",
+    "criterion_issue",
+    "base_ref",
+    "defect_classes",
+)
+
+#: The two admission roles and the criteria author carry one artifact the
+#: body author does not: the operation's declared environments, rendered
+#: between the base ref and the defect classes.
+ORGANIZE_ADMISSION_TAGS = (
+    *ORGANIZE_INPUT_TAGS[:-1],
+    "declared_environments",
+    ORGANIZE_INPUT_TAGS[-1],
+)
+
 ARTIFACT_TAGS: dict[str, tuple[str, ...]] = {
+    "audit_overclaim": ("criterion_key", "graded_sha", "head_sha", "check"),
+    "audit_mandate": (
+        "defect_class",
+        "refutation_evidence",
+        "head_sha",
+        "audited_surfaces",
+    ),
+    "audit_claim": ("criterion_key", "head_sha", "check"),
+    "audit_detection_removal": ("criterion_key", "graded_sha", "head_sha", "check"),
+    "organize_assess": ORGANIZE_ADMISSION_TAGS,
+    "organize_verify": ORGANIZE_ADMISSION_TAGS,
+    "organize_author": (*ORGANIZE_INPUT_TAGS, "refusal_evidence"),
+    "organize_criteria_author": (*ORGANIZE_ADMISSION_TAGS, "refusal_evidence"),
+    # A rubric is the standard a judging role is handed; it carries no
+    # injected artifact of its own and therefore no tag.
+    "organize_spec_rubric": (),
+    # The session's prompt lists the marker and the member keys as plain
+    # lines; the members are addresses, not injected artifacts.
+    "organize_session": (),
     "acceptance_criteria": ("ticket",),
     "acceptance_criteria__regeneration_round": ("validation_findings", "ticket"),
     "branch_name": ("task",),
@@ -55,12 +96,36 @@ ARTIFACT_TAGS: dict[str, tuple[str, ...]] = {
     "evaluation__empty_changeset": ("acceptance_criteria", "changeset"),
     "evaluation__no_file_paths": ("acceptance_criteria", "changeset"),
     "fire_prep_pass": (),
+    # The gate's two per-tick values are a name and a timestamp, rendered as
+    # plain lines; neither is an injected artifact.
+    "pass_gate": (),
+    # The scope questions render the boundary and the parent as plain lines.
+    "scope_scan": (),
+    "scope_done": (),
     "fix": ("ticket", "review_feedback", "ci_summary"),
     "fix__no_optional_sections": ("ticket",),
     "grooming_pass": (),
     "implementation": ("ticket",),
     "iteration_feedback": ("failed_criteria",),
     "knowledge_map": (),
+    "fire_record": (),
+    # The criteria roster is the only thing the removal member renders, and
+    # it renders as plain lines rather than inside a named tag.
+    "mutation_survival": (),
+    # The base reading renders the same roster the same way, beside the sha
+    # it names in prose.
+    "base_check": (),
+    "fire_time_ruling": ("issue_key", "pinned_answers", "task_md"),
+    "native_writer_contract": ("pinned_rulings",),
+    "amendment_judge": ("claim", "current_criteria", "pinned_rulings", "base_sha"),
+    "amendment_author": (
+        "claim",
+        "independent_judgment",
+        "exact_prior_artifact",
+        "write_back_finding",
+        "preserve_subject",
+    ),
+    "write_back_verify": ("base_ref", "written_artifact"),
     "post_merge_review": ("acceptance_criteria", "changeset"),
     "pr_description": ("ticket", "acceptance_criteria"),
     "remediation_ticket": ("ticket", "done_work", "failure_evidence"),

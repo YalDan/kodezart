@@ -1,0 +1,314 @@
+"""Construct the standing native audit from explicitly declared scope bindings."""
+
+from kodezart.adapters.git.source_reader import SubprocessGitSourceReader
+from kodezart.chains.audit_detection_removal import DetectorRemovalVerifier
+from kodezart.chains.audit_evidence import (
+    AuditEvidenceVerifier,
+    AuditRestampVerifier,
+)
+from kodezart.chains.audit_forge import AuditForgeVerifier
+from kodezart.chains.audit_overclaim import AuditOverclaimVerifier
+from kodezart.chains.audit_pass import AuditClaimVerifier, AuditMandateHunt
+from kodezart.chains.audit_sweep import AuditReadSweep
+from kodezart.chains.write_back_verifier import FreshWriteBackJudge, WriteBackVerifier
+from kodezart.config.app import AppConfig
+from kodezart.core.protocols import (
+    AgentRunner,
+    CIMonitor,
+    GitService,
+    OutboundContentGate,
+    PromptSetProvider,
+    PRStateReader,
+    RepoCache,
+    TrackerPort,
+    WorkspaceProvider,
+)
+from kodezart.domain.comment_markers import configured_marker_prefix
+from kodezart.services.assertion_drift import AssertionDriftDetector
+from kodezart.services.audit_coverage import AuditCoverage
+from kodezart.services.audit_escalation import AuditEscalations
+from kodezart.services.audit_publication import AuditPublisher
+from kodezart.services.audit_reopen import AuditReopener
+from kodezart.services.audit_runtime import AuditScheduledPass, AuditTarget
+from kodezart.services.audit_sessions import FreshAuditSession
+from kodezart.services.audit_sources import AuditSourceReader
+from kodezart.services.audit_terminal import AuditTerminalReader
+from kodezart.services.criterion_sources import NativeCriterionResolver
+from kodezart.services.lane_records import LaneRecordReader
+from kodezart.services.recorded_assertion_drift import RecordedAssertionDriftDetector
+from kodezart.services.ruling_records import RulingRecordReader
+from kodezart.types.domain.operation import (
+    LifecycleStage,
+    OperationConfig,
+    OperationMemberAbsentError,
+    OrganizeScopeBinding,
+    RunKind,
+)
+from kodezart.types.domain.scope import ScopeRef
+from kodezart.types.domain.session import SessionType
+from kodezart.types.domain.skills import SkillsSelection
+
+
+def _report_issue_key(binding: OrganizeScopeBinding) -> str:
+    """Where this scope's verified summary is reported, or a named refusal."""
+    if binding.report_issue_key is None:
+        raise OperationMemberAbsentError(
+            missing="organize_scopes.report_issue_key",
+            stops="configured audit scheduling",
+        )
+    return binding.report_issue_key
+
+
+def verify_audit_configuration(
+    *,
+    config: AppConfig,
+    operation: OperationConfig | None,
+    tracker: TrackerPort | None,
+    forge: PRStateReader | None,
+) -> bool:
+    """Reject a partial declared runtime before the queue or recorder starts.
+
+    The audit's own settings decide whether it is configured at all; the one
+    declared scope table supplies what it is configured over.  A deployment
+    that declares scopes and configures no audit is not a partial audit —
+    it is a deployment with no audit, and it boots.
+    """
+    if operation is not None and RunKind.AUDIT in operation.records:
+        raise OperationMemberAbsentError(
+            missing="records.audit",
+            stops="the declared audit record sink lacks canonical write verification",
+        )
+    if config.audit is None:
+        return False
+    if operation is None:
+        raise OperationMemberAbsentError(
+            missing="operation", stops="configured audit scheduling"
+        )
+    for present, missing in (
+        (bool(operation.organize_scopes), "organize_scopes"),
+        (config.write_back is not None, "write_back"),
+        (forge is not None, "audit.forge"),
+        (
+            LifecycleStage.IN_REVIEW in operation.workflow_states,
+            "workflow_states.in_review",
+        ),
+    ):
+        if not present:
+            raise OperationMemberAbsentError(
+                missing=missing, stops="configured audit scheduling"
+            )
+    # Every row's destination, before the first backend call below: a roster
+    # whose shape cannot be audited refuses typed and refuses cheaply.
+    for binding in operation.organize_scopes:
+        _report_issue_key(binding)
+    configured_marker_prefix(operation.marker_prefixes, purpose="audit")
+    configured_marker_prefix(operation.marker_prefixes, purpose="escalation")
+    # The drift arm reads protection records; an operation that cannot address
+    # them is refused here, typed, before any backend call.
+    configured_marker_prefix(operation.marker_prefixes, purpose="ruling")
+    if tracker is None:
+        raise OperationMemberAbsentError(
+            missing="tracker", stops="configured audit scheduling"
+        )
+    for classification in ("criterion", "decision"):
+        if classification not in operation.issue_labels:
+            raise OperationMemberAbsentError(
+                missing=f"issue_labels['{classification}']",
+                stops="configured audit collection and mandate escalation",
+            )
+    tracker.require_scope_plan_reads()
+    return True
+
+
+def build_audit_read_sweep(
+    *,
+    config: AppConfig,
+    operation: OperationConfig,
+    tracker: TrackerPort,
+    forge: PRStateReader,
+    ci: CIMonitor | None,
+    git: GitService,
+    cache: RepoCache,
+    workspace: WorkspaceProvider,
+    runner: AgentRunner,
+    prompts: PromptSetProvider,
+    skills: SkillsSelection,
+    scope: ScopeRef,
+) -> AuditReadSweep:
+    records = LaneRecordReader(tracker=tracker, operation=operation)
+    source = SubprocessGitSourceReader()
+    resolver = NativeCriterionResolver(tracker=tracker)
+    claims = AuditClaimVerifier(
+        resolver=resolver,
+        records=records,
+        cache=cache,
+        git=git,
+        workspace=workspace,
+        runner=runner,
+        prompts=prompts,
+        skills=skills,
+        remote=config.git.remote,
+    )
+    evidence = AuditEvidenceVerifier(
+        resolver=resolver,
+        records=records,
+        git=git,
+        source=source,
+        cache=cache,
+        claims=claims,
+        operation=operation,
+        remote=config.git.remote,
+    )
+    mandates = AuditMandateHunt(
+        tracker=tracker,
+        runner=runner,
+        workspace=workspace,
+        git=git,
+        prompts=prompts,
+        skills=skills,
+    )
+    terminals = AuditTerminalReader(
+        tracker=tracker,
+        records=records,
+        forge=forge,
+        git=git,
+        cache=cache,
+        operation=operation,
+        remote=config.git.remote,
+    )
+    sources = AuditSourceReader(
+        resolver=resolver,
+        records=records,
+        git=git,
+        source=source,
+        cache=cache,
+        operation=operation,
+        remote=config.git.remote,
+    )
+    sessions = FreshAuditSession(
+        git=git,
+        workspace=workspace,
+        runner=runner,
+        prompts=prompts,
+        skills=skills,
+    )
+    return AuditReadSweep(
+        scope=scope,
+        tracker=tracker,
+        operation=operation,
+        claims=claims,
+        evidence=evidence,
+        # TrackerPort satisfies the narrowed read-only role structurally, so
+        # the trace is reachable from composition with no adapter change.
+        restamps=AuditRestampVerifier(events=tracker),
+        mandates=mandates,
+        terminals=terminals,
+        git=git,
+        cache=cache,
+        remote=config.git.remote,
+        overclaims=AuditOverclaimVerifier(
+            sources=sources,
+            sessions=sessions,
+            prompts=prompts,
+            git=source,
+        ),
+        removals=DetectorRemovalVerifier(
+            sources=sources,
+            sessions=sessions,
+            prompts=prompts,
+            git=source,
+        ),
+        forge=AuditForgeVerifier(
+            resolver=resolver, ci=ci, operation=operation, config=config
+        ),
+        drift=RecordedAssertionDriftDetector(
+            tracker=tracker,
+            sources=sources,
+            rulings=RulingRecordReader(tracker=tracker, operation=operation),
+            detector=AssertionDriftDetector(git=source),
+        ),
+    )
+
+
+def build_audit_pass(
+    *,
+    config: AppConfig,
+    operation: OperationConfig,
+    tracker: TrackerPort,
+    forge: PRStateReader,
+    ci: CIMonitor | None,
+    git: GitService,
+    cache: RepoCache,
+    workspace: WorkspaceProvider,
+    runner: AgentRunner,
+    prompts: PromptSetProvider,
+    skills: SkillsSelection,
+    gate: OutboundContentGate,
+) -> AuditScheduledPass:
+    verify_audit_configuration(
+        config=config, operation=operation, tracker=tracker, forge=forge
+    )
+    if config.write_back is None:
+        raise OperationMemberAbsentError(
+            missing="write_back", stops="configured audit publication"
+        )
+    targets = []
+    repositories = {entry.url: entry for entry in operation.repos}
+    for binding in operation.organize_scopes:
+        sweep = build_audit_read_sweep(
+            config=config,
+            operation=operation,
+            tracker=tracker,
+            forge=forge,
+            ci=ci,
+            git=git,
+            cache=cache,
+            workspace=workspace,
+            runner=runner,
+            prompts=prompts,
+            skills=skills,
+            scope=binding.scope,
+        )
+        judge = FreshWriteBackJudge(
+            runner=runner,
+            workspace=workspace,
+            git=git,
+            prompts=prompts,
+            skills=skills,
+            repo_url=binding.repo_url,
+            session_type=SessionType.SCHEDULED_PASS,
+        )
+        verifier = WriteBackVerifier(
+            tracker=tracker, judge=judge, max_rounds=config.write_back.max_verify_rounds
+        )
+        publisher = AuditPublisher(
+            tracker=tracker,
+            gate=gate,
+            verifier=verifier,
+            lease_seconds=config.tracker.surface_lease_seconds,
+        )
+        targets.append(
+            AuditTarget(
+                binding=binding,
+                report_issue_key=_report_issue_key(binding),
+                repository=repositories[binding.repo_url],
+                sweep=sweep,
+                publisher=publisher,
+                escalations=AuditEscalations(
+                    tracker=tracker,
+                    gate=gate,
+                    operation=operation,
+                    lease_seconds=config.tracker.surface_lease_seconds,
+                ),
+                reopener=AuditReopener(tracker=tracker),
+            )
+        )
+    return AuditScheduledPass(
+        targets=targets,
+        coverage=AuditCoverage(config=config),
+        tracker=tracker,
+        operation=operation,
+        git=git,
+        cache=cache,
+        remote=config.git.remote,
+    )

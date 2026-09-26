@@ -16,7 +16,7 @@ import pytest
 from kodezart.adapters.in_repo_prompt_registry import InRepoPromptRegistry
 from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.composition.knowledge import boot_knowledge_grant
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.errors import PromptRenderError, PromptResolutionError
 from kodezart.core.logging import get_logger
 from kodezart.core.prompt_namespaces import bindings_for
@@ -73,6 +73,14 @@ def rendered_map(config: OperationConfig) -> str:
 # ---------------------------------------------------------------------------
 # KOD-84-AC-1 — the render, with every destination substituted
 # ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _knowledge_http(monkeypatch):
+    monkeypatch.setenv("KODEZART_KNOWLEDGE__CONNECTION__TRANSPORT", "http")
+    monkeypatch.setenv(
+        "KODEZART_KNOWLEDGE__CONNECTION__SERVER_URL", "https://knowledge.invalid/mcp"
+    )
 
 
 def test_the_fragment_renders_every_destination_from_configuration() -> None:
@@ -168,11 +176,11 @@ async def test_the_shipped_empty_grant_preludes_no_session_at_all(
 
 def test_the_grant_cannot_carry_a_server_without_a_map_or_the_reverse() -> None:
     """The two consequences are one value, so they cannot disagree."""
-    with pytest.raises(ValueError, match="carries no knowledge map"):
+    with pytest.raises(ValueError, match="knowledge_map"):
         knowledge_grant_for(SessionType.TICKET_FIRE, knowledge_map="")
 
-    with pytest.raises(ValueError, match="names no session type but carries"):
-        AppConfig().knowledge_grant(knowledge_map="a map nothing renders")
+    with pytest.raises(ValueError, match="knowledge_map"):
+        AppConfig().knowledge.grant(knowledge_map="a map nothing renders")
 
 
 # ---------------------------------------------------------------------------
@@ -184,13 +192,15 @@ async def test_a_granted_boot_renders_the_map_into_the_resolved_grant(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The map is resolved once, at boot, and rides the grant from there."""
-    monkeypatch.setenv("KODEZART_KNOWLEDGE_SESSION_GRANTS", '["ticket_fire"]')
-    monkeypatch.setenv("KODEZART_KNOWLEDGE_MCP_TOKEN", "ntn_" + ("M" * 44))
-    monkeypatch.setenv("KODEZART_KNOWLEDGE_MCP_SERVER_URL", SELF_HOSTED_URL)
+    monkeypatch.setenv("KODEZART_KNOWLEDGE__SESSION_GRANTS", '["ticket_fire"]')
+    monkeypatch.setenv(
+        "KODEZART_KNOWLEDGE__CONNECTION__CREDENTIAL", "ntn_" + ("M" * 44)
+    )
+    monkeypatch.setenv("KODEZART_KNOWLEDGE__CONNECTION__SERVER_URL", SELF_HOSTED_URL)
     config = example_config()
 
     grant = await boot_knowledge_grant(
-        config=AppConfig(),
+        knowledge=(AppConfig()).knowledge,
         prompts=registry_for(config),
         log=get_logger(__name__),
     )
@@ -204,7 +214,7 @@ async def test_the_shipped_boot_renders_nothing_and_needs_no_references() -> Non
     bare = OperationConfig(operation_name="bare", workspace="bare-workspace")
 
     grant = await boot_knowledge_grant(
-        config=AppConfig(),
+        knowledge=(AppConfig()).knowledge,
         prompts=registry_for(bare),
         log=get_logger(__name__),
     )
@@ -222,8 +232,10 @@ async def test_a_missing_destination_aborts_a_granted_boot_naming_it(
     missing: str,
 ) -> None:
     """AC-4: the unresolvable reference is named at startup, not in a prompt."""
-    monkeypatch.setenv("KODEZART_KNOWLEDGE_SESSION_GRANTS", '["ticket_fire"]')
-    monkeypatch.setenv("KODEZART_KNOWLEDGE_MCP_TOKEN", "ntn_" + ("N" * 44))
+    monkeypatch.setenv("KODEZART_KNOWLEDGE__SESSION_GRANTS", '["ticket_fire"]')
+    monkeypatch.setenv(
+        "KODEZART_KNOWLEDGE__CONNECTION__CREDENTIAL", "ntn_" + ("N" * 44)
+    )
     config = example_config()
     incomplete = config.model_copy(
         update={
@@ -233,7 +245,7 @@ async def test_a_missing_destination_aborts_a_granted_boot_naming_it(
 
     with pytest.raises(PromptRenderError) as excinfo:
         await boot_knowledge_grant(
-            config=AppConfig(),
+            knowledge=(AppConfig()).knowledge,
             prompts=registry_for(incomplete),
             log=get_logger(__name__),
         )
@@ -245,14 +257,16 @@ async def test_every_missing_destination_is_named_at_once(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """One error listing all four, so an operator fixes them in one pass."""
-    monkeypatch.setenv("KODEZART_KNOWLEDGE_SESSION_GRANTS", '["ticket_fire"]')
-    monkeypatch.setenv("KODEZART_KNOWLEDGE_MCP_TOKEN", "ntn_" + ("O" * 44))
+    monkeypatch.setenv("KODEZART_KNOWLEDGE__SESSION_GRANTS", '["ticket_fire"]')
+    monkeypatch.setenv(
+        "KODEZART_KNOWLEDGE__CONNECTION__CREDENTIAL", "ntn_" + ("O" * 44)
+    )
     config = example_config()
     stripped = config.model_copy(update={"knowledge": {}})
 
     with pytest.raises(PromptRenderError) as excinfo:
         await boot_knowledge_grant(
-            config=AppConfig(),
+            knowledge=(AppConfig()).knowledge,
             prompts=registry_for(stripped),
             log=get_logger(__name__),
         )

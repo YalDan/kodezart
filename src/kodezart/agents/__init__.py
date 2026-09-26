@@ -27,7 +27,7 @@ Two agent surfaces are available:
     from kodezart.types.domain.some_domain import SomeDomainResult
 
     agent: Agent[None, SomeDomainResult] = Agent(
-        model="claude-sonnet-4-6",
+        model=settings.agent.model,  # the engine is a setting, never a literal
         result_type=SomeDomainResult,
         system_prompt="...",
     )
