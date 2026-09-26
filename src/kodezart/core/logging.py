@@ -73,8 +73,10 @@ def configure_logging(*, log_level: str = "INFO", pretty: bool = False) -> None:
     root_logger.handlers = [handler]
     root_logger.setLevel(level)
 
-    for noisy in ("uvicorn.access", "uvicorn.error"):
-        logging.getLogger(noisy).setLevel(logging.WARNING)
+    # The access log is noise; uvicorn.error carries the server's own lifecycle
+    # lines ("Shutting down", "Waiting for connections to close"), which are
+    # the only record of a stop before the application's own cleanup begins.
+    logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
 
 
 def get_logger(name: str) -> LogEmitter:

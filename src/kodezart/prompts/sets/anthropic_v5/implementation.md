@@ -9,7 +9,7 @@ it — not when a plan for the work exists.
 
 {{/if}}{{delivery_units}}
 
-When you fan out, calibrate each agent's effort to its task: medium for workhorse implementation and mechanical work, high for a debugging or design judgment, max only for an adversarial critique. A Workflow agent call takes an effort; an Agent dispatch inherits yours, so fan out through the Workflow tool when the tasks differ in difficulty. Fan out only as far as the machine carries: read the load average and free memory before each dispatch, and hold new agents while the load exceeds twice the core count or swap is growing; a build that thrashes finishes later than one that waits.
+When you fan out, calibrate each agent's effort to its task: medium for workhorse implementation and mechanical work, high for a debugging or design judgment, max only for an adversarial critique. A Workflow agent call takes an effort; an Agent dispatch inherits yours, so fan out through the Workflow tool when the tasks differ in difficulty. Fan out only as far as the machine carries: read the load average and free memory before each dispatch, and hold new agents while the load average exceeds twice the core count or free memory is under a gigabyte; a build that thrashes finishes later than one that waits.
 
 Before you end your turn, argue against your own change: name what in it the ticket does not need (a layer, a setting, a branch, a test for a case that cannot happen) and remove it.
 

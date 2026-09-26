@@ -234,6 +234,19 @@ must therefore be registered under that same name.
 4. **The disk has room.** Both directories from section 3 exist and are on the
    large disk.
 
+## Stopping the service
+
+Send the server process `SIGTERM` (the `uv run` wrapper forwards it). uvicorn then
+closes its listener, waits for open requests and connections up to
+`--timeout-graceful-shutdown` (unbounded when the flag is absent; a client attached to
+a job stream keeps the wait open, so set the flag), and only then runs the
+application's own cleanup. A good stop logs, in this order: `Shutting down` (uvicorn),
+`pass_scheduler_stopped`, one `workspace_released` per checkout the live run held,
+`job_queue_stopped`, `application_shutdown`. The cleanup itself is not bounded; a
+supervisor that kills after a deadline should allow at least five minutes. A process
+killed before `application_shutdown` leaves its run's worktrees on disk; nothing
+sweeps them yet.
+
 ## 5. Booting
 
 Install once, then start the service from the checkout:
