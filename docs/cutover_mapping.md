@@ -70,6 +70,7 @@ registries.
 | workspace | workspace |
 | agent_identities.0 | agent_identities |
 | agent_identities.1 | agent_identities |
+| agent_identities.2 | agent_identities |
 | principals.approver.tracker_user | principals |
 | principals.approver.forge_handle | principals |
 | principals.assignee.tracker_user | principals |
