@@ -93,6 +93,7 @@
   "tests/chains/test_scope_gap_membership.py": 33,
   "tests/chains/test_scope_gap_selection.py": 9,
   "tests/chains/test_scope_observations.py": 14,
+  "tests/chains/test_scope_prep.py": 3,
   "tests/chains/test_scope_ready.py": 58,
   "tests/chains/test_session_policy_composition.py": 7,
   "tests/chains/test_shorthand_url_resolution.py": 17,
@@ -325,6 +326,7 @@
   "tests/services/test_claim_heartbeat.py": 44,
   "tests/services/test_dispatch_delta_cancel_independent.py": 3,
   "tests/services/test_dispatch_pass.py": 71,
+  "tests/services/test_evaluator_rulings.py": 4,
   "tests/services/test_fire_context.py": 33,
   "tests/services/test_fire_dispatcher.py": 250,
   "tests/services/test_fire_log_facts.py": 29,
@@ -2026,6 +2028,9 @@
   "tests/chains/test_scope_observations.py": [
    "test_unapproved_lane_retains_its_criterion_in_the_same_snapshot",
    "test_overlapping_member_subtrees_do_not_duplicate_criterion_observations"
+  ],
+  "tests/chains/test_scope_prep.py": [
+   "test_a_criterion_key_listed_twice_is_held_once_where_it_first_stood"
   ],
   "tests/chains/test_scope_ready.py": [
    "test_blocker_subtree_recomputed_across_ticks_without_parent_state",
@@ -4841,6 +4846,9 @@
    "test_a_fan_out_no_dispatcher_refuses_names_no_failure",
    "test_the_dispatch_pass_comments_count_no_outcome_members",
    "test_the_outcome_enum_counts_its_own_members_nowhere"
+  ],
+  "tests/services/test_evaluator_rulings.py": [
+   "test_a_failed_claim_moves_back_from_started_or_completed_only"
   ],
   "tests/services/test_fire_context.py": [
    "test_a_referenced_document_lands_in_the_fire_context",
