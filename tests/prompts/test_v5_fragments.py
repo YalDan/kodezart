@@ -16,6 +16,7 @@ from kodezart.adapters.in_repo_prompt_registry import default_sets_root
 from kodezart.types.domain.prompts import PromptKey
 from tests.prompts.sets import V5_SET, v5_registry
 from tests.prompts.style_detectors import data_boundary_sentences
+from tests.prompts.test_operation_config import CADENCE_WORDS
 from tests.prompts.test_prompt_wiring import DEFAULT_SET, load_registry
 
 SET_TOML = default_sets_root() / V5_SET / "set.toml"
@@ -194,6 +195,92 @@ def test_the_design_review_resolves_into_exactly_the_two_changeset_graders() -> 
 def test_the_design_review_keeps_each_load_bearing_clause(clause: str) -> None:
     """Named one by one, so removing any one of them reds its own case."""
     assert clause in prose(fragment("design_review"))
+
+
+# ---------------------------------------------------------------------------
+# delivery_units — a unit's pull request leaves draft only when it is finished
+# ---------------------------------------------------------------------------
+
+#: The members the delivery standard is composed into: the two scheduled
+#: passes, the run's own groom and prep session, and the implementer, whose
+#: prompt every later iteration of the loop carries as its prior prompt.
+DELIVERY_CARRIERS = frozenset(
+    {
+        PromptKey.GROOMING_PASS.value,
+        PromptKey.FIRE_PREP_PASS.value,
+        PromptKey.ORGANIZE_SESSION.value,
+        PromptKey.IMPLEMENTATION.value,
+    },
+)
+
+#: When a pull request leaves draft (owner ruling of 2026-09-29), whole.
+DRAFT_RULE = (
+    "The session delivering the unit keeps each pull request a draft whenever"
+    " its unit is work in progress — any criterion open, any review comment"
+    " unanswered, its checks red or its base conflicting at the pushed head —"
+    " returning it to draft if it was marked ready; when every criterion is"
+    " done, every review comment addressed, its checks green and its base not"
+    " conflicting at the pushed head, it marks the pull request ready for review"
+    " and stops there; a person merges it, never a session."
+)
+
+#: Who merges, which the standard states once.
+MERGE_CLAUSE = "a person merges it, never a session"
+
+#: The same rule as the two changeset graders apply it, whole.
+DRAFT_RULE_REVIEW = (
+    "Judge each pull request of the unit at its pushed head as well, and raise"
+    " as a concern in your own name any one marked ready for review while its"
+    " unit is unfinished, still a draft once its unit is finished, or merged by"
+    " a session."
+)
+
+
+def test_the_delivery_standard_keeps_a_pull_request_a_draft_until_it_is_finished() -> (
+    None
+):
+    """The draft rule is carried whole, and who merges is said once."""
+    standard = prose(fragment("delivery_units"))
+    assert DRAFT_RULE in standard
+    assert standard.count(MERGE_CLAUSE) == 1
+
+
+def test_the_delivery_standard_resolves_into_exactly_its_four_carriers() -> None:
+    """The implementer is among them, so the loop's iterations carry the rule."""
+    standard = fragment("delivery_units")
+    consumers = {key for key, body in v5_bodies().items() if standard in body}
+    assert consumers == DELIVERY_CARRIERS
+
+
+def test_the_draft_rule_is_declared_once() -> None:
+    """One fragment of the manifest states each wording, and no member file does."""
+    manifest = prose(SET_TOML.read_text(encoding="utf-8"))
+    for rule in (DRAFT_RULE, DRAFT_RULE_REVIEW):
+        assert manifest.count(rule) == 1
+        assert member_files_carrying(rule) == []
+
+
+def test_the_changeset_graders_judge_the_pull_request_by_the_draft_rule() -> None:
+    """Exactly the two graders, each inside its scope block.
+
+    A per-request run opens its pull request only after the loop and the
+    review, so only a scope run has one for the grader to judge.
+    """
+    assert prose(fragment("draft_review")) == DRAFT_RULE_REVIEW
+    bodies = {key: prose(body) for key, body in v5_bodies().items()}
+    graders = {key for key, body in bodies.items() if DRAFT_RULE_REVIEW in body}
+    assert graders == DESIGN_REVIEW_CONSUMERS
+    for key in sorted(graders):
+        body = bodies[key]
+        rule_at = body.index(DRAFT_RULE_REVIEW)
+        scope_open = body.index("{{#if scope_key}}")
+        assert scope_open < rule_at < body.index("{{/if}}", scope_open)
+
+
+def test_the_delivery_standard_names_no_cadence() -> None:
+    """Both scheduled passes carry it, and scheduling lives in their config."""
+    standard = fragment("delivery_units").lower()
+    assert [word for word in CADENCE_WORDS if word in standard] == []
 
 
 # ---------------------------------------------------------------------------
