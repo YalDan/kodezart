@@ -329,7 +329,7 @@ explicit invocation key and declared session count. Iterations, corrective
 dispatches and graph-level retries have distinct invocation keys; repeated frames for the same native
 session produce one occurrence. Issue-less calls do not synthesize a tracker
 identity. This event is emitted on the harness stream and does not certify a
-durable tracker event, an alarm, or completion of the supervisor's event reader.
+durable tracker event or an alarm.
 On the scoped arm each opening is also posted on the lane's own stream, and
 `COMPOSITION_SUBSTITUTED` reads it there.
 

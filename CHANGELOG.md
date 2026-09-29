@@ -61,6 +61,22 @@ Each of these needs an action from a v0.2 operator; the steps are in
 
 ### Added
 
+- The supervisor is a third prompt pass, `supervisor_pass` (template
+  `supervisor_pass.md` in both sets, record kind `supervisor`, role row
+  `[session_roles.supervisor]` at low effort), on the existing
+  `KODEZART_SUPERVISOR_PASS_INTERVAL_SECONDS` /
+  `KODEZART_SUPERVISOR_PASS_TIMEOUT_SECONDS` pair. It reads what the
+  operation's own account did since its last pass and reports its conduct:
+  one comment per finding and a row under `[records.supervisor]`; it changes
+  no state or label and writes nothing on the forge. The code observation tick
+  that pair used to schedule (`composition/supervisor.py` and the alarm
+  observers under it) is merged into the pass and removed; its two signals
+  are two of the pass's rules. Unset, boot logs `scheduled_pass_not_configured`
+  naming `supervisor_pass`; `supervisor_pass_not_wired` is gone.
+- `run_alarm_max_commits_without_closure`,
+  `run_alarm_escalation_age_max_commits` and
+  `run_alarm_escalation_age_max_ticks` are retired: boot refuses each, from
+  every source, with a message naming the supervisor pass.
 - The standing scopes' heartbeat (`services/scope_heartbeat.py`) asks the
   `scope_scan` question once a tick and submits each approved, unfinished node
   it lists as a scope run, as `POST /api/v1/agent/fire` submits one. It skips a

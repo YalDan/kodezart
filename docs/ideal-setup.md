@@ -103,12 +103,12 @@ With an operation file but **no key**, boot logs `tracker_not_configured` with
 - a request addressed at a scope refuses with
   `ScopedExecutionUnavailableError`: the scope arm is built only on a dialled
   tracker (`composition/engine.py`);
-- the per-issue dispatch passes and the supervisor tick are not scheduled, and
-  a configured audit refuses the boot naming `tracker`;
+- the per-issue dispatch passes are not scheduled, and a configured audit
+  refuses the boot naming `tracker`;
 - a `system = "tracker"` record logs `run_record_sink_unavailable` at boot and
   every write to it refuses;
-- the fire-prep and grooming passes are still scheduled when their cadence
-  pairs are set, but kodezart gives their sessions no tracker server. With the
+- the fire-prep, grooming and supervisor passes are still scheduled when their
+  cadence pairs are set, but kodezart gives their sessions no tracker server. With the
   host opt-in off they have no board to read.
 
 ## Notion

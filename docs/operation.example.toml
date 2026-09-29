@@ -34,8 +34,7 @@ organize_mandates = []
 # issue that scope's verified audit summary is reported on — omit it where the
 # deployment configures no audit, and a configured audit refuses by name on a
 # row that omits it.
-# Who reads these rows: the observation tick reads each row's scope where a
-# tracker is dialled, and the audit collects each row where audit settings are
+# Who reads these rows: the audit collects each row where audit settings are
 # configured. No cadence has a default: a pass whose
 # interval is unset is not scheduled, and boot names it with
 # scheduled_pass_not_configured. Before approval a scope is the grooming and
@@ -78,7 +77,8 @@ run_state = "run-state"
 run_event = "run-event"
 # One idempotent terminal outcome comment per queued job.
 run_outcome = "run-outcome"
-# One record per (subject, signal) run-shape alarm, rewritten in place.
+# Run-shape alarm records written before the supervisor pass replaced their
+# writer; kept so those records stay addressable. Nothing writes new ones.
 run_alarm = "run-alarm"
 # The amendment write-back's archive comments, and the audit's own records.
 amendment = "kodezart-amendment"
