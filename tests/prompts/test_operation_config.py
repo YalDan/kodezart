@@ -758,10 +758,7 @@ def test_placeholder_mapping_is_total_in_both_directions() -> None:
     # the mapping can no longer be checked against what it was derived from.
     native = dict(markdown_rows("## Native OperationConfig consumers"))
     assert native == {
-        "organize_scopes": (
-            "composition/audit.py::build_audit_pass, "
-            "composition/supervisor.py::build_supervisor_pass"
-        ),
+        "organize_scopes": "composition/audit.py::build_audit_pass",
         "workflow_states.done": "adapters/linear/tracker.py::set_workflow_state",
     }
     assert set(mapped).isdisjoint(native)

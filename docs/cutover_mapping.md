@@ -107,7 +107,6 @@ registries.
 | scope_labels.approved | scope_labels |
 | workflow_states.in_progress | workflow_states |
 | workflow_states.in_review | workflow_states |
-| workflow_states | workflow_states |
 | run_event_states | run_event_states |
 | marker_prefixes.repository | marker_prefixes |
 | repos | repos |
@@ -153,5 +152,5 @@ These fields have native typed consumers rather than template placeholders. The 
 
 | Field | Consumer |
 | --- | --- |
-| organize_scopes | composition/audit.py::build_audit_pass, composition/supervisor.py::build_supervisor_pass |
+| organize_scopes | composition/audit.py::build_audit_pass |
 | workflow_states.done | adapters/linear/tracker.py::set_workflow_state |
