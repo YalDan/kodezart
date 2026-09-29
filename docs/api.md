@@ -317,7 +317,7 @@ configured-scope lookup, concurrent lane marks and cross-job branch recovery are
 separate requirements. A lane re-enters from its own tracker record and the
 head that record names; no graph state is persisted for the
 scope path, so nothing is replayed and a killed process changes nothing about
-the next decision (KOD-684, KOD-840). Re-entering is posting the same request
+the next decision. Re-entering is posting the same request
 again; the HTTP API exposes no request to resume an existing job.
 
 `workflow_iteration.verdict` is three-state (`accepted`, `ship_with_flags`,

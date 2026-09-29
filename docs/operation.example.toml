@@ -265,7 +265,7 @@ depends_on = "build"
 
 # Read-side document registry, addressed by stable key. The "checkpoint" key
 # is the tracker-owned document boot instates or adopts; the scan window
-# itself is carried by the record row a pass writes (KOD-245), not by this.
+# itself is carried by the record row a pass writes, not by this.
 #
 # `system` and `name` are REQUIRED. An id on its own renders into a prompt as
 # an opaque token, and a session given only that prompt cannot tell which
@@ -283,7 +283,7 @@ depends_on = "build"
 #
 # `container` names the declared team (a key under [teams.*]) creation files
 # the document under — the backend files every document in a container and
-# refuses a bare create (KOD-166). Read only when boot has to CREATE: an
+# refuses a bare create. Read only when boot has to CREATE: an
 # adopted document already lives where it lives. An id-less entry with no
 # container refuses boot naming exactly this line.
 [documents.checkpoint]
@@ -311,7 +311,7 @@ name = "Example — Operating Constitution"
 id = "example-constitution-document-id"
 
 # Record keys are the RUN-KIND vocabulary — fire_prep, grooming, fire — one
-# declared destination per kind (KOD-170). The runner writes each run's
+# declared destination per kind. The runner writes each run's
 # structural row there, and the rendered pass prompt names the same
 # declaration for the session's own prose row. A kind left undeclared is a
 # legal NAMED absence: the recorder logs it and writes nowhere. `fire` is
