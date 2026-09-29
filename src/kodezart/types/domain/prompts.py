@@ -147,6 +147,9 @@ class PromptSetFragments(BaseModel):
     #: share: what a finishable unit is, and how one is delivered.  One
     #: source, for the same reason as the hierarchy above.
     delivery_units: str | None = None
+    #: The same standard as the two changeset graders apply it to a pull
+    #: request.  One source composed into both, like the refutation above.
+    draft_review: str | None = None
 
 
 class SessionRole(StrEnum):
