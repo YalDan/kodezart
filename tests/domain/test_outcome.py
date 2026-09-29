@@ -258,6 +258,23 @@ def test_a_run_with_commits_and_no_pr_is_never_the_zero_commit_terminal() -> Non
     assert classify_outcome(state) is WorkflowOutcome.loop_plateaued
 
 
+def test_zero_commit_no_pr_when_an_accepted_loop_gained_nothing_to_merge() -> None:
+    """Accepted, unmerged and unfailed: the criteria already held at the trunk.
+
+    The loop branch gained no commit in any repository, so the run did no
+    work and opened no PR, which is the literal zero-commit terminal.
+    """
+    state = _state(
+        verdict=AcceptVerdict.accepted,
+        merged=False,
+        merge_error=None,
+        pr_url=None,
+        best_iteration_sha=None,
+        trajectory=_trajectory(plateaued=False, commit_sha=None),
+    )
+    assert classify_outcome(state) is WorkflowOutcome.zero_commit_no_pr
+
+
 def test_review_passed_no_pr_adapter() -> None:
     state = _state(
         verdict=AcceptVerdict.accepted, merged=True, review_passed=True, pr_url=None

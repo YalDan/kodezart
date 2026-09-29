@@ -17,6 +17,7 @@ from kodezart.chains import authored_checks
 from kodezart.chains import authored_publication as authored_publication_module
 from kodezart.chains import fire_consolidation as fire_consolidation_module
 from kodezart.chains.authored_delivery import AuthoredDeliveryCoordinator
+from kodezart.chains.scope_stages import ScopeStages
 from kodezart.config.app import AppConfig
 from kodezart.core.checkpointer import make_checkpointer
 from kodezart.core.error_egress import build_error_event
@@ -40,10 +41,13 @@ from kodezart.types.domain.agent import (
     AssistantTextEvent,
     RateLimitWarningEvent,
     ResultEvent,
+    ScopeItem,
+    ScopeItemsOutput,
     TicketDraftOutput,
     WorkflowArtifactsEvent,
     WorkflowCIEvent,
     WorkflowCompleteEvent,
+    WorkflowConsolidationEvent,
     WorkflowCriteriaEvent,
     WorkflowCriteriaValidationEvent,
     WorkflowIterationEvent,
@@ -61,15 +65,18 @@ from kodezart.types.domain.branch import (
 )
 from kodezart.types.domain.ci import CIStatus
 from kodezart.types.domain.consolidation import (
+    ChangesetDigest,
     ConsolidationOutcome,
     ConsolidationStatus,
 )
 from kodezart.types.domain.gating import RepoVisibility
+from kodezart.types.domain.operation import RepoEntry
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.persist import ArtifactPersistStatus
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.remediation import RemediationEntry
 from kodezart.types.domain.run_records import RunIdentity
+from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.session import PermissionMode, SessionType
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.subagents import (
@@ -90,6 +97,7 @@ from tests.fakes import (
     RATE_LIMIT_FLOOR_SECONDS,
     SUPPRESS_ALL_SKILLS,
     FakeAgentExecutor,
+    FakeAgentRunner,
     FakeArtifactPersister,
     FakeBranchMerger,
     FakeChangePersister,
@@ -112,6 +120,7 @@ from tests.fakes import (
     make_prompt_provider,
     no_delay_floor,
 )
+from tests.prompts.sets import operation_registry
 from tests.workflow_factory import make_authored_workflow
 
 
@@ -145,6 +154,7 @@ def _make_engine(
     repositories=(),
     max_concurrent_watches=4,
     red_rerun_max_attempts=0,
+    stages: ScopeStages | None = None,
 ) -> AuthoredDeliveryCoordinator:
     if quality_gate is None:
         quality_gate = FakeQualityGate(
@@ -192,6 +202,7 @@ def _make_engine(
         delay_floor_for=delay_floor_for,
         criteria_max_regeneration_rounds=1,
         fan_in_max_attempts=2,
+        stages=stages,
     )
 
 
@@ -5239,3 +5250,166 @@ class TestWorkBaseRefIsWrittenWhereItBecomesTrue:
         )
 
         assert "work_base_ref" not in result
+
+
+#: Two declared repositories, told apart by their trunks: the fake clone cache
+#: answers one path for every repository, so each is read by its trunk.
+_APP = RepoEntry(url="https://github.com/o/app", trunk="main")
+_LIB = RepoEntry(url="https://github.com/o/lib", trunk="trunk")
+_TRUNK_TIPS: dict[str, str | None] = {"main": "a" * 40, "trunk": "b" * 40}
+
+
+class _CommitsBeyondTrunk(FakeGitService):
+    """The loop branch's commits beyond each trunk, whatever it is named.
+
+    A scope run draws its branch names, so the count is keyed on the trunk
+    the diff is taken from rather than on both refs.
+    """
+
+    def __init__(self, commits: Mapping[str, int]) -> None:
+        super().__init__(remote_branch_shas=_TRUNK_TIPS)
+        self._commits = dict(commits)
+
+    async def diff_summary(
+        self, cwd: str, base_ref: str, head_ref: str
+    ) -> ChangesetDigest:
+        self.calls.append(("diff_summary", cwd, base_ref, head_ref))
+        count = self._commits.get(base_ref, 0)
+        return ChangesetDigest(
+            file_paths=[f"file_{n}.py" for n in range(count)],
+            commit_subjects=[f"commit {n}" for n in range(count)],
+            commit_count=count,
+        )
+
+
+async def test_an_accepted_scope_run_that_gained_no_commit_ends_with_nothing_to_deliver(
+    tmp_path: Path,
+) -> None:
+    """The criteria already held at every trunk: a finished run, not a fault.
+
+    Each declared repository is reported already integrated at its trunk's
+    tip, nothing is merged, no remediation round or pull request follows,
+    and the run reaches its terminal instead of raising.
+    """
+    board = FakeAgentRunner(
+        events=[
+            ResultEvent(
+                subtype="result",
+                duration_ms=1,
+                duration_api_ms=1,
+                is_error=False,
+                num_turns=1,
+                session_id="fake",
+                structured_output=ScopeItemsOutput(
+                    items=[
+                        ScopeItem(
+                            key="SCOPE-2", criterion=True, text="It works", done=False
+                        )
+                    ],
+                    reason="One criterion is open.",
+                ).model_dump(by_alias=True),
+            )
+        ]
+    )
+    merger = FakeBranchMerger()
+    pr_creator = FakePRCreator()
+    remediator = FakeRemediator()
+    engine = _make_engine(
+        quality_gate=FakeQualityGate(
+            events=[], evaluation=make_passing_evaluation_over("SCOPE-2")
+        ),
+        merger=merger,
+        pr_creator=pr_creator,
+        remediator=remediator,
+        git=_CommitsBeyondTrunk({}),
+        repositories=(_APP, _LIB),
+        stages=ScopeStages(
+            runner=board,
+            prompts=operation_registry(),
+            skills=SUPPRESS_ALL_SKILLS,
+            working_dir=str(tmp_path),
+        ),
+    )
+
+    events = [
+        e
+        async for e in engine.run(
+            scope=ScopeRef(kind=ScopeKind.ISSUE, key="SCOPE-1"),
+            prompt="scope issue SCOPE-1",
+            repo_path=None,
+            repo_url=_APP.url,
+            base_spec=trunk_base("main"),
+            permission_mode=PermissionMode.UNATTENDED,
+            allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
+        )
+    ]
+
+    assert [
+        (e.status, e.feature_branch, e.feature_tip_sha)
+        for e in events
+        if isinstance(e, WorkflowConsolidationEvent)
+    ] == [
+        (ConsolidationStatus.ALREADY_INTEGRATED, "main", "a" * 40),
+        (ConsolidationStatus.ALREADY_INTEGRATED, "trunk", "b" * 40),
+    ]
+    assert merger.calls == []
+    assert remediator.calls == []
+    assert pr_creator.calls == []
+    complete = next(e for e in events if isinstance(e, WorkflowCompleteEvent))
+    assert complete.accepted is True
+    assert complete.merged is False
+    assert complete.merge_error is None
+    assert complete.outcome is WorkflowOutcome.zero_commit_no_pr
+    assert complete.final_commit_sha == "a" * 40
+    assert complete.pr_url is None
+
+
+async def test_a_scope_merge_consolidates_only_where_the_branch_gained_commits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A repository the branch gained nothing in is neither merged nor reported."""
+    written: list[object] = []
+    monkeypatch.setattr(
+        fire_consolidation_module, "get_stream_writer", lambda: written.append
+    )
+    merger = FakeBranchMerger()
+    engine = _make_engine(
+        merger=merger,
+        git=_CommitsBeyondTrunk({"main": 2}),
+        repositories=(_APP, _LIB),
+    )
+    state: WorkflowState = {
+        "feature_branch": "kodezart/scope-1-12345678",
+        "ralph_branch": "kodezart/scope-1-12345678-ralph-abcdef01",
+        "accept_verdict": AcceptVerdict.accepted,
+    }
+    config: RunnableConfig = {
+        "configurable": {
+            "prompt": "scope issue SCOPE-1",
+            "repo_path": None,
+            "repo_url": _APP.url,
+            "cache_key": "test-cache",
+            "base_spec": trunk_base("main"),
+            "permission_mode": PermissionMode.UNATTENDED,
+            "allowed_tools": ["Bash"],
+            "scope": ScopeRef(kind=ScopeKind.ISSUE, key="SCOPE-1"),
+        }
+    }
+
+    result = await engine.fire.consolidation.merge_to_feature(state, config)
+
+    assert [call["repo_url"] for call in merger.calls] == [_APP.url]
+    assert [
+        (e.status, e.feature_branch)
+        for e in written
+        if isinstance(e, WorkflowConsolidationEvent)
+    ] == [(ConsolidationStatus.FAST_FORWARDED, "kodezart/scope-1-12345678")]
+    assert result == {
+        "merged": True,
+        "merge_error": None,
+        "feature_tip_sha": "m" * 40,
+        "review_base_sha": "a" * 40,
+        "review_head_sha": "m" * 40,
+        "work_base_ref": "kodezart/scope-1-12345678",
+    }
