@@ -37,6 +37,7 @@ from kodezart.core.errors import PromptRenderError
 from kodezart.core.prompt_namespaces import bindings_for
 from kodezart.core.protocols import AgentRunner, PromptSetProvider
 from kodezart.services import pass_scheduler as pass_scheduler_module
+from kodezart.services import prompt_pass as prompt_pass_module
 from kodezart.services.prompt_pass import (
     PromptPass,
     gate_render_bindings,
@@ -672,19 +673,22 @@ class TestTheGateQuestion:
         pass_ = prompt_pass(prompts=bound_registry(), runner=runner)
         await pass_.run(TICK)
 
-        with pytest.raises(RuntimeError):
+        with pytest.raises(RuntimeError) as caught:
             await pass_.run(NEXT_TICK)
 
+        assert caught.value is runner.error
         assert runner.calls == 2, "the gate was asked and raised"
         assert pass_.window_start == TICK
 
     async def test_a_pass_that_raised_leaves_no_window_behind(self) -> None:
         """A session that never ran is not a run the next window starts from."""
-        pass_ = prompt_pass(prompts=bound_registry(), runner=RaisingRunner())
+        runner = RaisingRunner()
+        pass_ = prompt_pass(prompts=bound_registry(), runner=runner)
 
-        with pytest.raises(RuntimeError):
+        with pytest.raises(RuntimeError) as caught:
             await pass_.run(TICK)
 
+        assert caught.value is runner.error
         assert pass_.window_start is None
 
     async def test_a_gate_cancelled_mid_question_asks_the_same_window_again(
@@ -726,6 +730,41 @@ class TestTheGateQuestion:
             gate_prompt(registry, key=PromptKey.GROOMING_PASS, window_start=TICK)
         ] * 2
         assert len(runner.pass_calls()) == 1
+        assert pass_.window_start == TICK
+        assert other.window_start == NEXT_TICK
+
+    async def test_a_tick_cancelled_as_its_answer_is_logged_opens_no_session(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The answer was observed; the tick was abandoned before it acted.
+
+        Cancelled at the gate's final awaited log: the cancellation reaches
+        the scheduler, no session opens on an answer the tick never acted
+        on, and the window stays where the last run left it.
+        """
+        runner = GateAnsweringRunner(
+            answers=[gate_answer(run=True, moved=["KOD-1"], reason="one moved")]
+        )
+        pass_ = prompt_pass(prompts=bound_registry(), runner=runner)
+        await pass_.run(TICK)
+        entered = asyncio.Event()
+        logged: list[str] = []
+
+        async def blocked_log(event: str, **_kwargs: object) -> None:
+            logged.append(event)
+            entered.set()
+            await asyncio.Event().wait()
+
+        monkeypatch.setattr(prompt_pass_module._log, "ainfo", blocked_log)
+        running = asyncio.create_task(pass_.run(NEXT_TICK))
+        await asyncio.wait_for(entered.wait(), timeout=5.0)
+        running.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(running, timeout=5.0)
+
+        assert logged == ["pass_gate_answered"]
+        assert len(runner.gate_calls()) == 1
+        assert len(runner.pass_calls()) == 1, "only the boot tick opened a session"
         assert pass_.window_start == TICK
 
     async def test_a_tick_cancelled_after_its_answer_keeps_the_window(self) -> None:
@@ -918,6 +957,9 @@ class RaisingRunner:
         #: raises the gate the next tick asks.
         self._after_calls: int = after_calls
         self.calls: int = 0
+        #: The one error instance every raising call raises, so a case can
+        #: pin that the scheduler receives it as it was, unwrapped.
+        self.error: RuntimeError = RuntimeError("the session could not be started")
 
     async def stream_in_workspace(
         self,
@@ -926,8 +968,7 @@ class RaisingRunner:
         self.calls += 1
         if self.calls <= self._after_calls:
             return
-        msg = "the session could not be started"
-        raise RuntimeError(msg)
+        raise self.error
         yield  # pragma: no cover - unreachable, and what makes this a generator
 
 
