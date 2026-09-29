@@ -38,8 +38,8 @@ All cross-layer dependencies point inward through protocols defined in
 (`main.py` `lifespan()`).
 Dialling the tracker consults no run-event table; a declared one is checked when
 the operation file loads. An operation that declares `[[organize_scopes]]`
-schedules the passes that read that one table — the observation tick where a
-tracker is dialled and the audit where one is configured — beside the per-issue machine: the dispatch pass, the two
+schedules the pass that reads that one table — the audit where one is
+configured — beside the per-issue machine: the dispatch pass, the three
 prompt passes and the lifecycle watcher are built on their own premises, each
 pass's cadence pair among them, whether or not scopes are declared.
 Each prompt pass (`services/prompt_pass.py`) asks a gate question before every
@@ -119,7 +119,7 @@ does not exist.
 | IssueScanReader | LinearMcpTracker | The board scan the dispatch pass's gate and the fire dispatcher select on |
 | ScopeFamilyReader | LinearMcpTracker | The scope family, resolved for scope resolution and composed into every membership read |
 | StateHistoryReader | LinearMcpTracker | When an issue entered its state; the read audit candidate collection makes |
-| EscalationResolutionReader | LinearMcpTracker | Whether a decision record answers an escalation; the read the escalation signal and the run-shape reading make |
+| EscalationResolutionReader | LinearMcpTracker | Whether a decision record answers an escalation; its one caller, the removed escalation ageing observer, went with the supervisor merge, and the read stays on the port with its adapter method |
 | RecordedRepositoryReader | LinearMcpTracker | The repository a staged fire recorded; read by the audit request reader and the fire dispatcher |
 | WriterIdentityReader | LinearMcpTracker | The account this credential writes as, read once by the boot that refuses an unattributable writer |
 | ScanCapabilityReader | LinearMcpTracker | The scan scopes a credential holds, read once by the pass preflight |
@@ -138,8 +138,6 @@ does not exist.
 | SubjectCriteriaReader | LinearMcpTracker | A subject and its criterion family: the audit terminal reading's two reads |
 | ScopeMemberReader | LinearMcpTracker | The scope family and each member's criteria, which is what scope membership resolves |
 | ScopePlanReader | LinearMcpTracker | Everything a scope plan is read from, with no write in it: the plan and delivery coordinator readings |
-| ScopeRosterReader | LinearMcpTracker | A scope's roster and each member's classification, which the scope tally reads twice to agree |
-| ScopeTallyReader | LinearMcpTracker | The roster the scope tally is counted over, behind the classification preflight: exactly what a scope's stage barrier is read from, with no event read and no write |
 | ScopeReadyReader | LinearMcpTracker | The scope plan plus the approval an entry asks for: what the scope walker and the dispatcher read |
 | FireSubjectReader | LinearMcpTracker | The admitted subject of a fire over the family it is measured against: the criteria stage's reads |
 | OrganizeAuthorReader | LinearMcpTracker | The criterion family and body digests the organize and authoring rounds read |
@@ -153,7 +151,6 @@ does not exist.
 | LaneEscalationTracker | LinearMcpTracker | The escalation record a lane writes and the reads it is composed from |
 | LaneLapseEscalationTracker | LinearMcpTracker | The question a lapsed grading raises and the reads the write-back verifier checks it by: what the lane's lapse escalations hand on |
 | AuditPublicationWriter | LinearMcpTracker | The record an audit publishes, under the lease publication holds |
-| EscalationSignalReader | LinearMcpTracker | The resolution and records an escalation's ageing is observed from; the supervisor's ageing arm holds it for the collector it hands it to |
 | RecordSignalReader | LinearMcpTracker | The criterion family and lane record a barren tick, and a lane's recorded ruling growth, are observed from |
 | OrganizeOwnerTracker | LinearMcpTracker | Everything the older cascade organize owner reads and every write it makes: the widest single consumer; the wired session owner reads through ScopeFamilyReader and TrackerScopeApprovalReader alone and writes nothing |
 | FireRulingTracker | LinearMcpTracker | The criterion reads and record writes a ruling round makes |
@@ -164,7 +161,7 @@ does not exist.
 | ScopeStatusReader | LinearScopeStatusUpdates | The one read the scope terminal makes before its one write: the reports the container already carries, so a report is posted once across a restart; a role beside the port, over the tracker's caller |
 | ScopeStatusUpdates | LinearScopeStatusUpdates | The container-status role whole, read and write, one class over the tracker's caller |
 | SurfaceLeaseTracker | LinearMcpTracker | Exactly the lease calls a writing job's own lifetime makes, narrowed out of the port rather than added to it |
-| RunAlarmTracker | LinearMcpTracker | Exactly the tracker calls an observation of a run's shape makes: every alarm record on one issue, read in one listing, and one keyed record rewritten, which it declares, over the lease, lane-history and lane-append roles it composes. It holds no workflow state, queue state, criterion reset or description edit, so its holder cannot move a run's state |
+| RunAlarmTracker | LinearMcpTracker | Exactly the tracker calls an observation of a run's shape makes: every alarm record on one issue, read in one listing, and one keyed record rewritten, which it declares, over the lease, lane-history and lane-append roles it composes. It holds no workflow state, queue state, criterion reset or description edit, so its holder cannot move a run's state. No module takes it since the supervisor merge; it stays with the run-record members it declares |
 | LaneEventHistory | LinearMcpTracker | A lane's posted events read for a grading's provenance; narrowed out of the port rather than added to it, and holding no write |
 | CriterionMinter | LinearMcpTracker | Exactly the tracker calls one obligation mint makes, composed from the criterion mint, criterion reopen and lease roles: the lease on a lane's criterion child set, the mint under it, and the move of a child the mint answered with back to unstarted under a lease on that child, narrowed out of the port rather than added to it; it holds no other workflow state and no description edit, so its holder can add an obligation, or reopen the one it names, and change no text the lane already carries |
 | LaneStateWriter | TrackerLaneStateWriter | Records the lane's run state in the same act as the commit that changed it |
@@ -1185,270 +1182,30 @@ The alarm vocabulary and payload validation are available independently of
 signal computation and of the writers that publish it; constructing a model
 enables neither.
 
-`domain.run_alarm_table.ALARM_TABLE` is keyed by the signal vocabulary and
-gives each member its one pure fold and the `PassSignal` scans its readings are
-collected through: `issues_changed` for the signals that read rosters,
-criterion states, stage markers or the issue graph, and none for those that
-read only comments and records. `require_alarm_table` is the first statement of
-`composition/passes.py::verify_pass_preflight`, so a member with no fold aborts
-startup with `AlarmTableError` naming every such member before anything is
-built. When the deployment schedules the supervisor tick — a dialled tracker
-and a declared roster, the predicate that registers it — `_verify_wired_gates`
-adds one entry per alarm the tick observes, `supervisor/<alarm>`, carrying that
-alarm's declared scans, and the landed probe refuses with
-`PassGateCapabilityError` naming each refused scan with every alarm that
-declares it. A deployment that does not schedule the tick probes nothing on its
-behalf. Nothing at runtime asks whether a signal has a fold or a capability, no
-configuration field can name a signal, and nothing catches either refusal;
-`tests/test_capability_checked_at_boot.py` holds all three for the spellings it
-scans. Whether a stored record is an alarm is answered by `alarm_raised`, which
-replays the record through its own row's fold for every signal alike, and a
-missing fold is never answered as a quiet signal: with a record's row taken out
-of the table, `alarm_raised` raises `KeyError`, which
-`tests/domain/test_run_alarm_table.py` holds whatever an arm's spelling. No
-knob, whatever its name or type, narrows what the supervisor observes: every
-function that reads `OBSERVED_ALARMS`, the supervisor arm of
-`_verify_wired_gates` and the lane observation's `_announceable` among them,
-reads no `AppConfig` or `OperationConfig` field inside the statements that
-read that set other than a `run_alarm_*` numeric bound. That scan is keyed on
-the consumer and resolved by object; a value handed across a function
-boundary, a name built at run time and a binding made only when a function
-runs are outside its reach.
-
 ### Supervisor pass
 
-`services.supervisor_pass.SupervisorPass` is one scheduled tick over the
-scopes `OperationConfig.organize_scopes` declares, of which the tick reads
-each row's scope and nothing else, registered on the
-existing scheduler by `composition/supervisor.py::build_supervisor_pass` with
-its interval and timeout from application configuration, no report, and no
-sleep, timer or clock of its own. `composition/passes.py` registers it only
-when a tracker is dialled and the roster is non-empty; either one absent
-registers nothing and logs `supervisor_pass_not_wired` naming which. The pass
-holds no port at all: the scope read is injected as a callable and the
-observation is the observers', so it can reach no repository, session, queue
-or forge.
+The supervisor is a prompt pass, `supervisor_pass`, built beside fire
+preparation and grooming by `composition/passes.py::build_prompt_passes` on the
+`supervisor` cadence pair (`KODEZART_SUPERVISOR_PASS_INTERVAL_SECONDS` and
+`KODEZART_SUPERVISOR_PASS_TIMEOUT_SECONDS`), and rendered at boot by the same
+preflight. Each tick after its first asks the `pass_gate` question and then
+runs one unattended session on the `supervisor_pass.md` template: it reads
+what the operation's own account did in the window, every fire in progress and
+the principal comments addressed to it, and reports that conduct against the
+standing rules, one comment per finding and one row under `[records.supervisor]`
+(`RunKind.SUPERVISOR`). It writes no state, label or relation and nothing on
+the forge. Its rules include the two signals the earlier code observers
+counted — a fire that keeps committing while no criterion closes, and a
+question to a person still unanswered since the previous pass — judged from
+the board by the session.
 
-Per scope it observes every member of the ready reading at the standing that
-reading gives it (`domain.lane_alarms.LaneStanding`): every ready lane with that
-lane's own roster and gap, every finished member with neither — a raise standing
-on a lane that has since finished is cleared rather than left — and every
-blocked or unapproved member as waiting. A waiting lane's tally is not composed:
-it is never fired, so there is no clock to measure, and the accepted consequence
-is that a lane raised and then blocked by hand stays raised until it is ready
-again. Its stream is still read, because a lapsed criterion keeps its lane's gap
-open, so a lane holding a lapse nothing will re-derive is exactly a lane that is
-not ready.
-
-The tick reads each scope through `chains.scope_walker.read_scope_ready` with
-`stage_barriers=False`: the scope, each consulted descendant tree and the final
-re-read take membership and dependencies through
-`services.scope_planning.read_scope_facts` rather than `read_scope_plan`, and
-the rest of the arithmetic is the walker's. A scope whose walk is held on an
-open decision is therefore still observed rather than failed; the walker's own
-read keeps the barriers and still refuses it. A member its own lapse question
-classified for decision, and which has criterion children, is carried in
-`ScopeReadySet.held` with every criterion of its subtree. The closure is handed
-these keys and reads them as lanes, not record issues: a lane a held lane blocks
-is blocked while the held lane owes criteria, and a parent member's gap includes
-the held lane's open criteria. A decision issue with no criterion children stays
-a record issue. A held lane is observed as waiting, so its tally is not composed
-and its stream is still read, and its questions are aged: a held lane is waiting
-on a person, and the ageing alarm is the alarm for that. A tally raise standing
-on it stays as it stood until the lane is ready again.
-
-One lane's failure is that lane's. Each scope read and each lane observation
-is contained, logged as `supervisor_scope_failed` or `supervisor_lane_failed`,
-and the tick then raises `SupervisorIncompleteError` naming what it could not
-reach, so the scheduler reports it failed with whatever it did write already
-on the tracker. Cancellation and the scheduler's own timeout are not a lane's
-failure and pass straight through.
-
-What the tick is observable by: an alarm is a record on the lane's own issue
-whose readings replay to an alarm. At `(LaneSubject(scope, lane),
-TALLY_UNMOVED)` it is announced by exactly one `run_alarm_raised` event on that
-lane's stream. A record whose readings replay to nothing is a tally reading
-kept so the next tick has an anchor, and it is written only when a lane moved
-while it still owed work — which is the only write a run that never stalls
-makes. There is no scope-keyed event: a scope's stall is observed from the
-roster and the stage markers on every tick and logged, and no run event and no
-record is keyed to a scope.
-
-The criteria a lane graded are observed at their own addresses on that lane's
-issue, `(CriterionSubject(scope, parent, criterion, lane), signal)`, and which
-lane a criterion belongs to is read off a fact rather than recomputed: it is the
-lane whose stream carries an account of it — `issue_crossed_off`,
-`criterion_refuted` or `criterion_lapsed` keyed to it — which is by construction
-a lane in whose subtree it sits. Its current state comes from the scope's own
-criterion reading. `domain.stream_signals.tally_regressed` raises when the
-lane's last account of a criterion is that it crossed it off and the criterion
-now stands unstarted: something moved it back and nobody reported it. A
-refutation is the lane reporting that move, and a lapse is not a regression, so
-neither raises. `domain.stream_signals.lapse_undischarged` raises when the last
-account is a lapse, the criterion is still owed, and the lane is not ready on
-this tick. Nothing on the scope path takes a claim, so "nothing will re-derive
-it" is read through a proxy, and the proxy is exactly "not ready on this tick".
-What the proxy cannot tell follows from that. No walk re-derives lanes one by
-one any more: a scope run works its whole parent in one loop. So every ready
-lane counts as re-derived, whether or not a scope run is going.
-
-Two further limits of the criterion reading are stated rather than built.
-Nested member lanes: a member whose parent is also a member reads its account
-from the lane whose stream announced it, and a criterion under two member lanes
-is observed through the announcing lane only — each lane reads its own stream
-and never the other's. So when both lanes graded a criterion, each is read by
-its own last word: the outer lane's `issue_crossed_off`, with the criterion back
-in Todo after the inner lane took it back as a lapse, raises `TALLY_REGRESSED`
-on the outer lane. Presence is read per scope: a lane blocked in one scope and
-ready in another is observed as each scope reads it, so the scope that reads it
-blocked can raise `LAPSE_UNDISCHARGED` at its own address while the other
-scope reads it ready and raises nothing.
-
-Both criterion signals raise with no bound. A criterion record is written only
-when what the address says differs from what the tick observed, where absence
-says not raised, so a healthy lane writes none; and it is never announced on
-the stream, whose transitions are the lane's.
-
-`domain.stream_signals.composition_substituted` reads the lane's stream alone:
-its `node_session_started` events, grouped by the invocation each is keyed to,
-raise at `(LaneSubject(scope, lane), COMPOSITION_SUBSTITUTED)` when any
-invocation opened more distinct sessions than it declared. Both counts come off
-the one reading, so the record replays and no bound is configured. It is
-composed at every standing, because the openings are facts of runs already
-over, and announced like the tally; it never clears, because a posted opening
-is never taken back.
-
-`services.alarm_supervisor.AlarmSupervisor` is the writer the tick observes
-through.
-Per lane it reads the run-state record, every alarm record on that lane's issue
-in one listing (`read_run_alarms`), and the lane's stream once, and
-`domain.lane_alarms.lane_alarm_records` composes what each address should
-hold. A lane with no run-state record is passed over before anything else is
-read. Each record is rewritten in place — a clear is an edit showing the
-condition ending, never a delete — under one lease over exactly the marker
-surfaces written that tick, which `domain.run_alarm_record.run_alarm_surface`
-is the single expression for. The lease is taken only around a write, because a
-lease is itself a comment on the carrier and a tick with nothing to say writes
-nothing. The records are written before their events: a record whose event was
-lost is repaired by the next tick, while an event without its record announces
-nothing. What the stream owes is read from the stream, so a condition firing
-across many ticks is announced once. The holder that takes
-the lease and the holder recorded on the alarm are the same string. That
-string is the pass's own identity, the operation name with the tick name on it
-(`services/supervisor_pass.py::supervisor_holder`); it is not composed from
-`dispatch_holder`, which names the process that holds fire claims.
-
-Each scope's stage barrier is observed first in that scope's iteration of the
-tick: `composition/supervisor.py::build_supervisor_pass` builds, beside the lane
-observer, a callable the tick is handed the way `read_ready` is, which binds the
-port to `services.scope_tally.observe_scope_barrier` and holds no loop of its
-own. That function is typed on `ScopeTallyReader` alone, the roster behind its
-classification preflight, and calls
-`services.scope_tally.observe_scope_tally` once for each rung of the governed
-sequence that has a successor, returning every open rung's alarm in that order,
-so two barriers open at once are two alarms. Each raise is
-logged as `supervisor_scope_alarm_raised` at warning with the scope, the
-signal it raised under (`tally_unmoved`, the member the scope arm widens) and
-the rung's marker address; a failure is logged as `supervisor_scope_arm_failed`,
-names the scope in `SupervisorIncompleteError`, and leaves the scope's lanes
-still observed. The argument is required, so there is no tick without it.
-
-`services.escalation_ageing_supervisor.EscalationAgeingSupervisor` is the
-tick's other lane observer (KOD-892). Once per scope it reads every member's
-run-state record the ready read names — ready, blocked, unapproved, closed and
-held — as the scope's position; a damaged record leaves that scope's questions
-unobserved for the tick, logged as `supervisor_escalations_unobserved`, while
-its lanes' alarms are still observed. Per ready lane and per held lane it asks,
-for each criterion of the lane's roster, whether the lapse question a lapsed
-observation raises (KOD-699) is on the lane's issue, through
-`EscalationRecordReader.find`. For each one there it reads the question's
-record at `(EscalationSubject, ESCALATION_AGEING)`, feeds the recorded
-question, the lane's commits and the tick-age count from the stored anchor to
-`services.escalation_signals.observe_recorded_escalation_ageing`, and writes
-through its leased recorder, `services.run_alarm_recorder.RunAlarmRecorder`,
-only when whether the question is raised changes. Its transition events are
-keyed per question, `escalation_ageing:<occurrence>`, so two questions on one
-lane are two streams; a lane-subject record's key stays its signal. Both keys
-are composed by `domain.run_alarm_record.alarm_event_due`, the one transition
-rule the lane observer's `domain.lane_alarms.alarm_event_due` also asks. Only
-lapse questions are aged.
-
-`services.scope_tally.observe_scope_tally` reads current native membership and
-strict issue classification twice before computing `tally_unmoved`. Its roster
-uses the same ORGANIZE work-target predicate as the gap: criterion and
-record-shaped issues are excluded without pruning deliverable descendants.
-The governed GROOM → TICKET → CRITERIA sequence selects adjacent configured
-terminal markers independently of table order. A member carrying the next
-marker while fewer than all members carry the current marker returns a scope
-alarm. Missing phase labels count as open; unreadable or changed membership
-and classification refuse. Required semantic mappings must be present, and
-aliased phase or classification markers refuse instead of changing the roster.
-
-The signal retains the exact configuration references, native scope address,
-roster keys and member label projections as readings, so replay needs no port.
-A missing member reading or null/empty marker set counts as open in the pure
-predicate. The final execution transition still requires a native member
-lane-dispatched event reader and explicitly refuses before querying, so the
-tick never asks for that rung.
-
-`tally_unmoved` has a second arm, chosen by the subject's kind and sharing the
-signal: under a `LaneSubject` it reads one lane's tally twice. A `LaneTally` is
-that reading — the criterion sub-issue keys the lane's subtree still owes,
-sorted, and the commit shas its run-state record carries, in recorded order.
-The arm takes four readings: the earlier tally, the current one, the earlier
-reading's identities that have since closed, and
-`run_alarm_max_commits_without_closure`. It returns an alarm when the lane owes
-work, closed none of what it owed, and recorded more commits since the earlier
-reading than the bound allows. The clock is therefore the lane's own record: a
-lane nobody fires records nothing and is quiet by arithmetic. Work counts
-identities and never lengths, the same position `domain/fire_plateau` states
-for the walk's own plateau, and closure is the walk's own arithmetic rather
-than a second one. A subject with neither arm refuses. `domain/tally_record`
-composes those readings from the tracker and decides what the one record at
-the address should hold next; whether a record is an alarm is answered by
-replaying its readings, never by whether it carries a bound, because the scope
-arm raises with none.
-
-`domain.run_shape.escalation_ageing` measures an unresolved escalation in
-recorded lane commits after its raise SHA and recorded walker ticks since
-raise. A walker tick leaves no tracker fact of its own (KOD-788); what it
-leaves is the commits the fired lane records, so a tick is counted by the
-commits every lane of the escalation's scope has recorded since the question
-was first observed. Either count exceeding its own AppConfig limit returns the observation;
-when both exceed, the commit bound has deterministic precedence. Equal counts
-remain clean. The function retains six readings in order: the escalation JSON,
-its resolution JSON, the ordered commit SHA projection, the tick-age count,
-the configured commit limit and the configured tick limit. Each value keeps
-its source reference and original bytes. Replaying those readings with the
-alarm's subject and raising provenance reconstructs the same alarm.
-
-`services.run_shape.read_escalation_ageing` consumes already-read tracker
-projections and reads the current addressed decision through
-`EscalationResolutionReader`. It has no writer or repository dependency. Missing escalation reads, malformed
-counts, and absent or duplicate raise positions refuse observation; they do
-not manufacture an unanswered question or a clean result. The configured
-limits are nonnegative counts, defaulting to five commits and ten ticks.
-`services.escalation_signals.observe_recorded_escalation_ageing` supplies the
-escalation and commit readings from their actual configured native records.
-The escalation reader consumes the existing writer's seven-field JSON, with
-strict occurrence identity and no interpretation of legacy prose. The lane
-record's ordered commits must completely reach its declared head and agree
-with its count. Both native records and the exact decision resolution used
-by the shared observer are checked again; a changed source refuses the
-observation, including a newly answered or withdrawn decision. All returned readings preserve
-their source comment identities, and neither collector writes or reads Git.
-The tick-age input is anchored once, on the question's own record: the first
-observation stores the scope's lane heads as the first reading of its
-`ESCALATION_AGEING` record at the existing `(subject, signal)` address, and
-every later tick counts the commits recorded after those heads
-(`domain.escalation_age_record`). A tick over unchanged tracker state counts
-the same commits and writes nothing, nothing reads a clock or counts the
-pass's own ticks, and a killed tick re-enters from the stored anchor alone. A
-question already answered when it is first observed is never anchored. The
-supervisor tick ages each lane's open lapse questions and writes their records
-under the same holder as its lane observer; other escalation occurrences are
-not aged. Leased alarm persistence exists, and only the supervisor tick's own
-observations write through it.
+Those code observers — the alarm table, the lane and scope tallies, the
+criterion stream signals, the escalation ageing arm and the alarm recorder —
+were removed with the settings only they read. The `RunAlarm` value, the stored
+record's address (`domain/run_alarm_record.py`), the tracker adapter's alarm
+reads and the `run_alarm_raised` and `run_alarm_cleared` event kinds stay, so
+records written before the merge remain readable; nothing writes new ones. The
+pure folds below remain, with no scheduled caller.
 
 `barren_tick_with_diff_growth` compares recorded files-changed and
 commits-ahead against their own configured bounds when a tick closes no
@@ -1475,8 +1232,7 @@ belongs to the separate record-consistency signal.
 
 The previous tick's open identities still require explicit supplied
 provenance. Their collectors remain separate
-work and no tick reaches them; leased alarm persistence exists, and only the
-supervisor tick's own observation and its escalation ageing arm write through it. These bounded record reads do not provide
+work and no tick reaches them. These bounded record reads do not provide
 an atomic tracker transaction or an execution event stream.
 
 `surface_contended` counts distinct opaque run-holder identities for one

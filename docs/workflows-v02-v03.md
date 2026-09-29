@@ -176,6 +176,10 @@ origin is a `file://` URL.
   `_build_graph(criteria=None)` exactly as before, and the per-issue dispatch
   passes are still scheduled beside the cron wherever a tracker, a forge token
   and the dispatch cadence are set.
+- **The prompt passes run beside both.** Fire preparation, grooming and the
+  supervisor pass are scheduled prompt passes, each on its own cadence pair,
+  scope or no scope; the supervisor pass reads what the run did and reports
+  its conduct, and no separate code tick observes the run.
 - **Old operation files boot.** The loader ignores a v0.2 `[[initiatives]]`
   table, gives a file with no `[marker_prefixes]` table the markers v0.2 wrote,
   and says what it did in one `operation_file_v02_accepted` line

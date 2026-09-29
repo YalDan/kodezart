@@ -71,9 +71,9 @@ The dispatch pair schedules the heartbeat and the per-issue dispatch passes
 alike; leave it unset and neither runs, and boot names each with
 `scheduled_pass_not_configured`. The run timeout is the longest one run may
 take before the queue cancels it (`job_timed_out`); set it well above the
-longest run you expect. The fire-prep and grooming passes have cadence pairs of
-their own and run over the declared teams' boards beside the heartbeat when
-those are set.
+longest run you expect. The fire-prep, grooming and supervisor passes have cadence
+pairs of their own and run over the declared teams' boards beside the
+heartbeat when those are set.
 
 ## What boot logs
 
