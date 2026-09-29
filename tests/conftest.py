@@ -68,8 +68,7 @@ def _restore_logging_configuration() -> Iterator[None]:
     try:
         yield
     finally:
-        if structlog.get_config()["cache_logger_on_first_use"]:
-            _forget_cached_loggers()
+        _forget_cached_loggers()
         root.handlers = handlers
         for name, level in levels.items():
             logging.getLogger(name).setLevel(level)
