@@ -46,6 +46,7 @@ UTILITY_KEYS = frozenset(
         PromptKey.PASS_GATE.value,
         PromptKey.SCOPE_SCAN.value,
         PromptKey.SCOPE_DONE.value,
+        PromptKey.SUPERVISOR_PASS.value,
     },
 )
 
