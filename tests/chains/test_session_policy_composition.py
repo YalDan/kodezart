@@ -89,9 +89,18 @@ async def test_existing_real_workflow_tool_policy_reaches_native_options(
     assert {tuple(o.allowed_tools) for o in options_seen} == {
         (),
         ("Bash",),
-        ("Read", "Glob", "Grep", "Bash"),
-        ("Read", "Glob", "Grep", "Bash", "Agent"),
-        ("Read", "Glob", "Grep", "Bash", "Agent", "WebSearch", "WebFetch"),
+        ("Read", "Glob", "Grep", "Bash", "Workflow"),
+        ("Read", "Glob", "Grep", "Bash", "Agent", "Workflow"),
+        (
+            "Read",
+            "Glob",
+            "Grep",
+            "Bash",
+            "Agent",
+            "WebSearch",
+            "WebFetch",
+            "Workflow",
+        ),
     }
     for options in options_seen:
         assert options.tools is None
