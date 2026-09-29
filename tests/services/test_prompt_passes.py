@@ -1898,4 +1898,16 @@ def test_the_supervisor_pass_renders_as_the_one_supervisor(prompt_set: str) -> N
     assert "A fire closes what it builds." in rendered
     assert "A question to a person does not age unseen." in rendered
     assert "A pull request's draft flag tells the truth." in rendered
+    assert (
+        "Never write on the forge — no comments, labels, reviews, merges, pushes"
+        " or branches — and never clone a repository" in rendered
+    )
+    assert (
+        "Never change a workflow state, a label, a relation, a parent, a date,"
+        " an assignee, a priority, a description or a title" in rendered
+    )
+    assert (
+        "A session never merges: a merge by the account is a finding of the first"
+        " rank." in rendered
+    )
     assert "on every fire in progress" in gate
