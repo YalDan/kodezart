@@ -6,6 +6,8 @@ half — what actually reaches the executor at each dispatch — is asserted in
 the chain modules the criteria name by path.
 """
 
+import json
+import re
 from pathlib import Path
 
 import pytest
@@ -33,9 +35,9 @@ V5_SET_DIR = default_sets_root() / V5_SET
 LADDER: tuple[SessionEffort, ...] = tuple(SessionEffort)
 
 #: The set's own declared role → effort. The judgment roles run at the
-#: maximum and the question role at the floor (owner ruling of 2026-09-24);
-#: the maximum replaced the fire-time ruling FR-2 that ran judgment one
-#: level below authoring.
+#: maximum and the question and utility roles at the floor (rulings of
+#: 2026-09-24 and 2026-09-29); the maximum replaced the fire-time ruling
+#: FR-2 that ran judgment one level below authoring.
 EXPECTED_EFFORT: dict[SessionRole, SessionEffort] = {
     **dict.fromkeys(SessionRole, SessionEffort.MAX),
     SessionRole.QUESTION: SessionEffort.LOW,
@@ -365,3 +367,17 @@ def test_an_empty_table_is_byte_identical_to_before_it_existed() -> None:
 
     for key in PromptKey:
         assert registry.session_policy(key).model is None
+
+
+def test_every_engine_the_deploying_guide_pins_is_one_the_set_declares() -> None:
+    """The guide's SESSION_MODELS example boots without an engine mismatch:
+    a model the set does not declare would be logged at every boot."""
+    guide = Path(__file__).resolve().parents[2] / "docs" / "deploying.md"
+    tables = re.findall(
+        r"SESSION_MODELS`? *[|=] *[`']?(\{[^}]*\})",
+        guide.read_text(encoding="utf-8"),
+    )
+    assert tables, "the deploying guide no longer shows a SESSION_MODELS example"
+
+    pinned = {engine for table in tables for engine in json.loads(table).values()}
+    assert pinned - set(v5_metadata().engines) == set()
