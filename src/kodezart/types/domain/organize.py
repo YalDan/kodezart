@@ -30,14 +30,6 @@ class RefusalKind(StrEnum):
     HUMAN_DECISION = "human_decision"
 
 
-class AdmissionRoute(StrEnum):
-    """The next admission action; choosing one performs no tracker write."""
-
-    MARK_COMPLETE = "mark_complete"
-    REAUTHOR = "reauthor"
-    ESCALATE = "escalate"
-
-
 class DefectRole(StrEnum):
     """A defect instance or the instruction that makes writers reproduce it."""
 
@@ -419,18 +411,3 @@ class ResolvedMandateSpec(CamelCaseModel):
     terminal_marker: str
     role: MandatePhaseRole
     marker_source: str
-
-
-class OrganizeAdmissionRequest(CamelCaseModel):
-    """Source identity, rubric and repository base for one fresh judgment."""
-
-    model_config = ConfigDict(frozen=True)
-
-    issue_key: str = Field(min_length=1)
-    scope: ScopeRef
-    mandate_rubric: str = Field(min_length=1)
-    repo_url: str = Field(min_length=1)
-    base_ref: str = Field(min_length=1)
-    cache_key: str | None = None
-    defect_classes: tuple[str, ...] = ()
-    admission_prompt_key: PromptKey = PromptKey.ORGANIZE_ASSESS

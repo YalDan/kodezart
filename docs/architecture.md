@@ -108,14 +108,14 @@ does not exist.
 | FireCriteriaReader | TrackerCriteria | Refreshes current native criterion obligations at execution, retry and replay barriers, and answers the same obligations from a subtree reading the caller already holds (the native writer's authority read) |
 | FireCriteriaSource | TrackerCriteria | Composes the typed native subject specification from the admitted subject and its subtree's criteria, and supplies current criterion reads |
 | TrackerContextReader | LinearMcpTracker | Referenced assets and document bodies for fire context |
-| TrackerScopeApprovalReader | LinearMcpTracker | The reads a scope-member question needs, composed from the cascade and the container metadata roles and declaring the scope's own labels; a scope run's entry and the heartbeat depend on it alone, and the organize owner's gate reading (`scope_carries`) is typed on it |
+| TrackerScopeApprovalReader | LinearMcpTracker | The reads a scope-member question needs, composed from the cascade and the container metadata roles and declaring the scope's own labels; a scope run's entry and the heartbeat depend on it alone |
 | LaneStateTracker | LinearMcpTracker | Exactly the tracker calls the lane's own state writer makes, composed from the comment, event, issue, description, state and criterion roles those calls belong to |
 | CriterionReopener | LinearMcpTracker | The one state move the audit makes (a refuted finished criterion back to unstarted), narrowed out of the port rather than added to it |
 | ContainerMetadataReader | LinearMcpTracker | What a container is, read on its own; composed into the approval read and taken by the tracker-artifact reader |
 | ExecutionApprovalReader | LinearMcpTracker | The one approval question an entry asks, composed into the approval read and into the scope-ready read the walker takes |
 | IssueReader | LinearMcpTracker | One issue, whole; the read the audit runtime and the native amendment arm make, and a base of the composed roles that read an issue |
 | PlanningIssueReader | LinearMcpTracker | One issue with complete relations; composed into the scope-plan read, the lane escalation writer and the artifact reader |
-| IssueRevisionReader | LinearMcpTracker | One issue and its body digest; the read the organize author round and the organize owner make |
+| IssueRevisionReader | LinearMcpTracker | One issue and its body digest; composed into `TrackerPort` and `OrganizeOwnerTracker` |
 | IssueScanReader | LinearMcpTracker | The board scan the dispatch pass's gate and the fire dispatcher select on |
 | ScopeFamilyReader | LinearMcpTracker | The scope family, resolved for scope resolution and composed into every membership read |
 | StateHistoryReader | LinearMcpTracker | When an issue entered its state; the read audit candidate collection makes |
@@ -126,11 +126,11 @@ does not exist.
 | SurfaceAuthorshipReader | LinearMcpTracker | Whom the tracker records as the author of a body it can replace. The read answers the backend's own attribution together with the distinct holders whose recorded writes replaced it, in the order the backend placed those records; it is asked only of the two body surfaces the port can replace |
 | ScopeReadPreflight | LinearMcpTracker | The capability assertions a scope read makes first; composed into the scope-plan read and the lane escalation writer |
 | TrackerVocabulary | LinearMcpTracker | The declared vocabulary resolved and instated: the two calls tracker boot makes |
-| CriterionMintWriter | LinearMcpTracker | The criterion mint on a role of its own, taken by the organize owner and by nothing else |
+| CriterionMintWriter | LinearMcpTracker | The criterion mint on a role of its own; `CriterionMinter` narrows it for the weakened-assertion marks |
 | DescriptionWriter | LinearMcpTracker | The one body replacement the port offers; composed into the lane state, amendment and organize writer roles |
 | WorkflowStateWriter | LinearMcpTracker | The configured lifecycle move; composed into the lane state tracker and the per-issue lifecycle writer |
 | StateRestorer | LinearMcpTracker | The put-back a reader's own state asks for; composed into the walk's role and the lifecycle writer |
-| ClassificationWriter | LinearMcpTracker | One configured classification added; composed into the lane escalation writer and the organize owner |
+| ClassificationWriter | LinearMcpTracker | One configured classification added; composed into the lane escalation writer |
 | CommentRecordWriter | LinearMcpTracker | The marker-keyed record write; composed into every role that keeps a record on an issue |
 | LaneEventWriter | LinearMcpTracker | The append to a lane's event stream, composed into the run-alarm and lane-state roles |
 | ClaimHolder | LinearMcpTracker | Extending and withdrawing a claim already held: the claim heartbeat's two calls |
@@ -142,7 +142,6 @@ does not exist.
 | ScopeTallyReader | LinearMcpTracker | The roster the scope tally is counted over, behind the classification preflight: exactly what a scope's stage barrier is read from, with no event read and no write |
 | ScopeReadyReader | LinearMcpTracker | The scope plan plus the approval an entry asks for: what the scope walker and the dispatcher read |
 | FireSubjectReader | LinearMcpTracker | The admitted subject of a fire over the family it is measured against: the criteria stage's reads |
-| OrganizeAuthorReader | LinearMcpTracker | The criterion family and body digests the organize and authoring rounds read |
 | OrganizeContextTracker | LinearMcpTracker | The issues, milestones and records the organize context reader assembles from |
 | PassGateReader | LinearMcpTracker | The board and review scans the dispatch pass's gate decides on, with no write |
 | TrackerArtifactReader | LinearMcpTracker | Every read a tracker artifact is assembled from; taken by the audit pass, the sweep's verifier and the artifact reader itself |
@@ -155,7 +154,7 @@ does not exist.
 | AuditPublicationWriter | LinearMcpTracker | The record an audit publishes, under the lease publication holds |
 | EscalationSignalReader | LinearMcpTracker | The resolution and records an escalation's ageing is observed from; the supervisor's ageing arm holds it for the collector it hands it to |
 | RecordSignalReader | LinearMcpTracker | The criterion family and lane record a barren tick, and a lane's recorded ruling growth, are observed from |
-| OrganizeOwnerTracker | LinearMcpTracker | Everything the older cascade organize owner reads and every write it makes: the widest single consumer; the wired session owner reads through ScopeFamilyReader and TrackerScopeApprovalReader alone and writes nothing |
+| OrganizeOwnerTracker | LinearMcpTracker | Split creation and graph change with the reads and writes they were composed with; the cascade organize owner that held it is removed, and `TrackerPort` still carries it |
 | FireRulingTracker | LinearMcpTracker | The criterion reads and record writes a ruling round makes |
 | AmendmentWriteTracker | LinearMcpTracker | Every read the amendment write-back is composed from and every write it makes |
 | NativeAmendmentTracker | LinearMcpTracker | The amendment writes plus the membership the native arm reads beside them, and the criterion minter its weakened-assertion marks take |
@@ -775,55 +774,13 @@ conformance checks cover body changes, unchanged replays and metadata-only
 writes. An unreadable or invalid revision refuses at the actual read; no
 consumer substitutes an empty digest or treats it as live.
 
-The paragraphs from here to the organize table below describe the older
-cascade owner, `services/organize_owner.py`: its admission sessions, its gap
-arithmetic and its leased write-back. That owner stays in the tree and is
-constructible through `build_organize_owner`, and it is wired nowhere; the
-stages a scope run runs today are described after the organize table.
-
-Admission sessions return an `AdmissionJudgment`. The caller creates the
-`AdmissionResult` by attaching the body digest from the revision supplied to
-that session; the agent never supplies that metadata. A body changed while
-the session runs therefore leaves a result about the earlier body.
-`OrganizeAdmission.is_live` reads the surface's current revision and calls the
-pure two-digest comparison. It starts no session and never restamps a result.
-An issue body and each criterion body are graded and checked independently.
-Persistence, phase markers and issue readiness orchestration remain separate
-consumers of those results.
-
-The pure `organize_gap` function takes a complete scope revision snapshot,
-admissions keyed by each surface identity, open findings and the configured
-semantic body marker. It returns original issue records in snapshot order.
-Missing markers, absent or stale admissions, missing non-Canceled criterion
-children, or open findings put an issue in the work set. A stale criterion
-body puts its parent there through the same comparison, without lapsing the
-parent body judgment; execution-state changes alone do not. Record-shaped
-`tracker` and `decision` members and criterion children are never work targets.
-Incomplete parent identity or duplicate revision/admission records refuse
-computation. Collecting and persisting these snapshots and running leased
-author sessions remain orchestration work outside this pure function.
-
-The admission test asks gradability beside buildability. The assessing and
-verifying roles are given each declared repository's check chain and runner
-environment, with the named absence where a repository declares none, and a
-deliverable no declared environment can demonstrate is a repairable refusal
-whose repair is to move the demonstration. A criterion sub-issue is created
-only when its author names what will fill its Evidence (a runnable test, or
-the observation recorded where no test can run); one that names neither is
-refused before the child exists. The Evidence row itself is still created
-empty. That refusal asks only that a demonstration is named. Whether the
-named test runs through a declared check, or the named observation is one the
-declared runner environment can make, is the criteria author's judgement,
-under a prompt that carries the same declared environments, and the
-verifier's under the verify prompt.
-
 One organize table, `[[organize_mandates]]`, declares a `ticket` row and a
 `criteria` row, each with a gate label and a terminal marker. It still loads
 and is still validated: a declared table must hold both rows, a `groom` row is
 refused at load naming it, a row may gate on `scope_labels.approved` by that
 exact reference, and no row may mark with the approval label or reach it
-through an alias. The cascade owner above runs over it, and the tracker
-adapter reads the criteria row's marker when it reads a fire's subject
+through an alias. The tracker adapter reads the criteria row's marker when
+it reads a fire's subject
 (`criteria_stage_label_key` in `composition/tracker.py`). The scope run reads
 no row of it.
 
@@ -843,7 +800,7 @@ ends the run `criteria_infeasible`. There is no stage barrier and no marker
 roster: a run submitted again after a failure grooms and preps again from
 what the board holds.
 
-Measured 2026-09-24: the cascade owner cost about 5,900 tracker
+Measured 2026-09-24: the cascade owner this replaced cost about 5,900 tracker
 calls per settling round of the scratch scope and wrote its markers only at
 the end; one session with the tracker tools over the same scope took 8 tool
 calls and 45 seconds. That is why each stage is one session.

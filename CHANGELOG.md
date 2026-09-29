@@ -201,6 +201,16 @@ Each of these needs an action from a v0.2 operator; the steps are in
   `[[organize_scopes]]` rows without `[organize]`, `[write_back]` or a tracker.
   What the tick did before approval is the grooming and fire-prep passes' work;
   the ticket and criteria stages run inside the scope run the heartbeat submits.
+- Present only in pre-release v0.3 builds, and wired nowhere: the cascade
+  organize owner (`services/organize_owner.py`, `build_organize_owner`), its
+  admission and authoring chains (`chains/organize.py`,
+  `chains/organize_author.py`), its context reader
+  (`services/organize_context.py`), and the arithmetic only it computed
+  (`organize_gap`, `admission_route` and the stage roster helpers in
+  `domain/organize.py`, and `domain/organize_surfaces.py`). Each scope stage is
+  one session. `KODEZART_ORGANIZE__MAX_ADMISSION_ROUNDS` and
+  `KODEZART_ORGANIZE__MAX_CONVERGENCE_ROUNDS` still load and are read by
+  nothing.
 
 ## [0.2.0] - 2026-09-07
 

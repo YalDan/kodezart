@@ -58,9 +58,8 @@ body = "organize:body-complete"
 criteria = "organize:criteria-complete"
 
 # The organize table. The scope run does not read it: its groom and prep stages
-# are one session each over the whole parent. The table is read by the older
-# cascade organize owner, which nothing wires, and by the tracker adapter's
-# fire-subject read, and [[organize_scopes]] below requires it. Declaring the
+# are one session each over the whole parent. The table is read by the tracker
+# adapter's fire-subject read, and [[organize_scopes]] below requires it. Declaring the
 # table requires both rows, and a row of any other kind is refused at load.
 [[organize_mandates]]
 kind = "ticket"

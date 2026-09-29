@@ -45,8 +45,6 @@ from kodezart.types.domain.gating import (
     RepoVisibility,
 )
 from kodezart.types.domain.node_session import NodeInvocation
-from kodezart.types.domain.organize import AdmissionJudgment
-from kodezart.types.domain.organize_owner import OrganizeProposal
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.persist import ArtifactPersistStatus
 from kodezart.types.domain.remediation import RemediationEntry, RemediationPlan
@@ -1416,11 +1414,9 @@ AUDIT_CLAIM_SCHEMA: dict[str, object] = AuditClaimJudgment.model_json_schema()
 DETECTOR_REMOVAL_SCHEMA: dict[str, object] = DetectorRemovalJudgment.model_json_schema()
 
 
-ORGANIZE_ADMISSION_SCHEMA: dict[str, object] = AdmissionJudgment.model_json_schema()
 NATIVE_WRITER_SCHEMA: dict[str, object] = NativeWriterOutput.model_json_schema()
 AMENDMENT_JUDGMENT_SCHEMA: dict[str, object] = AmendmentJudgment.model_json_schema()
 AMENDMENT_TEXT_SCHEMA: dict[str, object] = AmendmentTextOutput.model_json_schema()
-ORGANIZE_PROPOSAL_SCHEMA: dict[str, object] = OrganizeProposal.model_json_schema()
 WRITE_BACK_SCHEMA: dict[str, object] = WriteBackFinding.model_json_schema()
 RULING_SCHEMA: dict[str, object] = RulingOutput.model_json_schema()
 
@@ -1446,8 +1442,6 @@ WIRE_SCHEMAS: dict[str, dict[str, object]] = {
     "SCOPE_SCAN_SCHEMA": SCOPE_SCAN_SCHEMA,
     "SCOPE_DONE_SCHEMA": SCOPE_DONE_SCHEMA,
     "DRAFT_CRITIQUE_SCHEMA": DRAFT_CRITIQUE_SCHEMA,
-    "ORGANIZE_ADMISSION_SCHEMA": ORGANIZE_ADMISSION_SCHEMA,
-    "ORGANIZE_PROPOSAL_SCHEMA": ORGANIZE_PROPOSAL_SCHEMA,
     "WRITE_BACK_SCHEMA": WRITE_BACK_SCHEMA,
     "RULING_SCHEMA": RULING_SCHEMA,
     "AUDIT_CLAIM_SCHEMA": AUDIT_CLAIM_SCHEMA,

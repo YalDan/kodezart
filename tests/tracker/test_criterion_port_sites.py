@@ -8,18 +8,15 @@ implementation, a call of the descent from outside the adapter, or a second
 definition that lists children by parent on the wire each redden.
 
 The mint is declared on the aggregate port and on the segregated writer
-role narrowed out of it, implemented once, and called once per holder: the
-criteria stage's own write step, and the mark one lost designated assertion
-leaves on its lane.  Its adapter method is identified by the surface kind
-the port declaration itself names for the mint and by the creation payload
-the adapter's write verifier recognises — not by a save method, of which the
-adapter has none, and not by the criterion classification label, which the
-classification writer also resolves.  Pinned elsewhere and not repeated
+role narrowed out of it, implemented once, and called by one holder: the
+mark one lost designated assertion leaves on its lane.  Its adapter method is
+identified by the surface kind the port declaration itself names for the mint
+and by the creation payload the adapter's write verifier recognises — not by
+a save method, of which the adapter has none, and not by the criterion
+classification label, which the classification writer also resolves.  Pinned elsewhere and not repeated
 here: the identity value's one construction site, which the
-criterion-lifecycle conformance module asserts over the whole package; that
-the stage rules the criterion sub-issue set is the proposal's list, which
-the run-stage owner case asserts; and the two exact call-site registers that
-name the member.
+criterion-lifecycle conformance module asserts over the whole package; and
+the two exact call-site registers that name the member.
 
 Every name the guard looks for is read off an object — the members off the
 port protocols, the privates off the adapter class, the surface off the
@@ -80,7 +77,6 @@ from kodezart.core.protocols import (
     TrackerCriteriaReader,
     TrackerPort,
 )
-from kodezart.services.organize_owner import OrganizeOwner
 from kodezart.services.weakened_assertions import WeakenedAssertionMarks
 from kodezart.types.domain.surface import SurfaceKind
 from tests.domain.test_criterion_cross_off import (
@@ -109,7 +105,6 @@ ADAPTER = module_of(LinearMcpTracker)
 #: The package every vendor adapter lives under, taken off one of them.
 ADAPTERS = ADAPTER.split("/", 1)[0]
 SCOPE_READER = module_of(LinearScopeReader)
-OWNER = module_of(OrganizeOwner)
 MARKS = module_of(WeakenedAssertionMarks)
 READ = TrackerCriteriaReader.read_criteria.__name__
 DESCENT = LinearMcpTracker._read_criteria.__name__
@@ -548,16 +543,16 @@ def mint_surfaces(sources: dict[str, str]) -> dict[str, list[str]]:
 
 
 def callers_outside_the_holders(callers: dict[str, list[str]]) -> list[str]:
-    """The modules naming the mint other than its two holders, sorted.
+    """The modules naming the mint other than its one holder, sorted.
 
     The one comparison the guard below and the planted control share, so a
     loosened comparison fails the control rather than passing silently.
     """
-    return sorted(set(callers) - {OWNER, MARKS})
+    return sorted(set(callers) - {MARKS})
 
 
-def test_the_criteria_stage_is_the_only_caller_of_the_criterion_mint():
-    """The mint is declared on two roles, implemented once, named once per holder.
+def test_the_weakening_mark_is_the_only_caller_of_the_criterion_mint():
+    """The mint is declared on two roles, implemented once, named by one holder.
 
     The member, the classes and their steps are all read off the code, so
     renaming any of them moves the guard.  The port module declares the
@@ -565,12 +560,9 @@ def test_the_criteria_stage_is_the_only_caller_of_the_criterion_mint():
     The count is of every definition that names the member, called or not,
     over the whole package at once (KOD-621): a definition that hands the
     member on names it, so a second minting caller is a second site wherever
-    it later calls the value.  The stage's call sits in a closure of its write
-    step, and the step is what the stage holds, so that assertion is on the
-    prefix and the closure's own tail stays the code's word; a second closure
-    in the same step would be a second naming definition and would redden the
-    count.  The mark's call sits in the method's own body, and the equality
-    over the callers is exact, so a third holder of the mint still reddens.
+    it later calls the value.  The mark's call sits in the method's own body,
+    and the equality over the callers is exact, so a second holder of the mint
+    reddens.
     """
     sources = source_tree()
 
@@ -586,10 +578,6 @@ def test_the_criteria_stage_is_the_only_caller_of_the_criterion_mint():
     callers = mint_sites(sources)
 
     assert callers_outside_the_holders(callers) == []
-    assert len(callers[OWNER]) == 1
-    assert callers[OWNER][0].startswith(
-        f"{OrganizeOwner.__name__}.{OrganizeOwner._author_write.__name__}."
-    )
     assert callers[MARKS] == [
         f"{WeakenedAssertionMarks.__name__}."
         f"{WeakenedAssertionMarks.refuse_weakening.__name__}"

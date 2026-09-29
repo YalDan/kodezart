@@ -196,36 +196,6 @@ def test_every_verdict_requires_a_nonempty_admitted_body_digest(verdict, digest)
 
 
 @pytest.mark.parametrize(
-    "admitted,current,expected",
-    [
-        ("revision:one", "revision:one", True),
-        ("revision:one", "revision:two", False),
-        ("revision:one ", "revision:one", False),
-        ("REVISION", "revision", False),
-        ("opaque-not-a-sha", "opaque-not-a-sha", True),
-    ],
-)
-def test_admission_liveness_is_exact_digest_arithmetic(admitted, current, expected):
-    from kodezart.domain.organize import is_admission_live
-
-    assert (
-        is_admission_live(admitted_body_digest=admitted, current_body_digest=current)
-        is expected
-    )
-
-
-@pytest.mark.parametrize("field", ["admitted_body_digest", "current_body_digest"])
-@pytest.mark.parametrize("missing", ["", " \n"])
-def test_liveness_cannot_treat_unavailable_digests_as_live(field, missing):
-    from kodezart.domain.organize import is_admission_live
-
-    fields = {"admitted_body_digest": "revision", "current_body_digest": "revision"}
-    fields[field] = missing
-    with pytest.raises(ValueError, match="nonempty"):
-        is_admission_live(**fields)
-
-
-@pytest.mark.parametrize(
     "verdict,fields",
     [
         ("not_buildable", {}),
@@ -424,46 +394,6 @@ def test_non_refusals_round_trip_with_no_refusal_kind(verdict):
     )
     assert restored == result
     assert restored.refusal_kind is None
-
-
-@pytest.mark.parametrize(
-    "refusal_kind,expected",
-    [("spec_gap", "reauthor"), ("human_decision", "escalate")],
-)
-@pytest.mark.parametrize(
-    "invented_decision",
-    ["URGENT HUMAN APPROVAL REQUIRED", "The author can easily repair this gap."],
-)
-def test_admission_refusal_route_uses_kind_without_reading_tone(
-    refusal_kind, expected, invented_decision
-):
-    from kodezart.domain.organize import admission_route
-    from kodezart.types.domain.organize import AdmissionResult
-    from tests.fakes import make_tracker_issue
-
-    result = AdmissionResult.model_validate(
-        {
-            "issue_id": "ISSUE-1",
-            "verdict": "not_buildable",
-            "admitted_scope": {"kind": "issue", "key": "fixture-scope"},
-            "admitted_context_digest": "fixture-context",
-            "admitted_body_digest": "revision:one",
-            "invented_decision": invented_decision,
-            "evidence": "The same evidence is used for either classification.",
-            "refusal_kind": refusal_kind,
-        }
-    )
-    before = result.model_dump_json()
-    assert (
-        admission_route(
-            result,
-            issue=make_tracker_issue("ISSUE-1"),
-            scope_issue_keys=frozenset({"ISSUE-1"}),
-        ).value
-        == expected
-    )
-    assert result.model_dump_json() == before
-    assert AdmissionResult.model_validate_json(before) == result
 
 
 def mandate_fields(**overrides):
@@ -828,33 +758,3 @@ async def test_invalid_table_stops_normal_boot_before_tracker_or_dispatch(
             pytest.fail(
                 "dispatch became available with an unresolved mandate reference"
             )
-
-
-EVIDENCE_FILLABILITY = [
-    ("tests/fixture/test_criterion.py", None, True),
-    (None, "The recorded observation of the landed board.", True),
-    ("tests/fixture/test_criterion.py", "And the recorded observation.", True),
-    (None, None, False),
-    ("", None, False),
-    ("   ", None, False),
-    (None, "", False),
-    (None, "   ", False),
-    ("", "   ", False),
-]
-
-
-@pytest.mark.parametrize(
-    ("runnable_test", "named_observation", "fillable"), EVIDENCE_FILLABILITY
-)
-def test_evidence_is_fillable_only_when_a_demonstration_is_named(
-    runnable_test, named_observation, fillable
-):
-    """Presence of a demonstration, not prose about one, and never a blank."""
-    from kodezart.domain.organize import evidence_is_fillable
-
-    assert (
-        evidence_is_fillable(
-            runnable_test=runnable_test, named_observation=named_observation
-        )
-        is fillable
-    )

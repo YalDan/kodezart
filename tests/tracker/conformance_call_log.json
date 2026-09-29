@@ -1,10 +1,4 @@
 {
-  "tests/tracker/test_organize_replay_contract.py::test_a_fresh_owner_reads_every_labelled_member_as_labelled[linear-mcp]": "0b94346ef41b3f004cfbe6f7896d5527c28b6bfb7d3a8a9b26da6efbd9f2b0b9",
-  "tests/tracker/test_organize_replay_contract.py::test_a_labelled_body_is_reworked_only_when_a_finding_names_it[linear-mcp]": "d798cd90d68ba52d824af9fd6f7d615082dc591880c1d7e269bc411613cac1d7",
-  "tests/tracker/test_organize_replay_contract.py::test_a_second_pass_over_the_same_board_issues_zero_writes[linear-mcp]": "8f2d00bfa448207bd54439bf56bda3afce44b7342270944343173fd3d5929805",
-  "tests/tracker/test_organize_replay_contract.py::test_the_body_edit_asserts_its_revision_before_it_edits[linear-mcp]": "ce4eb831c6b8417e2b4c2d6419fd60d4b1a6495d620a7d387c4df5d97fd7d6f6",
-  "tests/tracker/test_organize_replay_contract.py::test_the_first_pass_labels_every_member_on_every_implementation[linear-mcp]": "2b481f38b75666165e3dce58ef0d9e51a7b6a6c3697c85bf0d0f16b3f1db857c",
-  "tests/tracker/test_organize_replay_contract.py::test_the_label_decides_the_roster_and_a_provenance_footer_does_not[linear-mcp]": "525dec3dc284287d6ef9bda5cc92e4788b6e905f03e0c24c15491d4adccc59af",
   "tests/tracker/test_scope_approval.py::test_absent_approval_or_another_meta_member_is_not_approval[linear-mcp-None]": "52e328f5e4131157caf16855effc4c12a70844a5ef2f7a485a1942759dc96f8e",
   "tests/tracker/test_scope_approval.py::test_absent_approval_or_another_meta_member_is_not_approval[linear-mcp-proposed]": "52e328f5e4131157caf16855effc4c12a70844a5ef2f7a485a1942759dc96f8e",
   "tests/tracker/test_scope_approval.py::test_absent_approval_or_another_meta_member_is_not_approval[linear-mcp-triage]": "52e328f5e4131157caf16855effc4c12a70844a5ef2f7a485a1942759dc96f8e",

@@ -1352,8 +1352,8 @@ class TrackerScopeApprovalReader(
     """Read approval the way it is granted: as a label on a node, cascading down.
 
     The reads a scope-member question needs and nothing else, so a scope
-    run's entry, the pass that submits one and the organize owner's gate
-    depend on no writer and on no other read. The cascade and the container
+    run's entry and the pass that submits one depend on no writer and on no
+    other read. The cascade and the container
     it resolves through are the two roles this composes; the label on the
     scope itself is its own.
     """
@@ -1684,15 +1684,6 @@ class FireSubjectReader(ScopeMemberReader, Protocol):
 
 
 @runtime_checkable
-class OrganizeAuthorReader(
-    IssueRevisionReader,
-    TrackerCriteriaReader,
-    Protocol,
-):
-    """The criterion family and the body digests an authoring round reads."""
-
-
-@runtime_checkable
 class OrganizeContextTracker(
     IssueReader,
     TrackerCommentReader,
@@ -1921,7 +1912,7 @@ class OrganizeOwnerTracker(
     SurfaceLeaseTracker,
     Protocol,
 ):
-    """Everything the organize owner reads and every write it makes."""
+    """Split creation and graph change, with the reads and writes beside them."""
 
     async def create_split_if_absent(
         self,

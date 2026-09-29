@@ -5671,13 +5671,6 @@ class FakeNativeAmendmentTracker(
     """The ``NativeAmendmentTracker`` role, composed of its role doubles."""
 
 
-class FakeOrganizeAuthorReader(
-    FakeIssueRevisionReader,
-    FakeTrackerCriteriaReader,
-):
-    """The ``OrganizeAuthorReader`` role, composed of its role doubles."""
-
-
 class FakeRecordSignalReader(
     FakeTrackerCommentReader,
     FakeTrackerCriteriaReader,

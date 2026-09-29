@@ -5,13 +5,9 @@ from typing import Annotated, Literal, Self
 from pydantic import ConfigDict, Field, model_validator
 
 from kodezart.types.base import CamelCaseModel
-from kodezart.types.domain.scope import ScopeContainer
-from kodezart.types.domain.scope_address import ScopeRef
 from kodezart.types.domain.tracker import (
     IssuePriority,
     IssueRelation,
-    TrackerComment,
-    TrackerIssue,
     WorkflowStateKind,
 )
 
@@ -196,14 +192,3 @@ class IssueGraphSnapshot(CamelCaseModel):
     milestone_key: NativeKey | None
     project_id: NativeKey | None
     relations: tuple[IssueRelation, ...]
-
-
-class OrganizeContext(CamelCaseModel):
-    """Full current scope and closure evidence, kept typed until prompt rendering."""
-
-    model_config = ConfigDict(frozen=True)
-    scope: ScopeRef
-    member_keys: tuple[NativeKey, ...]
-    issues: tuple[TrackerIssue, ...]
-    ruling_comments: tuple[TrackerComment, ...]
-    milestones: tuple[ScopeContainer, ...]

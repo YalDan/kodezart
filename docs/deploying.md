@@ -99,7 +99,7 @@ What each table does for the scope workflow:
 | `[records.fire_prep]`, `[records.grooming]`, `[records.fire]` | Where each run kind writes its log row: `system = "knowledge"` (Notion) or `system = "tracker"` (a Linear document). | The run is not recorded, and each run logs `run_record_destination_undeclared`. |
 | `[knowledge]` | The knowledge map: `run_logs`, `memories`, `personas`, `notes`, plus any other key a prompt addresses. | Sessions get no map. With a knowledge grant set, boot refuses with `PromptRenderError` naming the missing map keys. |
 | `[documents]` | Documents a prompt set can name. A populated table must carry `checkpoint`; boot creates a tracker-side document the operation owns if it is missing. | Nothing: the shipped `anthropic_v5` prompts name no document. |
-| `[[organize_scopes]]`, `[[organize_mandates]]` | `[[organize_scopes]]` is read by the supervisor tick and the audit, and requires `[[organize_mandates]]`. The mandate rows are read by the older cascade owner, which is wired nowhere, and by the tracker adapter's fire-subject read. | Nothing in the scope workflow reads them. Declaring `[[organize_scopes]]` makes boot also require the marker prefixes the supervisor tick uses. |
+| `[[organize_scopes]]`, `[[organize_mandates]]` | `[[organize_scopes]]` is read by the supervisor tick and the audit, and requires `[[organize_mandates]]`. The mandate rows are read by the tracker adapter's fire-subject read. | Nothing in the scope workflow reads them. Declaring `[[organize_scopes]]` makes boot also require the marker prefixes the supervisor tick uses. |
 
 Boot splits the tables by who owns the value. Labels (`[queue_states]`,
 `[scope_labels]`, `[issue_labels]`) and `[documents]` are the operation's own:
