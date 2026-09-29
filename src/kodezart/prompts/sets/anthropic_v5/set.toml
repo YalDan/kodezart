@@ -6,7 +6,7 @@ name = "anthropic_v5"
 # The engines this corpus is authored for, by their model ids: the one
 # declaration boot compares KODEZART_AGENT__MODEL and every per-key engine
 # against. A model outside this list is logged as a mismatch, never refused.
-engines = ["claude-opus-5-5", "claude-fable-5-1"]
+engines = ["claude-opus-5-5", "claude-fable-5-1", "claude-sonnet-5-5"]
 
 # Roles that carry no reasoning-depth instruction: they emit a name, a
 # message, a description, or a prelude composed into another session's
@@ -269,13 +269,13 @@ tools = ["Read", "Glob", "Grep"]
 # under each role, in one place: changing what judgment costs is an edit
 # here, not an edit per key. Effort is NAMED at every role because the
 # harness exposes no way to ask what it resolved. The judgment roles run at
-# the maximum and the question role at the floor, by the owner's ruling of
-# 2026-09-24: the maximum replaced the earlier ladder that ran judgment one
-# level below authoring, and a short structured board question runs at the
-# floor. Per-key skill loadouts
-# are deliberately absent from this set: a loadout has one source, and for
-# this set that source is the role. No template of this set names a skill
-# or when to invoke one — a skill's own description is its trigger.
+# the maximum, and the question and utility roles at the floor because their
+# answers are short and structured (rulings of 2026-09-24 and 2026-09-29).
+# The maximum replaced the earlier ladder that ran judgment one level below
+# authoring. Per-key skill loadouts are deliberately absent from this set:
+# a loadout has one source, and for this set that source is the role. No
+# template of this set names a skill or when to invoke one — a skill's own
+# description is its trigger.
 
 [session_roles.generative]
 effort = "max"
@@ -359,7 +359,7 @@ keys = ["implementation", "fix"]
 # This roster and the question roster below together are utility_keys
 # above, and the metadata model refuses a set where they disagree.
 [session_roles.utility]
-effort = "max"
+effort = "low"
 skills = []
 keys = ["branch_name", "commit_message", "knowledge_map", "fire_record", "native_writer_contract", "mutation_survival", "organize_spec_rubric"]
 # The rubric key is on this roster because a rubric opens no session:
