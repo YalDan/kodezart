@@ -15,6 +15,7 @@ from kodezart.core.protocols import (
     FireCriteriaSource,
     FireSubjectReader,
 )
+from kodezart.domain.criteria import criterion_set
 from kodezart.domain.criterion_cross_off import HELD_CRITERION_STATE
 from kodezart.domain.errors import (
     CriterionReadError,
@@ -28,7 +29,6 @@ from kodezart.domain.lane_entry import require_unamended_subject
 from kodezart.domain.workflow_state import recorded_native_roster
 from kodezart.services.scope_membership import read_subtree_criteria
 from kodezart.types.domain.criteria import (
-    CriterionId,
     ExecutionCriterion,
     TrackerCriterion,
     TrackerCriterionSet,
@@ -60,22 +60,6 @@ _TRANSPORT_FAILURES = (
     TrackerUnavailableError,
     TrackerAccessDeniedError,
 )
-
-
-def criterion_set(checks: Mapping[str, str]) -> TrackerCriterionSet:
-    """The one shaping of a reading's result, so the readings compare equal.
-
-    A barrier compares the set it holds with the set a later reading
-    answers, by identity and Check text in order; two construction sites
-    could order or spell them differently and turn a lane that is exactly
-    on track into a refusal.
-    """
-    return TrackerCriterionSet(
-        criteria=[
-            TrackerCriterion(id=CriterionId(key), text=check)
-            for key, check in checks.items()
-        ],
-    )
 
 
 def held_roster(criteria: Sequence[ExecutionCriterion]) -> TrackerCriterionSet | None:

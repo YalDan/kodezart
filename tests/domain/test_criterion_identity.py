@@ -119,31 +119,44 @@ def test_every_field_named_for_a_criterion_id_annotates_the_identity() -> None:
     assert offenders == []
 
 
-def test_identity_construction_is_authored_mint_or_exact_tracker_key() -> None:
-    """Authored IDs are minted; the native reader carries the exact source key."""
-    offenders: list[str] = []
-    for path in Path("src").rglob("*.py"):
-        tree = ast.parse(path.read_text())
-        for node in ast.walk(tree):
-            if (
-                isinstance(node, ast.Call)
-                and isinstance(node.func, ast.Name)
-                and node.func.id == "CriterionId"
-                and path
-                not in {_MINTING_MODULE, Path("src/kodezart/chains/criteria.py")}
-            ):
-                offenders.append(f"{path}:{node.lineno}")
-    assert offenders == []
-    source = Path("src/kodezart/chains/criteria.py").read_text()
-    native_calls = [
+def _identity_calls(tree: ast.AST) -> list[ast.Call]:
+    """Every call constructing a criterion identity by its type's name."""
+    return [
         node
-        for node in ast.walk(ast.parse(source))
+        for node in ast.walk(tree)
         if isinstance(node, ast.Call)
         and isinstance(node.func, ast.Name)
         and node.func.id == "CriterionId"
     ]
-    assert len(native_calls) == 1
-    assert ast.unparse(native_calls[0]) == "CriterionId(key)"
+
+
+def test_identity_construction_is_authored_mint_or_exact_tracker_key() -> None:
+    """Authored IDs are minted; the native reading carries the exact source key.
+
+    Both constructions live in the minting module and nowhere else, one
+    each: the ``AC-n`` mint, and the native set's ``CriterionId(key)``,
+    which the criteria chain's readings and the scope run's prep both shape
+    through. The native one moved here from ``chains/criteria.py`` so the
+    prep reaches it without reaching the gap arithmetic that chain imports.
+    """
+    offenders = [
+        f"{path}:{node.lineno}"
+        for path in Path("src").rglob("*.py")
+        if path != _MINTING_MODULE
+        for node in _identity_calls(ast.parse(path.read_text()))
+    ]
+    assert offenders == []
+    tree = ast.parse(_MINTING_MODULE.read_text())
+    owners = {
+        node.name: sorted(ast.unparse(call) for call in _identity_calls(node))
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef) and _identity_calls(node)
+    }
+    assert owners == {
+        "mint_criterion_id": ["CriterionId(f'{CRITERION_ID_PREFIX}{index}')"],
+        "criterion_set": ["CriterionId(key)"],
+    }
+    assert len(_identity_calls(tree)) == 2
 
 
 @pytest.mark.parametrize(

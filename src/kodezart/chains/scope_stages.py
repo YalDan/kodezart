@@ -2,9 +2,9 @@
 
 from langchain_core.runnables import RunnableConfig
 
-from kodezart.chains.criteria import criterion_set
 from kodezart.core.constants import UNATTENDED_PERMISSION_MODE
 from kodezart.core.protocols import AgentRunner, PromptSetProvider
+from kodezart.domain.criteria import criterion_set
 from kodezart.domain.fire_spec import criterion_ref
 from kodezart.domain.prompt_variables import scope_variables
 from kodezart.services.agent_question import ask
