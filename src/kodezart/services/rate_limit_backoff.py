@@ -9,9 +9,11 @@ executor.  Wrapping that executor is therefore the one place a rate limit
 can be waited out for every session kind, and no call site keeps a copy.
 
 A session the provider stopped on a rate limit is run again, with the same
-arguments, after a wait.  The wait is the reset time the limit message
-states (``resets 3:20pm (Europe/Berlin)``) plus a small jitter, and an
-exponential back-off from the configured floor when it states none.  The
+arguments, after a wait.  The wait is the reset the provider stated plus a
+small jitter -- the rejected rate-limit frame's ``resets_at`` first, the
+result's ``rate_limit_resets_at`` (the provider adapter's reading of its
+own limit message) when the frame carries none -- and an exponential
+back-off from the configured floor when neither states one.  The
 total a session waits is bounded by ``max_wait_seconds``; once that is
 spent, the last attempt's events go on unchanged and the existing failure
 path handles them exactly as before.
@@ -28,12 +30,10 @@ length has passed.
 """
 
 import asyncio
-import re
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from random import SystemRandom
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import AgentExecutor
@@ -66,46 +66,6 @@ EXPONENTIAL_CAP_SECONDS = 1800.0
 #: The jitter added to a stated reset time, so sessions waiting on one reset
 #: do not all start in the same second.
 JITTER_RANGE_SECONDS = (1.0, 30.0)
-
-#: "resets 3:20pm (Europe/Berlin)", "resets 3pm (UTC)", "resets 15:20 (UTC)".
-_RESET = re.compile(
-    r"resets\s+(\d{1,2})(?::(\d{2}))?\s*([ap]m)?\s*\(([^)]+)\)",
-    re.IGNORECASE,
-)
-
-
-def reset_at(text: str | None, *, now: datetime) -> datetime | None:
-    """The instant a limit message says the limit resets, or ``None``.
-
-    The message states a wall-clock time in a named zone and no date, so
-    the reset is the next time that clock reads it: today when that is
-    still ahead of *now*, tomorrow otherwise.  A message with no reset, an
-    impossible time or a zone name the zone database does not know is
-    ``None``, and the caller backs off exponentially instead.
-    """
-    if not text:
-        return None
-    match = _RESET.search(text)
-    if match is None:
-        return None
-    hour = int(match[1])
-    minute = int(match[2] or 0)
-    meridiem = match[3]
-    if meridiem is not None:
-        if not 1 <= hour <= 12:
-            return None
-        hour = hour % 12 + (12 if meridiem.lower() == "pm" else 0)
-    if hour > 23 or minute > 59:
-        return None
-    try:
-        zone = ZoneInfo(match[4].strip())
-    except (ZoneInfoNotFoundError, ValueError, OSError):
-        return None
-    local_now = now.astimezone(zone)
-    candidate = local_now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-    if candidate <= local_now:
-        candidate += timedelta(days=1)
-    return candidate
 
 
 def exponential_seconds(attempt: int, *, floor: float, cap: float) -> float:
@@ -185,17 +145,13 @@ class RateLimitBackoffExecutor:
         )
 
     def _wait(
-        self, *, attempt: int, waited: float, texts: Sequence[str]
+        self, *, attempt: int, waited: float, resets: datetime | None
     ) -> tuple[float, datetime | None] | None:
         """The next wait and the reset it aims at, or ``None`` when spent."""
         remaining = self._max_wait - waited
         if remaining <= 0 or not self._may_wait():
             return None
         now = self._now()
-        resets = next(
-            (at for at in (reset_at(t, now=now) for t in texts) if at is not None),
-            None,
-        )
         if resets is None:
             wanted = exponential_seconds(attempt, floor=self._floor, cap=self._cap)
         else:
@@ -224,7 +180,7 @@ class RateLimitBackoffExecutor:
             held: list[AgentEvent] = []
             result: ResultEvent | None = None
             rejected = False
-            texts: list[str] = []
+            frame_resets: datetime | None = None
             async for event in self._inner.stream(
                 prompt=prompt,
                 cwd=cwd,
@@ -240,16 +196,14 @@ class RateLimitBackoffExecutor:
             ):
                 if isinstance(event, ResultEvent):
                     result = event
-                    if event.result:
-                        texts.append(event.result)
-                elif isinstance(event, ErrorEvent):
-                    texts.append(event.error)
                 elif (
                     isinstance(event, RateLimitWarningEvent)
                     and event.status == "rejected"
                 ):
                     rejected = True
-                else:
+                    if event.resets_at is not None:
+                        frame_resets = datetime.fromtimestamp(event.resets_at, UTC)
+                elif not isinstance(event, ErrorEvent):
                     yield event
                     continue
                 held.append(event)
@@ -261,7 +215,10 @@ class RateLimitBackoffExecutor:
                     yield event
                 return
             attempt += 1
-            planned = self._wait(attempt=attempt, waited=waited, texts=texts)
+            stated = frame_resets or (
+                None if result is None else result.rate_limit_resets_at
+            )
+            planned = self._wait(attempt=attempt, waited=waited, resets=stated)
             if planned is None:
                 spent_here = self._may_wait()
                 if spent_here:

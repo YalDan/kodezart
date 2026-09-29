@@ -14,7 +14,6 @@ from kodezart.services.rate_limit_backoff import (
     EXPONENTIAL_CAP_SECONDS,
     RateLimitBackoffExecutor,
     exponential_seconds,
-    reset_at,
 )
 from kodezart.types.domain.agent import (
     AgentEvent,
@@ -33,71 +32,10 @@ from tests.fakes import (
 )
 
 BERLIN = ZoneInfo("Europe/Berlin")
-SESSION_LIMIT = "You've hit your session limit · resets 3:20pm (Europe/Berlin)"
 #: 12:00 in Berlin on the day of the recorded deaths.
 NOON_BERLIN = datetime(2026, 9, 29, 12, 0, tzinfo=BERLIN)
-
-
-# ---------------------------------------------------------------- the parser
-
-
-def test_a_twelve_hour_reset_in_a_named_zone_is_today_when_still_ahead() -> None:
-    at = reset_at(SESSION_LIMIT, now=NOON_BERLIN.astimezone(UTC))
-
-    assert at == datetime(2026, 9, 29, 15, 20, tzinfo=BERLIN)
-    assert (at - NOON_BERLIN).total_seconds() == 3 * 3600 + 20 * 60
-
-
-@pytest.mark.parametrize(
-    ("text", "hour", "minute"),
-    [
-        ("resets 9am (Europe/Berlin)", 9, 0),
-        ("resets 12am (Europe/Berlin)", 0, 0),
-        ("resets 12pm (Europe/Berlin)", 12, 0),
-        ("resets 11:45PM (Europe/Berlin)", 23, 45),
-        ("resets 15:20 (Europe/Berlin)", 15, 20),
-    ],
-)
-def test_the_clock_reading_is_read_on_both_clocks(
-    text: str, hour: int, minute: int
-) -> None:
-    at = reset_at(text, now=NOON_BERLIN)
-
-    assert at is not None
-    assert (at.hour, at.minute) == (hour, minute)
-    assert at > NOON_BERLIN
-
-
-def test_a_reset_already_past_today_rolls_over_to_tomorrow() -> None:
-    four_pm = datetime(2026, 9, 29, 16, 0, tzinfo=BERLIN)
-
-    at = reset_at(SESSION_LIMIT, now=four_pm)
-
-    assert at == datetime(2026, 9, 30, 15, 20, tzinfo=BERLIN)
-
-
-def test_the_zone_is_the_named_one_not_the_hosts() -> None:
-    at = reset_at("resets 3:20pm (America/New_York)", now=NOON_BERLIN)
-
-    assert at is not None
-    assert at.utcoffset() == timedelta(hours=-4)
-    assert at.astimezone(UTC) == datetime(2026, 9, 29, 19, 20, tzinfo=UTC)
-
-
-@pytest.mark.parametrize(
-    "text",
-    [
-        None,
-        "",
-        "Claude API error: rate_limit",
-        "resets 3:20pm (Mars/Olympus_Mons)",
-        "resets 13pm (Europe/Berlin)",
-        "resets 25:00 (Europe/Berlin)",
-        "resets 3:20pm",
-    ],
-)
-def test_an_unreadable_reset_is_none(text: str | None) -> None:
-    assert reset_at(text, now=NOON_BERLIN) is None
+#: The reset the recorded session limit stated: 3:20pm Berlin that day.
+SESSION_RESET = datetime(2026, 9, 29, 15, 20, tzinfo=BERLIN)
 
 
 # ------------------------------------------------------ the back-off sequence
@@ -124,6 +62,7 @@ def _result(
     is_error: bool = False,
     result: str | None = None,
     structured_output: dict[str, object] | None = None,
+    rate_limit_resets_at: datetime | None = None,
 ) -> ResultEvent:
     return ResultEvent(
         subtype="success",
@@ -134,17 +73,21 @@ def _result(
         session_id="s",
         result=result,
         structured_output=structured_output,
+        rate_limit_resets_at=rate_limit_resets_at,
     )
 
 
 REJECTED = RateLimitWarningEvent(status="rejected", rate_limit_type="five_hour")
 
 
-def _limited(text: str = "Claude API error: rate_limit") -> list[AgentEvent]:
+def _limited(
+    resets: datetime | None = None, *, frame: RateLimitWarningEvent = REJECTED
+) -> list[AgentEvent]:
+    """A session the limit stopped; *resets* is what the adapter read off it."""
     return [
         AssistantTextEvent(text="starting", model="m"),
-        REJECTED,
-        _result(is_error=True, result=text),
+        frame,
+        _result(is_error=True, result="limited", rate_limit_resets_at=resets),
     ]
 
 
@@ -248,7 +191,7 @@ async def test_the_session_survives_n_rate_limits_then_succeeds() -> None:
 
 
 async def test_a_stated_reset_is_waited_until_plus_jitter() -> None:
-    inner = ScriptedExecutor([_limited(SESSION_LIMIT), _answered()])
+    inner = ScriptedExecutor([_limited(SESSION_RESET), _answered()])
     clock = Clock(NOON_BERLIN)
 
     with structlog.testing.capture_logs() as logs:
@@ -257,6 +200,25 @@ async def test_a_stated_reset_is_waited_until_plus_jitter() -> None:
     assert clock.sleeps == [3 * 3600 + 20 * 60 + 7.0]
     (wait,) = [entry for entry in logs if entry["event"] == "rate_limit_backoff"]
     assert wait["resets_at"] == "2026-09-29T15:20:00+02:00"
+
+
+async def test_the_rejected_frames_reset_wins_over_the_results() -> None:
+    """The frame's timestamp is the provider's own fact; the prose is a fallback."""
+    in_an_hour = NOON_BERLIN + timedelta(hours=1)
+    frame = RateLimitWarningEvent(
+        status="rejected",
+        rate_limit_type="five_hour",
+        resets_at=int(in_an_hour.timestamp()),
+    )
+    inner = ScriptedExecutor([_limited(SESSION_RESET, frame=frame), _answered()])
+    clock = Clock(NOON_BERLIN)
+
+    with structlog.testing.capture_logs() as logs:
+        await _run(_backoff(inner, clock), output_format=SCHEMA)
+
+    assert clock.sleeps == [3600 + 7.0]
+    (wait,) = [entry for entry in logs if entry["event"] == "rate_limit_backoff"]
+    assert wait["resets_at"] == in_an_hour.astimezone(UTC).isoformat()
 
 
 async def test_a_limit_with_no_output_format_is_still_waited_out() -> None:
@@ -397,7 +359,7 @@ async def test_a_cancelled_wait_reaches_the_caller_and_runs_nothing_more() -> No
 
 async def test_a_board_question_is_answered_after_rate_limits() -> None:
     """The scope_scan question that died four times on 2026-09-29 now answers."""
-    inner = ScriptedExecutor([_limited(), _limited(SESSION_LIMIT), _answered()])
+    inner = ScriptedExecutor([_limited(), _limited(SESSION_RESET), _answered()])
     clock = Clock(NOON_BERLIN)
     service = AgentService(
         executor=_backoff(inner, clock),
