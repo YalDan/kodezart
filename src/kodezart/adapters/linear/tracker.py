@@ -4976,12 +4976,21 @@ class LinearWorkflowStateWriter(_LinearTrackerSession):
         return await self._save_state(issue_key=issue_key, state_name=state_name)
 
 
+class LinearIssueCommentWriter(_LinearTrackerSession):
+    """The ``IssueCommentWriter`` role, over the shared session."""
+
+    async def post_comment(self, *, issue_key: str, body: str) -> TrackerComment:
+        """Post a comment and return it as stored."""
+        return await self._post_comment(issue_key=issue_key, body=body)
+
+
 class LinearLifecycleStateWriter(
     LinearWorkflowStateWriter,
     LinearWorkRefRecorder,
     LinearSurfaceLeaseTracker,
     LinearStateRestorer,
     LinearCommentRecordWriter,
+    LinearIssueCommentWriter,
 ):
     """The ``LifecycleStateWriter`` role, over the shared session."""
 
@@ -5012,10 +5021,6 @@ class LinearLifecycleStateWriter(
             _TOOL_SAVE_ISSUE, {"id": issue_key, "labels": [*preserved, label]}
         )
         return self._saved_issue(payload, written={"labels": [*preserved, label]})
-
-    async def post_comment(self, *, issue_key: str, body: str) -> TrackerComment:
-        """Post a comment and return it as stored."""
-        return await self._post_comment(issue_key=issue_key, body=body)
 
 
 class LinearMcpTracker(

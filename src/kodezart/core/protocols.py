@@ -1998,9 +1998,19 @@ class NativeAmendmentTracker(
 
 
 @runtime_checkable
+class IssueCommentWriter(Protocol):
+    """A new comment on one issue, with no marker and no read beside it."""
+
+    async def post_comment(self, *, issue_key: str, body: str) -> TrackerComment:
+        """Post a comment and return it as stored."""
+        ...
+
+
+@runtime_checkable
 class LifecycleStateWriter(
     WorkRefRecorder,
     CommentRecordWriter,
+    IssueCommentWriter,
     StateRestorer,
     SurfaceLeaseTracker,
     WorkflowStateWriter,
@@ -2024,9 +2034,19 @@ class LifecycleStateWriter(
         """
         ...
 
-    async def post_comment(self, *, issue_key: str, body: str) -> TrackerComment:
-        """Post a comment and return it as stored."""
-        ...
+
+@runtime_checkable
+class EvaluatorRulingTracker(
+    IssueReader,
+    IssueCommentWriter,
+    WorkflowStateWriter,
+    Protocol,
+):
+    """Exactly the tracker calls the evaluator's ruling record makes.
+
+    It comments each ruling, reads a failed criterion, and moves a claimed
+    one back; nothing wider.
+    """
 
 
 @runtime_checkable
@@ -2040,6 +2060,7 @@ class TrackerPort(
     TrackerScopeApprovalReader,
     ClassificationWriter,
     CommentRecordWriter,
+    IssueCommentWriter,
     StateRestorer,
     ContainerMetadataReader,
     FireDispatchTracker,

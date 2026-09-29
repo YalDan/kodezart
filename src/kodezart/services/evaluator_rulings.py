@@ -1,7 +1,7 @@
 """The evaluator's rulings on a scope run, written to the board by the run itself."""
 
 from kodezart.core.logging import BoundLogger, get_logger
-from kodezart.core.protocols import ScopeStatusWriter, TrackerPort
+from kodezart.core.protocols import EvaluatorRulingTracker, ScopeStatusWriter
 from kodezart.domain.derived_writes import derived_writes
 from kodezart.domain.evaluator_rulings import rulings_to_record
 from kodezart.types.domain.agent import AcceptanceCriteriaOutput
@@ -20,7 +20,7 @@ class EvaluatorRulingWriter:
     def __init__(
         self,
         *,
-        tracker: TrackerPort,
+        tracker: EvaluatorRulingTracker,
         operation: OperationConfig,
         status: ScopeStatusWriter,
     ) -> None:
