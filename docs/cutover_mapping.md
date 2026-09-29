@@ -31,7 +31,7 @@ live with the cutover work itself.
 Each dimension names the template and the section carrying it. A test asserts
 every referenced section exists in the referenced template.
 
-The templates carry the routines' prose (KOD-60, byte-identity gate), so a
+The templates carry the routines' prose (byte-identity gate), so a
 section cell names a distinctive clause of that prose rather than a markdown
 heading the condensation invented. The prose is verbatim everywhere the
 routines named a fixed team or repository slot, where it is amended: those
@@ -122,8 +122,8 @@ registries.
   exactly one approver. Resolving principals, teams and state mappings against
   the live workspace belongs to the tracker adapter.
 - **The scan-window marker.** The record row a pass writes is the boundary
-  the next pass reads (KOD-245); no separate checkpoint document carries it,
-  in any prompt set (KOD-306). `documents` stays a read-side registry.
+  the next pass reads; no separate checkpoint document carries it,
+  in any prompt set. `documents` stays a read-side registry.
 - **Cutover execution.** Only the mapping.
 
 ## Native OperationConfig consumers

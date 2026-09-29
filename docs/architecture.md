@@ -105,7 +105,7 @@ does not exist.
 | ModelMemberReader | LinearMcpTracker | The two reads a model's surface set is resolved from — its marked membership and each member's criteria — narrowed out of the port rather than added to it |
 | WorkRefReader | LinearMcpTracker | The one read base resolution makes to find a blocker's branch, narrowed out of the port rather than added to it; on the per-issue pass it is the refs recorded against the issue |
 | WorkRefReader | RecordedDeliverableRefs | The same read on the scope path, answered from the blocker's own lane run-state record, which is where a lane's deliverable branch is written. A peer, selected at the composition root — not a fallback |
-| FireCriteriaReader | TrackerCriteria | Refreshes current native criterion obligations at execution, retry and replay barriers, and answers the same obligations from a subtree reading the caller already holds (the native writer's authority read, KOD-1249) |
+| FireCriteriaReader | TrackerCriteria | Refreshes current native criterion obligations at execution, retry and replay barriers, and answers the same obligations from a subtree reading the caller already holds (the native writer's authority read) |
 | FireCriteriaSource | TrackerCriteria | Composes the typed native subject specification from the admitted subject and its subtree's criteria, and supplies current criterion reads |
 | TrackerContextReader | LinearMcpTracker | Referenced assets and document bodies for fire context |
 | TrackerScopeApprovalReader | LinearMcpTracker | The reads a scope-member question needs, composed from the cascade and the container metadata roles and declaring the scope's own labels; a scope run's entry and the heartbeat depend on it alone, and the organize owner's gate reading (`scope_carries`) is typed on it |
@@ -287,8 +287,7 @@ The explicit `read_planning_issue` port read requires reported semantic labels
 and full requested dependency relations. Planning reads the board once: the
 scope family, the subtree under each root member, and one planning read per
 blocker outside both; an issue the family already holds is never read again,
-and a dependency read that answers another identity refuses. Since 2026-09-24
-(KOD-1241) nothing is re-read and compared: a member mentioned elsewhere on the
+and a dependency read that answers another identity refuses. Since 2026-09-24 nothing is re-read and compared: a member mentioned elsewhere on the
 tracker between two reads gains a related-to relation and a later `updated_at`,
 and that refused a live scope twice over a fact no plan uses. Open decisions,
 backlog-kind criteria and criterion edges leaving their parent's subtree yield
@@ -307,7 +306,7 @@ with nothing dispatched. `ScopeRunLiveError` refuses ahead of even that read:
 it means another job over the same scope was submitted earlier in this process
 and is still live; it names that job and its lane, and nothing about the scope
 was read. The per-member approval reading inside `read_scope_ready`
-is unchanged and still decides each lane (KOD-425); this is the run's own
+is unchanged and still decides each lane; this is the run's own
 admission, not a substitute for it.
 
 The actual scoped entry then calls `read_scope_ready`. It requires all three
@@ -317,7 +316,7 @@ approval through the issue's real ancestry, and selects only native scope
 deliverables with a nonempty criterion gap. It also reports, separately from
 those, the approved members whose criterion gap is EMPTY: they are no lane to
 work, and on an origin whose lane can deliver the walker dispatches them for
-their delivery alone, before it fires any ready lane (KOD-844). Record issues
+their delivery alone, before it fires any ready lane. Record issues
 and criteria are never selected and never reported that way either; an approved
 deliverable without its own criteria refuses. That refusal is the walk's
 candidate selection, not the fire entry's reading, which measures membership
@@ -340,12 +339,11 @@ not transactional exclusion from concurrent tracker writers.
 A canceled or duplicate criterion counts for nothing on its state alone. It
 leaves every gap and leaves `unresolved`, and it is named by key in the ready
 read's `excluded` and in each walk observation's `excluded_criteria`, so a
-reader tells an obligation the board set aside from one that was never there
-(KOD-794).
+reader tells an obligation the board set aside from one that was never there.
 
 A criterion the board Canceled or closed as a Duplicate counts for nothing, at
 the readiness read and at the spec read alike: it joins no gap, no
-specification and no unresolved list, and it refuses nothing (KOD-794). The gap
+specification and no unresolved list, and it refuses nothing. The gap
 arithmetic reads the criterion's own state kind and nothing else, so no second
 input and no inferred reference decides what an abandoned criterion means.
 A member whose every criterion is Canceled or Duplicate owes nothing and reads
@@ -366,7 +364,7 @@ Each ready lane's gap is measured on the walk observation, as `gaps`: one
 `GapMeasurement` per ready lane naming its open subtree criteria at that read,
 built fresh every tick and written to none of the three surfaces the run
 writes down: the lane record comment, a criterion's Evidence row and the scope
-status update (KOD-461). An
+status update. An
 open criterion inside a ready lane's subtree that the scope's own filter cannot
 address in its own right is named among the observation's exclusions as
 `out_of_scope`, with the reason the filter gives; one under a blocked or
@@ -392,7 +390,7 @@ and never a remote reading. After a stall exit that had a commit, that last act
 is the best iteration: the consolidated tip when the landing integrated, and
 otherwise the best commit itself. A record whose run reached no stall exit names
 its last act, and that is the head. A record naming no commit act
-refuses, because a lane resumed against none has nothing to grade (KOD-705).
+refuses, because a lane resumed against none has nothing to grade.
 The loop level's remote head is read at the branch the LOOP role resolves, and
 says whether the recorded loop branch still stands at that head; where it does
 not, the difference is logged under `lane_record_head_differs` with both shas.
@@ -409,7 +407,7 @@ record with an empty gap is nothing to do. A record with an open gap resumes at
 the record's head on its recorded DELIVERABLE branch, whether or not a pull
 request is recorded: on its recorded loop branch when the remote holds that
 branch at the head, and otherwise on a fresh loop branch cut from the head sha,
-with the old loop branch left where it stands (KOD-705, KOD-96). A record whose
+with the old loop branch left where it stands. A record whose
 gap is empty and that carries no pull request is a deliver-only entry, which the
 walker selects and dispatches for its delivery alone; a record carrying a pull
 request with an empty gap is nothing to do.
@@ -441,13 +439,13 @@ landed leaves the pull request on the lane's record and nothing further to do,
 and a fire that reached no delivery moved nothing about the lane, so a second
 identical turn would say what the first said. How the fire ended is not read to
 decide any of it — what the walker offers next follows from the board and from
-its own resting lanes (KOD-724, KOD-725). Every lane resting is reported
+its own resting lanes. Every lane resting is reported
 on the walk observation, and `dispatched` carries one entry per fire. The walker
 asks the forge nothing about a candidate at all, neither at selection nor at the
 lane's own boundary: where a lane stands is its own record, and a lane whose
 pull request is already open is the lane whose next commits that pull request
-receives (KOD-431, KOD-785). The one forge read a lane's turn makes is about a
-closed blocker recording no branch (KOD-777, below). A deliver-only entry enters
+receives. The one forge read a lane's turn makes is about a
+closed blocker recording no branch (below). A deliver-only entry enters
 the fire graph already accepted — the
 verdict states the entry's own fact, that every criterion of the subtree is
 Done — reads its roster as the whole finished subtree out of the entry's one
@@ -482,9 +480,9 @@ every grading its loop would carry from one iteration to the next lapses through
 pinned by its next write. The reading is reachable on one arm only: a base whose
 inputs or arm changed is renamed, and the recorded-base check above refuses it;
 a base that keeps its name, which is one blocker whose delivery advanced, reads
-stale and lapses what the loop carries (KOD-888). Nothing here is remembered in
+stale and lapses what the loop carries. Nothing here is remembered in
 process: every fact is read again before every fire, so a killed process changes
-nothing about the next decision (KOD-684, KOD-433, KOD-840).
+nothing about the next decision.
 
 `TrackerLaneStateWriter` is the write side of that same record, and of the
 criterion cross-off beside it. Its calls follow. `record_commit` runs inside the
@@ -678,8 +676,7 @@ both, and what tells the two readings apart on the record is
 leaves is the case it cannot reach at all: a criterion whose named behaviour no
 removal session can take out of the tree leaves the copy unchanged, so no
 reading is taken there and the pass stands. Closing that needs a third reading,
-over what the production code holds rather than over what a removal changed
-(KOD-613), not a second mechanism here.
+over what the production code holds rather than over what a removal changed, not a second mechanism here.
 
 A native evaluation whose grading did stand then runs each criterion it passed
 through that criterion's own check again, in a further tree the loop owns at the
@@ -730,7 +727,7 @@ classification from that sub-issue, then firing again.
 marker, followed by fixed re-entry guidance. The record preserves three-state remote head facts,
 ordered `LaneCommit` rows — one row per commit act, not one per loop iteration:
 a head already recorded appends no second row, and a head that returns to an
-earlier sha is a new act with a row of its own (KOD-681) — `LanePR` and
+earlier sha is a new act with a row of its own — `LanePR` and
 explicitly typed `BranchAssociation` roles, parents and run identities. Its loop
 branch must appear in the association set, and each run has at most one
 deliverable. Branch names do not supply roles. Those are the model's own
@@ -738,7 +735,7 @@ invariants, and the composer is the boundary that types them:
 `next_lane_record` catches the model's `ValidationError` over the value it
 composes and raises `LaneRecordWriteError`, so a caller that writes a record
 never sees a validation error out of a layer it did not call, and a refused
-write leaves the prior record exactly as it was (KOD-703).
+write leaves the prior record exactly as it was.
 The model follows the declared list fields: field assignment is frozen, but
 the lists are not deeply immutable. Consumers must not mutate retained evidence;
 each read returns freshly decoded values rather than a shared cached collection.
@@ -846,7 +843,7 @@ ends the run `criteria_infeasible`. There is no stage barrier and no marker
 roster: a run submitted again after a failure grooms and preps again from
 what the board holds.
 
-Measured 2026-09-24 (KOD-1239): the cascade owner cost about 5,900 tracker
+Measured 2026-09-24: the cascade owner cost about 5,900 tracker
 calls per settling round of the scratch scope and wrote its markers only at
 the end; one session with the tracker tools over the same scope took 8 tool
 calls and 45 seconds. That is why each stage is one session.
@@ -873,7 +870,7 @@ Approval is read once per run, at its entry. `ScopeEntry.admit`
 then one that is not approved, before anything else is read. Nothing after the
 entry reads approval again: withdrawing it during a run stops no session, the
 cron's next scan leaves the node out, and a new run's entry would refuse it.
-No act of a run comes before approval (KOD-788).
+No act of a run comes before approval.
 
 ## Workflow Pipeline
 
@@ -1354,13 +1351,13 @@ names the scope in `SupervisorIncompleteError`, and leaves the scope's lanes
 still observed. The argument is required, so there is no tick without it.
 
 `services.escalation_ageing_supervisor.EscalationAgeingSupervisor` is the
-tick's other lane observer (KOD-892). Once per scope it reads every member's
+tick's other lane observer. Once per scope it reads every member's
 run-state record the ready read names — ready, blocked, unapproved, closed and
 held — as the scope's position; a damaged record leaves that scope's questions
 unobserved for the tick, logged as `supervisor_escalations_unobserved`, while
 its lanes' alarms are still observed. Per ready lane and per held lane it asks,
 for each criterion of the lane's roster, whether the lapse question a lapsed
-observation raises (KOD-699) is on the lane's issue, through
+observation raises is on the lane's issue, through
 `EscalationRecordReader.find`. For each one there it reads the question's
 record at `(EscalationSubject, ESCALATION_AGEING)`, feeds the recorded
 question, the lane's commits and the tick-age count from the stored anchor to
@@ -1411,7 +1408,7 @@ arm raises with none.
 
 `domain.run_shape.escalation_ageing` measures an unresolved escalation in
 recorded lane commits after its raise SHA and recorded walker ticks since
-raise. A walker tick leaves no tracker fact of its own (KOD-788); what it
+raise. A walker tick leaves no tracker fact of its own; what it
 leaves is the commits the fired lane records, so a tick is counted by the
 commits every lane of the escalation's scope has recorded since the question
 was first observed. Either count exceeding its own AppConfig limit returns the observation;
@@ -1525,8 +1522,8 @@ the blocker's issue. `WorkRefReader` is the one read role base resolution makes
 them through, and the scoped composition serves it from the blocker's own lane
 run-state record: one ref per record, at the DELIVERABLE branch the record's
 associations name, and no landing, so it reads unknown and keeps the existing
-resolution path (KOD-776, KOD-842). The per-issue pass hands the tracker itself
-as that reader, stated at its composition rather than defaulted (KOD-834).
+resolution path. The per-issue pass hands the tracker itself
+as that reader, stated at its composition rather than defaulted.
 
 The assumed-landed arm — a closed blocker carrying no deliverable ref anywhere
 on its ancestor chain contributes no input, because its work reached the trunk
@@ -1537,7 +1534,7 @@ before the base is resolved: an open delivery refuses the lane with the
 resolution error the base would otherwise have been wrong about, no open
 delivery states the assumption in the log under `base_input_no_open_delivery`,
 and a forge that cannot answer raises its own typed error, which is neither
-answer (KOD-721, KOD-777). The resolver names the blockers and holds no forge
+answer. The resolver names the blockers and holds no forge
 collaborator that could settle them.
 
 At the walk's one clean exit the scope terminal reports. It reads the tick's
@@ -1561,12 +1558,11 @@ propagates before any write, and a person's note on the same surface is passed
 over rather than compared. Nothing is leased, claimed or marked in progress for
 it, and no writable-surface address is taken: no container-description
 destination exists, and exactly-one follows from the terminal running once and
-comparing before it posts (KOD-788). That write sits outside the write-back verifier,
+comparing before it posts. That write sits outside the write-back verifier,
 declared a derived write beside its writer, which the adoption census and the
 boot gate both read,
 rather than a new read-back arm, because the walk it
-reports on has ended and there is no judged commit to verify it against
-(KOD-806). A milestone or issue scope has no status surface at the backend, so
+reports on has ended and there is no judged commit to verify it against. A milestone or issue scope has no status surface at the backend, so
 it ends with the terminal event alone and `scope_status_surface_absent` in the
 log; no containing project is written in its place.
 
@@ -1753,7 +1749,7 @@ observations, without atomic exclusion of a writer after the last read. The
 scope walk asks its union once per tick, and a tick whose lane heads are
 unchanged reuses the observation rather than composing again; durable
 persistence of the result remains outside the scope path, which compiles no
-checkpointer (KOD-840).
+checkpointer.
 
 The walk holds a factory rather than an instance, because what a union may
 reuse is pinned to one repository path and one selected base and both are facts
@@ -1764,8 +1760,7 @@ says so. A measurement that refuses is stated and ends nothing: it rests no
 lane, reports no lane failure and stops no dispatch, because whether a scope
 composes is an observation of the scope and not a gate on it. The branch each
 lane contributes is the one its own run-state record names, read through the
-narrow ref-reading role (KOD-842). The union holds no forge collaborator
-(KOD-778).
+narrow ref-reading role. The union holds no forge collaborator.
 
 The pinned composition consumes the ordered lane-head snapshot
 and an immutable selected base. It creates a detached Git worktree, merges
@@ -1893,7 +1888,7 @@ a failing one posts; both address the lane issue, so a criterion sub-issue
 still carries no comment. Without the passing entry the history would hold
 only the refutations, and the ordinary lifecycle — refuted at one commit, then
 passed at the next — would read as a row pointing behind its last recorded
-grading and be refuted for having been legitimately restamped (KOD-506).
+grading and be refuted for having been legitimately restamped.
 
 Only those two kinds are the row's history (`EVIDENCE_ROW_WRITES`). An
 undemonstrated reading posts its own event keyed to the criterion at the sha
@@ -1902,7 +1897,7 @@ at one commit and read as undemonstrated at the next keeps the row of the
 earlier grading, finished. Read as an entry, that event would leave the row
 behind the history's last commit and refute a row nothing rewrote, so the
 history leaves it out and ends where the row does in every state a cross-off
-can leave (KOD-506, KOD-610).
+can leave.
 
 A criterion whose history holds no recorded grading was never restamped by its
 lane and is not traced at all: an empty history is a row no lane write accounts
@@ -1920,7 +1915,7 @@ Evidence read failure, which the sweep's single translation point turns into
 an unavailable reason.
 
 A refuted trace is still a refutation the sweep produces, so it carries a
-mandate verdict like every other (KOD-516). Before the lapse return, the sweep
+mandate verdict like every other. Before the lapse return, the sweep
 runs the same mandate hunt at the current head, with the defect named as a
 restamp not traced to the last recorded grading and the trace's reason as the
 refutation evidence, and keeps the result beside the trace as an
@@ -1933,8 +1928,7 @@ the report is not published: the raw observations still carry the trace.
 
 `build_audit_read_sweep` constructs `RecordedAssertionDriftDetector`, and
 `AuditReadSweep` runs it for every criterion target, comparing each test a
-protection record names between the criterion's graded sha and the head
-(KOD-510, KOD-891). Each `AssertionDeviationClaim` rides in the scope report's
+protection record names between the criterion's graded sha and the head. Each `AssertionDeviationClaim` rides in the scope report's
 raw observations and adds no comment, marker, escalation, reopen or state
 move of its own: a deviation is evidence, not a verdict on the criterion whose
 Evidence supplied the baseline. A comparison that cannot be made — an
@@ -1988,7 +1982,7 @@ and evidence handling without claiming live-model detection accuracy.
 
 Whether a grading taken at one commit still stands at another is answered by one
 function under `domain/`, `graded_state` in `domain/lapse.py`, for every record
-that carries a graded sha (KOD-696). It is pure arithmetic over the two shas, the
+that carries a graded sha. It is pure arithmetic over the two shas, the
 grading's re-derivation class, the path prefixes that grading exercised and the
 changed paths of the commit record between them; it runs no command and reads no
 tree. Its reading is a two-member value, never a boolean, and it refuses to
@@ -2043,7 +2037,7 @@ forge reading, the restamp trace and the recorded Evidence — is listed in
 excuses it. A REFUTED value with neither refuses construction, so the sweep
 cannot emit a refutation without its mandate verdict. A refutation whose hunt
 genuinely fails keeps its raw value beside that reason, and the runtime then
-refuses the subject and ends the tick incomplete (KOD-516).
+refuses the subject and ends the tick incomplete.
 
 `AuditEvidenceVerifier.observe` reads the requested criterion's current full
 record and its lane's addressed run-state comment. The existing Evidence field
@@ -2165,12 +2159,12 @@ the captured specification names every criterion sub-issue under the subject
 that counts — its own children and, recursively, its deliverable children's. A
 subtree holding none is refused with `EmptyFireCriteriaError` naming the
 subject, before the question step and before the loop's graph is dispatched (the
-pinned interim on KOD-786; what the walk does with such a member is decided
+pinned interim; what the walk does with such a member is decided
 there, not here). A criterion the board Canceled or closed as a Duplicate
 neither joins the specification nor refuses that read, and a subtree whose every
 criterion is one of those is refused as empty. There is no second, narrower
 reading in which the subject's own criterion children alone admit or refuse a
-fire (KOD-790). The question step asks one read-only pass under the
+fire. The question step asks one read-only pass under the
 `fire_time_ruling` role what the subject text and the current Checks leave open,
 pins each answer on the issue whose text raised it, reads it back, and only then
 enters the loop. The identities an answer may address are the subject and every
@@ -2283,7 +2277,7 @@ move the fence. A renewal that lands late renews nothing and takes back only
 the deadlines it accounts for: a deadline carried past those was put there by
 a later grant of the same holder, whose ownership lives inside the marker this
 renewal was extending, so an earlier renewal's lapse does not void it on the
-markers the late write never reached. The residual accepted under KOD-831: on
+markers the late write never reached. The accepted residual: on
 a set spanning two targets, the marker the late write did reach is taken
 back, and the later grant keeps only the other half. After that, the same
 holder's re-acquisition of the set is refused once naming no current holder,
@@ -2296,7 +2290,7 @@ design: the arbitration is over the identity, so it cannot tell them apart.
 That includes a restart: re-entering under a reused holder, it is granted
 while its predecessor's grant is still live, because a holder re-acquiring
 what it holds is not contention. Keeping one process per holder identity is
-an owed invariant (KOD-832).
+an owed invariant.
 
 ### Owned resource operations
 
@@ -2331,7 +2325,7 @@ outside the surface and is not censused here.
 
 The write surface is read off the roles the tracker is dialled as: the
 fields of `DialledTracker` whose type is declared in `kodezart.core.protocols`,
-so a role dialled beside the port over the same session (KOD-829) is censused
+so a role dialled beside the port over the same session is censused
 exactly as a port member is. A public member whose leading name token is a
 mutating verb is a write; a write that takes more than addresses and lease
 bookkeeping is an artifact write.
@@ -2374,7 +2368,7 @@ declaration is exact in both directions — an undeclared undriven write is
 unadopted, and a declared write its function no longer makes undriven is
 stale — and it cannot shelter authored prose: a declared write whose writer
 names `ContentClass.AUTHORED` stays unadopted. Each declaring function says
-in its own docstring why its write is derived (KOD-806, KOD-867).
+in its own docstring why its write is derived.
 
 Boot refuses what the census does not account for.
 `kodezart.composition.write_adoption.verify_write_adoption` is the first act of
@@ -2387,4 +2381,4 @@ reads no configuration, because a write path no verifier drives is a defect in
 every deployment whatever it schedules. A stale declaration does not refuse
 boot; the guard in `tests/chains/test_write_back_adoption.py` holds the census
 to none. The census is kept per distinct source content, so a process parses
-the package once (KOD-533).
+the package once.

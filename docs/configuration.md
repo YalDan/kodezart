@@ -465,7 +465,7 @@ A scheduled-pass session — grooming, fire prep, the audit's sessions — and a
 scope run's organize stage session are also described the deployment's own
 tracker server: the same URL, server identity and `KODEZART_TRACKER__TOKEN`
 the tracker client dials, so their board reads and writes carry this
-deployment's key and count against its budget (KOD-846). Every session that
+deployment's key and count against its budget. Every session that
 touches the tracker runs on that connection and never on a login the host
 holds. Without a credential no server is described. No other session kind
 receives it.
@@ -675,8 +675,7 @@ Tracker-object counts and rosters of at least three references block the whole
 write; ordinary test/file/commit counts remain permitted. This policy has no
 aggregate setting. Point-in-time comments allow aggregates subject to privacy;
 PRIVATE targets retain the existing fast path. Generated writers declare their
-tracker aggregates as typed values at the gate; residual writer adoption
-(KOD-489) remains unfinished.
+tracker aggregates as typed values at the gate; residual writer adoption remains unfinished.
 
 
 The audit claim role is `audit_claim` in both prompt sets. Its `criterion_key`,

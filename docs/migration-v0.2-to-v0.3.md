@@ -88,7 +88,6 @@ the adapter choice moves into it as `BACKEND`.
 | `TRACKER_MCP_ERROR_DETAIL_LIMIT` | `TRACKER__ERROR_DETAIL_LIMIT` |
 | `TRACKER_MAX_RETRIES` | `TRACKER__MAX_RETRIES` |
 | `TRACKER_RETRY_BACKOFF_FACTOR` | `TRACKER__RETRY_BACKOFF_FACTOR` |
-| `TRACKER_SURFACE_LEASE_SECONDS` | `TRACKER__SURFACE_LEASE_SECONDS` |
 
 The composed lifecycle outcome writer uses the surface duration for acquisition
 and explicit renewal. A declared `[marker_prefixes]` table must name a distinct
@@ -302,10 +301,9 @@ A v0.2 file boots into the same per-issue flow, with these deliberate changes:
 
 - A stalled pull request is watched for its checks like any other.
 - A red check is classified before remediation is attempted.
-- The pull request body ends with a `Tracker issue:` line naming the issue
-  (KOD-739).
+- The pull request body ends with a `Tracker issue:` line naming the issue.
 - A granted `ticket_fire` session gets the fire record clause where
-  `records.fire` declares its columns (KOD-742).
+  `records.fire` declares its columns.
 - A verified merge moves the issue's queue state to done and no longer moves
   its workflow state to Done.
 - The terminal outcome is one comment per job under the `run_outcome` marker,
@@ -313,30 +311,58 @@ A v0.2 file boots into the same per-issue flow, with these deliberate changes:
 - A fire log's title line spells its start instant in v0.3's ISO form, with
   sub-second precision, where v0.2 wrote it to the second.
 
+## 4e. Turning on the scope workflow
+
+Nothing above turns on the v0.3 scope workflow; a v0.2 deployment keeps its
+per-issue flow until it opts in. [docs/workflows-v02-v03.md](workflows-v02-v03.md)
+sets the two workflows side by side, and [docs/running-a-scope.md](running-a-scope.md)
+walks a first run against [docs/operation.scope.toml](operation.scope.toml).
+The operation file gains these tables for it:
+
+| Table | What it does |
+| --- | --- |
+| `[scope_labels]` | The tracker labels for `triage`, `proposed` and `approved`; a declared table must name all three. Applying the `approved` label is the one human act that admits a scope. |
+| `[marker_prefixes]` | The markers the scope path writes. Boot refuses naming every purpose a scheduled pass can ask for that the table leaves out. |
+| `[[organize_mandates]]` | The `ticket` and `criteria` rows; a declared table needs both. The scope run does not read it (its groom and prep stages are one session each over the whole parent), but `[[organize_scopes]]` requires it. |
+| `[[organize_scopes]]` | One row per scope with the declared repository it is judged against (and `report_issue_key` for a configured audit). A row requires `[[organize_mandates]]`. Rows turn on the supervisor tick and a configured audit, and switch nothing else off. |
+
+The standing scopes' heartbeat, the cron that submits each approved, unfinished
+scope as a run, is scheduled wherever a tracker is dialled, `[scope_labels]` is
+declared and the dispatch cadence pair is set; it reads no `[[organize_scopes]]`
+row. The supervisor tick and the audit need their own cadence pairs from
+[4b](#4b-scheduled-pass-cadences-have-no-default).
+
 ## 5. Removed with no replacement
 
 Delete these assignments. Each is refused at startup, from every source, and no
 current name expresses the same choice.
 
-- `KODEZART_ORGANIZE_MAX_ADMISSION_ROUNDS` and
-  `KODEZART_ORGANIZE_MAX_CONVERGENCE_ROUNDS` — the bounded organize loops have
-  no composed consumer at this release. Their bounded-retry and exhaustion
-  behaviour is still required of that loop; what is gone is the unread setting.
-- `KODEZART_UNION_CHECK_CLEANUP_POLL_INTERVAL_SECONDS` — repeated process-group
-  termination now waits on a fixed interval until output drains. That is
-  cleanup mechanics rather than a deployment policy. The per-step command
-  timeout stays configurable.
+- `KODEZART_FIRE_PREP_PASS_GATE_SIGNALS` and
+  `KODEZART_GROOMING_PASS_GATE_SIGNALS` — the fire-prep and grooming passes
+  now ask an agent whether to run (the `pass_gate` key of
+  `KODEZART_AGENT__SESSION_MODELS` picks its engine). The events
+  `prompt_pass_gates_absent_no_tracker` and `prompt_pass_skipped_no_delta` are
+  no longer emitted. The dispatch pass keeps `KODEZART_DISPATCH_PASS_GATE_SIGNALS`.
 - `KODEZART_DENY_PATTERNS` and `KODEZART_DENY_PATTERN_VERDICTS` — the regex
   scanner they configured has no remaining production writer. Outbound
   admission is a judgment session plus a typed reference classification, and
   the semantic private-surface description in the operation config is where a
   deployment states what must not leave.
-- `KODEZART_AGGREGATE_COUNT_TOKEN_DISTANCE`,
-  `KODEZART_AGGREGATE_IDENTIFIER_ROSTER_MIN_LENGTH`,
-  `KODEZART_AGGREGATE_TRACKER_OBJECT_NOUNS`,
-  `KODEZART_AGGREGATE_ISSUE_IDENTIFIER_PATTERN` and
-  `KODEZART_AGGREGATE_IDENTIFIER_SEPARATOR_PATTERN` — the same retirement, for
-  the aggregate half of that scanner.
+
+### Names only pre-release v0.3 builds carried
+
+A deployment that ran a pre-release v0.3 build may carry these. Each is refused
+at startup:
+
+| Name | What to do |
+| --- | --- |
+| `KODEZART_DISPATCH_WORKFLOW` | Delete it. The per-issue dispatch passes and the standing scopes' heartbeat both run on the dispatch cadence pair. |
+| `KODEZART_TRACKER_SURFACE_LEASE_SECONDS` | Rename to `KODEZART_TRACKER__SURFACE_LEASE_SECONDS`. |
+| `KODEZART_ORGANIZE_MAX_ADMISSION_ROUNDS`, `KODEZART_ORGANIZE_MAX_CONVERGENCE_ROUNDS` | Delete them. The bounded organize loops have no composed consumer at this release; what is gone is the unread setting. |
+| `KODEZART_UNION_CHECK_CLEANUP_POLL_INTERVAL_SECONDS` | Delete it. Repeated process-group termination waits on a fixed interval until output drains; the per-step command timeout stays configurable. |
+| `KODEZART_AGGREGATE_COUNT_TOKEN_DISTANCE`, `KODEZART_AGGREGATE_IDENTIFIER_ROSTER_MIN_LENGTH`, `KODEZART_AGGREGATE_TRACKER_OBJECT_NOUNS`, `KODEZART_AGGREGATE_ISSUE_IDENTIFIER_PATTERN`, `KODEZART_AGGREGATE_IDENTIFIER_SEPARATOR_PATTERN` | Delete them. They configured the aggregate half of the retired regex scanner. |
+| `KODEZART_WRITE_BACK_MAX_VERIFY_ROUNDS` | Rename to `KODEZART_WRITE_BACK__MAX_VERIFY_ROUNDS`. |
+| `KODEZART_ORGANIZE__INTERVAL_SECONDS`, `KODEZART_ORGANIZE__TIMEOUT_SECONDS` | Delete them. The organize stages run inside the scope run the heartbeat submits on the dispatch pair; the organize section refuses a cadence field. |
 
 ## 6. Checking the result
 
