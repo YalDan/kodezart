@@ -1527,28 +1527,17 @@ GAP_COMPUTATION_MODULES = frozenset(
         "composition/engine.py",
         "composition/organize.py",
         "composition/passes.py",
-        "composition/supervisor.py",
         "domain/gap.py",
         "domain/issue_tree.py",
-        "domain/lane_alarms.py",
         "domain/organize.py",
-        "domain/run_alarm_table.py",
-        "domain/stream_signals.py",
-        "domain/tally_record.py",
         "main.py",
-        "services/alarm_supervisor.py",
         "services/audit_runtime.py",
         "services/audit_terminal.py",
         "services/barren_record_signals.py",
-        "services/escalation_ageing_supervisor.py",
-        "services/escalation_signals.py",
         "services/mandate_graph.py",
         "services/organize_owner.py",
-        "services/run_alarm_recorder.py",
         "services/run_shape.py",
         "services/scope_dispatcher.py",
-        "services/scope_tally.py",
-        "services/supervisor_pass.py",
     }
 )
 #: Every module of the tree that spells the change stamp, and the reason it
@@ -3022,9 +3011,6 @@ CALL_SITES_NOT_RUN = {
     "runs as entry points.",
     ("chains/organize.py", "OrganizeAdmission.is_live"): "Async; reads the "
     "current revision through the tracker port.",
-    ("domain/stream_signals.py", "lapse_undischarged"): "Folds alarm "
-    "readings, a workflow kind among them, and takes no tracker record, so no "
-    "record's change stamp reaches it for the trap to hold.",
     ("services/mandate_graph.py", "observe_ruling_growth"): "Async; reads "
     "criteria and ruling projections through the tracker port.",
     ("services/organize_owner.py", "OrganizeOwner._author_write"): "Async; a "
@@ -3047,8 +3033,6 @@ CALL_SITES_NOT_RUN = {
     "the git and forge ports.",
     ("services/run_shape.py", "read_barren_tick"): "Async; reads criteria "
     "through the tracker port.",
-    ("services/scope_tally.py", "observe_scope_tally"): "Async; reads the "
-    "scope through the tracker port.",
 }
 
 
@@ -3075,11 +3059,10 @@ def test_every_call_site_the_fixtures_can_run_is_run_under_the_trap():
     ``OrganizeAdmission.is_live``,
     ``observe_ruling_growth``, the organize service's ``_author_write`` and
     the ``apply`` nested in it, ``_converge``, ``_proof_live``, ``_roster``,
-    ``_route`` and ``run``, ``read_barren_tick``, ``observe_scope_tally`` and
-    the audit terminal reader's ``observe``, each of which needs a tracker
-    port, a service instance or the composition's wiring; and
-    ``lapse_undischarged``, which takes alarm readings and no tracker
-    record.  A new call site reds here until it is one or the other.  Each
+    ``_route`` and ``run``, ``read_barren_tick`` and the audit terminal
+    reader's ``observe``, each of which needs a tracker port, a service
+    instance or the composition's wiring.  A new call site reds here until
+    it is one or the other.  Each
     case answers what it was built for over the baseline stamp.
     """
     points = arithmetic_entry_points()

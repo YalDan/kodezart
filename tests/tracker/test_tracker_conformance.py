@@ -41,7 +41,6 @@ from kodezart.domain.errors import (
     SurfaceLeaseError,
 )
 from kodezart.domain.fire_spec import replace_criterion_fields
-from kodezart.domain.lane_alarms import stored_alarm
 from kodezart.domain.organize_graph import graph_snapshot
 from kodezart.domain.run_alarm_record import run_alarm_marker, run_alarm_surface
 from kodezart.domain.run_event_stream import LaneRunEvent
@@ -3617,10 +3616,14 @@ async def _the_issues_criteria(tracker: TrackerPort) -> object:
 
 
 async def _the_recorded_alarm(tracker: TrackerPort) -> object:
-    return stored_alarm(
-        await tracker.read_run_alarms(issue_key=APPROVED_ISSUE),
-        subject=ALARM.subject,
-        signal=ALARM.signal,
+    records = await tracker.read_run_alarms(issue_key=APPROVED_ISSUE)
+    return next(
+        (
+            record
+            for record in records
+            if record.subject == ALARM.subject and record.signal is ALARM.signal
+        ),
+        None,
     )
 
 

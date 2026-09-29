@@ -16,19 +16,16 @@ from kodezart.core.protocols import (
 from kodezart.domain.errors import (
     AssetFetchError,
     CriterionResolutionError,
-    EscalationReadError,
     LaneRecordReadError,
     RulingRecordReadError,
 )
 from kodezart.services.criterion_sources import NativeCriterionResolver
-from kodezart.services.escalation_records import EscalationRecordReader
 from kodezart.services.fire_context import FireContextAssembler
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.services.ruling_records import RulingRecordReader
 from kodezart.types.domain.gating import RepoVisibility, WriterShape
 from kodezart.types.domain.tracker import TrackerAsset, TrackerComment, TrackerIssue
 from tests.fakes import FakeMcpAsset, FakeMcpIssue, PassThroughGate
-from tests.tracker import test_escalation_record_collector as escalation
 from tests.tracker import test_lane_records as lane
 from tests.tracker import test_ruling_records as ruling
 from tests.tracker.conftest import (
@@ -88,21 +85,16 @@ async def test_all_record_readers_work_with_only_complete_comment_reads(
     tracker: TrackerPort, tracker_writes
 ):
     stored_lane = await lane.seed(tracker)
-    stored_escalation = await escalation.seed_escalation(tracker)
     stored_ruling, original_ruling = await ruling.seed(tracker)
     before = tracker_writes()
     comments = CommentsOnly(tracker)
     lane_comment, lane_record = await LaneRecordReader(
         tracker=comments, operation=lane.OPERATION
     ).read(**lane.ADDRESS, record_ref=stored_lane.comment_key)
-    question_comment, question = await EscalationRecordReader(
-        tracker=comments, operation=escalation.OPERATION
-    ).read(**escalation.ADDRESS, record_ref=stored_escalation.comment_key)
     rulings = await RulingRecordReader(
         tracker=comments, operation=ruling.OPERATION
     ).read_all(**ruling.ADDRESS)
     assert lane_comment == stored_lane and lane_record.lane_key == lane.LANE
-    assert question_comment == stored_escalation and question == escalation.escalation()
     assert rulings == ((stored_ruling, original_ruling),)
     assert tracker_writes() == before
 
@@ -125,13 +117,6 @@ async def test_each_record_reader_preserves_failure_or_cancellation(
             LaneRecordReader(tracker=comments, operation=lane.OPERATION).read,
             lane.ADDRESS,
             LaneRecordReadError,
-        ),
-        (
-            EscalationRecordReader(
-                tracker=comments, operation=escalation.OPERATION
-            ).read,
-            escalation.ADDRESS,
-            EscalationReadError,
         ),
         (
             RulingRecordReader(tracker=comments, operation=ruling.OPERATION).read_all,

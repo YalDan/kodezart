@@ -562,9 +562,8 @@ class OrganizeScopeBinding(OperationModel):
     audit is configured — the issue its verified summary is reported on.
 
     The one scope table of the operation.  Every pass that works scope by
-    scope is composed from these rows: the heartbeat over the whole row, the
-    observation tick over the scope alone, and the audit over the row and the
-    destination below.  ``report_issue_key`` is
+    scope is composed from these rows: the heartbeat over the whole row and
+    the audit over the row and the destination below.  ``report_issue_key`` is
     optional because a deployment that configures no audit has nowhere to
     report; a configured audit refuses by name on a row that omits it.
     """

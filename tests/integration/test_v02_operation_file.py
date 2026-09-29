@@ -172,6 +172,7 @@ async def test_the_v020_example_boots_unchanged_and_schedules_the_per_issue_pass
         *(f"dispatch:{repo.url}" for repo in operation.repos),
         "fire_prep_pass",
         "grooming_pass",
+        "supervisor_pass",
     ]
     assert len(operation.repos) == 2
     # The lifecycle writer, which needs the outcome marker, was constructed.

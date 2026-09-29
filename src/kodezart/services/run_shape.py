@@ -2,32 +2,22 @@
 
 from kodezart.config.app import AppConfig
 from kodezart.core.protocols import (
-    EscalationResolutionReader,
     TrackerCriteriaReader,
 )
 from kodezart.domain.gap import compute_gap
 from kodezart.domain.run_shape import (
     BARREN_COMMITS_BOUND,
     BARREN_FILES_BOUND,
-    ESCALATION_COMMITS_BOUND,
-    ESCALATION_TICKS_BOUND,
     SURFACE_HOLDERS_BOUND,
     barren_tick_with_diff_growth,
-    escalation_ageing,
-    read_alarm_value,
     surface_contended,
 )
-from kodezart.types.domain.escalation import EscalationResolution
 from kodezart.types.domain.run_alarm import (
     AlarmReading,
-    AlarmSignal,
     AlarmSubject,
     CountEvidence,
-    EscalationEvidence,
-    EscalationSubject,
     LaneSubject,
     ReferencesEvidence,
-    ResolutionEvidence,
     RunAlarm,
 )
 from kodezart.types.domain.tracker import TrackerIssue
@@ -61,66 +51,6 @@ def observe_surface_contention(
         raised_at_sha=raised_at_sha,
         raised_by=raised_by,
     )
-
-
-async def read_escalation_ageing(
-    *,
-    tracker: EscalationResolutionReader,
-    config: AppConfig,
-    scope_key: str,
-    lane_key: str,
-    escalation: AlarmReading,
-    commits: AlarmReading,
-    ticks_since_raise: AlarmReading,
-    raised_at_sha: str,
-    raised_by: str,
-) -> tuple[RunAlarm | None, EscalationResolution]:
-    """Retain the exact resolution that produced this age observation.
-
-    The caller supplies tracker projections with explicit source references:
-    the typed LaneEscalation, recorded commit SHAs in order, and the recorded
-    ticks since this occurrence was raised. This function never collects
-    commits from a repository or manufactures walker ticks. It returns an
-    observation; persistence belongs to a supervisor holding its own lease.
-    """
-    record = read_alarm_value(
-        escalation, EscalationEvidence, AlarmSignal.ESCALATION_AGEING
-    )
-    subject = EscalationSubject(
-        scope_key=scope_key,
-        lane_key=lane_key,
-        issue_id=record.issue_id,
-        member_id=record.escalation_key,
-    )
-    resolution = await tracker.read_escalation_resolution(
-        issue_key=record.issue_id,
-        lane_key=lane_key,
-        escalation_key=record.escalation_key,
-    )
-    observation = escalation_ageing(
-        subject=subject,
-        readings=(
-            escalation,
-            AlarmReading(
-                source_ref=escalation.source_ref,
-                value=ResolutionEvidence(value=resolution),
-            ),
-            commits,
-            ticks_since_raise,
-            AlarmReading(
-                source_ref=ESCALATION_COMMITS_BOUND,
-                value=CountEvidence(value=config.run_alarm_escalation_age_max_commits),
-            ),
-            AlarmReading(
-                source_ref=ESCALATION_TICKS_BOUND,
-                value=CountEvidence(value=config.run_alarm_escalation_age_max_ticks),
-            ),
-        ),
-        raised_at_sha=raised_at_sha,
-        raised_by=raised_by,
-    )
-
-    return observation, resolution
 
 
 async def observe_barren_tick(
