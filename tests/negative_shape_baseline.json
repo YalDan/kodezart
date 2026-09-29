@@ -344,7 +344,7 @@
   "tests/services/test_pass_gate.py": 91,
   "tests/services/test_pass_scheduler.py": 87,
   "tests/services/test_prompt_pass.py": 120,
-  "tests/services/test_prompt_passes.py": 139,
+  "tests/services/test_prompt_passes.py": 140,
   "tests/services/test_rate_limit_backoff.py": 44,
   "tests/services/test_refusal_surface_static.py": 10,
   "tests/services/test_run_recorder.py": 49,
