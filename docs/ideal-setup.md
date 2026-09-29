@@ -178,12 +178,15 @@ Leave `KODEZART_KNOWLEDGE__SESSION_GRANTS` empty, remove `[knowledge]` and any
   repository the run committed in.
 - **Pull requests.** One per repository the deliverable branch gained commits
   in, each against that repository's trunk (`chains/authored_publication.py`).
-  The session delivering a unit keeps each of the unit's pull requests a draft
-  while any criterion is open, a review comment is unanswered, or its checks
-  are red or its base conflicts at the pushed head, and marks it ready for
-  review and stops once every criterion is done, every review comment
-  addressed and its checks green with no base conflict at the pushed head
-  (`delivery_units` in `set.toml`). kodezart never merges one.
+  Sessions are instructed that the session delivering a unit keeps each of
+  the unit's pull requests a draft whenever any criterion is open, a review
+  comment is unanswered, or its checks are red or its base conflicts at the
+  pushed head, returning it to draft if it was marked ready, and marks it
+  ready for review and stops once every criterion is done, every review
+  comment addressed and its checks green with no base conflict at the pushed
+  head (`delivery_units` in `set.toml`). That is an instruction to sessions:
+  the pull requests kodezart's own publication step opens are opened ready
+  for review. kodezart never merges one.
 - **Checks.** The checks on each pull request are watched and classified. A red
   set is re-run at the same commit before it counts, and a work defect sends
   the run back into the loop while remediation rounds remain
