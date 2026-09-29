@@ -363,10 +363,9 @@
   "tests/services/test_native_execution_record.py": 23,
   "tests/services/test_organize_gate_static.py": 9,
   "tests/services/test_parent_rollup_authority.py": 4,
-  "tests/services/test_pass_delta_cancellation.py": 15,
+  "tests/services/test_pass_delta_cancellation.py": 14,
   "tests/services/test_pass_gate.py": 91,
   "tests/services/test_pass_scheduler.py": 85,
-  "tests/services/test_prompt_delta_cancel_independent.py": 3,
   "tests/services/test_prompt_pass.py": 58,
   "tests/services/test_prompt_passes.py": 111,
   "tests/services/test_refusal_surface_static.py": 8,
@@ -5555,9 +5554,6 @@
    "test_a_gate_skipped_tick_writes_no_run_record_and_names_the_skip",
    "test_a_real_run_beside_a_skipped_tick_still_records_its_row",
    "test_a_pass_marked_to_tick_at_boot_runs_before_its_first_sleep"
-  ],
-  "tests/services/test_prompt_delta_cancel_independent.py": [
-   "test_prompt_cancellation_after_observation_does_not_consume_window"
   ],
   "tests/services/test_prompt_pass.py": [
    "test_the_grooming_prompt_composes_through_the_registry",
