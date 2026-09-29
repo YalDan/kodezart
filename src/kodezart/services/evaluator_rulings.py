@@ -4,25 +4,30 @@ from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import EvaluatorRulingTracker, ScopeStatusWriter
 from kodezart.domain.derived_writes import derived_writes
 from kodezart.domain.evaluator_rulings import rulings_to_record
-from kodezart.domain.gap import state_membership
 from kodezart.types.domain.agent import AcceptanceCriteriaOutput
-from kodezart.types.domain.gap import GapMembership
 from kodezart.types.domain.operation import LifecycleStage
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.scope_terminal import STATUS_UPDATE_SCOPE_KINDS
-from kodezart.types.domain.tracker import WorkflowStateKind
+from kodezart.types.domain.tracker import WorkflowStateKind, is_non_counting
+
+#: The kinds a criterion stands in before anyone has claimed it.
+_UNCLAIMED_KINDS = frozenset(
+    {
+        WorkflowStateKind.TRIAGE,
+        WorkflowStateKind.BACKLOG,
+        WorkflowStateKind.UNSTARTED,
+    }
+)
 
 
 def _claimed(kind: WorkflowStateKind) -> bool:
     """Whether a criterion in *kind* stands where the implementer's claim put it.
 
-    Started (in progress or in review), or discharged as the gap rule reads
-    it. Moving one already in progress is a read and no write.
+    A selection, not a reading of finishedness: the criterion still counts
+    and has left the kinds it stands in before a claim. Moving one already
+    in progress is a read and no write.
     """
-    return (
-        kind is WorkflowStateKind.STARTED
-        or state_membership(kind) is GapMembership.DISCHARGED
-    )
+    return kind not in _UNCLAIMED_KINDS and not is_non_counting(kind)
 
 
 class EvaluatorRulingWriter:
