@@ -519,6 +519,24 @@ async def _run_git_output(cmd: list[str], cwd: Path) -> str:
     return stdout.decode().strip()
 
 
+async def test_update_ref_refuses_a_ref_that_moved_since_it_was_read(
+    git_service: SubprocessGitService, git_repo: Path
+) -> None:
+    """The old value makes the update a compare-and-swap, never a clobber."""
+    read_at = await git_service.current_sha(str(git_repo))
+    for message in ("moved by another writer", "the caller's target"):
+        await _run_git(["git", "commit", "--allow-empty", "-m", message], cwd=git_repo)
+    target = await git_service.current_sha(str(git_repo))
+    moved_to = await _run_git_output(["git", "rev-parse", "HEAD~"], cwd=git_repo)
+    await _run_git(["git", "branch", "lane", moved_to], cwd=git_repo)
+    assert len({read_at, moved_to, target}) == 3
+
+    with pytest.raises(GitOperationError):
+        await git_service.update_ref(str(git_repo), "refs/heads/lane", target, read_at)
+
+    assert await _run_git_output(["git", "rev-parse", "lane"], cwd=git_repo) == moved_to
+
+
 async def test_reset_hard_moves_head_to_ref(
     git_service: SubprocessGitService, git_repo: Path
 ) -> None:
