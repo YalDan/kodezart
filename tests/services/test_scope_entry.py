@@ -88,7 +88,12 @@ def entry_over(*records):
     for held in records:
         registry.records[held.job_id] = held
     return (
-        ScopeEntry(approvals=board_double, registry=registry, arm_for=unreached_arm),
+        ScopeEntry(
+            approvals=board_double,
+            registry=registry,
+            arm_for=unreached_arm,
+            issue_labels={"criterion": "criterion", "decision": "decision"},
+        ),
         board_double,
     )
 

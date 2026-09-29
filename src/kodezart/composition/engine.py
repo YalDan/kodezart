@@ -509,6 +509,7 @@ def build_workflow_engine(
                 forge_arm=arm(github_api, stages),
                 forge_less_arm=arm(None, stages),
             ).arm_for,
+            issue_labels=operation.issue_labels if operation is not None else {},
         )
     return OriginRoutedWorkflowEngine(
         forge_arm=forge_arm,
