@@ -159,12 +159,15 @@ An issue's finish line stays its stated criteria.\
 # The delivery standard, composed into the two scheduled passes, the run's
 # own groom and prep session and the implementer: what a finishable unit
 # is and how it is delivered (owner ruling of 2026-09-25, after a scope
-# whose units were too broad looped without landing anything).
+# whose units were too broad looped without landing anything), and when
+# its pull request leaves draft (owner ruling of 2026-09-29, after a run
+# left finished work in draft and unfinished work ready for review).
 delivery_units = """\
 Deliverable units. A milestone, or the parent issue where a project has none, is the unit of delivery: one run finishes it.
 Finishable means a bounded set of criteria, each Check executable in the repository, no open decision beneath it, and no dependency on unmerged work except the unit it stacks on.
 Cut anything broader into such units before it is approved. A unit that starts to loop, sprawl into new issues or chase tests past its criteria was cut too broad: cut it again rather than push on.
-Each unit is delivered on its own branch and draft pull request per repository, opened at the unit's first push, named after the project and the unit, stacked on the project's previous unit only where it depends on it; progress is pushed there as it is made, and a person merges it, never a session.\
+Each unit is delivered on its own branch and draft pull request per repository, opened at the unit's first push, named after the project and the unit, stacked on the project's previous unit only where it depends on it; progress is pushed there as it is made.
+Each pull request stays a draft while its unit is work in progress — any criterion open, any review comment unanswered, its checks red or its base conflicting at the pushed head — and when every criterion is done, every review comment addressed, its checks green and its base not conflicting at the pushed head, the session delivering the unit marks it ready for review and stops there; a person merges it, never a session.\
 """
 
 # Appended as the final block of every member outside the utility roster,
