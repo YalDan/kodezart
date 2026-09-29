@@ -1,5 +1,6 @@
 """Agent event domain models for SSE streaming."""
 
+from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Literal, Self
 
@@ -491,6 +492,15 @@ class ResultEvent(AgentEvent):
         default=None,
         exclude=True,
         description="Failure fact for live consumers; omitted from public result JSON.",
+    )
+    rate_limit_resets_at: datetime | None = Field(
+        default=None,
+        exclude=True,
+        description=(
+            "When the provider said the limit that ended this session resets, "
+            "read by the provider's adapter from the result it reported; for "
+            "live consumers, omitted from public result JSON."
+        ),
     )
     subtype: str
     duration_ms: int

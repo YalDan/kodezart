@@ -75,9 +75,9 @@ class AgentSettings(BaseModel):
         description=(
             "Total seconds one session may spend waiting out provider rate "
             "limits before it gives up. A session the provider stops on a "
-            "rate limit is run again after a wait: until the reset time the "
-            "limit message states, plus a small jitter, or, when it states "
-            "none, an exponential back-off from "
+            "rate limit is run again after a wait: until the reset the "
+            "provider states, plus a small jitter, or, when it states none, "
+            "an exponential back-off from "
             "retry_rate_limit_floor_seconds doubling to a 30-minute cap. The "
             "job and its workspace stay while it waits. Once this total is "
             "spent the existing failure path runs unchanged, and later "
