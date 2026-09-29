@@ -107,6 +107,7 @@ from tests.tracker.conftest import (
     TrackerWorkspace,
     fixture_server,
     observed_writes,
+    stored_alarm,
 )
 from tests.tracker.lease_fixtures import leased_comment
 from tests.tracker.marker_config import MARKER_PREFIXES
@@ -3616,15 +3617,7 @@ async def _the_issues_criteria(tracker: TrackerPort) -> object:
 
 
 async def _the_recorded_alarm(tracker: TrackerPort) -> object:
-    records = await tracker.read_run_alarms(issue_key=APPROVED_ISSUE)
-    return next(
-        (
-            record
-            for record in records
-            if record.subject == ALARM.subject and record.signal is ALARM.signal
-        ),
-        None,
-    )
+    return await stored_alarm(tracker, ALARM)
 
 
 #: Every supplied-holder port write, with the address it refuses at. The
