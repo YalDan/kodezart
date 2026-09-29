@@ -173,10 +173,6 @@ class SessionRole(StrEnum):
     #: Grooms or prepares a whole board as one unattended session on a
     #: schedule, reading and writing the tracker, the store and the forge.
     SCHEDULED_PASS = "scheduled_pass"
-    #: Reads the operation's own conduct as one unattended session on a
-    #: schedule and reports it; it writes findings and its record, and
-    #: changes nothing it reads.
-    SUPERVISOR = "supervisor"
 
 
 class SessionRolePolicy(BaseModel):

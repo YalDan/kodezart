@@ -134,7 +134,7 @@ example:
 | `KODEZART_TRACKER__TOKEN` | the Linear personal API key | The process's tracker credential. |
 | `KODEZART_GITHUB_TOKEN` | the fine-grained token | The forge credential. |
 | `KODEZART_AGENT__MODEL` | `claude-opus-5-5` | The engine every session runs on unless a key is pinned. |
-| `KODEZART_AGENT__SESSION_MODELS` | `{"pass_gate":"claude-opus-5-5","scope_scan":"claude-opus-5-5","scope_done":"claude-opus-5-5","supervisor_pass":"claude-sonnet-5-5"}` | Pins the three board questions: the intake gate, the cron's scan and the "is it done" question; and runs the supervisor pass on Sonnet. |
+| `KODEZART_AGENT__SESSION_MODELS` | `{"pass_gate":"claude-opus-5-5","scope_scan":"claude-opus-5-5","scope_done":"claude-opus-5-5"}` | Pins the three board questions: the intake gate, the cron's scan and the "is it done" question. |
 | `KODEZART_DISPATCH_PASS_INTERVAL_SECONDS` | `300` | The cron's cadence. It also paces the per-issue dispatch passes. |
 | `KODEZART_DISPATCH_PASS_TIMEOUT_SECONDS` | `240` | The longest one cron tick may take. |
 | `KODEZART_FIRE_PREP_PASS_INTERVAL_SECONDS` | `1800` | Fire prep every 30 minutes. |
@@ -172,7 +172,7 @@ export KODEZART_OPERATION_CONFIG=/path/to/operation.toml
 export KODEZART_TRACKER__TOKEN=<the Linear personal API key>
 export KODEZART_GITHUB_TOKEN=<the GitHub token>
 export KODEZART_AGENT__MODEL=claude-opus-5-5
-export KODEZART_AGENT__SESSION_MODELS='{"pass_gate":"claude-opus-5-5","scope_scan":"claude-opus-5-5","scope_done":"claude-opus-5-5","supervisor_pass":"claude-sonnet-5-5"}'
+export KODEZART_AGENT__SESSION_MODELS='{"pass_gate":"claude-opus-5-5","scope_scan":"claude-opus-5-5","scope_done":"claude-opus-5-5"}'
 export KODEZART_DISPATCH_PASS_INTERVAL_SECONDS=300
 export KODEZART_DISPATCH_PASS_TIMEOUT_SECONDS=240
 export KODEZART_FIRE_PREP_PASS_INTERVAL_SECONDS=1800
