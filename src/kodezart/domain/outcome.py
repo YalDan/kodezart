@@ -22,12 +22,17 @@ def classify_outcome(state: WorkflowState) -> WorkflowOutcome:
 
     merge_failed = merged is False and merge_error is not None
     loop_exit = accepted is False and merged is False and merge_error is None
+    # Accepted, yet nothing merged and nothing failed: the loop branch gained
+    # no commit in any repository, because the work was already on the trunk.
+    nothing_gained = accepted is True and merged is False and merge_error is None
 
     if merge_failed and remediation_rounds_used == 0:
         return WorkflowOutcome.merge_divergent
     if merge_failed and remediation_rounds_used > 0:
         return WorkflowOutcome.fix_consolidation_failed
     if loop_exit and state["best_iteration_sha"] is None and trajectory is not None:
+        return WorkflowOutcome.zero_commit_no_pr
+    if nothing_gained and trajectory is not None:
         return WorkflowOutcome.zero_commit_no_pr
     if remediation_rounds_used > 0 and not accepted:
         return WorkflowOutcome.remediation_budget_exhausted

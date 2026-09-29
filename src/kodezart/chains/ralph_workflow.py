@@ -526,11 +526,13 @@ class RalphWorkflowEngine:
         Unmerged WITH an error is a divergent accepted run — its work is
         already on the feature branch and the terminal reports the
         divergence.  Unmerged with NO error is the loop exit, which is
-        the run this lane exists to stop stranding.
+        the run this lane exists to stop stranding — unless the loop was
+        accepted: then its branch gained nothing to merge anywhere, and
+        there is nothing to review or land either.
         """
         if state["merged"]:
             return "review_against_ticket"
-        if state["merge_error"] is not None:
+        if state["merge_error"] is not None or gate_cleared(state["accept_verdict"]):
             return "complete"
         if self.remediation.rounds_remain(state):
             return "remediate"
