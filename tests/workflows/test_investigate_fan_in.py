@@ -166,6 +166,18 @@ def test_the_json_string_args_the_workflow_tool_sends_reach_the_fan_out() -> Non
     ]
 
 
+def test_a_calibrated_question_carries_its_effort_and_model_to_the_agent() -> None:
+    """A `{question, effort, model}` item reaches agent() with both options."""
+    question = REPO_QUESTIONS[0]
+    calibrated = {"question": question, "effort": "low", "model": "sonnet"}
+    executed = run_workflow([answered(question)], args={"repo_questions": [calibrated]})
+
+    [dispatch] = executed["dispatches"]
+    assert dispatch["prompt"] == question
+    assert dispatch["options"]["effort"] == "low"
+    assert dispatch["options"]["model"] == "sonnet"
+
+
 @pytest.mark.parametrize(
     "args",
     [{}, {"repo_questions": [], "external_claims": []}, "{}"],

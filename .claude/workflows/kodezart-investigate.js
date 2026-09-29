@@ -17,11 +17,11 @@ const EVIDENCE = {
 // Measured: the Workflow tool hands `args` over as a JSON-encoded string.
 const input = typeof args === 'string' ? JSON.parse(args) : (args ?? {})
 
-// A question is a string, or { question, effort } when the caller calibrates
-// that agent's effort; with no effort given the agent inherits the session's.
+// A question is a string, or { question, effort, model } when the caller
+// calibrates that agent; an option left out is inherited from the session.
 const asItem = type => entry => typeof entry === 'string'
   ? { q: entry, type }
-  : { q: entry.question, type, effort: entry.effort }
+  : { q: entry.question, type, effort: entry.effort, model: entry.model }
 const items = (input.repo_questions ?? []).map(asItem('explorer'))
   .concat((input.external_claims ?? []).map(asItem('doc-verifier')))
 
@@ -33,8 +33,8 @@ if (items.length === 0) {
 }
 
 phase('Investigate')
-const results = await parallel(items.map(({ q, type, effort }) => () =>
-  agent(q, { agentType: type, effort, label: q.slice(0, 60), schema: EVIDENCE })))
+const results = await parallel(items.map(({ q, type, effort, model }) => () =>
+  agent(q, { agentType: type, effort, model, label: q.slice(0, 60), schema: EVIDENCE })))
 
 const findings = items.map(({ q }, i) =>
   results[i] ?? { question: q, answered: false, evidence: 'agent returned no result' })
