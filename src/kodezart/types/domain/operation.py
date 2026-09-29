@@ -84,9 +84,9 @@ class RunKind(StrEnum):
     """Every kind of run the operation records — the record registry's keys.
 
     Each native or prompt-driven run owns a distinct record kind, including
-    the standing audit and the fire a dispatch starts. ``records`` is keyed by
-    these values, one declared destination
-    per kind, so which log a run reports to is configuration rather than a
+    the standing audit, the supervisor pass and the fire a dispatch starts.
+    ``records`` is keyed by these values, one declared destination per kind,
+    so which log a run reports to is configuration rather than a
     name a session invents — and a key outside this vocabulary is a typo
     refused at load, not a destination nothing will ever write to
     (KOD-170).
@@ -96,6 +96,7 @@ class RunKind(StrEnum):
     GROOMING = "grooming"
     FIRE = "fire"
     AUDIT = "audit"
+    SUPERVISOR = "supervisor"
 
 
 class ConfigOwnership(StrEnum):

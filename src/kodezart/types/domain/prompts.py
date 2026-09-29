@@ -43,6 +43,9 @@ class PromptKey(StrEnum):
     PR_DESCRIPTION = "pr_description"
     FIRE_PREP_PASS = "fire_prep_pass"
     GROOMING_PASS = "grooming_pass"
+    #: Reads what the operation's own account did since its last pass and
+    #: reports its conduct against the standing rules; it edits nothing.
+    SUPERVISOR_PASS = "supervisor_pass"
     #: The question a scheduled pass asks before it opens its session: did
     #: anything move in its window that the pass should act on.  One short
     #: session with the tracker tools, answered in a structured shape; the
@@ -170,6 +173,10 @@ class SessionRole(StrEnum):
     #: Grooms or prepares a whole board as one unattended session on a
     #: schedule, reading and writing the tracker, the store and the forge.
     SCHEDULED_PASS = "scheduled_pass"
+    #: Reads the operation's own conduct as one unattended session on a
+    #: schedule and reports it; it writes findings and its record, and
+    #: changes nothing it reads.
+    SUPERVISOR = "supervisor"
 
 
 class SessionRolePolicy(BaseModel):

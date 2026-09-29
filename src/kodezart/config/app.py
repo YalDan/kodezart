@@ -30,7 +30,8 @@ from kodezart.types.domain.ticket_review import (
 )
 
 #: The groups of cadence settings, one per scheduled pass; the scope
-#: heartbeat runs on the dispatch group.
+#: heartbeat runs on the dispatch group, and the supervisor pass runs on the
+#: supervisor group beside the observation tick.
 CadenceName = Literal["dispatch", "fire_prep", "grooming", "audit", "supervisor"]
 
 #: The two settings that schedule each pass: its interval, then its timeout.
@@ -421,17 +422,21 @@ class AppConfig(BaseSettings):
         ge=60.0,
         le=86400.0,
         description=(
-            "Seconds between supervisor observation ticks on the existing "
-            "scheduler. Unset, the supervisor tick is not scheduled."
+            "Seconds between supervisor passes. One pair schedules two jobs: "
+            "the observation tick over the declared scopes and the supervisor "
+            "pass session, which reads what the operation's own account did "
+            "and reports its conduct. Unset, neither is scheduled."
         ),
     )
     supervisor_pass_timeout_seconds: float | None = Field(
         default=None,
-        gt=0,
-        allow_inf_nan=False,
+        ge=60.0,
+        le=86400.0,
         description=(
-            "Wall-clock bound for one supervisor observation tick over every "
-            "declared scope. Set together with the interval."
+            "Seconds one observation tick, and one supervisor pass session, "
+            "may take before it is abandoned. On expiry the session is "
+            "cancelled and reported as timed out; the loop continues. Set "
+            "together with the interval."
         ),
     )
     audit_full_sweep_interval_seconds: float = Field(

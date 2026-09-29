@@ -310,8 +310,8 @@ system = "knowledge"
 name = "Example — Operating Constitution"
 id = "example-constitution-document-id"
 
-# Record keys are the RUN-KIND vocabulary — fire_prep, grooming, fire — one
-# declared destination per kind (KOD-170). The runner writes each run's
+# Record keys are the RUN-KIND vocabulary — fire_prep, grooming, supervisor,
+# fire — one declared destination per kind (KOD-170). The runner writes each run's
 # structural row there, and the rendered pass prompt names the same
 # declaration for the session's own prose row. A kind left undeclared is a
 # legal NAMED absence: the recorder logs it and writes nowhere. `fire` is
@@ -330,6 +330,14 @@ append_only = true
 system = "knowledge"
 name = "Example Grooming Log"
 id = "example-grooming-log-destination-id"
+append_only = true
+
+# The supervisor pass writes its conduct report to a log of its own; its
+# last row is where the next supervisor window starts.
+[records.supervisor]
+system = "knowledge"
+name = "Example Supervisor Log"
+id = "example-supervisor-log-destination-id"
 append_only = true
 
 # A declared knowledge fire destination with neither an outcome mapping nor

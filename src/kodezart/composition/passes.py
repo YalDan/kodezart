@@ -158,7 +158,7 @@ def build_gate(
     """A gate over *signals*, or none when the pass declares none.
 
     The deterministic gate serves the per-issue dispatch tick alone: the
-    two prompt passes ask an agent instead (:class:`PromptPass`).  No
+    prompt passes ask an agent instead (:class:`PromptPass`).  No
     signals is the ONLY way a built gate is absent.  Having no tracker at
     all is the caller's arm — it holds a dialled tracker or it does not —
     and it is reported there, because "the gate is absent" and "nothing
@@ -217,6 +217,7 @@ def _assert_renders(
 _PROMPT_PASS_CADENCE: dict[PromptKey, CadenceName] = {
     PromptKey.FIRE_PREP_PASS: "fire_prep",
     PromptKey.GROOMING_PASS: "grooming",
+    PromptKey.SUPERVISOR_PASS: "supervisor",
 }
 
 
@@ -291,7 +292,7 @@ def runs_scope_flow(operation: OperationConfig) -> bool:
 
 
 def session_passes_wire(operation: OperationConfig) -> bool:
-    """Whether the two prompt passes run as agent sessions here.
+    """Whether the prompt passes run as agent sessions here.
 
     One condition, named once: a roster a template could render over. Two
     sites ask the same question — the wiring and the render preflight — and
@@ -468,10 +469,11 @@ async def build_prompt_passes(
     skills: SkillsSelection,
     recorder: RunRecorder,
 ) -> list[ScheduledPass]:
-    """Bind the two prompt passes: the intake over the declared boards.
+    """Bind the prompt passes: the intake passes and the supervisor pass.
 
-    Each scans the declared boards on its own cadence pair, scope or no
-    scope: they wire wherever the roster renders
+    Each reads the declared boards on its own cadence pair, scope or no
+    scope; the supervisor pass shares its pair with the observation tick,
+    as the heartbeat shares the dispatch pair: they wire wherever the roster renders
     (:func:`session_passes_wire`). Every pass here whose cadence is unset is
     not scheduled and is named as such. Preflight validates exactly those
     active rows.
@@ -719,7 +721,7 @@ async def _verify_wired_gates(
     scan through the dialled port: the per-issue dispatch pass, on its
     configured signals, and the supervisor tick, which needs every scan the
     alarms it observes declare, each named as ``supervisor/<alarm>``. The
-    two prompt passes scan through nothing here — their gate is a session
+    prompt passes scan through nothing here — their gate is a session
     over the same tracker server the pass itself is described — so no
     signal is probed on their behalf.
 
@@ -777,13 +779,13 @@ def _supervisor_scans() -> dict[str, Sequence[PassSignal]]:
 def _session_running(kind: RunKind) -> SessionType:
     """Which session runs a kind, and therefore reads its record's log.
 
-    The two judgment passes are one session type by design — they differ
+    The judgment passes are one session type by design — they differ
     in what their prompt says, not in what kind of session runs them — and
-    a fire is its own.  Exhaustive by ``match``: a fourth run kind cannot
+    a fire is its own.  Exhaustive by ``match``: a new run kind cannot
     be added without answering this question for it.
     """
     match kind:
-        case RunKind.FIRE_PREP | RunKind.GROOMING | RunKind.AUDIT:
+        case RunKind.FIRE_PREP | RunKind.GROOMING | RunKind.AUDIT | RunKind.SUPERVISOR:
             return SessionType.SCHEDULED_PASS
         case RunKind.FIRE:
             return SessionType.TICKET_FIRE
