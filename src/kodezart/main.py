@@ -36,6 +36,7 @@ from kodezart.core.protocols import (
     TrackerPort,
 )
 from kodezart.services.agent_service import AgentService
+from kodezart.services.rate_limit_backoff import RateLimitBackoffExecutor
 
 
 @asynccontextmanager
@@ -168,8 +169,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             gate=gate,
         )
 
+        # Every session this deployment opens goes through this one service,
+        # so a rate limit is waited out here, once, for every session kind.
+        # The outbound gate keeps the bare executor: its scan has its own
+        # wall-clock bound and a named rate-limited outcome.
         agent_service = AgentService(
-            executor=executor,
+            executor=RateLimitBackoffExecutor(
+                executor,
+                floor_seconds=config.retry_rate_limit_floor_seconds,
+                max_wait_seconds=config.agent.rate_limit_max_wait_seconds,
+            ),
             workspace=stack.workspace,
             persister=stack.persister,
             git_base_url=config.git.base_url,

@@ -144,6 +144,7 @@ example:
 | `KODEZART_AGENT__DANGEROUSLY_ALLOW_HOST_MCP` | `true` | The host MCP opt-in. See below. |
 | `KODEZART_AGENT__SKILLS__MODE` | `all` | Lets each role load the skills the prompt set declares for it, where the host has them installed. `none`, the default, suppresses them. |
 | `KODEZART_AGENT__OUTPUT_STYLE` | `Concise` | The Claude Code output style. A session whose opening frame reports another style fails. |
+| `KODEZART_AGENT__RATE_LIMIT_MAX_WAIT_SECONDS` | `18000` (the default) | How long one session waits out a provider rate limit before it gives up: until the reset time the limit message states, or a doubling back-off from 60 seconds. The job and its workspace stay while it waits. A tick or pass timeout still cuts the wait, and so does `KODEZART_QUEUE__RUN_TIMEOUT_SECONDS` when set. `0` turns the wait off. |
 | `KODEZART_KNOWLEDGE__SESSION_GRANTS` | `["scheduled_pass","ticket_fire","organize_pass","content_audit"]` | Which session kinds get the Notion server and the knowledge map. |
 | `KODEZART_KNOWLEDGE__CONNECTION__TRANSPORT` | `stdio` | Run the Notion server as a local process. |
 | `KODEZART_KNOWLEDGE__CONNECTION__COMMAND` | absolute path to `notion-mcp-server` | Package runners such as `npx` are refused. |
@@ -180,6 +181,7 @@ export KODEZART_GROOMING_PASS_TIMEOUT_SECONDS=7200
 export KODEZART_AGENT__DANGEROUSLY_ALLOW_HOST_MCP=true
 export KODEZART_AGENT__SKILLS__MODE=all
 export KODEZART_AGENT__OUTPUT_STYLE=Concise
+export KODEZART_AGENT__RATE_LIMIT_MAX_WAIT_SECONDS=18000
 export KODEZART_KNOWLEDGE__SESSION_GRANTS='["scheduled_pass","ticket_fire","organize_pass","content_audit"]'
 export KODEZART_KNOWLEDGE__CONNECTION__TRANSPORT=stdio
 export KODEZART_KNOWLEDGE__CONNECTION__COMMAND=/absolute/path/to/notion-mcp-server
