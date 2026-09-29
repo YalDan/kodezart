@@ -68,7 +68,8 @@ RUN_RECORD_EXEMPTION = frozenset(
 #: declares two of the run-record members above and goes with them, and the
 #: escalation-resolution read the ageing observer made, whose adapter method
 #: and conformance rows are a tracker-adapter change of their own. Named, so
-#: a new caller of either reddens the guard until its entry goes.
+#: a new caller of either reddens the guard until its entry goes. KOD-1296
+#: deletes both, and this exemption with them.
 SUPERVISOR_MERGE_ROLES = frozenset({"RunAlarmTracker", "EscalationResolutionReader"})
 SUPERVISOR_MERGE_MEMBERS = frozenset({"read_escalation_resolution"})
 
@@ -85,7 +86,8 @@ EXEMPT_UNTIL_KOD_390 = frozenset({"read_surface_authorship"})
 #: roles were deleted with the supervisor's code observers, their only
 #: takers; the scope plan and scope-ready reads joined this list then,
 #: because the scope walker and the scope planning that take them were
-#: reached only through the supervisor's scope arm. Named rather than
+#: reached only through the supervisor's scope arm; KOD-1296 deletes that
+#: chain and takes those two entries off. Named rather than
 #: scanned: wiring one of those consumers takes
 #: its role off the unreached list and reddens the reachability guard until
 #: the entry here goes too.
