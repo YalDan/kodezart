@@ -88,7 +88,6 @@ the adapter choice moves into it as `BACKEND`.
 | `TRACKER_MCP_ERROR_DETAIL_LIMIT` | `TRACKER__ERROR_DETAIL_LIMIT` |
 | `TRACKER_MAX_RETRIES` | `TRACKER__MAX_RETRIES` |
 | `TRACKER_RETRY_BACKOFF_FACTOR` | `TRACKER__RETRY_BACKOFF_FACTOR` |
-| `TRACKER_SURFACE_LEASE_SECONDS` | `TRACKER__SURFACE_LEASE_SECONDS` |
 
 The composed lifecycle outcome writer uses the surface duration for acquisition
 and explicit renewal. A declared `[marker_prefixes]` table must name a distinct
@@ -338,25 +337,17 @@ row. The supervisor tick and the audit need their own cadence pairs from
 Delete these assignments. Each is refused at startup, from every source, and no
 current name expresses the same choice.
 
-- `KODEZART_ORGANIZE_MAX_ADMISSION_ROUNDS` and
-  `KODEZART_ORGANIZE_MAX_CONVERGENCE_ROUNDS` — the bounded organize loops have
-  no composed consumer at this release. Their bounded-retry and exhaustion
-  behaviour is still required of that loop; what is gone is the unread setting.
-- `KODEZART_UNION_CHECK_CLEANUP_POLL_INTERVAL_SECONDS` — repeated process-group
-  termination now waits on a fixed interval until output drains. That is
-  cleanup mechanics rather than a deployment policy. The per-step command
-  timeout stays configurable.
+- `KODEZART_FIRE_PREP_PASS_GATE_SIGNALS` and
+  `KODEZART_GROOMING_PASS_GATE_SIGNALS` — the fire-prep and grooming passes
+  now ask an agent whether to run (the `pass_gate` key of
+  `KODEZART_AGENT__SESSION_MODELS` picks its engine). The events
+  `prompt_pass_gates_absent_no_tracker` and `prompt_pass_skipped_no_delta` are
+  no longer emitted. The dispatch pass keeps `KODEZART_DISPATCH_PASS_GATE_SIGNALS`.
 - `KODEZART_DENY_PATTERNS` and `KODEZART_DENY_PATTERN_VERDICTS` — the regex
   scanner they configured has no remaining production writer. Outbound
   admission is a judgment session plus a typed reference classification, and
   the semantic private-surface description in the operation config is where a
   deployment states what must not leave.
-- `KODEZART_AGGREGATE_COUNT_TOKEN_DISTANCE`,
-  `KODEZART_AGGREGATE_IDENTIFIER_ROSTER_MIN_LENGTH`,
-  `KODEZART_AGGREGATE_TRACKER_OBJECT_NOUNS`,
-  `KODEZART_AGGREGATE_ISSUE_IDENTIFIER_PATTERN` and
-  `KODEZART_AGGREGATE_IDENTIFIER_SEPARATOR_PATTERN` — the same retirement, for
-  the aggregate half of that scanner.
 
 ### Names only pre-release v0.3 builds carried
 
@@ -366,7 +357,10 @@ at startup:
 | Name | What to do |
 | --- | --- |
 | `KODEZART_DISPATCH_WORKFLOW` | Delete it. The per-issue dispatch passes and the standing scopes' heartbeat both run on the dispatch cadence pair. |
-| `KODEZART_FIRE_PREP_PASS_GATE_SIGNALS`, `KODEZART_GROOMING_PASS_GATE_SIGNALS` | Delete them. The fire-prep and grooming passes ask an agent whether to run (the `pass_gate` key of `KODEZART_AGENT__SESSION_MODELS` picks its engine). |
+| `KODEZART_TRACKER_SURFACE_LEASE_SECONDS` | Rename to `KODEZART_TRACKER__SURFACE_LEASE_SECONDS`. |
+| `KODEZART_ORGANIZE_MAX_ADMISSION_ROUNDS`, `KODEZART_ORGANIZE_MAX_CONVERGENCE_ROUNDS` | Delete them. The bounded organize loops have no composed consumer at this release; what is gone is the unread setting. |
+| `KODEZART_UNION_CHECK_CLEANUP_POLL_INTERVAL_SECONDS` | Delete it. Repeated process-group termination waits on a fixed interval until output drains; the per-step command timeout stays configurable. |
+| `KODEZART_AGGREGATE_COUNT_TOKEN_DISTANCE`, `KODEZART_AGGREGATE_IDENTIFIER_ROSTER_MIN_LENGTH`, `KODEZART_AGGREGATE_TRACKER_OBJECT_NOUNS`, `KODEZART_AGGREGATE_ISSUE_IDENTIFIER_PATTERN`, `KODEZART_AGGREGATE_IDENTIFIER_SEPARATOR_PATTERN` | Delete them. They configured the aggregate half of the retired regex scanner. |
 | `KODEZART_WRITE_BACK_MAX_VERIFY_ROUNDS` | Rename to `KODEZART_WRITE_BACK__MAX_VERIFY_ROUNDS`. |
 | `KODEZART_ORGANIZE__INTERVAL_SECONDS`, `KODEZART_ORGANIZE__TIMEOUT_SECONDS` | Delete them. The organize stages run inside the scope run the heartbeat submits on the dispatch pair; the organize section refuses a cadence field. |
 
