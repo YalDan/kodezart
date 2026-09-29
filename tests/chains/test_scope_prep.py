@@ -1,5 +1,7 @@
 """The scope run's prep: the criteria it grades are the ones the board lists."""
 
+from typing import cast
+
 from kodezart.chains.scope_stages import ScopeStages
 from kodezart.core.prompt_namespaces import bindings_for
 from kodezart.types.domain.agent import ResultEvent
@@ -12,7 +14,7 @@ from kodezart.types.domain.criteria import (
 from kodezart.types.domain.fire_spec import TrackerSpec
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.session import PermissionMode
-from kodezart.types.domain.workflow import ExecutionContext
+from kodezart.types.domain.workflow import ExecutionContext, WorkflowState
 from tests.fakes import SUPPRESS_ALL_SKILLS, FakeAgentRunner
 from tests.prompts.test_prompt_wiring import load_registry
 from tests.services.test_prompt_pass import example_config
@@ -25,8 +27,8 @@ def _item(key: str, text: str, *, criterion: bool = True) -> dict[str, object]:
 async def test_a_criterion_key_listed_twice_is_held_once_where_it_first_stood() -> None:
     """The scope-done answer lists one key twice: one criterion, last text.
 
-    The roster is shaped through the criteria chain's one set builder, which
-    takes a mapping, so the key keeps its first position and the text the
+    The roster is shaped through the one native set builder, which takes a
+    mapping, so the key keeps its first position and the text the
     answer gave it last. The set has no uniqueness check of its own; this is
     the outcome prep chooses.
     """
@@ -69,7 +71,10 @@ async def test_a_criterion_key_listed_twice_is_held_once_where_it_first_stood() 
         scope=ScopeRef(kind=ScopeKind.ISSUE, key="fire/parent"),
     )
 
-    update = await stages.prep({}, {"configurable": execution.model_dump()})
+    # Prep reads nothing off the graph state; the run's address is the config.
+    empty = cast(WorkflowState, {})
+
+    update = await stages.prep(empty, {"configurable": execution.model_dump()})
 
     assert update["criterion_set"] == TrackerCriterionSet(
         criteria=[
