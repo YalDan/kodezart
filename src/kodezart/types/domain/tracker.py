@@ -113,7 +113,8 @@ def is_non_counting(kind: WorkflowStateKind) -> bool:
     discharged.
 
     Asked by the spec read, the native writer's authority read,
-    ``existing_criterion`` and the criteria stage's ``needs_criteria``; the
+    ``existing_criterion``, the criteria stage's ``needs_criteria`` and the
+    evaluator ruling writer's selection of claims to move back; the
     gap and readiness read asks the gap arithmetic's one state match
     (``state_membership`` in ``domain/gap.py``), which excludes the same
     kinds.

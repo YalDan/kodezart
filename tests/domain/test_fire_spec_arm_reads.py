@@ -1516,7 +1516,7 @@ def test_the_scan_catches_a_spec_handed_to_an_unannotated_parameter_in_the_tree(
     assert report["digested"] == DIGEST_POSITIONS
 
 
-PROMPT_ANCHOR = ').render({"task_md": task_md})'
+PROMPT_ANCHOR = 'bindings: dict[str, object] = {"task_md": task_md}'
 
 
 def test_the_whole_arm_handed_to_the_implementation_prompt_is_a_render():
@@ -1531,7 +1531,7 @@ def test_the_whole_arm_handed_to_the_implementation_prompt_is_a_render():
     sources = dict(PACKAGE)
     assert sources[IMPLEMENTATION].count(PROMPT_ANCHOR) == 1
     sources[IMPLEMENTATION] = sources[IMPLEMENTATION].replace(
-        PROMPT_ANCHOR, ').render({"task_md": spec})'
+        PROMPT_ANCHOR, 'bindings: dict[str, object] = {"task_md": spec}'
     )
 
     report = _report(sources)

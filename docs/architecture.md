@@ -155,7 +155,9 @@ does not exist.
 | FireRulingTracker | LinearMcpTracker | The criterion reads and record writes a ruling round makes |
 | AmendmentWriteTracker | LinearMcpTracker | Every read the amendment write-back is composed from and every write it makes |
 | NativeAmendmentTracker | LinearMcpTracker | The amendment writes plus the membership the native arm reads beside them, and the criterion minter its weakened-assertion marks take |
+| IssueCommentWriter | LinearMcpTracker | A new comment on one issue, with no marker and no read beside it |
 | LifecycleStateWriter | LinearMcpTracker | The writes the per-issue lifecycle makes on one issue, and nothing wider |
+| EvaluatorRulingTracker | LinearMcpTracker | Exactly the tracker calls the evaluator's ruling record makes: read a failed criterion, comment each ruling, move a claimed one back |
 | ScopeStatusWriter | LinearScopeStatusUpdates | The scope terminal's one write, a role beside the port rather than a member of it; built over the tracker's caller the way the record sink is |
 | ScopeStatusReader | LinearScopeStatusUpdates | The one read the scope terminal makes before its one write: the reports the container already carries, so a report is posted once across a restart; a role beside the port, over the tracker's caller |
 | ScopeStatusUpdates | LinearScopeStatusUpdates | The container-status role whole, read and write, one class over the tracker's caller |

@@ -300,14 +300,13 @@ def build_workflow_engine(
         if scope_tracker is not None and operation is not None
         else None
     )
-    # Only a scope run writes through it; the loop asks the run's scope.
+    # Only a scope run writes through it; the loop asks the run's scope. Unlike
+    # the lane state writer above it takes no operation: it finds a claim by
+    # its state kind, never by a configured state name, so the tracker and the
+    # status writer are all its construction waits on.
     evaluator_rulings = (
-        EvaluatorRulingWriter(
-            tracker=scope_tracker, operation=operation, status=scope_status
-        )
-        if scope_tracker is not None
-        and operation is not None
-        and scope_status is not None
+        EvaluatorRulingWriter(tracker=scope_tracker, status=scope_status)
+        if scope_tracker is not None and scope_status is not None
         else None
     )
     # One reader for every lane of this deployment: it holds no run state —
