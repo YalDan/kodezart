@@ -5,7 +5,7 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from kodezart.config.app import AppConfig
+from kodezart.config.app import RETIRED_TO_SUPERVISOR_PASS, AppConfig
 
 
 def _from_source(source, field, value, tmp_path, monkeypatch):
@@ -49,6 +49,42 @@ def test_removed_setting_refuses_all_supported_sources(
     assert "input_value" not in str(caught.value)
 
 
+#: The run-alarm bounds only the supervisor's code observers read. Those
+#: observers were merged into the supervisor pass, a session that judges the
+#: same conduct from the board, so each name is refused at boot with a
+#: message naming that pass, never silently ignored.
+SUPERVISOR_PASS_REPLACED = (
+    "run_alarm_max_commits_without_closure",
+    "run_alarm_escalation_age_max_commits",
+    "run_alarm_escalation_age_max_ticks",
+)
+
+
+def test_the_retired_run_alarm_bounds_are_exactly_the_three_the_observers_read():
+    assert frozenset(SUPERVISOR_PASS_REPLACED) == RETIRED_TO_SUPERVISOR_PASS
+    assert RETIRED_TO_SUPERVISOR_PASS.isdisjoint(AppConfig.model_fields)
+
+
+@pytest.mark.parametrize("field", SUPERVISOR_PASS_REPLACED)
+@pytest.mark.parametrize("source", ["init", "env", "dotenv", "secret"])
+def test_a_bound_the_supervisor_pass_replaced_is_refused_naming_that_pass(
+    source, field, tmp_path, monkeypatch
+):
+    with pytest.raises(ValidationError) as caught:
+        _from_source(source, field, "7", tmp_path, monkeypatch)
+    refusal = str(caught.value)
+    assert field in refusal.casefold()
+    assert "the supervisor pass" in refusal
+    assert "KODEZART_SUPERVISOR_PASS_INTERVAL_SECONDS" in refusal
+    assert "judges this from the board" in refusal
+    assert "input_value" not in refusal
+
+
+def test_an_unprefixed_name_of_a_replaced_bound_is_not_refused(monkeypatch):
+    monkeypatch.setenv("RUN_ALARM_MAX_COMMITS_WITHOUT_CLOSURE", "7")
+    assert AppConfig(_env_file=None).git.remote == "origin"
+
+
 @pytest.mark.parametrize("source", ["init", "env", "dotenv", "secret"])
 def test_retained_remote_override_loads_at_the_same_config_boundary(
     source, tmp_path, monkeypatch
@@ -63,6 +99,8 @@ def test_default_config_exposes_no_removed_setting():
     assert "organize_max_admission_rounds" not in config.model_dump()
     assert "organize_max_convergence_rounds" not in config.model_dump()
     assert "union_check_cleanup_poll_interval_seconds" not in config.model_dump()
+    for field in SUPERVISOR_PASS_REPLACED:
+        assert field not in config.model_dump()
 
 
 @pytest.mark.parametrize("source", ["env", "secret"])
