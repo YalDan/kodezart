@@ -269,14 +269,13 @@ tools = ["Read", "Glob", "Grep"]
 # under each role, in one place: changing what judgment costs is an edit
 # here, not an edit per key. Effort is NAMED at every role because the
 # harness exposes no way to ask what it resolved. The judgment roles run at
-# the maximum and the question and utility roles at the floor, by the owner's
-# rulings of 2026-09-24 and 2026-09-29 (a cheap session runs on the smaller
-# engine, where effort above medium buys nothing): the maximum replaced the earlier ladder that ran judgment one
-# level below authoring, and a short structured board question runs at the
-# floor. Per-key skill loadouts
-# are deliberately absent from this set: a loadout has one source, and for
-# this set that source is the role. No template of this set names a skill
-# or when to invoke one — a skill's own description is its trigger.
+# the maximum, and the question and utility roles at the floor because their
+# answers are short and structured (rulings of 2026-09-24 and 2026-09-29).
+# The maximum replaced the earlier ladder that ran judgment one level below
+# authoring. Per-key skill loadouts are deliberately absent from this set:
+# a loadout has one source, and for this set that source is the role. No
+# template of this set names a skill or when to invoke one — a skill's own
+# description is its trigger.
 
 [session_roles.generative]
 effort = "max"
