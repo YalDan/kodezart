@@ -83,7 +83,7 @@
   "tests/chains/test_native_prepare_cancel_peer.py": 7,
   "tests/chains/test_native_prepare_cleanup_peer.py": 7,
   "tests/chains/test_node_session_events.py": 16,
-  "tests/chains/test_organize.py": 51,
+  "tests/chains/test_organize.py": 47,
   "tests/chains/test_outbound_gating.py": 24,
   "tests/chains/test_ralph_loop.py": 174,
   "tests/chains/test_ralph_workflow.py": 351,
@@ -199,7 +199,6 @@
   "tests/domain/test_non_counting.py": 6,
   "tests/domain/test_operation_optionality.py": 12,
   "tests/domain/test_organize.py": 28,
-  "tests/domain/test_organize_graph_peers.py": 3,
   "tests/domain/test_organize_surfaces.py": 5,
   "tests/domain/test_outcome.py": 31,
   "tests/domain/test_owed_rulings.py": 47,
@@ -430,7 +429,6 @@
   "tests/tracker/test_audit_terminal_mandate_git.py": 25,
   "tests/tracker/test_barren_record_collector.py": 34,
   "tests/tracker/test_barren_tick.py": 17,
-  "tests/tracker/test_body_revisions.py": 27,
   "tests/tracker/test_classification_authority.py": 7,
   "tests/tracker/test_combined_issue_writes.py": 6,
   "tests/tracker/test_comment_expected.py": 15,
@@ -493,11 +491,7 @@
   "tests/tracker/test_native_criterion_amendment.py": 25,
   "tests/tracker/test_native_read_configuration.py": 10,
   "tests/tracker/test_native_recorded_landing.py": 6,
-  "tests/tracker/test_organize_graph_final_boundary.py": 8,
-  "tests/tracker/test_organize_graph_independent.py": 21,
-  "tests/tracker/test_organize_graph_receipt_boundary.py": 5,
-  "tests/tracker/test_organize_graph_retry_boundary.py": 7,
-  "tests/tracker/test_organize_graph_writes.py": 32,
+  "tests/tracker/test_organize_graph_writes.py": 2,
   "tests/tracker/test_ownership_arbitration.py": 166,
   "tests/tracker/test_port_failure_boundary.py": 4,
   "tests/tracker/test_port_roles.py": 81,
@@ -530,7 +524,7 @@
   "tests/tracker/test_tracker_boot.py": 48,
   "tests/tracker/test_tracker_boot_cleanup.py": 12,
   "tests/tracker/test_tracker_boot_wiring.py": 80,
-  "tests/tracker/test_tracker_conformance.py": 347,
+  "tests/tracker/test_tracker_conformance.py": 341,
   "tests/types/test_audit_mandate_independent.py": 10,
   "tests/types/test_audit_report_contract.py": 11,
   "tests/types/test_audit_restamp_report.py": 6,
@@ -1778,7 +1772,6 @@
   ],
   "tests/chains/test_organize.py": [
    "test_session_type_is_required_by_the_actual_runner_call",
-   "test_the_organized_port_moves_its_stamp_on_read_and_not_its_body_revision",
    "test_no_gap_computation_call_site_reads_the_tracker_change_timestamp",
    "test_the_discovered_gap_sites_are_the_upper_bound_exactly",
    "test_every_module_that_reads_the_change_stamp_is_registered_with_its_reason",
@@ -3481,11 +3474,6 @@
    "test_invalid_table_stops_normal_boot_before_tracker_or_dispatch",
    "test_mandate_kind_names_and_values_are_the_two_organize_stages",
    "test_a_groom_row_is_refused_at_load_by_name"
-  ],
-  "tests/domain/test_organize_graph_peers.py": [
-   "test_every_graph_change_kind_has_a_shape",
-   "test_a_graph_change_reaches_exactly_the_issues_it_writes",
-   "test_changes_together_reach_every_issue_each_one_reaches"
   ],
   "tests/domain/test_organize_surfaces.py": [
    "test_no_row_declares_a_container_surface",
@@ -6410,15 +6398,6 @@
    "test_observer_has_one_tracker_read_and_no_version_control_dependency",
    "test_a_cancellation_closes_on_state_alone"
   ],
-  "tests/tracker/test_body_revisions.py": [
-   "test_repeated_reads_preserve_body_and_digest_without_writes",
-   "test_metadata_changes_preserve_the_body_revision",
-   "test_body_change_moves_only_its_surface_and_unchanged_replay_moves_none",
-   "test_every_exact_body_has_a_nonempty_stable_revision",
-   "test_revision_rejects_an_unavailable_digest",
-   "test_revision_is_frozen_closed_and_does_not_normalize_opaque_digests",
-   "test_linear_revision_uses_one_full_hydration_and_hashes_its_exact_body"
-  ],
   "tests/tracker/test_classification_authority.py": [
    "test_escalation_label_write_requires_current_grant_after_waits",
    "test_actual_label_readback_failure_cannot_resend_completed_write"
@@ -6961,35 +6940,10 @@
    "test_unreadable_landing_never_disappears_into_ref_absence",
    "test_repeated_native_work_ref_marker_refuses"
   ],
-  "tests/tracker/test_organize_graph_final_boundary.py": [
-   "test_final_split_observation_after_refreshed_identity_is_authoritative",
-   "test_final_writers_refuse_missing_and_foreign_holder"
-  ],
-  "tests/tracker/test_organize_graph_independent.py": [
-   "test_graph_lease_must_still_hold_after_final_graph_read",
-   "test_split_final_observed_source_is_checked_before_creation",
-   "test_split_identity_appearing_during_state_read_is_not_duplicated",
-   "test_milestone_parent_is_current_after_holder_wait"
-  ],
-  "tests/tracker/test_organize_graph_receipt_boundary.py": [
-   "test_post_save_read_failure_never_reissues_a_completed_write"
-  ],
-  "tests/tracker/test_organize_graph_retry_boundary.py": [
-   "test_known_unsent_retry_revalidates_current_write_preconditions"
-  ],
   "tests/tracker/test_organize_graph_writes.py": [
-   "test_actual_adapter_preserves_unrequested_edges_and_updates_inverse",
-   "test_graph_refuses_before_save",
-   "test_split_creation_uses_native_initial_state_and_replay_never_overwrites",
    "test_graph_surfaces_never_alias_container_or_parent_body",
-   "test_split_source_drift_during_state_lookup_refuses_before_create",
    "test_initial_state_requires_actual_nonblank_native_identity",
-   "test_split_creation_shape_never_bypasses_existing_issue_transition_guard",
-   "test_project_milestones_expose_complete_native_identities_and_descriptions",
-   "test_project_milestone_incomplete_identity_evidence_refuses",
-   "test_parent_change_and_clear_use_exact_native_keys",
-   "test_milestone_assignment_requires_actual_current_project",
-   "test_existing_split_identity_damage_never_creates_or_overwrites"
+   "test_split_creation_shape_never_bypasses_existing_issue_transition_guard"
   ],
   "tests/tracker/test_ownership_arbitration.py": [
    "test_two_grants_at_one_instant_leave_the_issue_to_neither",
@@ -7543,7 +7497,6 @@
    "TestIndependentlyHeldSurfaces.test_a_parents_criterion_child_grant_moves_no_criterion_under_it",
    "TestSuppliedHolderWrites.test_the_table_is_the_derived_holder_taking_write_surface",
    "TestSuppliedHolderWrites.test_a_supplied_holder_that_does_not_hold_is_refused_with_nothing_written",
-   "TestSuppliedHolderWrites.test_a_graph_write_is_refused_on_the_peer_it_would_relate",
    "TestSuppliedHolderWrites.test_a_write_that_supplies_no_holder_consults_no_lease",
    "TestAPrincipalAuthoredCriterionBody.test_a_principal_authored_criterion_body_is_refused_under_its_own_grant",
    "TestSurfaceWriteProvenance.test_two_holders_writing_one_body_read_back_as_that_ordered_pair",

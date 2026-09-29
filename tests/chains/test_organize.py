@@ -61,17 +61,11 @@ from kodezart.types.domain.tracker import (
     IssueQuery,
     ReviewQuery,
     TrackerIssue,
-    TrackerIssueRevision,
     WorkflowStateKind,
 )
 from tests.fakes import (
     SUPPRESS_ALL_SKILLS,
-    FakeLinearMcpServer,
-    FakeMcpIssue,
-    FakeTrackerPort,
     FakeWorkspaceProvider,
-    seed_fake_issue,
-    seed_server_issue,
 )
 from tests.name_resolution import (
     defining_module,
@@ -81,7 +75,6 @@ from tests.name_resolution import (
     referencing_definitions,
     source_tree,
 )
-from tests.tracker.test_linear_mcp_tracker import tracker_over
 
 SUBJECT = "subject/42"
 
@@ -190,104 +183,6 @@ async def test_session_type_is_required_by_the_actual_runner_call():
             allowed_tools=[],
             skills=SUPPRESS_ALL_SKILLS,
         )
-
-
-BODY_MARKER = "body_ready"
-
-
-def gap_revision(key, **changes):
-    return TrackerIssueRevision(
-        issue=issue(key, f"Body for {key}", **changes),
-        body_digest=f"opaque:{key}",
-    )
-
-
-def organized_family(key=SUBJECT):
-    return (
-        gap_revision(key, issue_labels=[BODY_MARKER]),
-        gap_revision(
-            f"{key}/check",
-            parent_key=key,
-            issue_labels=["criterion"],
-            state_kind=WorkflowStateKind.COMPLETED,
-            state_name="Done",
-        ),
-    )
-
-
-@pytest.fixture(params=["fake", "linear"])
-def organized_port(request):
-    # *stamp_reads* makes every further read of this port move the change
-    # stamp, whichever double is underneath. The UNCHANGED replay below writes
-    # nothing, so a stamp that only a write moves cannot tell a digest taken
-    # from the body alone from one that folds the stamp into it; a stamp that
-    # moves on the read can. It is a switch rather than a constructor value
-    # because an admission session compares the whole issue across its
-    # context read and its revision read, so no session may run under it.
-    revisions = (*organized_family(), *organized_family("other/17"))
-    keys = tuple(revision.issue.issue_key for revision in revisions)
-    if request.param == "fake":
-        source = FakeTrackerPort(issues=[revision.issue for revision in revisions])
-
-        def stamp_reads() -> None:
-            source.stamp_moves_on_read = True
-
-        def seed_issue(*, issue_key: str, body: str) -> None:
-            seed_fake_issue(source, issue_key=issue_key, body=body)
-    else:
-        server = FakeLinearMcpServer(
-            issues=[
-                FakeMcpIssue(
-                    id=revision.issue.issue_key,
-                    description=revision.issue.body,
-                    parent_id=revision.issue.parent_key,
-                    status=revision.issue.state_name,
-                    status_type=revision.issue.state_kind.value,
-                    labels=["acceptance-condition"]
-                    if "criterion" in revision.issue.issue_labels
-                    else ["body-phase-finished"],
-                )
-                for revision in revisions
-            ],
-            state_types={"Todo": "unstarted", "Done": "completed"},
-        )
-        source = tracker_over(
-            server,
-            issue_labels={
-                "criterion": "acceptance-condition",
-                BODY_MARKER: "body-phase-finished",
-            },
-        )
-
-        def stamp_reads() -> None:
-            server.stamp_moves_on_read = True
-
-        def seed_issue(*, issue_key: str, body: str) -> None:
-            seed_server_issue(server, issue_key=issue_key, body=body)
-
-    return source, keys, stamp_reads, seed_issue
-
-
-async def test_the_organized_port_moves_its_stamp_on_read_and_not_its_body_revision(
-    organized_port,
-):
-    """Under the switch a read moves the stamp and the body revision holds.
-
-    Stated on both arms and positively, so the replay case below cannot go
-    vacuous: a revision that folded the stamp into its digest would answer two
-    reads of one unwritten body with two digests, and the digest holding still
-    across those reads is the prohibition itself.
-    """
-    source, keys, stamp_reads, _seed = organized_port
-    stamp_reads()
-    first = await source.read_issue(issue_key=keys[1])
-    second = await source.read_issue(issue_key=keys[1])
-    assert second.updated_at > first.updated_at
-    assert second.body == first.body
-    one = await source.read_issue_revision(issue_key=keys[1])
-    two = await source.read_issue_revision(issue_key=keys[1])
-    assert two.issue.updated_at > one.issue.updated_at
-    assert two.body_digest == one.body_digest
 
 
 CHANGE_STAMP_FIELDS = frozenset(

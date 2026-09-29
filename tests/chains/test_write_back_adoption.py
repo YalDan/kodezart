@@ -2531,16 +2531,13 @@ KOD_806_STATE_MOVES = frozenset(
 )
 
 #: The tracker's structural writes: every port write that moves workflow
-#: state, queue state or the issue graph. Derived from the state moves
-#: KOD-806 holds outside the write-back check (a stage write, a queue-state
-#: write and a put-back that names a backend state, the kind of move a
-#: cancellation would be) plus the graph change and the queue-state write,
-#: so a state move registered there is structural here without being
-#: listed twice. No production call changes the graph: the register below
-#: holds none, so the first one fails here.
+#: state or queue state. Derived from the state moves KOD-806 holds outside
+#: the write-back check (a stage write, a queue-state write and a put-back
+#: that names a backend state, the kind of move a cancellation would be)
+#: plus the queue-state write, so a state move registered there is
+#: structural here without being listed twice. The port has no graph write.
 STRUCTURAL_WRITES = frozenset(
-    {site.method for site in KOD_806_STATE_MOVES}
-    | {"update_issue_graph", "set_queue_state"}
+    {site.method for site in KOD_806_STATE_MOVES} | {"set_queue_state"}
 )
 #: Every production call of those writes, compared exactly, each with the
 #: reason it is where it is: a new call site of any of them, inside a
@@ -2592,14 +2589,13 @@ STRUCTURAL_CALL_SITES = frozenset(
 
 
 def test_the_structural_writes_are_called_only_where_the_register_says():
-    """Graph change and state moves, read off the tree and held to the register."""
+    """State moves, read off the tree and held to the register."""
     assert KOD_806_STATE_MOVES <= census().held_out
     assert STRUCTURAL_WRITES == frozenset(
         {
             "set_workflow_state",
             "restore_workflow_state",
             "set_queue_state",
-            "update_issue_graph",
         }
     )
     assert STRUCTURAL_WRITES <= write_methods(ROLES)

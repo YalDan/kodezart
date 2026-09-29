@@ -207,7 +207,10 @@ Each of these needs an action from a v0.2 operator; the steps are in
   `chains/organize_author.py`), its context reader
   (`services/organize_context.py`), and the arithmetic only it computed
   (`organize_gap`, `admission_route` and the stage roster helpers in
-  `domain/organize.py`, and `domain/organize_surfaces.py`). Each scope stage is
+  `domain/organize.py`, and `domain/organize_surfaces.py`), with the tracker
+  port members only it called (`update_issue_graph`, `create_split_if_absent`,
+  `read_issue_revision`, `project_milestones`) and the `OrganizeOwnerTracker`,
+  `OrganizeContextTracker` and `IssueRevisionReader` roles. Each scope stage is
   one session. `KODEZART_ORGANIZE__MAX_ADMISSION_ROUNDS` and
   `KODEZART_ORGANIZE__MAX_CONVERGENCE_ROUNDS` still load and are read by
   nothing.

@@ -115,7 +115,6 @@ does not exist.
 | ExecutionApprovalReader | LinearMcpTracker | The one approval question an entry asks, composed into the approval read and into the scope-ready read the walker takes |
 | IssueReader | LinearMcpTracker | One issue, whole; the read the audit runtime and the native amendment arm make, and a base of the composed roles that read an issue |
 | PlanningIssueReader | LinearMcpTracker | One issue with complete relations; composed into the scope-plan read, the lane escalation writer and the artifact reader |
-| IssueRevisionReader | LinearMcpTracker | One issue and its body digest; composed into `TrackerPort` and `OrganizeOwnerTracker` |
 | IssueScanReader | LinearMcpTracker | The board scan the dispatch pass's gate and the fire dispatcher select on |
 | ScopeFamilyReader | LinearMcpTracker | The scope family, resolved for scope resolution and composed into every membership read |
 | StateHistoryReader | LinearMcpTracker | When an issue entered its state; the read audit candidate collection makes |
@@ -142,7 +141,6 @@ does not exist.
 | ScopeTallyReader | LinearMcpTracker | The roster the scope tally is counted over, behind the classification preflight: exactly what a scope's stage barrier is read from, with no event read and no write |
 | ScopeReadyReader | LinearMcpTracker | The scope plan plus the approval an entry asks for: what the scope walker and the dispatcher read |
 | FireSubjectReader | LinearMcpTracker | The admitted subject of a fire over the family it is measured against: the criteria stage's reads |
-| OrganizeContextTracker | LinearMcpTracker | The issues, milestones and records the organize context reader assembles from |
 | PassGateReader | LinearMcpTracker | The board and review scans the dispatch pass's gate decides on, with no write |
 | TrackerArtifactReader | LinearMcpTracker | Every read a tracker artifact is assembled from; taken by the audit pass, the sweep's verifier and the artifact reader itself |
 | FireDispatchTracker | LinearMcpTracker | The claim, base and staging facts the deterministic dispatch decides on |
@@ -154,7 +152,6 @@ does not exist.
 | AuditPublicationWriter | LinearMcpTracker | The record an audit publishes, under the lease publication holds |
 | EscalationSignalReader | LinearMcpTracker | The resolution and records an escalation's ageing is observed from; the supervisor's ageing arm holds it for the collector it hands it to |
 | RecordSignalReader | LinearMcpTracker | The criterion family and lane record a barren tick, and a lane's recorded ruling growth, are observed from |
-| OrganizeOwnerTracker | LinearMcpTracker | Split creation and graph change with the reads and writes they were composed with; the cascade organize owner that held it is removed, and `TrackerPort` still carries it |
 | FireRulingTracker | LinearMcpTracker | The criterion reads and record writes a ruling round makes |
 | AmendmentWriteTracker | LinearMcpTracker | Every read the amendment write-back is composed from and every write it makes |
 | NativeAmendmentTracker | LinearMcpTracker | The amendment writes plus the membership the native arm reads beside them, and the criterion minter its weakened-assertion marks take |
@@ -768,11 +765,6 @@ Mandatory write leases and the recorded association-storage conflict remain
 separate prerequisites. The scope terminal reads each lane's branch and pull
 request through this reader; whether a lane is done is read from its criterion
 sub-issues, never from the record.
-
-Body revisions retain the exact same-read body and a nonempty digest. Shared
-conformance checks cover body changes, unchanged replays and metadata-only
-writes. An unreadable or invalid revision refuses at the actual read; no
-consumer substitutes an empty digest or treats it as live.
 
 One organize table, `[[organize_mandates]]`, declares a `ticket` row and a
 `criteria` row, each with a gate label and a terminal marker. It still loads
@@ -2173,8 +2165,7 @@ edits, and deletions. Timestamp-only movement without a new local receipt
 still wakes. Current snapshots cannot establish the causal author of
 indistinguishable transient histories, including a simultaneous mention-only
 ripple during otherwise identical own churn; this is not a vendor event
-history or a universal attribution proof. Admission continues to use its
-upstream body digest and gap, never this scan window or a second digest.
+history or a universal attribution proof.
 
 
 Description edits address the complete issue body. An exact desired body or

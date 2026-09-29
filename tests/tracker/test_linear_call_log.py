@@ -55,8 +55,6 @@ from tests.tracker.role_register import declared_by_role, port_members
 from tests.tracker.test_linear_mcp_tracker import tracker_over
 from tests.tracker.test_organize_graph_writes import (
     address,
-    changes,
-    expected,
     fixture,
 )
 from tests.tracker.test_run_alarm_records import PREFIXES, alarm
@@ -71,33 +69,6 @@ type Step = Callable[[object], Awaitable[object]]
 
 def issue(key: str) -> ScopeRef:
     return ScopeRef(kind=ScopeKind.ISSUE, key=key)
-
-
-async def graph_and_split(tracker) -> None:
-    surfaces = frozenset(
-        {
-            address("child"),
-            address("peer"),
-            address(CLAIMED_ISSUE, SurfaceKind.ISSUE_SPLIT_SET),
-        }
-    )
-    async with RunSurfaceLease(
-        tracker=tracker, job_id=HOLDER, surfaces=surfaces, lease_seconds=300
-    ):
-        await tracker.update_issue_graph(
-            issue_key="child",
-            expected=await expected(tracker),
-            changes=changes({"kind": "blocked_by", "add": ["peer"]}),
-            holder=HOLDER,
-        )
-        await tracker.create_split_if_absent(
-            source_key=CLAIMED_ISSUE,
-            deliverable_key="call-log/child",
-            title="Split child",
-            body="Independent child specification",
-            holder=HOLDER,
-            expected=await expected(tracker),
-        )
 
 
 async def criterion_mint(tracker) -> None:
@@ -143,12 +114,11 @@ async def run_alarm(tracker) -> None:
 
 
 #: The script, one flow per step, each named by the role whose member it
-#: drives. The organize writes come first so the criterion the reopen step
+#: drives. The criterion mint comes first so the criterion the reopen step
 #: reads exists; everything else reads the fixture workspace as it stands.
 #: The adapter is dialled with the run-alarm marker as well, so the alarm
 #: flow reaches its write rather than refusing for want of a prefix.
 STEPS: tuple[tuple[str, Step], ...] = (
-    ("OrganizeOwnerTracker", graph_and_split),
     ("CriterionMintWriter", criterion_mint),
     ("TrackerCommentReader", lambda t: t.list_comments(issue_key=CLAIMED_ISSUE)),
     ("TrackerCriteriaReader", lambda t: t.read_criteria(issue_key=APPROVED_ISSUE)),
@@ -161,7 +131,6 @@ STEPS: tuple[tuple[str, Step], ...] = (
     ),
     ("IssueReader", lambda t: t.read_issue(issue_key=APPROVED_ISSUE)),
     ("PlanningIssueReader", lambda t: t.read_planning_issue(issue_key=APPROVED_ISSUE)),
-    ("IssueRevisionReader", lambda t: t.read_issue_revision(issue_key=APPROVED_ISSUE)),
     (
         "IssueScanReader",
         lambda t: t.scan_issues(
@@ -352,10 +321,6 @@ STEPS: tuple[tuple[str, Step], ...] = (
 SCOPE_STEPS: tuple[tuple[str, Step], ...] = (
     ("ContainerMetadataReader", lambda t: t.container_metadata(ref=PROJECT)),
     (
-        "OrganizeContextTracker",
-        lambda t: t.project_milestones(project_key=PROJECT.key),
-    ),
-    (
         "FireDispatchTracker",
         lambda t: t.initiative_identifiers(project_id=PROJECT.key),
     ),
@@ -518,73 +483,10 @@ async def test_the_adapter_sends_the_recorded_values_where_no_conformance_case_l
     assert sent == RECORDED_VALUES
 
 
-#: Read off the adapter before the split, by running ``call_log`` once.
+#: Read off the adapter before the split, by running ``call_log`` once, and
+#: read again when the tracker port's graph, split and revision members were
+#: removed, from a script the adapter before that removal sends identically.
 RECORDED_CALL_LOG: tuple[Entry, ...] = (
-    ("OrganizeOwnerTracker", "save_comment", ("body", "issueId")),
-    ("OrganizeOwnerTracker", "save_comment", ("body", "issueId")),
-    ("OrganizeOwnerTracker", "save_comment", ("body", "issueId")),
-    ("OrganizeOwnerTracker", "list_comments", ("issueId",)),
-    ("OrganizeOwnerTracker", "list_comments", ("issueId",)),
-    ("OrganizeOwnerTracker", "list_comments", ("issueId",)),
-    ("OrganizeOwnerTracker", "save_comment", ("body", "id")),
-    ("OrganizeOwnerTracker", "save_comment", ("body", "id")),
-    ("OrganizeOwnerTracker", "save_comment", ("body", "id")),
-    ("OrganizeOwnerTracker", "list_comments", ("issueId",)),
-    ("OrganizeOwnerTracker", "list_comments", ("issueId",)),
-    ("OrganizeOwnerTracker", "list_comments", ("issueId",)),
-    ("OrganizeOwnerTracker", "get_issue", ("id", "includeRelations")),
-    ("OrganizeOwnerTracker", "get_issue", ("id", "includeRelations")),
-    ("OrganizeOwnerTracker", "get_issue", ("id", "includeRelations")),
-    ("OrganizeOwnerTracker", "get_issue", ("id", "includeRelations")),
-    ("OrganizeOwnerTracker", "get_issue", ("id", "includeRelations")),
-    ("OrganizeOwnerTracker", "get_issue", ("id", "includeRelations")),
-    ("OrganizeOwnerTracker", "list_comments", ("issueId",)),
-    ("OrganizeOwnerTracker", "list_comments", ("issueId",)),
-    ("OrganizeOwnerTracker", "get_issue", ("id", "includeRelations")),
-    ("OrganizeOwnerTracker", "get_issue", ("id", "includeRelations")),
-    ("OrganizeOwnerTracker", "get_issue", ("id", "includeRelations")),
-    ("OrganizeOwnerTracker", "save_issue", ("blockedBy", "id")),
-    ("OrganizeOwnerTracker", "get_issue", ("id", "includeRelations")),
-    ("OrganizeOwnerTracker", "get_issue", ("id", "includeRelations")),
-    ("OrganizeOwnerTracker", "get_issue", ("id", "includeRelations")),
-    ("OrganizeOwnerTracker", "get_issue", ("id", "includeRelations")),
-    ("OrganizeOwnerTracker", "get_issue", ("id", "includeRelations")),
-    ("OrganizeOwnerTracker", "get_issue", ("id", "includeRelations")),
-    ("OrganizeOwnerTracker", "list_issues", ("fields", "includeArchived", "limit")),
-    ("OrganizeOwnerTracker", "get_issue", ("id", "includeRelations")),
-    ("OrganizeOwnerTracker", "get_issue", ("id", "includeRelations")),
-    ("OrganizeOwnerTracker", "get_issue", ("id", "includeRelations")),
-    ("OrganizeOwnerTracker", "get_issue", ("id", "includeRelations")),
-    ("OrganizeOwnerTracker", "get_issue", ("id", "includeRelations")),
-    ("OrganizeOwnerTracker", "get_issue", ("id", "includeRelations")),
-    ("OrganizeOwnerTracker", "get_issue", ("id", "includeRelations")),
-    ("OrganizeOwnerTracker", "list_issue_statuses", ("team",)),
-    ("OrganizeOwnerTracker", "list_comments", ("issueId",)),
-    ("OrganizeOwnerTracker", "get_issue", ("id", "includeRelations")),
-    ("OrganizeOwnerTracker", "get_issue", ("id", "includeRelations")),
-    ("OrganizeOwnerTracker", "get_issue", ("id", "includeRelations")),
-    ("OrganizeOwnerTracker", "list_issues", ("fields", "includeArchived", "limit")),
-    ("OrganizeOwnerTracker", "get_issue", ("id", "includeRelations")),
-    ("OrganizeOwnerTracker", "get_issue", ("id", "includeRelations")),
-    ("OrganizeOwnerTracker", "get_issue", ("id", "includeRelations")),
-    ("OrganizeOwnerTracker", "get_issue", ("id", "includeRelations")),
-    ("OrganizeOwnerTracker", "get_issue", ("id", "includeRelations")),
-    ("OrganizeOwnerTracker", "get_issue", ("id", "includeRelations")),
-    ("OrganizeOwnerTracker", "get_issue", ("id", "includeRelations")),
-    (
-        "OrganizeOwnerTracker",
-        "save_issue",
-        ("description", "parentId", "state", "team", "title"),
-    ),
-    ("OrganizeOwnerTracker", "get_issue", ("id", "includeRelations")),
-    ("OrganizeOwnerTracker", "get_issue", ("id", "includeRelations")),
-    ("OrganizeOwnerTracker", "list_comments", ("issueId",)),
-    ("OrganizeOwnerTracker", "list_comments", ("issueId",)),
-    ("OrganizeOwnerTracker", "list_comments", ("issueId",)),
-    ("OrganizeOwnerTracker", "delete_comment", ("id",)),
-    ("OrganizeOwnerTracker", "delete_comment", ("id",)),
-    ("OrganizeOwnerTracker", "delete_comment", ("id",)),
-    ("OrganizeOwnerTracker", "returned", ()),
     ("CriterionMintWriter", "save_comment", ("body", "issueId")),
     ("CriterionMintWriter", "list_comments", ("issueId",)),
     ("CriterionMintWriter", "save_comment", ("body", "id")),
@@ -595,7 +497,6 @@ RECORDED_CALL_LOG: tuple[Entry, ...] = (
         "list_issues",
         ("fields", "includeArchived", "limit", "parentId"),
     ),
-    ("CriterionMintWriter", "get_issue", ("id", "includeRelations")),
     ("CriterionMintWriter", "get_issue", ("id", "includeRelations")),
     ("CriterionMintWriter", "get_issue", ("id", "includeRelations")),
     ("CriterionMintWriter", "get_issue", ("id", "includeRelations")),
@@ -636,8 +537,6 @@ RECORDED_CALL_LOG: tuple[Entry, ...] = (
     ("IssueReader", "returned", ()),
     ("PlanningIssueReader", "get_issue", ("id", "includeRelations")),
     ("PlanningIssueReader", "returned", ()),
-    ("IssueRevisionReader", "get_issue", ("id", "includeRelations")),
-    ("IssueRevisionReader", "returned", ()),
     ("IssueScanReader", "list_issues", ("label", "limit", "updatedAt")),
     ("IssueScanReader", "returned", ()),
     ("ScopeFamilyReader", "get_issue", ("id", "includeRelations")),
@@ -645,8 +544,6 @@ RECORDED_CALL_LOG: tuple[Entry, ...] = (
     ("ScopeFamilyReader", "get_issue", ("id", "includeRelations")),
     ("ScopeFamilyReader", "get_issue", ("id", "includeRelations")),
     ("ScopeFamilyReader", "get_issue", ("id", "includeRelations")),
-    ("ScopeFamilyReader", "get_issue", ("id", "includeRelations")),
-    ("ScopeFamilyReader", "list_issues", ("includeArchived", "limit", "parentId")),
     ("ScopeFamilyReader", "list_issues", ("includeArchived", "limit", "parentId")),
     ("ScopeFamilyReader", "list_issues", ("includeArchived", "limit", "parentId")),
     ("ScopeFamilyReader", "list_issues", ("includeArchived", "limit", "parentId")),
@@ -715,7 +612,6 @@ RECORDED_CALL_LOG: tuple[Entry, ...] = (
     ("CriterionReopener", "get_issue", ("id", "includeRelations")),
     ("CriterionReopener", "get_issue", ("id", "includeRelations")),
     ("CriterionReopener", "get_issue", ("id", "includeRelations")),
-    ("CriterionReopener", "get_issue", ("id", "includeRelations")),
     ("CriterionReopener", "list_issue_statuses", ("team",)),
     ("CriterionReopener", "get_issue", ("id", "includeRelations")),
     ("CriterionReopener", "get_issue", ("id", "includeRelations")),
@@ -777,7 +673,6 @@ RECORDED_CALL_LOG: tuple[Entry, ...] = (
     ("TrackerArtifactReader", "get_issue", ("id", "includeRelations")),
     ("TrackerArtifactReader", "get_issue", ("id", "includeRelations")),
     ("TrackerArtifactReader", "get_issue", ("id", "includeRelations")),
-    ("TrackerArtifactReader", "get_issue", ("id", "includeRelations")),
     ("TrackerArtifactReader", "returned", ()),
     ("SurfaceLeaseTracker", "save_comment", ("body", "issueId")),
     ("SurfaceLeaseTracker", "list_comments", ("issueId",)),
@@ -799,11 +694,6 @@ RECORDED_CALL_LOG: tuple[Entry, ...] = (
     ("ContainerMetadataReader", "get_project", ("query",)),
     ("ContainerMetadataReader", "get_initiative", ("includeSubInitiatives", "query")),
     ("ContainerMetadataReader", "returned", ()),
-    ("OrganizeContextTracker", "get_project", ("query",)),
-    ("OrganizeContextTracker", "list_milestones", ("project",)),
-    ("OrganizeContextTracker", "get_milestone", ("project", "query")),
-    ("OrganizeContextTracker", "list_milestones", ("project",)),
-    ("OrganizeContextTracker", "returned", ()),
     ("FireDispatchTracker", "get_project", ("query",)),
     ("FireDispatchTracker", "returned", ()),
 )
@@ -811,18 +701,19 @@ RECORDED_CALL_LOG: tuple[Entry, ...] = (
 
 #: Read off the adapter before the split, by running
 #: ``sent_where_no_conformance_case_looks`` once: step index to the digest of
-#: the calls that step made, values kept and only the nonce erased.
+#: the calls that step made, values kept and only the nonce erased.  Read
+#: again with the call log above, the same way.
 RECORDED_VALUES: dict[int, str] = {
-    4: "c373a4efa64a68c921e6f83bdf09adfb6b98d4a335014aeb8521bd58b7bf3b5d",
-    9: "0e1b12ce640e6fde4996850687b89d4dc0025581b6630d888dd0dbce23c3f14e",
-    13: "0e1b12ce640e6fde4996850687b89d4dc0025581b6630d888dd0dbce23c3f14e",
-    14: "81ad9c7fb9e38233a335e8173a9145adbc64a31824a8eb79c078fb1eedebcabe",
-    15: "81ad9c7fb9e38233a335e8173a9145adbc64a31824a8eb79c078fb1eedebcabe",
-    19: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    35: "0e1b12ce640e6fde4996850687b89d4dc0025581b6630d888dd0dbce23c3f14e",
-    40: "97fae04e8892539e9a2c1193b4ca16d2fbf093b3c8971b32134b394e70e3efbb",
-    42: "2edf077cca2996aa93c16223006fb01f87a85b64143bc14bc2d0fda787c915d8",
-    43: "97fae04e8892539e9a2c1193b4ca16d2fbf093b3c8971b32134b394e70e3efbb",
-    51: "22124195923ca9ec43e5c1718cc24e9a8d8d31d25cd0148e41148558060cb2b1",
-    52: "a37b28ca3a08be52cdedf1178ad905c730119c3d7c78e759ab3df119030edd28",
+    3: "064c0fff52449d2ae2add5992787c82ddf058986369a3e91df873ba7e19264d6",
+    8: "0e1b12ce640e6fde4996850687b89d4dc0025581b6630d888dd0dbce23c3f14e",
+    11: "0e1b12ce640e6fde4996850687b89d4dc0025581b6630d888dd0dbce23c3f14e",
+    12: "81ad9c7fb9e38233a335e8173a9145adbc64a31824a8eb79c078fb1eedebcabe",
+    13: "81ad9c7fb9e38233a335e8173a9145adbc64a31824a8eb79c078fb1eedebcabe",
+    17: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    33: "0e1b12ce640e6fde4996850687b89d4dc0025581b6630d888dd0dbce23c3f14e",
+    38: "97fae04e8892539e9a2c1193b4ca16d2fbf093b3c8971b32134b394e70e3efbb",
+    40: "2edf077cca2996aa93c16223006fb01f87a85b64143bc14bc2d0fda787c915d8",
+    41: "97fae04e8892539e9a2c1193b4ca16d2fbf093b3c8971b32134b394e70e3efbb",
+    42: "c381a7bb328d9736fa2e223bf31a68a4753b4d0bf90b01cc703da252e1a3fedc",
+    49: "a37b28ca3a08be52cdedf1178ad905c730119c3d7c78e759ab3df119030edd28",
 }
