@@ -310,6 +310,27 @@ async def test_is_ancestor_returns_false_when_not_ancestor(
     assert await git_service.is_ancestor(str(git_repo), "main", "branch-c") is False
 
 
+async def test_merge_base_names_the_commit_two_lines_split_from(
+    git_service: SubprocessGitService, git_repo: Path
+) -> None:
+    split = await git_service.current_sha(str(git_repo))
+    await _run_git(["git", "branch", "side"], cwd=git_repo)
+    await _run_git(["git", "commit", "--allow-empty", "-m", "main"], cwd=git_repo)
+    await _run_git(["git", "checkout", "side"], cwd=git_repo)
+    await _run_git(["git", "commit", "--allow-empty", "-m", "side"], cwd=git_repo)
+
+    assert await git_service.merge_base(str(git_repo), "main", "side") == split
+
+
+async def test_merge_base_is_none_for_unrelated_histories(
+    git_service: SubprocessGitService, git_repo: Path
+) -> None:
+    await _run_git(["git", "checkout", "--orphan", "other"], cwd=git_repo)
+    await _run_git(["git", "commit", "--allow-empty", "-m", "other"], cwd=git_repo)
+
+    assert await git_service.merge_base(str(git_repo), "main", "other") is None
+
+
 async def test_is_ancestor_raises_on_unknown_ref(
     git_service: SubprocessGitService, git_repo: Path
 ) -> None:

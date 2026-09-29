@@ -569,6 +569,24 @@ class SubprocessGitService:
         )
         return exit_code == 0
 
+    async def merge_base(
+        self,
+        cwd: str,
+        first_ref: str,
+        second_ref: str,
+    ) -> str | None:
+        """Best common ancestor of the two refs; ``None`` when they share none.
+
+        Maps to ``git merge-base``: exit 0 → the SHA, exit 1 → None, any
+        other exit raises.
+        """
+        exit_code, stdout = await self._run_with_exit_codes(
+            ["git", "merge-base", first_ref, second_ref],
+            cwd=cwd,
+            allowed=frozenset({0, 1}),
+        )
+        return stdout.strip() if exit_code == 0 else None
+
     async def has_object(self, cwd: str, object_sha: str) -> bool:
         """Return True iff the repository at *cwd* holds *object_sha*.
 
