@@ -42,14 +42,12 @@ from kodezart.domain.errors import (
 )
 from kodezart.domain.fire_spec import replace_criterion_fields
 from kodezart.domain.lane_alarms import stored_alarm
-from kodezart.domain.organize_graph import graph_snapshot
 from kodezart.domain.run_alarm_record import run_alarm_marker, run_alarm_surface
 from kodezart.domain.run_event_stream import LaneRunEvent
 from kodezart.types.domain.branch import BaseInput, BaseSpec, WorkRef, WorkRefRole
 from kodezart.types.domain.criterion_evidence import CriterionEvidence
 from kodezart.types.domain.dispatch import PassSignal
 from kodezart.types.domain.operation import LifecycleStage, QueueState, ScopeLabel
-from kodezart.types.domain.organize_graph import GraphProposal
 from kodezart.types.domain.run_alarm import (
     AlarmBound,
     AlarmReading,
@@ -3431,18 +3429,6 @@ CLAIMED_SPLIT_SET = WritableSurface(
     kind=SurfaceKind.ISSUE_SPLIT_SET,
     ref=CLAIMED_REF,
 )
-CHILD_GRAPH = WritableSurface(
-    kind=SurfaceKind.ISSUE_GRAPH,
-    ref=ScopeRef(kind=ScopeKind.ISSUE, key=GRAPH_CHILD),
-)
-PEER_GRAPH = WritableSurface(
-    kind=SurfaceKind.ISSUE_GRAPH,
-    ref=ScopeRef(kind=ScopeKind.ISSUE, key=GRAPH_PEER),
-)
-RELATED_GRAPH = WritableSurface(
-    kind=SurfaceKind.ISSUE_GRAPH,
-    ref=ScopeRef(kind=ScopeKind.ISSUE, key=GRAPH_RELATED),
-)
 CLAIMED_GRAPH = WritableSurface(kind=SurfaceKind.ISSUE_GRAPH, ref=CLAIMED_REF)
 #: The alarm record one row writes, and the marker its own address is
 #: composed from: the seam derives the whole address from the subject and
@@ -3524,45 +3510,6 @@ async def _move_a_criterion_back(tracker: TrackerPort, holder: str | None) -> ob
     return await tracker.reset_criterion_pending(expected=finished, holder=holder)
 
 
-async def _change_a_graph(tracker: TrackerPort, holder: str | None) -> object:
-    assert holder is not None
-    proposed = GraphProposal.model_validate(
-        {
-            "kind": "graph",
-            "issue_id": GRAPH_CHILD,
-            "changes": [{"kind": "priority", "priority": IssuePriority.HIGH.value}],
-        }
-    )
-    # The child's own ancestry and the issue it is blocked by are part of
-    # the dependency graph the seam verifies, so both are read with it;
-    # only the child is affected, so only the child's graph address is a
-    # grant this write needs.
-    return await tracker.update_issue_graph(
-        issue_key=GRAPH_CHILD,
-        expected=tuple(
-            [
-                graph_snapshot(await tracker.read_issue(issue_key=key))
-                for key in (CLAIMED_ISSUE, GRAPH_CHILD, GRAPH_RELATED)
-            ]
-        ),
-        changes=proposed.changes,
-        holder=holder,
-    )
-
-
-async def _create_a_split(tracker: TrackerPort, holder: str | None) -> object:
-    assert holder is not None
-    source = await tracker.read_issue(issue_key=CLAIMED_ISSUE)
-    return await tracker.create_split_if_absent(
-        source_key=CLAIMED_ISSUE,
-        deliverable_key="fixture/split",
-        title="a split of the claimable issue",
-        body="the independent child specification",
-        holder=holder,
-        expected=(graph_snapshot(source),),
-    )
-
-
 async def _create_a_criterion(tracker: TrackerPort, holder: str | None) -> object:
     assert holder is not None
     return await tracker.create_criterion_if_absent(
@@ -3597,17 +3544,6 @@ async def _the_issues_labels(tracker: TrackerPort) -> object:
 
 async def _the_criterions_state(tracker: TrackerPort) -> object:
     return (await tracker.read_issue(issue_key=OWED_CRITERION)).state_kind
-
-
-async def _the_childs_priority(tracker: TrackerPort) -> object:
-    return (await tracker.read_issue(issue_key=GRAPH_CHILD)).priority
-
-
-async def _the_issues_split_children(tracker: TrackerPort) -> object:
-    return tuple(
-        child.issue_key
-        for child in await tracker.read_split_children(source_key=CLAIMED_ISSUE)
-    )
 
 
 async def _the_issues_criteria(tracker: TrackerPort) -> object:
@@ -3646,14 +3582,6 @@ SUPPLIED_HOLDER_WRITES: Mapping[str, HolderWrite] = {
         write=_move_a_criterion_back,
         effect=_the_criterions_state,
     ),
-    "update_issue_graph": HolderWrite(
-        surface=CHILD_GRAPH, write=_change_a_graph, effect=_the_childs_priority
-    ),
-    "create_split_if_absent": HolderWrite(
-        surface=CLAIMED_SPLIT_SET,
-        write=_create_a_split,
-        effect=_the_issues_split_children,
-    ),
     "create_criterion_if_absent": HolderWrite(
         surface=CLAIMED_CRITERION_CHILD_SET,
         write=_create_a_criterion,
@@ -3673,78 +3601,11 @@ ISSUE_SURFACE_WRITES: Mapping[str, HolderWrite] = {
     if row.surface.ref == CLAIMED_REF
 }
 #: Every surface kind a holder can take on that one issue: each written
-#: one, and its graph address, which the table writes on a child instead.
+#: one, and its graph and split-set addresses, which no port write takes.
 ISSUE_SURFACES = frozenset(
-    {row.surface for row in ISSUE_SURFACE_WRITES.values()} | {CLAIMED_GRAPH}
+    {row.surface for row in ISSUE_SURFACE_WRITES.values()}
+    | {CLAIMED_GRAPH, CLAIMED_SPLIT_SET}
 )
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class PeerChange:
-    """One change of the child's graph that writes another issue's graph too.
-
-    ``held`` is what the writer holds live; ``peer`` is the one affected
-    address it does not, which the refusal must name.
-    """
-
-    change: Mapping[str, object]
-    held: frozenset[WritableSurface]
-    peer: WritableSurface
-
-
-#: Every kind of graph change whose affected peers go beyond the child: a
-#: relation added, a relation removed (of either kind, and alongside an
-#: addition in one change), a list naming two peers with only the second
-#: unheld, whether added or removed, and a parent change, where the old
-#: parent and the new one are both peers and each is left unheld in turn,
-#: and where clearing the parent still writes the parent the child leaves.
-GRAPH_PEER_CHANGES: Mapping[str, PeerChange] = {
-    "related_to_add": PeerChange(
-        change={"kind": "related_to", "add": [GRAPH_PEER]},
-        held=frozenset({CHILD_GRAPH}),
-        peer=PEER_GRAPH,
-    ),
-    "related_to_remove": PeerChange(
-        change={"kind": "related_to", "remove": [GRAPH_RELATED]},
-        held=frozenset({CHILD_GRAPH}),
-        peer=RELATED_GRAPH,
-    ),
-    "related_to_add_and_remove": PeerChange(
-        change={"kind": "related_to", "add": [GRAPH_PEER], "remove": [GRAPH_RELATED]},
-        held=frozenset({CHILD_GRAPH, PEER_GRAPH}),
-        peer=RELATED_GRAPH,
-    ),
-    "related_to_add_two": PeerChange(
-        change={"kind": "related_to", "add": [GRAPH_PEER, CLAIMED_ISSUE]},
-        held=frozenset({CHILD_GRAPH, PEER_GRAPH}),
-        peer=CLAIMED_GRAPH,
-    ),
-    "related_to_remove_two": PeerChange(
-        change={"kind": "related_to", "remove": [GRAPH_PEER, GRAPH_RELATED]},
-        held=frozenset({CHILD_GRAPH, PEER_GRAPH}),
-        peer=RELATED_GRAPH,
-    ),
-    "blocked_by_remove": PeerChange(
-        change={"kind": "blocked_by", "remove": [GRAPH_RELATED]},
-        held=frozenset({CHILD_GRAPH}),
-        peer=RELATED_GRAPH,
-    ),
-    "parent_new": PeerChange(
-        change={"kind": "parent", "parent_id": GRAPH_PEER},
-        held=frozenset({CHILD_GRAPH, CLAIMED_GRAPH}),
-        peer=PEER_GRAPH,
-    ),
-    "parent_old": PeerChange(
-        change={"kind": "parent", "parent_id": GRAPH_PEER},
-        held=frozenset({CHILD_GRAPH, PEER_GRAPH}),
-        peer=CLAIMED_GRAPH,
-    ),
-    "parent_clear": PeerChange(
-        change={"kind": "parent", "parent_id": None},
-        held=frozenset({CHILD_GRAPH}),
-        peer=CLAIMED_GRAPH,
-    ),
-}
 
 
 class TestSuppliedHolderWrites:
@@ -3805,7 +3666,7 @@ class TestSuppliedHolderWrites:
         """The rows ARE the port's holder-taking writes, neither more nor less."""
         assert supplied_holder_writes()
         assert frozenset(SUPPLIED_HOLDER_WRITES) == supplied_holder_writes()
-        assert len(supplied_holder_writes()) >= 8
+        assert len(supplied_holder_writes()) >= 6
         assert len(single_writer_writes()) >= 4
         assert supplied_holder_writes() - single_writer_writes()
 
@@ -3887,7 +3748,7 @@ class TestSuppliedHolderWrites:
             SurfaceKind.CRITERION_CHILD_SET,
         }
         assert len(ISSUE_SURFACES) == 6
-        assert len(ISSUE_SURFACE_WRITES) == 5
+        assert len(ISSUE_SURFACE_WRITES) == 4
 
     @pytest.mark.parametrize(
         "held",
@@ -3922,7 +3783,7 @@ class TestSuppliedHolderWrites:
         }
         assert {row.surface.kind for row in others.values()} == {
             surface.kind for surface in ISSUE_SURFACES
-        } - {held.kind, SurfaceKind.ISSUE_GRAPH}
+        } - {held.kind, SurfaceKind.ISSUE_GRAPH, SurfaceKind.ISSUE_SPLIT_SET}
 
         for method in sorted(others):
             row = others[method]
@@ -3953,92 +3814,6 @@ class TestSuppliedHolderWrites:
         )
         assert granted.holder == JOB_B
         assert granted.surfaces == ISSUE_SURFACES - {held}
-
-    @pytest.mark.parametrize("change", sorted(GRAPH_PEER_CHANGES))
-    @pytest.mark.parametrize("standing", ["unheld", "expired", "foreign"])
-    async def test_a_graph_write_is_refused_on_the_peer_it_would_relate(
-        self,
-        tracker: TrackerPort,
-        tracker_writes: Callable[[], tuple[object, ...]],
-        clock: FixtureClock,
-        change: str,
-        standing: str,
-    ) -> None:
-        """A graph change writes each peer's graph too, so each peer's address is asked.
-
-        The writer holds live every affected address but one peer's, which
-        is unheld, lapsed or a rival's: the peer a relation is added to,
-        the peer a relation or a prerequisite edge is removed from (alone,
-        or in the change that also adds one), the second of two peers one
-        list adds or removes, and the new parent or the old one of a
-        parent change, including a parent cleared.  The
-        change is refused naming that PEER's address and its holder, with
-        nothing written and no member's graph moved: holding the issue a
-        change starts from is not holding the ones it reaches.
-        """
-        row = GRAPH_PEER_CHANGES[change]
-        if standing == "expired":
-            await tracker.acquire_surfaces(
-                surfaces=frozenset({row.peer}),
-                holder=JOB_A,
-                lease_seconds=LEASE_SECONDS,
-            )
-            clock.advance(seconds=LEASE_SECONDS + 1)
-        elif standing == "foreign":
-            await tracker.acquire_surfaces(
-                surfaces=frozenset({row.peer}),
-                holder=JOB_B,
-                lease_seconds=LEASE_SECONDS,
-            )
-        await tracker.acquire_surfaces(
-            surfaces=row.held,
-            holder=JOB_A,
-            lease_seconds=LEASE_SECONDS,
-        )
-        proposed = GraphProposal.model_validate(
-            {"kind": "graph", "issue_id": GRAPH_CHILD, "changes": [row.change]}
-        )
-        members = (CLAIMED_ISSUE, GRAPH_CHILD, GRAPH_PEER, GRAPH_RELATED)
-        before = {
-            key: (await tracker.read_issue(issue_key=key)).relations for key in members
-        }
-        expected = tuple(
-            [graph_snapshot(await tracker.read_issue(issue_key=key)) for key in members]
-        )
-        written = tracker_writes()
-
-        with pytest.raises(SurfaceLeaseError) as refused:
-            await tracker.update_issue_graph(
-                issue_key=GRAPH_CHILD,
-                expected=expected,
-                changes=proposed.changes,
-                holder=JOB_A,
-            )
-
-        assert (
-            refused.value.surface_kind,
-            refused.value.scope_kind,
-            refused.value.scope_key,
-            refused.value.current_holder,
-        ) == (
-            SurfaceKind.ISSUE_GRAPH.value,
-            ScopeKind.ISSUE.value,
-            row.peer.ref.key,
-            JOB_B if standing == "foreign" else None,
-        )
-        assert tracker_writes() == written
-        assert {
-            key: (await tracker.read_issue(issue_key=key)).relations for key in members
-        } == before
-        assert (
-            tuple(
-                [
-                    graph_snapshot(await tracker.read_issue(issue_key=key))
-                    for key in members
-                ]
-            )
-            == expected
-        )
 
     @pytest.mark.parametrize("method", sorted(single_writer_writes()))
     async def test_a_write_that_supplies_no_holder_consults_no_lease(
@@ -4334,11 +4109,11 @@ class TestSurfaceWriteProvenance:
         provenance_tracker: TrackerPort,
         kind: SurfaceKind,
     ) -> None:
-        """A move that touches no body adds nobody, and moves no digest.
+        """A move that touches no body adds nobody, and leaves the body as it was.
 
-        Stated through the port's own body digest rather than through a
-        vendor stamp, so both arms answer the same question: the digest is
-        what changes when and only when a body changes.
+        Stated through the body the port reads rather than through a vendor
+        stamp, so both arms answer the same question: the body is what
+        changes when and only when a body write lands.
 
         The premise is asserted rather than assumed: the move has to move
         the stamp, or the case is asking whether a change that did not
@@ -4352,16 +4127,16 @@ class TestSurfaceWriteProvenance:
                 holder=holder,
                 replacement=f"a body {holder} put there",
             )
-        before = await provenance_tracker.read_issue_revision(issue_key=surface.ref.key)
+        before = await provenance_tracker.read_issue(issue_key=surface.ref.key)
         written = await provenance_tracker.read_surface_authorship(surface=surface)
 
         await provenance_tracker.set_workflow_state(
             issue_key=surface.ref.key, stage=LifecycleStage.IN_PROGRESS
         )
 
-        after = await provenance_tracker.read_issue_revision(issue_key=surface.ref.key)
-        assert after.issue.updated_at != before.issue.updated_at
-        assert after.body_digest == before.body_digest
+        after = await provenance_tracker.read_issue(issue_key=surface.ref.key)
+        assert after.updated_at != before.updated_at
+        assert after.body == before.body
         assert (
             (await provenance_tracker.read_surface_authorship(surface=surface)).holders
             == written.holders

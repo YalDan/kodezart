@@ -181,9 +181,6 @@ EXEMPT = {
         "subtree, as KOD-188, KOD-285, KOD-217 and KOD-717 require; the scope "
         "walker answers discharge through SubtreeClosure.is_closed"
     ),
-    "domain/organize.py::organize_gap": (
-        "selection over organize children, which are not criterion sub-issues"
-    ),
     "services/base_resolver.py::BaseResolver._input_for": (
         "reads each blocker's own state (blocker.state_kind), not its subtree, "
         "when it builds a base's input, as KOD-188, KOD-285, KOD-217 and "

@@ -49,7 +49,6 @@ from kodezart.types.domain.operation import (
     RepoEntry,
     ScopeLabel,
 )
-from kodezart.types.domain.organize_graph import GraphChange, IssueGraphSnapshot
 from kodezart.types.domain.persist import ArtifactPersistStatus, PersistResult
 from kodezart.types.domain.pr_state import PRState
 from kodezart.types.domain.prompts import PromptKey
@@ -83,7 +82,6 @@ from kodezart.types.domain.tracker import (
     TrackerAsset,
     TrackerComment,
     TrackerIssue,
-    TrackerIssueRevision,
     TrackerIssueStateChange,
     TrackerReview,
 )
@@ -886,21 +884,6 @@ class PlanningIssueReader(Protocol):
 
 
 @runtime_checkable
-class IssueRevisionReader(Protocol):
-    """One issue and the digest of the body it was read from."""
-
-    async def read_issue_revision(self, *, issue_key: str) -> TrackerIssueRevision:
-        """Read one issue and its body digest from the same body snapshot.
-
-        Applies identically to issue bodies and criterion sub-issue bodies.
-        Repeated unchanged reads agree; body changes move the digest;
-        comments, labels, workflow state and UNCHANGED body replays do not.
-        An unavailable digest raises, never substitutes an empty or live one.
-        """
-        ...
-
-
-@runtime_checkable
 class IssueScanReader(Protocol):
     """A board scan, for a consumer that selects issues and writes none of them."""
 
@@ -1352,8 +1335,8 @@ class TrackerScopeApprovalReader(
     """Read approval the way it is granted: as a label on a node, cascading down.
 
     The reads a scope-member question needs and nothing else, so a scope
-    run's entry, the pass that submits one and the organize owner's gate
-    depend on no writer and on no other read. The cascade and the container
+    run's entry and the pass that submits one depend on no writer and on no
+    other read. The cascade and the container
     it resolves through are the two roles this composes; the label on the
     scope itself is its own.
     """
@@ -1684,31 +1667,6 @@ class FireSubjectReader(ScopeMemberReader, Protocol):
 
 
 @runtime_checkable
-class OrganizeAuthorReader(
-    IssueRevisionReader,
-    TrackerCriteriaReader,
-    Protocol,
-):
-    """The criterion family and the body digests an authoring round reads."""
-
-
-@runtime_checkable
-class OrganizeContextTracker(
-    IssueReader,
-    TrackerCommentReader,
-    ScopeFamilyReader,
-    Protocol,
-):
-    """The issues, milestones and records an organize context is assembled from."""
-
-    async def project_milestones(
-        self, *, project_key: str
-    ) -> tuple[ScopeContainer, ...]:
-        """Read all native project milestones without selection policy."""
-        ...
-
-
-@runtime_checkable
 class PassGateReader(IssueScanReader, Protocol):
     """The board and review scans a pass gate decides on, and no write at all."""
 
@@ -1909,56 +1867,6 @@ class RecordSignalReader(
 
 
 @runtime_checkable
-class OrganizeOwnerTracker(
-    LaneEscalationTracker,
-    TrackerArtifactReader,
-    TrackerScopeApprovalReader,
-    ClassificationWriter,
-    CriterionMintWriter,
-    DescriptionWriter,
-    IssueRevisionReader,
-    ScopeFamilyReader,
-    SurfaceLeaseTracker,
-    Protocol,
-):
-    """Everything the organize owner reads and every write it makes."""
-
-    async def create_split_if_absent(
-        self,
-        *,
-        source_key: str,
-        deliverable_key: str,
-        title: str,
-        body: str,
-        holder: str,
-        expected: tuple[IssueGraphSnapshot, ...],
-        revalidate: WriteRevalidation | None = None,
-    ) -> TrackerIssue:
-        """Create one ordinary unstarted child under ISSUE_SPLIT_SET authority.
-
-        Return a unique matching child unchanged; refuse duplicate or misplaced
-        identities. A declared parent creation surface grants no existing child edit.
-        """
-        ...
-
-    async def update_issue_graph(
-        self,
-        *,
-        issue_key: str,
-        expected: tuple[IssueGraphSnapshot, ...],
-        changes: tuple[GraphChange, ...],
-        holder: str,
-        revalidate: WriteRevalidation | None = None,
-    ) -> TrackerIssue:
-        """Apply explicit graph deltas under source and affected peer grants.
-
-        Re-read the supplied native snapshot after awaited ownership checks;
-        this is a refusal check, not an atomic backend compare-and-set.
-        """
-        ...
-
-
-@runtime_checkable
 class FireRulingTracker(
     ScopeMemberReader,
     SubjectCriteriaReader,
@@ -2035,7 +1943,6 @@ class TrackerPort(
     LifecycleStateWriter,
     WorkRefRecorder,
     WorkRefReader,
-    OrganizeOwnerTracker,
     TrackerArtifactReader,
     TrackerScopeApprovalReader,
     ClassificationWriter,
@@ -2045,7 +1952,6 @@ class TrackerPort(
     FireDispatchTracker,
     ClaimHolder,
     ModelMemberReader,
-    OrganizeContextTracker,
     IssueReader,
     PlanningIssueReader,
     ScopeReadPreflight,
@@ -2054,7 +1960,6 @@ class TrackerPort(
     ExecutionApprovalReader,
     CriterionMintWriter,
     DescriptionWriter,
-    IssueRevisionReader,
     ScopeFamilyReader,
     PassGateReader,
     IssueScanReader,

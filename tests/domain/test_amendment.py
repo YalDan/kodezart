@@ -1075,14 +1075,6 @@ SESSION_CLOSURE = {
         "criteria_results": "list[kodezart.types.domain.agent.CriterionResult]",
         "sherlock_flags": "list[kodezart.types.domain.accept.SherlockFlag]",
     },
-    "AdmissionJudgment": {
-        "root": (
-            "typing.Annotated[kodezart.types.domain.organize.BuildableAdmission | "
-            "kodezart.types.domain.organize.RefusedAdmission | "
-            "kodezart.types.domain.organize.UnverifiableAdmission, "
-            "FieldInfo(annotation=NoneType, required=True, discriminator='verdict')]"
-        ),
-    },
     "AmendmentClaim": {
         "subject": (
             "kodezart.types.domain.amendment.CriterionSubject | "
@@ -1153,32 +1145,8 @@ SESSION_CLOSURE = {
         "command": "<class 'str'>",
         "satisfied_at_base": "<class 'bool'>",
     },
-    "BlockedByChange": {
-        "add": (
-            "tuple[typing.Annotated[str, FieldInfo(annotation=NoneType, "
-            "required=True, metadata=[MinLen(min_length=1), "
-            "_PydanticGeneralMetadata(pattern='\\\\S')])], ...]"
-        ),
-        "remove": (
-            "tuple[typing.Annotated[str, FieldInfo(annotation=NoneType, "
-            "required=True, metadata=[MinLen(min_length=1), "
-            "_PydanticGeneralMetadata(pattern='\\\\S')])], ...]"
-        ),
-        "kind": "typing.Literal['blocked_by']",
-    },
-    "BodyProposal": {
-        "kind": "typing.Literal['body']",
-        "issue_id": "<class 'str'>",
-        "body": "<class 'str'>",
-    },
     "BranchNameOutput": {
         "slug": "<class 'str'>",
-    },
-    "BuildableAdmission": {
-        "verdict": "typing.Literal[<AdmissionVerdict.BUILDABLE: 'buildable'>]",
-        "issue_id": "<class 'str'>",
-        "evidence": "<class 'str'>",
-        "findings": "tuple[kodezart.types.domain.organize.SpecFinding, ...]",
     },
     "CodeReference": {
         "location": "<class 'str'>",
@@ -1216,13 +1184,6 @@ SESSION_CLOSURE = {
         "observed": "<class 'str'>",
         "affordable": "<class 'bool'>",
     },
-    "CriteriaProposal": {
-        "kind": "typing.Literal['criteria']",
-        "issue_id": "<class 'str'>",
-        "criteria": (
-            "tuple[kodezart.types.domain.organize_owner.CriterionProposal, ...]"
-        ),
-    },
     "CriteriaValidationOutput": {
         "findings": "list[kodezart.types.domain.criteria.CriterionFinding]",
         "contradictions": "list[kodezart.types.domain.criteria.Contradiction]",
@@ -1240,13 +1201,6 @@ SESSION_CLOSURE = {
             "kodezart.types.domain.criteria.ForbiddenCriterionClass | None"
         ),
         "undeclared_switch_arms": "list[str]",
-    },
-    "CriterionProposal": {
-        "title": "<class 'str'>",
-        "check": "<class 'str'>",
-        "do": "<class 'str'>",
-        "runnable_test": "str | None",
-        "named_observation": "str | None",
     },
     "CriterionReplacement": {
         "kind": "typing.Literal['criterion']",
@@ -1319,19 +1273,6 @@ SESSION_CLOSURE = {
         "criteria": "list[kodezart.types.domain.criteria.DraftedCriterion]",
         "reasoning": "<class 'str'>",
     },
-    "GraphProposal": {
-        "kind": "typing.Literal['graph']",
-        "issue_id": "<class 'str'>",
-        "changes": (
-            "tuple[typing.Annotated[kodezart.types.domain.organize_graph.ParentChange"
-            " | kodezart.types.domain.organize_graph.BlockedByChange | "
-            "kodezart.types.domain.organize_graph.RelatedToChange | "
-            "kodezart.types.domain.organize_graph.PriorityChange | "
-            "kodezart.types.domain.organize_graph.MilestoneChange, "
-            "FieldInfo(annotation=NoneType, required=True, discriminator='kind')], "
-            "...]"
-        ),
-    },
     "MandateAbsent": {
         "evidence": "<class 'str'>",
         "verdict": "typing.Literal[<AuditVerdict.REFUTED: 'refuted'>]",
@@ -1357,27 +1298,8 @@ SESSION_CLOSURE = {
         "finding": "<class 'NoneType'>",
         "source_index": "<class 'int'>",
     },
-    "MilestoneChange": {
-        "kind": "typing.Literal['milestone']",
-        "milestone_id": (
-            "typing.Optional[typing.Annotated[str, FieldInfo(annotation=NoneType, "
-            "required=True, metadata=[MinLen(min_length=1), "
-            "_PydanticGeneralMetadata(pattern='\\\\S')])]]"
-        ),
-    },
     "NativeWriterOutput": {
         "claims": "tuple[kodezart.types.domain.amendment.AmendmentClaim, ...]",
-    },
-    "OrganizeProposal": {
-        "root": (
-            "typing.Annotated[kodezart.types.domain.organize_owner.BodyProposal | "
-            "kodezart.types.domain.organize_owner.CriteriaProposal | "
-            "kodezart.types.domain.organize_graph.GraphProposal | "
-            "kodezart.types.domain.organize_graph.SplitProposal | "
-            "kodezart.types.domain.organize_owner.UnresolvedProposal | "
-            "kodezart.types.domain.organize_owner.UnavailableProposal, "
-            "FieldInfo(annotation=NoneType, required=True, discriminator='kind')]"
-        ),
     },
     "OverclaimReading": {
         "kind": "<enum 'OverclaimKind'>",
@@ -1390,45 +1312,12 @@ SESSION_CLOSURE = {
         "title": "<class 'str'>",
         "description": "<class 'str'>",
     },
-    "ParentChange": {
-        "kind": "typing.Literal['parent']",
-        "parent_id": (
-            "typing.Optional[typing.Annotated[str, FieldInfo(annotation=NoneType, "
-            "required=True, metadata=[MinLen(min_length=1), "
-            "_PydanticGeneralMetadata(pattern='\\\\S')])]]"
-        ),
-    },
     "PreservedSubject": {
         "kind": "typing.Literal['preserved']",
-    },
-    "PriorityChange": {
-        "kind": "typing.Literal['priority']",
-        "priority": "<enum 'IssuePriority'>",
     },
     "RecordedRefusal": {
         "kind": "typing.Literal['recorded']",
         "record": "<class 'kodezart.types.domain.write_back.WriteBackResult'>",
-    },
-    "RefusedAdmission": {
-        "verdict": "typing.Literal[<AdmissionVerdict.NOT_BUILDABLE: 'not_buildable'>]",
-        "issue_id": "<class 'str'>",
-        "evidence": "<class 'str'>",
-        "findings": "tuple[kodezart.types.domain.organize.SpecFinding, ...]",
-        "invented_decision": "<class 'str'>",
-        "refusal_kind": "<enum 'RefusalKind'>",
-    },
-    "RelatedToChange": {
-        "add": (
-            "tuple[typing.Annotated[str, FieldInfo(annotation=NoneType, "
-            "required=True, metadata=[MinLen(min_length=1), "
-            "_PydanticGeneralMetadata(pattern='\\\\S')])], ...]"
-        ),
-        "remove": (
-            "tuple[typing.Annotated[str, FieldInfo(annotation=NoneType, "
-            "required=True, metadata=[MinLen(min_length=1), "
-            "_PydanticGeneralMetadata(pattern='\\\\S')])], ...]"
-        ),
-        "kind": "typing.Literal['related_to']",
     },
     "RemediationPlan": {
         "instructions": "<class 'str'>",
@@ -1490,25 +1379,6 @@ SESSION_CLOSURE = {
         "criterion_id": "typing.Optional[kodezart.types.domain.criteria.CriterionId]",
         "concern": "<class 'str'>",
     },
-    "SpecFinding": {
-        "issue_id": "<class 'str'>",
-        "defect_class": "<class 'str'>",
-        "evidence": "<class 'str'>",
-        "role": "<enum 'DefectRole'>",
-        "mandate_text": "str | None",
-    },
-    "SplitChildProposal": {
-        "deliverable_key": "<class 'str'>",
-        "title": "<class 'str'>",
-        "body": "<class 'str'>",
-    },
-    "SplitProposal": {
-        "kind": "typing.Literal['split']",
-        "issue_id": "<class 'str'>",
-        "children": (
-            "tuple[kodezart.types.domain.organize_graph.SplitChildProposal, ...]"
-        ),
-    },
     "TicketDraftOutput": {
         "title": "<class 'str'>",
         "summary": "<class 'str'>",
@@ -1528,26 +1398,6 @@ SESSION_CLOSURE = {
         "surface": "<class 'kodezart.types.domain.surface.WritableSurface'>",
         "native_ref": "<class 'str'>",
         "content": "<class 'str'>",
-    },
-    "UnavailableProposal": {
-        "kind": "typing.Literal['unavailable']",
-        "issue_id": "<class 'str'>",
-        "capability": "typing.Literal['criterion_edit']",
-        "evidence": "<class 'str'>",
-    },
-    "UnresolvedProposal": {
-        "kind": "typing.Literal['unresolved']",
-        "issue_id": "<class 'str'>",
-        "question": "<class 'str'>",
-        "evidence": "<class 'str'>",
-    },
-    "UnverifiableAdmission": {
-        "verdict": "typing.Literal[<AdmissionVerdict.UNVERIFIABLE: 'unverifiable'>]",
-        "issue_id": "<class 'str'>",
-        "evidence": "<class 'str'>",
-        "findings": "tuple[kodezart.types.domain.organize.SpecFinding, ...]",
-        "missing_artifact": "<class 'str'>",
-        "pending_blocker_id": "<class 'str'>",
     },
     "UpheldAmendment": {
         "verdict": "typing.Literal['upheld']",

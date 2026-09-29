@@ -1,13 +1,13 @@
-"""The gate that admits a member names no principal and no configured member.
+"""The gate that admits a scope run names no principal and no configured member.
 
-The pinned interim reading is that the gate's member is settable by anybody:
-the predicate asks whether the scope carries the row's configured member and
-nothing about who put it there. That is an absence, so it is pinned as one —
+The pinned interim reading is that the approval is settable by anybody: the
+predicate asks whether the scope carries the approval member and nothing
+about who put it there. That is an absence, so it is pinned as one —
 over a surface the code derives rather than a list kept by hand, because a
 hand-listed scan stops speaking for a module somebody adds to the path.
 
 The surface is the predicate's own reach, derived by object after import:
-start at the two methods that decide admission and follow every call that
+start at the method that decides admission and follow every call that
 resolves to a function defined anywhere in the ``kodezart`` package, and
 repeat. A call resolves through the module's own namespace, so the walk
 follows
@@ -64,11 +64,8 @@ from kodezart.types.domain.operation import ScopeLabel
 SOURCE = Path(__file__).resolve().parents[2] / "src" / "kodezart"
 #: The package whose functions the walk follows, wherever in it they live.
 PACKAGE = "kodezart"
-#: Where the walk starts: the one admission predicate and the one gate reading.
-ROOTS = (
-    ("services/organize_owner.py", "OrganizeOwner._admitted"),
-    ("services/organize_owner.py", "OrganizeOwner._carried_members"),
-)
+#: Where the walk starts: the one admission predicate a scope run passes.
+ROOTS = (("services/scope_entry.py", "ScopeEntry.admit"),)
 
 
 #: Every word stem a principal or a setter role could be named by. An
@@ -354,8 +351,8 @@ def gate_path_modules(
 def test_the_derivation_reaches_the_decisions_and_not_the_whole_tree() -> None:
     """The control for the derivation itself, both ways.
 
-    The modules that decide admission are reached, the types module whose
-    key split both roots call among them. Two modules that legitimately name
+    The modules that decide admission are reached, the live-job reading the
+    entry asks first among them. Two modules that legitimately name
     an approver are not, and both are named here rather than merely absent:
     a scan over the whole tree would report the prompt binding that renders
     the approver and the error prose that names one, so a guard written that
@@ -363,8 +360,8 @@ def test_the_derivation_reaches_the_decisions_and_not_the_whole_tree() -> None:
     """
     reached = gate_path_modules()
     assert reached == [
-        "services/organize_owner.py",
-        "types/domain/organize.py",
+        "services/scope_entry.py",
+        "domain/scope_submission.py",
         "services/scope_approval.py",
         "domain/scope_approval.py",
     ], reached
@@ -375,9 +372,8 @@ def test_the_derivation_reaches_the_decisions_and_not_the_whole_tree() -> None:
 
 def test_the_derivation_starts_at_definitions_that_exist() -> None:
     """A root that stopped existing would derive an empty surface and pass."""
-    functions = _functions(_tree(SOURCE / "services/organize_owner.py"))
-    for _, name in ROOTS:
-        assert name in functions, name
+    for module, name in ROOTS:
+        assert name in _functions(_tree(SOURCE / module)), name
 
 
 #: The planted decision every call shape below delegates to.
@@ -406,18 +402,16 @@ PLANTED_PORT = (
 
 
 def _owner(imports: str, admitted: str, *, init: str = "", extra: str = "") -> str:
-    """A planted owner whose ``_admitted`` body is *admitted*, in a template.
+    """A planted entry whose ``admit`` body is *admitted*, in a template.
 
     ``{pkg}`` in the text is the planted package's name.
     """
     return (
         f"{imports}\n\n\n{extra}"
-        "class OrganizeOwner:\n"
+        "class ScopeEntry:\n"
         f"{init}"
-        "    def _admitted(self):\n"
+        "    def admit(self):\n"
         f"{admitted}\n"
-        "    def _carried_members(self):\n"
-        "        return None\n\n"
         "    def _gate_restricted(self):\n"
         "        return restricted(None)\n"
     )
@@ -624,10 +618,10 @@ def test_the_derivation_follows_each_call_shape(
     reached: list[str],
 ) -> None:
     name = "planted_gate_" + re.sub(r"\W", "_", shape)
-    source = _plant(tmp_path, name, {**files, "services/organize_owner.py": owner})
+    source = _plant(tmp_path, name, {**files, "services/scope_entry.py": owner})
     monkeypatch.syspath_prepend(str(tmp_path))
     assert gate_path_modules(source=source, package=name) == [
-        "services/organize_owner.py",
+        "services/scope_entry.py",
         *reached,
     ]
 
