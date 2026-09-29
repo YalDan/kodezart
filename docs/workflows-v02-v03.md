@@ -82,7 +82,9 @@ stateDiagram-v2
 
 Before any node, the scope entry (`services/scope_entry.py`) refuses a scope
 that already has a live job (`ScopeRunLiveError`) and then one that is not
-approved (`ScopeNotApprovedError`). It reads the approval once, there.
+approved (`ScopeNotApprovedError`). It reads the approval once, there. After
+that read, and before any session, it refuses an operation that maps no
+criterion or no decision label (`OperationMemberAbsentError`).
 
 - `resolve_visibility` reads every declared repository. The run is private only
   when all of them are.

@@ -69,11 +69,6 @@ from kodezart.domain.errors import (
 from kodezart.domain.escalation_resolution import resolution_from_comments
 from kodezart.domain.fire_spec import require_fire_entry
 from kodezart.domain.git_url import extract_owner_repo
-from kodezart.domain.organize_graph import (
-    changed_peers,
-    graph_snapshot,
-    validate_graph_change,
-)
 from kodezart.domain.run_alarm_record import (
     parse_run_alarm,
     render_run_alarm,
@@ -152,7 +147,6 @@ from kodezart.types.domain.operation import (
     RepoEntry,
     ScopeLabel,
 )
-from kodezart.types.domain.organize_graph import GraphChange, IssueGraphSnapshot
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.persist import ArtifactPersistStatus, PersistResult
 from kodezart.types.domain.pr_state import PRState
@@ -203,7 +197,6 @@ from kodezart.types.domain.tracker import (
     TrackerAsset,
     TrackerComment,
     TrackerIssue,
-    TrackerIssueRevision,
     TrackerIssueStateChange,
     TrackerReview,
     WorkflowStateKind,
@@ -3839,10 +3832,6 @@ class _FakeTrackerState:
         #: workspace already defines returns before touching anything, so it
         #: leaves this list empty, which is the honest answer for it.
         self.mapping_instatements: list[str] = []
-        #: Every issue a graph write moved: the addressed issue and each peer
-        #: the change carried with it.  The write replaces issues in place and
-        #: stamps none of them, so this list is its only trace as well.
-        self.graph_writes: list[str] = []
         #: Every container each INSTATED value is defined in, ``None`` being
         #: the workspace itself.  A SET per value, because one name is
         #: defined once per container and a two-board operation carries its
@@ -4735,17 +4724,6 @@ class FakeFireSubjectReader(
         return subject
 
 
-class FakeIssueRevisionReader(FakeIssueReader):
-    """The ``IssueRevisionReader`` role of this double."""
-
-    async def read_issue_revision(self, *, issue_key: str) -> TrackerIssueRevision:
-        issue = await self.read_issue(issue_key=issue_key)
-        return TrackerIssueRevision(
-            issue=issue,
-            body_digest=sha256(issue.body.encode("utf-8")).hexdigest(),
-        )
-
-
 class FakeLaneEventHistory(FakeTrackerCommentReader):
     """The ``LaneEventHistory`` role of this double."""
 
@@ -5026,33 +5004,6 @@ class FakeModelMemberReader(FakeTrackerCriteriaReader, FakePlanningIssueReader):
         return tuple(members)
 
 
-class FakeOrganizeContextTracker(
-    FakeContainerMetadataReader,
-    FakeTrackerCommentReader,
-    FakeIssueReader,
-    FakeScopeFamilyReader,
-):
-    """The ``OrganizeContextTracker`` role of this double."""
-
-    async def project_milestones(
-        self, *, project_key: str
-    ) -> tuple[ScopeContainer, ...]:
-        ref = ScopeRef(kind=ScopeKind.PROJECT, key=project_key)
-        project = await self.container_metadata(ref=ref)
-        if project.ref != ref:
-            raise ScopeReadError("project identity changed", ref=ref)
-        return tuple(
-            sorted(
-                [
-                    await self.container_metadata(ref=key)
-                    for key, value in self.scope_containers.items()
-                    if key.kind is ScopeKind.MILESTONE and value.parent == ref
-                ],
-                key=lambda value: value.ref.key,
-            )
-        )
-
-
 class FakeTrackerArtifactReader(
     FakeContainerMetadataReader,
     FakeTrackerCommentReader,
@@ -5122,152 +5073,6 @@ class FakeScopeReadPreflight(_FakeTrackerState):
         self, *, additional_keys: frozenset[str] = frozenset()
     ) -> None:
         """Supported: criterion and record classifications are explicit facts."""
-
-
-class FakeOrganizeOwnerTracker(
-    FakeDescriptionWriter,
-    FakeClassificationWriter,
-    FakeTrackerArtifactReader,
-    FakeTrackerScopeApprovalReader,
-    FakeCriterionMintWriter,
-    FakeScopeReadPreflight,
-    FakeCommentRecordWriter,
-    FakeIssueRevisionReader,
-    FakeScopeFamilyReader,
-    FakeSurfaceLeaseTracker,
-):
-    """The ``OrganizeOwnerTracker`` role of this double."""
-
-    async def update_issue_graph(
-        self,
-        *,
-        issue_key: str,
-        expected: tuple[IssueGraphSnapshot, ...],
-        changes: tuple[GraphChange, ...],
-        holder: str,
-        revalidate: WriteRevalidation | None = None,
-    ) -> TrackerIssue:
-        if revalidate is not None:
-            await revalidate()
-        current = tuple(
-            [await self.read_issue(issue_key=row.issue_key) for row in expected]
-        )
-        if tuple(graph_snapshot(issue) for issue in current) != expected:
-            raise OrganizeWriteRefusalError(
-                issue_key=issue_key, reason="native graph changed"
-            )
-        candidate, peers = validate_graph_change(
-            issue_key=issue_key,
-            changes=changes,
-            issues=current,
-            member_keys=frozenset(row.issue_key for row in expected),
-        )
-        for peer in peers:
-            self._require_graph_holder(
-                kind=SurfaceKind.ISSUE_GRAPH, issue_key=peer, holder=holder
-            )
-        self.graph_writes.append(issue_key)
-        self.issues[issue_key] = candidate
-        self._wrote(issue_key)
-        for peer in changed_peers(issue_key=issue_key, changes=changes, issues=current):
-            self.graph_writes.append(peer.issue_key)
-            self.issues[peer.issue_key] = peer
-            self._wrote(peer.issue_key)
-        return self.issues[issue_key]
-
-    async def create_split_if_absent(
-        self,
-        *,
-        source_key: str,
-        deliverable_key: str,
-        title: str,
-        body: str,
-        holder: str,
-        expected: tuple[IssueGraphSnapshot, ...],
-        revalidate: WriteRevalidation | None = None,
-    ) -> TrackerIssue:
-        if revalidate is not None:
-            await revalidate()
-        identity = IssueIdentity(
-            scope_key=ScopeRef(kind=ScopeKind.ISSUE, key=source_key),
-            deliverable_key=deliverable_key,
-        )
-        for child in await self.read_split_children(source_key=source_key):
-            if await self.read_issue_identity(issue_key=child.issue_key) == identity:
-                return child
-        self._require_graph_holder(
-            kind=SurfaceKind.ISSUE_SPLIT_SET, issue_key=source_key, holder=holder
-        )
-        current = tuple(
-            [await self.read_issue(issue_key=row.issue_key) for row in expected]
-        )
-        if (
-            not expected
-            or tuple(graph_snapshot(issue) for issue in current) != expected
-        ):
-            raise OrganizeWriteRefusalError(
-                issue_key=source_key, reason="split source graph changed"
-            )
-        source = await self.read_issue(issue_key=source_key)
-        if source.team_key is None or not all(
-            value.strip() for value in (deliverable_key, title, body)
-        ):
-            raise OrganizeWriteRefusalError(
-                issue_key=source_key,
-                reason="split creation requires a team, identity and specification",
-            )
-        created = await self._upsert_issue(
-            scope_key=identity.scope_key,
-            deliverable_key=deliverable_key,
-            title=title,
-            body=body,
-            team_key=source.team_key,
-            priority=IssuePriority.NONE,
-        )
-        child = TrackerIssue.model_validate(
-            {
-                **created.model_dump(),
-                "parent_key": source_key,
-                "project_id": source.project_id,
-                "state_name": "Todo",
-                "state_kind": WorkflowStateKind.UNSTARTED,
-            }
-        )
-        self.issues[child.issue_key] = child
-        return child
-
-    async def _upsert_issue(
-        self,
-        *,
-        scope_key: ScopeRef,
-        deliverable_key: str,
-        title: str,
-        body: str,
-        team_key: str,
-        priority: IssuePriority,
-    ) -> TrackerIssue:
-        identity = IssueIdentity(scope_key=scope_key, deliverable_key=deliverable_key)
-        keys = [
-            key for key, value in self.issue_identities.items() if value == identity
-        ]
-        if len(keys) > 1:
-            raise DuplicateIssueIdentityError(
-                scope_key=scope_key, deliverable_key=deliverable_key, issue_keys=keys
-            )
-        if not keys:
-            created = await self._create_issue(
-                title=title, body=body, team_key=team_key, priority=priority
-            )
-            self.issue_identities[created.issue_key] = identity
-            return created
-        current = await self.read_issue(issue_key=keys[0])
-        if current.body != body:
-            await self.edit_description(
-                target=current.issue_key, expected=current.body, replacement=body
-            )
-        if current.title != title:
-            await self._patch_issue(issue_key=current.issue_key, title=title)
-        return await self.read_issue(issue_key=current.issue_key)
 
 
 class FakePassGateReader(
@@ -5545,11 +5350,9 @@ class FakeTrackerVocabulary(_FakeTrackerState):
 
 
 class FakeTrackerPort(
-    FakeOrganizeOwnerTracker,
     FakeLifecycleStateWriter,
     FakeScanCapabilityReader,
     FakeFireDispatchTracker,
-    FakeOrganizeContextTracker,
     FakeFireSubjectReader,
     FakeEscalationResolutionReader,
     FakeModelMemberReader,
@@ -5560,6 +5363,13 @@ class FakeTrackerPort(
     FakeSurfaceAuthorshipReader,
     FakeCriterionReopener,
     FakeTrackerContextReader,
+    FakeDescriptionWriter,
+    FakeClassificationWriter,
+    FakeTrackerArtifactReader,
+    FakeTrackerScopeApprovalReader,
+    FakeContainerMetadataReader,
+    FakeCriterionMintWriter,
+    FakeScopeReadPreflight,
 ):
     """In-process ``TrackerPort`` — the double every port CONSUMER is tested on.
 
@@ -5682,13 +5492,6 @@ class FakeNativeAmendmentTracker(
     FakeCriterionMintWriter,
 ):
     """The ``NativeAmendmentTracker`` role, composed of its role doubles."""
-
-
-class FakeOrganizeAuthorReader(
-    FakeIssueRevisionReader,
-    FakeTrackerCriteriaReader,
-):
-    """The ``OrganizeAuthorReader`` role, composed of its role doubles."""
 
 
 class FakeRecordSignalReader(
@@ -5918,7 +5721,6 @@ TRACKER_WRITE_JOURNALS = frozenset(
         "recorded_work_refs",
         "label_writes",
         "mapping_instatements",
-        "graph_writes",
         "claim_releases",
         "lease_releases",
         "mapping_containers",

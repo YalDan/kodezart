@@ -1,97 +1,20 @@
-"""Construct the Organize cascade owner, which stays constructible and is wired
-nowhere, and the scope heartbeat."""
+"""Construct the scope heartbeat."""
 
-from collections.abc import Sequence
 from pathlib import Path
 
-from kodezart.chains.organize import OrganizeAdmission
-from kodezart.chains.organize_author import OrganizeAuthor
-from kodezart.chains.write_back_verifier import FreshWriteBackJudge
 from kodezart.config.app import AppConfig
 from kodezart.core.protocols import (
     AgentRunner,
-    GitService,
     JobQueue,
     JobRegistry,
-    OutboundContentGate,
     PromptSetProvider,
-    TrackerPort,
-    WorkspaceProvider,
 )
 from kodezart.services.agent_question import ask
-from kodezart.services.organize_context import OrganizeContextReader
-from kodezart.services.organize_owner import OrganizeOwner
 from kodezart.services.scope_heartbeat import ScopeHeartbeat
 from kodezart.types.domain.agent import ScopeScanOutput
-from kodezart.types.domain.operation import OperationConfig, OperationMemberAbsentError
-from kodezart.types.domain.organize import ResolvedMandateSpec
+from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.prompts import PromptKey
-from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
-
-
-def build_organize_owner(
-    *,
-    config: AppConfig,
-    operation: OperationConfig,
-    tracker: TrackerPort,
-    runner: AgentRunner,
-    workspace: WorkspaceProvider,
-    git: GitService,
-    prompts: PromptSetProvider,
-    skills: SkillsSelection,
-    gate: OutboundContentGate,
-    repo_url: str,
-    phases: Sequence[ResolvedMandateSpec],
-) -> OrganizeOwner:
-    if config.organize is None:
-        raise OperationMemberAbsentError(
-            missing="organize", stops="configured Organize owner"
-        )
-    if config.write_back is None:
-        raise OperationMemberAbsentError(
-            missing="write_back", stops="configured Organize write verification"
-        )
-    context = OrganizeContextReader(tracker=tracker, operation=operation)
-    admission = OrganizeAdmission(
-        tracker=tracker,
-        context=context,
-        runner=runner,
-        workspace=workspace,
-        prompts=prompts,
-        skills=skills,
-    )
-    author = OrganizeAuthor(
-        tracker=tracker,
-        context=context,
-        runner=runner,
-        workspace=workspace,
-        prompts=prompts,
-        skills=skills,
-    )
-    judge = FreshWriteBackJudge(
-        runner=runner,
-        workspace=workspace,
-        git=git,
-        prompts=prompts,
-        skills=skills,
-        repo_url=repo_url,
-        session_type=SessionType.ORGANIZE_PASS,
-    )
-    return OrganizeOwner(
-        tracker=tracker,
-        context=context,
-        admission=admission,
-        author=author,
-        judge=judge,
-        gate=gate,
-        prompts=prompts,
-        operation=operation,
-        phases=phases,
-        policy=config.organize,
-        write_back_max_rounds=config.write_back.max_verify_rounds,
-        lease_seconds=config.tracker.surface_lease_seconds,
-    )
 
 
 def scope_heartbeat_wires(operation: OperationConfig, *, tracker_present: bool) -> bool:

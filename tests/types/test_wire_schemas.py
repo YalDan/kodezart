@@ -50,8 +50,6 @@ from kodezart.types.domain.audit_overclaim import AuditOverclaimJudgment
 from kodezart.types.domain.criteria import (
     CRITERION_ID_PATTERN,
 )
-from kodezart.types.domain.organize import AdmissionJudgment
-from kodezart.types.domain.organize_owner import OrganizeProposal
 from kodezart.types.domain.remediation import RemediationPlan
 from kodezart.types.domain.write_back import WriteBackFinding
 from tests.types.schema_nodes import DEFS, schema_nodes
@@ -97,8 +95,6 @@ WIRE_MODELS: dict[str, type[BaseModel]] = {
     "SCOPE_SCAN_SCHEMA": ScopeScanOutput,
     "SCOPE_DONE_SCHEMA": ScopeItemsOutput,
     "DRAFT_CRITIQUE_SCHEMA": DraftCritiqueOutput,
-    "ORGANIZE_ADMISSION_SCHEMA": AdmissionJudgment,
-    "ORGANIZE_PROPOSAL_SCHEMA": OrganizeProposal,
     "WRITE_BACK_SCHEMA": WriteBackFinding,
     "RULING_SCHEMA": RulingOutput,
     "AUDIT_CLAIM_SCHEMA": AuditClaimJudgment,
@@ -227,12 +223,6 @@ AUDIT_SCHEMA_BINDINGS = [
         "AMENDMENT_JUDGMENT_SCHEMA",
     ),
     (
-        "chains/organize_author.py",
-        ("OrganizeAuthor", "propose"),
-        "judge_in_workspace",
-        "ORGANIZE_PROPOSAL_SCHEMA",
-    ),
-    (
         "chains/write_back_verifier.py",
         ("FreshWriteBackJudge", "judge"),
         "judge_in_workspace",
@@ -243,12 +233,6 @@ AUDIT_SCHEMA_BINDINGS = [
         ("FireTimeRulings", "_answers"),
         "judge_in_workspace",
         "RULING_SCHEMA",
-    ),
-    (
-        "chains/organize.py",
-        ("OrganizeAdmission", "_judge"),
-        "judge_in_workspace",
-        "ORGANIZE_ADMISSION_SCHEMA",
     ),
     (
         "chains/audit_pass.py",

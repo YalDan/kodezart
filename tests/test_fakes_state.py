@@ -69,7 +69,6 @@ from pydantic import BaseModel
 from kodezart.core.protocols import TrackerPort
 from kodezart.domain.comment_markers import compose_comment_marker
 from kodezart.domain.criterion_creation import criterion_body
-from kodezart.domain.organize_graph import graph_snapshot
 from kodezart.domain.run_alarm_record import run_alarm_marker, run_alarm_surface
 from kodezart.domain.run_event_stream import LaneRunEvent
 from kodezart.types.domain.branch import (
@@ -80,8 +79,8 @@ from kodezart.types.domain.branch import (
     trunk_base,
 )
 from kodezart.types.domain.dispatch import PassSignal
+from kodezart.types.domain.issue_identity import IssueIdentity
 from kodezart.types.domain.operation import LifecycleStage, QueueState, ScopeLabel
-from kodezart.types.domain.organize_graph import PriorityChange
 from kodezart.types.domain.run_alarm import (
     AlarmReading,
     AlarmSignal,
@@ -99,7 +98,6 @@ from kodezart.types.domain.surface import (
 from kodezart.types.domain.tracker import (
     ClaimResult,
     ClaimStatus,
-    IssuePriority,
     IssueQuery,
     IssueRelation,
     IssueRelationKind,
@@ -237,14 +235,6 @@ async def hold(port: FakeTrackerPort, surface: WritableSurface) -> None:
     )
 
 
-async def hold_graph(port: FakeTrackerPort) -> None:
-    await hold(port, issue_surface(SurfaceKind.ISSUE_GRAPH))
-
-
-async def hold_split_set(port: FakeTrackerPort) -> None:
-    await hold(port, issue_surface(SurfaceKind.ISSUE_SPLIT_SET))
-
-
 async def hold_child_set(port: FakeTrackerPort) -> None:
     await hold(port, issue_surface(SurfaceKind.CRITERION_CHILD_SET))
 
@@ -350,18 +340,6 @@ async def write_issue_creation(port: FakeTrackerPort) -> None:
     )
 
 
-async def write_split(port: FakeTrackerPort) -> None:
-    issue = await port.read_issue(issue_key=ISSUE)
-    await port.create_split_if_absent(
-        source_key=ISSUE,
-        deliverable_key="a-split",
-        title="a split child",
-        body="a body",
-        holder=HOLDER,
-        expected=(graph_snapshot(issue),),
-    )
-
-
 async def write_criterion(port: FakeTrackerPort) -> None:
     await port.create_criterion_if_absent(
         parent_key=ISSUE,
@@ -375,16 +353,6 @@ async def write_criterion(port: FakeTrackerPort) -> None:
 async def write_criterion_reset(port: FakeTrackerPort) -> None:
     expected = await port.read_issue(issue_key=CRITERION)
     await port.reset_criterion_pending(expected=expected)
-
-
-async def write_graph(port: FakeTrackerPort) -> None:
-    issue = await port.read_issue(issue_key=ISSUE)
-    await port.update_issue_graph(
-        issue_key=ISSUE,
-        expected=(graph_snapshot(issue),),
-        changes=(PriorityChange(kind="priority", priority=IssuePriority.HIGH),),
-        holder=HOLDER,
-    )
 
 
 async def write_base_spec(port: FakeTrackerPort) -> None:
@@ -544,10 +512,6 @@ async def read_assets(port: FakeTrackerPort) -> None:
     await port.list_issue_assets(issue_key=ISSUE)
 
 
-async def read_milestones(port: FakeTrackerPort) -> None:
-    await port.project_milestones(project_key=PROJECT.key)
-
-
 async def read_recorded_base_spec(port: FakeTrackerPort) -> None:
     await port.read_base_spec(issue_key=ISSUE)
 
@@ -582,10 +546,6 @@ async def read_identity(port: FakeTrackerPort) -> None:
 
 async def read_movement(port: FakeTrackerPort) -> None:
     await port.read_issue_movement(issue_key=ISSUE)
-
-
-async def read_revision(port: FakeTrackerPort) -> None:
-    await port.read_issue_revision(issue_key=ISSUE)
 
 
 async def read_state_change(port: FakeTrackerPort) -> None:
@@ -773,12 +733,6 @@ CASES: Mapping[str, Case] = {
         journals=frozenset({"issue_creations"}),
         setup=hold_child_set,
     ),
-    "a split child created": Case(
-        method="create_split_if_absent",
-        call=write_split,
-        journals=frozenset({"issue_creations"}),
-        setup=hold_split_set,
-    ),
     "a criterion created": Case(
         method="create_criterion_if_absent",
         call=write_criterion,
@@ -789,12 +743,6 @@ CASES: Mapping[str, Case] = {
         method="reset_criterion_pending",
         call=write_criterion_reset,
         journals=frozenset({"self_writes"}),
-    ),
-    "a graph changed": Case(
-        method="update_issue_graph",
-        call=write_graph,
-        journals=frozenset({"graph_writes", "self_writes"}),
-        setup=hold_graph,
     ),
     "a base spec recorded": Case(
         method="record_base_spec",
@@ -873,12 +821,6 @@ CASES: Mapping[str, Case] = {
         call=read_assets,
         journals=frozenset(),
     ),
-    "a project's milestones read": Case(
-        method="project_milestones",
-        call=read_milestones,
-        journals=frozenset(),
-        setup=hold_project,
-    ),
     "a base spec read": Case(
         method="read_base_spec",
         call=read_recorded_base_spec,
@@ -920,11 +862,6 @@ CASES: Mapping[str, Case] = {
     "an issue's movement read": Case(
         method="read_issue_movement",
         call=read_movement,
-        journals=frozenset(),
-    ),
-    "an issue revision read": Case(
-        method="read_issue_revision",
-        call=read_revision,
         journals=frozenset(),
     ),
     "an issue state change read": Case(
@@ -1077,27 +1014,26 @@ async def full_board(
 ) -> FakeTrackerPort:
     """The census board: every attribute, and every field on it, holds something.
 
-    :func:`board` of *double*, then one of each write the census declares,
-    each after its own setup, then by hand whatever those writes leave
-    empty: the project with a member, an initiative and a milestone, the
-    fire entry's stage label and approval, an asset with its type and size,
-    the reviews, a recorded repository, a body's authorship and held
-    writer, a refused scan, the approval aliases and a comment read
-    refusal; and the fields no write fills — on one issue past the seeded
-    three, and on the issue every keyed read asks for, a blocked-by
-    relation, the milestone, an assignee, the project in both spellings
-    and (on the asked one) a parent; a comment on a second issue, in reply
-    to one on the first, and a reply on the asked issue itself; a claim
-    that names its current holder; a base spec with an input and a role; a
-    work ref with a pushed head.  Every paged collection — the
-    issues and the reviews — holds one more entry than the largest page any
-    read case asks the double for, so a paged read always leaves something
-    it paged past.  Every attribute but the read logs holds something, and
-    every field of every model on it, at any depth, holds something on at
-    least one instance, so a read that moves an attribute — empties the
-    reviews, prunes what it paged past, drops a lease, rebinds the clock —
-    or erases a field on every instance — every issue's relations, the
-    comments on other issues — moves something on it.  Held to that by
+    :func:`board` of *double*, then one of each write the census declares, each
+    after its own setup, then by hand whatever those writes leave empty: the
+    project with a member, an initiative and a milestone, the fire entry's stage
+    label and approval, an asset with its type and size, the reviews, a recorded
+    repository, a body's authorship and held writer, a refused scan, the
+    approval aliases, a split child's identity and a comment read refusal; and
+    the fields no write fills — on one issue past the seeded three, and on the
+    issue every keyed read asks for, a blocked-by relation, the milestone, an
+    assignee, the project in both spellings and (on the asked one) a parent; a
+    comment on a second issue, in reply to one on the first, and a reply on the
+    asked issue itself; a claim that names its current holder; a base spec with
+    an input and a role; a work ref with a pushed head.  Every paged collection
+    — the issues and the reviews — holds one more entry than the largest page
+    any read case asks the double for, so a paged read always leaves something
+    it paged past.  Every attribute but the read logs holds something, and every
+    field of every model on it, at any depth, holds something on at least one
+    instance, so a read that moves an attribute — empties the reviews, prunes
+    what it paged past, drops a lease, rebinds the clock — or erases a field on
+    every instance — every issue's relations, the comments on other issues —
+    moves something on it.  Held to that by
     :func:`test_the_census_board_holds_something_in_every_attribute` and
     :func:`test_every_paged_read_leaves_something_past_its_page`.
     """
@@ -1110,6 +1046,14 @@ async def full_board(
         await row.call(port)
     await hold_project(port)
     await hold_fire_entry(port)
+    # A split child of the asked issue and its identity: no port write
+    # creates one any more, and the split read still answers from it.
+    port.issues["KOD-SPLIT"] = make_tracker_issue(
+        "KOD-SPLIT", parent_key=ISSUE, queue_states=()
+    )
+    port.issue_identities["KOD-SPLIT"] = IssueIdentity(
+        scope_key=ScopeRef(kind=ScopeKind.ISSUE, key=ISSUE), deliverable_key="a-split"
+    )
     port.scope_memberships[PROJECT] = (ISSUE,)
     port.initiative_identifiers_by_project[PROJECT.key] = frozenset({"an initiative"})
     port.scope_containers[MILESTONE] = ScopeContainer(

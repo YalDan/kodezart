@@ -19,15 +19,12 @@ green when a sentence is dropped.  The whole fragment is pinned as well, so
 a sentence added, reordered or reworded fails here first.
 """
 
-import copy
 import tomllib
 
 import pytest
 
 from kodezart.adapters.in_repo_prompt_registry import default_sets_root
-from kodezart.chains import organize as organize_chain
 from kodezart.core.prompt_rendering import render_template
-from kodezart.types.domain.agent import ORGANIZE_ADMISSION_SCHEMA
 from kodezart.types.domain.organize import RefusalKind
 from kodezart.types.domain.prompts import PromptKey
 from tests.prompts.sets import (
@@ -249,307 +246,6 @@ JUDGE_PROMPT: tuple[str, ...] = (
     DEPTH,
 )
 
-#: The descriptions three admission shapes share.
-ISSUE_ID = "Exact native tracker key of the issue assessed."
-EVIDENCE = (
-    "Concrete current source evidence supporting this judgment against the "
-    "supplied mandate rubric."
-)
-FINDINGS = (
-    "Observed defects under the configured rubric, retaining their owning issue keys."
-)
-
-#: Exact. The judge's whole structured-output schema, written out. The
-#: session is handed it as its output contract, so every title,
-#: description, default, enum value, const, pattern and required list in
-#: it is text the judge reads.
-ADMISSION_SCHEMA: dict[str, object] = {
-    "$defs": {
-        "BuildableAdmission": {
-            "additionalProperties": False,
-            "description": (
-                "No invented decision or unavailable artifact is carried by success."
-            ),
-            "properties": {
-                "verdict": {
-                    "const": "buildable",
-                    "description": (
-                        "The current issue satisfies the supplied mandate rubric "
-                        "without inventing a decision or missing evidence."
-                    ),
-                    "title": "Verdict",
-                    "type": "string",
-                },
-                "issueId": {
-                    "description": ISSUE_ID,
-                    "minLength": 1,
-                    "pattern": "\\S",
-                    "title": "Issueid",
-                    "type": "string",
-                },
-                "evidence": {
-                    "description": EVIDENCE,
-                    "minLength": 1,
-                    "pattern": "\\S",
-                    "title": "Evidence",
-                    "type": "string",
-                },
-                "findings": {
-                    "default": [],
-                    "description": FINDINGS,
-                    "items": {
-                        "$ref": "#/$defs/SpecFinding",
-                    },
-                    "title": "Findings",
-                    "type": "array",
-                },
-            },
-            "required": [
-                "verdict",
-                "issueId",
-                "evidence",
-            ],
-            "title": "BuildableAdmission",
-            "type": "object",
-        },
-        "DefectRole": {
-            "description": (
-                "A defect instance or the instruction that makes writers reproduce it."
-            ),
-            "enum": [
-                "instance",
-                "mandate",
-            ],
-            "title": "DefectRole",
-            "type": "string",
-        },
-        "RefusalKind": {
-            "description": (
-                "Whether re-authoring can repair a refusal without a human decision."
-            ),
-            "enum": [
-                SPEC_GAP,
-                HUMAN_DECISION,
-            ],
-            "title": "RefusalKind",
-            "type": "string",
-        },
-        "RefusedAdmission": {
-            "additionalProperties": False,
-            "description": "A refusal names the decision and the route it requires.",
-            "properties": {
-                "verdict": {
-                    "const": "not_buildable",
-                    "description": (
-                        "The current issue requires a specification repair or an "
-                        "unresolved human choice."
-                    ),
-                    "title": "Verdict",
-                    "type": "string",
-                },
-                "issueId": {
-                    "description": ISSUE_ID,
-                    "minLength": 1,
-                    "pattern": "\\S",
-                    "title": "Issueid",
-                    "type": "string",
-                },
-                "evidence": {
-                    "description": EVIDENCE,
-                    "minLength": 1,
-                    "pattern": "\\S",
-                    "title": "Evidence",
-                    "type": "string",
-                },
-                "findings": {
-                    "default": [],
-                    "description": FINDINGS,
-                    "items": {
-                        "$ref": "#/$defs/SpecFinding",
-                    },
-                    "title": "Findings",
-                    "type": "array",
-                },
-                "inventedDecision": {
-                    "description": (
-                        "The exact choice an implementer would otherwise have to "
-                        "invent."
-                    ),
-                    "minLength": 1,
-                    "pattern": "\\S",
-                    "title": "Inventeddecision",
-                    "type": "string",
-                },
-                "refusalKind": {
-                    "$ref": "#/$defs/RefusalKind",
-                    "description": (
-                        "Whether re-authoring can repair the specification gap or a "
-                        "human must settle the choice."
-                    ),
-                },
-            },
-            "required": [
-                "verdict",
-                "issueId",
-                "evidence",
-                "inventedDecision",
-                "refusalKind",
-            ],
-            "title": "RefusedAdmission",
-            "type": "object",
-        },
-        "SpecFinding": {
-            "additionalProperties": False,
-            "description": (
-                "Evidence for a class in the selected rubric, with any mandate "
-                "verbatim."
-            ),
-            "properties": {
-                "issueId": {
-                    "description": "Tracker key owning the source finding.",
-                    "minLength": 1,
-                    "title": "Issueid",
-                    "type": "string",
-                },
-                "defectClass": {
-                    "description": "Defect class from the selected rubric.",
-                    "minLength": 1,
-                    "title": "Defectclass",
-                    "type": "string",
-                },
-                "evidence": {
-                    "description": "Concrete evidence establishing the finding.",
-                    "title": "Evidence",
-                    "type": "string",
-                },
-                "role": {
-                    "$ref": "#/$defs/DefectRole",
-                    "description": "An instance or the instruction that mandates it.",
-                },
-                "mandateText": {
-                    "anyOf": [
-                        {
-                            "type": "string",
-                        },
-                        {
-                            "type": "null",
-                        },
-                    ],
-                    "default": None,
-                    "description": (
-                        "Exact instructing sentence for MANDATE, absent for INSTANCE."
-                    ),
-                    "title": "Mandatetext",
-                },
-            },
-            "required": [
-                "issueId",
-                "defectClass",
-                "evidence",
-                "role",
-            ],
-            "title": "SpecFinding",
-            "type": "object",
-        },
-        "UnverifiableAdmission": {
-            "additionalProperties": False,
-            "description": (
-                "Unavailable evidence retains its named dependency without inventing "
-                "it."
-            ),
-            "properties": {
-                "verdict": {
-                    "const": "unverifiable",
-                    "description": (
-                        "A named unavailable artifact prevents judging the current "
-                        "issue against the supplied mandate rubric."
-                    ),
-                    "title": "Verdict",
-                    "type": "string",
-                },
-                "issueId": {
-                    "description": ISSUE_ID,
-                    "minLength": 1,
-                    "pattern": "\\S",
-                    "title": "Issueid",
-                    "type": "string",
-                },
-                "evidence": {
-                    "description": EVIDENCE,
-                    "minLength": 1,
-                    "pattern": "\\S",
-                    "title": "Evidence",
-                    "type": "string",
-                },
-                "findings": {
-                    "default": [],
-                    "description": FINDINGS,
-                    "items": {
-                        "$ref": "#/$defs/SpecFinding",
-                    },
-                    "title": "Findings",
-                    "type": "array",
-                },
-                "missingArtifact": {
-                    "description": (
-                        "The actual unavailable artifact needed to assess the current "
-                        "issue."
-                    ),
-                    "minLength": 1,
-                    "pattern": "\\S",
-                    "title": "Missingartifact",
-                    "type": "string",
-                },
-                "pendingBlockerId": {
-                    "description": (
-                        "Existing native blocker identity owning the unavailable "
-                        "artifact; never invent one."
-                    ),
-                    "minLength": 1,
-                    "pattern": "\\S",
-                    "title": "Pendingblockerid",
-                    "type": "string",
-                },
-            },
-            "required": [
-                "verdict",
-                "issueId",
-                "evidence",
-                "missingArtifact",
-                "pendingBlockerId",
-            ],
-            "title": "UnverifiableAdmission",
-            "type": "object",
-        },
-    },
-    "description": (
-        "The agent sees the same discriminated legal states its consumer validates."
-    ),
-    "discriminator": {
-        "mapping": {
-            "buildable": "#/$defs/BuildableAdmission",
-            "not_buildable": "#/$defs/RefusedAdmission",
-            "unverifiable": "#/$defs/UnverifiableAdmission",
-        },
-        "propertyName": "verdict",
-    },
-    "oneOf": [
-        {
-            "$ref": "#/$defs/BuildableAdmission",
-        },
-        {
-            "$ref": "#/$defs/RefusedAdmission",
-        },
-        {
-            "$ref": "#/$defs/UnverifiableAdmission",
-        },
-    ],
-    "title": "AdmissionJudgment",
-}
-
-#: The refusal kind's property path, where the halt would be licensed.
-REFUSAL_KIND_PATH = "#/$defs/RefusedAdmission/properties/refusalKind"
-
 #: The halt, licensed in each ordinary place of the rendered judge prompt,
 #: as ``anchor -> planted`` over that render. The first two rewrite one of
 #: the two routing sentences; the other four leave both routing sentences
@@ -616,20 +312,6 @@ HALT_BRANCHED: dict[str, tuple[str, str]] = {
     ),
 }
 
-#: The halt, licensed in the judge's output schema instead of its prompt,
-#: as ``keyword -> value`` added to the refusal kind's property: appended
-#: to its description, or set as a title, an example or a default.
-SCHEMA_HALT = f" A misplaced issue is a {HUMAN_DECISION}."
-SCHEMA_HALTS: dict[str, object] = {
-    "description": (
-        "Whether re-authoring can repair the specification gap or a human "
-        f"must settle the choice.{SCHEMA_HALT}"
-    ),
-    "title": f"A misplaced issue is a {HUMAN_DECISION}",
-    "examples": [f"{HUMAN_DECISION} (a misplaced issue is a {HUMAN_DECISION})"],
-    "default": HUMAN_DECISION,
-}
-
 
 def member_files(set_name: str) -> list[str]:
     """Every member file of a shipped set, read as text."""
@@ -647,31 +329,6 @@ def judge_paragraphs(rendered: str) -> tuple[str, ...]:
     dropped, so an extra blank line is not a change to what the judge reads.
     """
     return tuple(prose(block) for block in rendered.split("\n\n") if block.strip())
-
-
-def schema_leaves(node: object, path: str = "#") -> dict[str, object]:
-    """Every leaf of a JSON schema, keyed by its path: the whole schema.
-
-    A leaf is a value that holds no further value: a string, a number, a
-    boolean, null, or an empty mapping or list. Every key the schema holds
-    is a step of some leaf's path (escaped as a JSON pointer escapes it),
-    so two schemas with the same leaves hold the same keys and values, and
-    a keyword added anywhere — a title, an example, a default — is a new
-    path. Walks the schema's own nested mappings and lists, which are
-    finite and hold no cycle (a ``$ref`` is a string), so the walk ends.
-    """
-    if isinstance(node, dict) and node:
-        found: dict[str, object] = {}
-        for key, value in node.items():
-            step = str(key).replace("~", "~0").replace("/", "~1")
-            found.update(schema_leaves(value, f"{path}/{step}"))
-        return found
-    if isinstance(node, list) and node:
-        found = {}
-        for index, value in enumerate(node):
-            found.update(schema_leaves(value, f"{path}/{index}"))
-        return found
-    return {path: node}
 
 
 def lens_prompts() -> dict[str, str]:
@@ -774,25 +431,16 @@ def test_the_judge_names_misplacement_as_a_repairable_gap() -> None:
     complete and no repair ever runs.
 
     The refusal kind is asserted with the verdict, because the two words
-    after it are the whole difference between a repair and a halt: a
-    human_decision refusal routes to ESCALATE and every other
-    ``not_buildable`` result to REAUTHOR (``domain/organize.py``), so a
-    misplacement classed as a human decision stops the stage instead of
-    reaching the author. Read off the prose, so rewrapping the member is
-    not a change to what it says.
+    after it are the whole difference between a repair and a halt. Read off
+    the prose, so rewrapping the member is not a change to what it says.
 
-    Pinned by equality, paragraph by paragraph, in three places the judge
-    reads. First, the composed template: the member with every fragment
-    substituted (the standard and the depth block among them) and every
-    ``{{...}}`` unresolved, so every ``{{#if}}`` branch is in it whatever an
-    operation binds, including the branches the fixed case leaves false.
-    The render of the fixed case is checked to start from exactly this
-    text. Second, that render, which is what the example deployment
-    actually sends. Third, the whole structured-output schema the session
-    is handed (``ORGANIZE_ADMISSION_SCHEMA``, the object the organize chain
-    passes as its output schema): every leaf keyed by its path, so every
-    title, description, example, default, enum value, const, pattern and
-    required entry, and every keyword present at all. The
+    Pinned by equality, paragraph by paragraph, in two places. First, the
+    composed template: the member with every fragment substituted (the
+    standard and the depth block among them) and every ``{{...}}``
+    unresolved, so every ``{{#if}}`` branch is in it whatever an operation
+    binds, including the branches the fixed case leaves false. The render of
+    the fixed case is checked to start from exactly this text. Second, that
+    render, which is what the example deployment actually sends. The
     two sentences that decide the route — the one that keeps the two
     refusal kinds apart and the one that applies it to a misplacement — are
     each whole inside the template and the render.
@@ -814,8 +462,6 @@ def test_the_judge_names_misplacement_as_a_repairable_gap() -> None:
     assert JUDGE_TEMPLATE[3].endswith(MISPLACEMENT_SENTENCE)
     assert CLASSIFYING_SENTENCE in JUDGE_PROMPT[1]
     assert JUDGE_PROMPT[3].endswith(MISPLACEMENT_SENTENCE)
-    assert organize_chain.ORGANIZE_ADMISSION_SCHEMA is ORGANIZE_ADMISSION_SCHEMA
-    assert schema_leaves(ORGANIZE_ADMISSION_SCHEMA) == schema_leaves(ADMISSION_SCHEMA)
 
 
 def test_the_template_pin_refuses_a_halt_licensed_in_a_branch() -> None:
@@ -837,35 +483,6 @@ def test_the_template_pin_refuses_a_halt_licensed_in_a_branch() -> None:
         rendered = render_template(mutated, bindings)
         assert judge_paragraphs(rendered) == JUDGE_PROMPT, case
         assert judge_paragraphs(mutated) != JUDGE_TEMPLATE, case
-
-
-def test_the_schema_pin_refuses_a_halt_licensed_in_a_description() -> None:
-    """The control for the schema pin: the halt anywhere on the refusal kind.
-
-    Each case sets one keyword of the refusal kind's property, in a copy of
-    the shipped schema, and reads it through the same function the pin
-    reads: the halt appended to its description, or set as its title, an
-    example or a default. The walk is checked to reach the planted value
-    at its own path, and the register to hold the shipped description, so
-    neither side of the pin is narrowed.
-    """
-    register = schema_leaves(ADMISSION_SCHEMA)
-    assert register[f"{REFUSAL_KIND_PATH}/description"] == (
-        "Whether re-authoring can repair the specification gap or a human must "
-        "settle the choice."
-    )
-    assert SCHEMA_HALTS
-    for keyword, value in SCHEMA_HALTS.items():
-        planted = copy.deepcopy(ORGANIZE_ADMISSION_SCHEMA)
-        planted["$defs"]["RefusedAdmission"]["properties"]["refusalKind"][keyword] = (
-            value
-        )
-        leaves = schema_leaves(planted)
-        assert leaves != register, keyword
-        assert HUMAN_DECISION in str(
-            leaves.get(f"{REFUSAL_KIND_PATH}/{keyword}")
-            or leaves.get(f"{REFUSAL_KIND_PATH}/{keyword}/0")
-        ), keyword
 
 
 def test_the_judge_prompt_pin_refuses_a_halt_licensed_anywhere_in_the_render() -> None:

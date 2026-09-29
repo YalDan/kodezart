@@ -656,8 +656,7 @@ async def test_the_shipped_scope_config_answers_each_adapter_point_of_need():
     )
     assert server.issues[built.criteria["A"][0]].status == DONE_STATE
 
-    # The organize owner's split creation (services/organize_owner.py:534) opens
-    # with the issue-identity prefix, so a scope deployment reaches that purpose
-    # and the file has to declare it. Read here rather than written, because the
-    # split write is the owner's act and not this builder's.
+    # The tracker's split read opens with the issue-identity prefix, so a scope
+    # deployment reaches that purpose and the file has to declare it. Read here
+    # rather than written, because this builder writes no split.
     assert await tracker.read_split_children(source_key=built.lanes["A"]) == ()

@@ -15,10 +15,9 @@ leave an artifact a later reader reads back — now live in
 ``kodezart.domain.write_adoption`` with the census that applies them, so the
 boot gate and this guard read one derivation rather than two.
 
-The run under observation is the composed one: the real Organize owner off
-``build_organize_owner`` over its tracker (bodies, edges, criterion
-sub-issues and phase markers), and the real criterion evaluator's amendment
-write-back (a criterion's evidence, its body and its state flip).
+The runs under observation are the composed ones: the real criterion
+evaluator's amendment write-back (a criterion's evidence, its body and its
+state flip) and the open-question step's record.
 
 An observed run answers for the writes that run makes.  The clause is about
 CALL SITES, so the second half puts the same question to the production
@@ -35,7 +34,6 @@ import ast
 import functools
 import importlib
 import json
-import re
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field, make_dataclass
@@ -87,12 +85,8 @@ from kodezart.types.domain.write_adoption import (
     WriteCensus,
 )
 from kodezart.types.domain.write_back import WriteBackFinding
-from tests.chains import test_organize_owner as organize_suite
 from tests.chains.test_native_fire import DIRECT_OWED
 from tests.chains.test_native_fire import tracker as native_tracker
-from tests.chains.test_organize import result
-from tests.chains.test_organize_owner import factory, run_owner
-from tests.fakes import FakeMcpIssue
 from tests.services.test_fire_time_rulings import (
     HOLDER,
     ambiguous_body,
@@ -108,7 +102,6 @@ from tests.services.test_native_amendments import (
     drive,
     repository,
 )
-from tests.tracker.conftest import CLAIMED_ISSUE
 from tests.tracker.test_linear_tool_roster import (
     _TOOL_CONSTANT,
     KNOWLEDGE_TOOL_MODULES,
@@ -502,197 +495,6 @@ def test_the_write_surface_is_read_off_the_port_rather_than_listed_here():
 
 
 @dataclass(frozen=True)
-class Shape:
-    """One thing an Organize author proposes, and the write it lands as."""
-
-    method: str
-    proposal: Mapping[str, object]
-    refusal: str
-
-
-#: What the run stages of an approved scope write: text and children.
-SHAPES = {
-    # The configured author already proposes a body, so this shape installs
-    # no proposal of its own and carries no refusal to provoke one.
-    "bodies": Shape(method="edit_description", proposal={}, refusal=""),
-    "split_children": Shape(
-        method="create_split_if_absent",
-        proposal={
-            "kind": "split",
-            "issue_id": CLAIMED_ISSUE,
-            "children": [
-                {
-                    "deliverable_key": "stable-deliverable",
-                    "title": "Prepared split",
-                    "body": "Prepared source-grounded child specification.",
-                }
-            ],
-        },
-        refusal="The settled mandate calls for an independent child deliverable.",
-    ),
-}
-
-#: Graph change, which only the row that runs before approval declares.
-GROOMING_SHAPES = {
-    "edges": Shape(
-        method="update_issue_graph",
-        proposal={
-            "kind": "graph",
-            "issue_id": CLAIMED_ISSUE,
-            "changes": [{"kind": "related_to", "remove": ["peer"]}],
-        },
-        refusal="The settled mandate keeps no edge to that peer.",
-    ),
-}
-
-
-def pending(shape, board):
-    """Whether *shape*'s proposal still has something left to change."""
-    if shape == "edges":
-        return ("relatedTo", "peer") in board.server.issues[CLAIMED_ISSUE].relations
-    return not any(
-        issue.title == "Prepared split" for issue in board.server.issues.values()
-    )
-
-
-def organize_run(
-    monkeypatch, journal, *, shape="bodies", gate=None, under_approval=True
-):
-    """The composed Organize owner, observed at the port it writes through.
-
-    *under_approval* True drives the run stages of an approved scope; False
-    drives the row that runs before approval.
-    """
-    proposed = {**SHAPES, **GROOMING_SHAPES}[shape]
-    trackers = organize_suite.tracker_over
-    ports = []
-
-    def recording(*args, **kwargs):
-        ports.append(RecordingTracker(trackers(*args, **kwargs), journal))
-        return ports[-1]
-
-    monkeypatch.setattr(organize_suite, "tracker_over", recording)
-    owner, board, executor = factory(
-        convergence_bound=4, bound=3, gate=gate, under_approval=under_approval
-    )
-    if shape == "bodies":
-        return owner, board, ports
-    if shape == "edges":
-        board.server.issues["peer"] = FakeMcpIssue(
-            id="peer",
-            parent_id=CLAIMED_ISSUE,
-            description="Prepared peer body",
-            relations=[("relatedTo", CLAIMED_ISSUE)],
-        )
-        board.server.issues[CLAIMED_ISSUE].relations = [("relatedTo", "peer")]
-    original = executor.stream
-
-    async def stream(**kwargs):
-        title = kwargs["output_format"]["schema"].get("title")
-        subjects = re.findall(r"<issue_key>(.*?)</issue_key>", kwargs["prompt"])
-        if (
-            subjects
-            and subjects[-1] == CLAIMED_ISSUE
-            and pending(shape, board)
-            and title in {"OrganizeProposal", "AdmissionJudgment"}
-        ):
-            executor.calls.append(kwargs)
-            yield result(
-                structured_output=dict(proposed.proposal)
-                if title == "OrganizeProposal"
-                else {
-                    "issue_id": CLAIMED_ISSUE,
-                    "verdict": "not_buildable",
-                    "refusal_kind": "spec_gap",
-                    "evidence": proposed.refusal,
-                    "invented_decision": "Apply the settled mandate.",
-                }
-            )
-            return
-        async for event in original(**kwargs):
-            yield event
-
-    monkeypatch.setattr(executor, "stream", stream)
-    return owner, board, ports
-
-
-@pytest.mark.parametrize("shape", sorted(SHAPES))
-async def test_every_organize_write_in_a_scope_run_passes_the_verifier(
-    monkeypatch, shape
-):
-    journal = observe(monkeypatch)
-    owner, board, _ = organize_run(monkeypatch, journal, shape=shape)
-    report = await run_owner(owner)
-    assert report.halt is None
-    require_adoption(journal)
-    written = {write.method for write in journal.writes} & WRITES
-    assert {
-        SHAPES[shape].method,
-        "create_criterion_if_absent",
-        "set_issue_classification",
-    } <= written
-    parent = board.server.issues[CLAIMED_ISSUE]
-    assert {"body complete", "criteria complete"} <= set(parent.labels)
-
-
-async def test_the_grooming_pass_graph_write_passes_the_verifier(monkeypatch):
-    """Graph change is the pre-approval row's, and it lands inside a write-back."""
-    journal = observe(monkeypatch)
-    owner, board, _ = organize_run(
-        monkeypatch, journal, shape="edges", under_approval=False
-    )
-    report = await run_owner(owner)
-    assert report.halt is None
-    require_adoption(journal)
-    written = {write.method for write in journal.writes} & WRITES
-    assert {"update_issue_graph", "set_issue_classification"} <= written
-    parent = board.server.issues[CLAIMED_ISSUE]
-    assert ("relatedTo", "peer") not in parent.relations
-    assert "graph complete" in parent.labels
-
-
-async def test_an_in_run_author_reaching_for_the_graph_writes_nothing_and_reports_it(
-    monkeypatch,
-):
-    """A run stage writes text and children: graph change is a finding, not a write.
-
-    Both graph addresses the edge needs are outside the stage's declared set,
-    so each is recorded on the item that owns it and escalated there at the
-    halt, and the port never sees a graph write.
-    """
-    journal = observe(monkeypatch)
-    owner, board, _ = organize_run(
-        monkeypatch, journal, shape="edges", under_approval=True
-    )
-    report = await run_owner(owner)
-    assert report.halt.cause == "convergence_exhausted"
-    assert "update_issue_graph" not in {write.method for write in journal.writes}
-    owners = {
-        finding.issue_id
-        for finding in report.halt.surviving_findings
-        if finding.defect_class == "undeclared_surface"
-    }
-    assert owners == {CLAIMED_ISSUE, "peer"}
-    for key in owners:
-        assert "needs decision" in board.server.issues[key].labels
-        assert [
-            comment
-            for comment in board.server.comments
-            if comment.issue_id == key and "undeclared_surface" in comment.body
-        ]
-    assert ("relatedTo", "peer") in board.server.issues[CLAIMED_ISSUE].relations
-    # Every write the run did make ran inside a verification addressing its
-    # own item. The content half of ``require_adoption`` is not asked here:
-    # the halt's escalation step writes the comment and then the decision
-    # label inside the comment's one window, so its last write is never what
-    # the comment's read-back carries, on this path or any other halt.
-    for write in journal.writes:
-        if write.method in WRITES:
-            assert write.window is not None, write.method
-            assert write.window.surface.ref.key in addressed_text(write)
-
-
-@dataclass(frozen=True)
 class DirectWriteStep:
     """A writing step wired at the port, with no verifier between."""
 
@@ -714,30 +516,33 @@ class DirectWriteStep:
     ],
 )
 async def test_a_step_wired_straight_at_the_port_fails_the_adoption_check(
-    monkeypatch, wiring, refusal
+    repository, monkeypatch, wiring, refusal
 ):
     journal = observe(monkeypatch)
-    owner, _, ports = organize_run(monkeypatch, journal)
-    await run_owner(owner)
+    port = RecordingTracker(native_tracker(), journal)
+    service, guard, workspace, _ = await build(
+        repository, Executor(reproduced=True), port=port
+    )
+    try:
+        await drive(service, guard, repository)
+    finally:
+        await cleanup(workspace)
     require_adoption(journal)
 
-    marked = next(
-        write for write in journal.writes if write.method == "set_issue_classification"
-    )
     step = DirectWriteStep(
         surface=WritableSurface(
             kind=SurfaceKind.ISSUE_LABEL_SET,
-            ref=ScopeRef(kind=ScopeKind.ISSUE, key=CLAIMED_ISSUE),
+            ref=ScopeRef(kind=ScopeKind.ISSUE, key=DIRECT_OWED),
         ),
-        tracker=ports[-1],
-        classification=str(marked.kwargs["classification"]),
+        tracker=port,
+        classification="unverified mark",
     )
     if wiring == "no verifier":
         await step.write(finding=None)
     else:
         elsewhere = WritableSurface(
             kind=SurfaceKind.ISSUE_LABEL_SET,
-            ref=ScopeRef(kind=ScopeKind.ISSUE, key=f"{CLAIMED_ISSUE}-other"),
+            ref=ScopeRef(kind=ScopeKind.ISSUE, key=f"{DIRECT_OWED}-other"),
         )
         with journal.verifying(elsewhere):
             await step.write(finding=None)
@@ -1659,34 +1464,15 @@ def test_driven_is_proven_by_declared_types():
     assert protocol not in grown.driven
 
 
-def test_the_census_covers_organize_and_the_evaluators_state_flips():
+def test_the_census_covers_the_evaluators_state_flip():
     """The writes this criterion names by hand are the ones it says they are.
 
-    The census is derived, so the positive half is pinned explicitly: an
-    Organize author's four writes and its phase marker, and the evaluator's
-    own state flip, are driven; the lane writer's state moves are held out.
-    A derivation that quietly stopped seeing one of these would still
-    partition what it did see.
+    The census is derived, so the positive half is pinned explicitly: the
+    evaluator's own state flip is driven; the lane writer's state moves are
+    held out. A derivation that quietly stopped seeing one of these would
+    still partition what it did see.
     """
     found = census()
-    author = "OrganizeOwner._author_write.apply"
-    assert {
-        CallSite(module="services/organize_owner.py", function=author, method=method)
-        for method in (
-            "edit_description",
-            "update_issue_graph",
-            "create_split_if_absent",
-            "create_criterion_if_absent",
-        )
-    } <= found.driven
-    assert (
-        CallSite(
-            module="services/organize_owner.py",
-            function="OrganizeOwner._mark.apply",
-            method="set_issue_classification",
-        )
-        in found.driven
-    )
     assert (
         CallSite(
             module="services/amendment_writeback.py",
@@ -1714,37 +1500,30 @@ def driven_methods(module: str) -> frozenset[str]:
     return frozenset(site.method for site in census().driven if site.module == module)
 
 
-@pytest.mark.parametrize("subject", [*sorted(SHAPES), "evaluator"])
-async def test_every_write_the_observed_runs_make_is_a_driven_site(
-    repository, monkeypatch, subject
+async def test_every_write_the_observed_run_makes_is_a_driven_site(
+    repository, monkeypatch
 ):
-    """Every write a run makes inside a window is a driven site of its module.
+    """Every write the run makes inside a window is a driven site of its module.
 
     A census that stopped seeing one of those writes would leave the run's
-    write unaccounted for.  That a run keeps making the writes it names is
+    write unaccounted for.  That the run keeps making the writes it names is
     pinned by the observed-run assertions above, not here.  The comparison
     is per module, which is where the two halves meet.
     """
     journal = observe(monkeypatch)
-    if subject == "evaluator":
-        port = RecordingTracker(native_tracker(), journal)
-        service, guard, workspace, _ = await build(
-            repository, Executor(reproduced=True), port=port
-        )
-        try:
-            await drive(service, guard, repository)
-        finally:
-            await cleanup(workspace)
-        module = "services/amendment_writeback.py"
-    else:
-        owner, _, _ = organize_run(monkeypatch, journal, shape=subject)
-        assert (await run_owner(owner)).halt is None
-        module = "services/organize_owner.py"
+    port = RecordingTracker(native_tracker(), journal)
+    service, guard, workspace, _ = await build(
+        repository, Executor(reproduced=True), port=port
+    )
+    try:
+        await drive(service, guard, repository)
+    finally:
+        await cleanup(workspace)
     windowed = {
         write.method for write in journal.writes if write.window is not None
     } & WRITES
     assert windowed
-    assert windowed <= driven_methods(module)
+    assert windowed <= driven_methods("services/amendment_writeback.py")
 
 
 DRIVEN = """
@@ -2752,29 +2531,19 @@ KOD_806_STATE_MOVES = frozenset(
 )
 
 #: The tracker's structural writes: every port write that moves workflow
-#: state, queue state or the issue graph. Derived from the state moves
-#: KOD-806 holds outside the write-back check (a stage write, a queue-state
-#: write and a put-back that names a backend state, the kind of move a
-#: cancellation would be) plus the graph change and the queue-state write,
-#: so a state move registered there is structural here without being
-#: listed twice. Graph change is the pre-approval organize row's alone
-#: (KOD-561), and no organize stage moves workflow or queue state.
+#: state or queue state. Derived from the state moves KOD-806 holds outside
+#: the write-back check (a stage write, a queue-state write and a put-back
+#: that names a backend state, the kind of move a cancellation would be)
+#: plus the queue-state write, so a state move registered there is
+#: structural here without being listed twice. The port has no graph write.
 STRUCTURAL_WRITES = frozenset(
-    {site.method for site in KOD_806_STATE_MOVES}
-    | {"update_issue_graph", "set_queue_state"}
+    {site.method for site in KOD_806_STATE_MOVES} | {"set_queue_state"}
 )
 #: Every production call of those writes, compared exactly, each with the
 #: reason it is where it is: a new call site of any of them, inside a
 #: write-back step or not, fails here as loudly as a stale entry does.
 STRUCTURAL_CALL_SITES = frozenset(
     {
-        # The pre-approval organize row applies graph change itself
-        # (KOD-561); the run stages declare no graph surface.
-        CallSite(
-            module="services/organize_owner.py",
-            function="OrganizeOwner._author_write.apply",
-            method="update_issue_graph",
-        ),
         # The lifecycle writer moves a claimed lane to in progress when its
         # job is dequeued (KOD-806).
         CallSite(
@@ -2821,14 +2590,13 @@ STRUCTURAL_CALL_SITES = frozenset(
 
 
 def test_the_structural_writes_are_called_only_where_the_register_says():
-    """Graph change and state moves, read off the tree and held to the register."""
+    """State moves, read off the tree and held to the register."""
     assert KOD_806_STATE_MOVES <= census().held_out
     assert STRUCTURAL_WRITES == frozenset(
         {
             "set_workflow_state",
             "restore_workflow_state",
             "set_queue_state",
-            "update_issue_graph",
         }
     )
     assert STRUCTURAL_WRITES <= write_methods(ROLES)

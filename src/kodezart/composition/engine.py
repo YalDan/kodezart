@@ -501,6 +501,7 @@ def build_workflow_engine(
         scoped_arm = ScopeEntry(
             approvals=scope_tracker,
             registry=scope_registry,
+            preflight=scope_tracker,
             arm_for=OriginRoutedWorkflowEngine(
                 forge_arm=arm(github_api, stages),
                 forge_less_arm=arm(None, stages),

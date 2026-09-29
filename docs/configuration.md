@@ -389,12 +389,10 @@ rubric role opens no session of its own: a row names it as its
 `rubric_prompt_key`, and it is rendered into the `mandate_rubric` binding of
 whichever judging role the row runs, which is how one verify role serves every
 row.
-The configured native Organize owner dispatches these roles and owns tracker
-mutation through the narrow declared surfaces. The shared `write_back_verify`
-role independently checks the exact reread artifact through the canonical
-write-back repair loop.
-The admission and verification roles render each declared repository's check
-chain and runner environment from the operation namespace.
+Nothing dispatches `organize_assess`, `organize_author`, `organize_verify` or
+`organize_criteria_author` since the cascade organize owner was removed: a
+scope stage renders `organize_session` alone. The files stay in each set, and
+the registry still requires them.
 
 The rubric and issue evidence vary per call: `mandate_rubric`, `issue_body`,
 `linked_issue_bodies`, `criterion_issue_bodies`, `refusal_evidence`, and
@@ -402,18 +400,6 @@ The rubric and issue evidence vary per call: `mandate_rubric`, `issue_body`,
 fragments. Boot rejects a colliding configuration root or projected binding.
 Refusal evidence carries the admission result for an authoring repair; assess
 and verify render the current source bodies without that prior refusal.
-
-`OrganizeAdmission.assess` and `.verify` read the current subject, linked
-issues and criterion children through the tracker port on every call. The
-source `issue_key` is supplied separately from the verbatim bodies. Each
-call acquires the requested repository base and starts a read-only
-`organize_pass` session, with no prior session or author transcript. These
-entry points return typed admission results to the configured owner. That
-owner bounds admission repair separately from full-scope convergence, and
-writes phase markers only from fresh current evidence. Caller cancellation waits for an
-in-flight workspace acquisition or release to settle. A cancellation during
-acquisition releases the resulting workspace without starting the session;
-repeated cancellation cannot interrupt that cleanup.
 
 ## Knowledge environment migration
 
@@ -852,7 +838,7 @@ those rows — the observation tick over the row's scope where a tracker is
 dialled, and the audit over the row and its report destination where audit
 settings are set.
 
-The native Organize owner requires explicit `[[organize_scopes]]` rows, each with
+Explicit `[[organize_scopes]]` rows each carry
 `scope = { kind = "issue", key = "<native key>" }` (or another supported scope
 kind) and `repo_url` matching exactly one declared repository. A scope has one
 repository binding; duplicates and ambiguous mappings refuse configuration.
@@ -881,9 +867,9 @@ and submits each one as a scope run, skipping one with a live run and one whose
 repository the operation does not declare.
 
 `KODEZART_ORGANIZE__MAX_ADMISSION_ROUNDS` and
-`KODEZART_ORGANIZE__MAX_CONVERGENCE_ROUNDS` are read only by the older cascade
-organize owner, which `build_organize_owner` (`composition/organize.py`) can
-construct and nothing wires; a scope run reads neither. Neither bound has a
+`KODEZART_ORGANIZE__MAX_CONVERGENCE_ROUNDS` still load and are read by nothing:
+the cascade organize owner that bounded its rounds by them is removed, and a
+scope run reads neither. Neither bound has a
 default, and each must be a positive integer when set. The optional
 `KODEZART_ORGANIZE` JSON container accepts the same `max_admission_rounds` and
 `max_convergence_rounds` fields, and nothing else: a cadence field there is
