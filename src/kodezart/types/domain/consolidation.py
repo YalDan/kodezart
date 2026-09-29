@@ -44,7 +44,10 @@ class ConsolidationOutcome(CamelCaseModel):
 
 
 class ChangesetDigest(CamelCaseModel):
-    """Typed digest of commits between two refs (base..head).
+    """Typed digest of what head added since it split from base.
+
+    Paths are diffed from the merge base (``base...head``) and commits are
+    ``base..head``, so commits base gained after the split add nothing.
 
     Inlined verbatim into the evaluator prompt by `evaluation.build_prompt`.
     The engine pre-computes this via `GitService.diff_summary` so the
