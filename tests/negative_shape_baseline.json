@@ -358,7 +358,7 @@
   "tests/services/test_pass_scheduler.py": 85,
   "tests/services/test_prompt_delta_cancel_independent.py": 3,
   "tests/services/test_prompt_pass.py": 58,
-  "tests/services/test_prompt_passes.py": 133,
+  "tests/services/test_prompt_passes.py": 139,
   "tests/services/test_refusal_surface_static.py": 8,
   "tests/services/test_run_recorder.py": 46,
   "tests/services/test_run_surface_lease.py": 52,
