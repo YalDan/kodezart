@@ -74,10 +74,9 @@ RETIRED_TO_SUPERVISOR_PASS: Final[frozenset[str]] = frozenset(
     }
 )
 _REPLACED_BY_THE_SUPERVISOR = (
-    "is retired: the supervisor pass (KODEZART_SUPERVISOR_PASS_INTERVAL_SECONDS "
-    "and KODEZART_SUPERVISOR_PASS_TIMEOUT_SECONDS) now judges this from the "
+    "is retired: the supervisor pass ({} and {}) now judges this from the "
     "board; remove the setting"
-)
+).format(*CADENCE_SETTINGS["supervisor"])
 
 
 @dataclass(frozen=True)
