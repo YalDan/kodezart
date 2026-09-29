@@ -13,10 +13,11 @@ mark one lost designated assertion leaves on its lane.  Its adapter method is
 identified by the surface kind the port declaration itself names for the mint
 and by the creation payload the adapter's write verifier recognises — not by
 a save method, of which the adapter has none, and not by the criterion
-classification label, which the classification writer also resolves.  Pinned elsewhere and not repeated
-here: the identity value's one construction site, which the
-criterion-lifecycle conformance module asserts over the whole package; and
-the two exact call-site registers that name the member.
+classification label, which the classification writer also resolves.
+Pinned elsewhere and not repeated here: the identity value's one
+construction site, which the criterion-lifecycle conformance module asserts
+over the whole package; and the two exact call-site registers that name the
+member.
 
 Every name the guard looks for is read off an object — the members off the
 port protocols, the privates off the adapter class, the surface off the
