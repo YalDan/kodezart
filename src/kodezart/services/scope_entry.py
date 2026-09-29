@@ -1,9 +1,10 @@
 """The scoped arm: a scope run's refusals, then its delivery."""
 
-from collections.abc import AsyncIterator, Callable, Mapping
+from collections.abc import AsyncIterator, Callable
 
 from kodezart.core.protocols import (
     JobRegistry,
+    ScopeReadPreflight,
     TrackerScopeApprovalReader,
     WorkflowEngine,
 )
@@ -12,7 +13,6 @@ from kodezart.domain.scope_submission import prior_live_job
 from kodezart.services.scope_approval import scope_approved
 from kodezart.types.domain.agent import AgentEvent
 from kodezart.types.domain.branch import BaseSpec
-from kodezart.types.domain.operation import OperationMemberAbsentError
 from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.scope import ScopeRef
 from kodezart.types.domain.session import AllowedTools, PermissionMode
@@ -27,7 +27,7 @@ class ScopeEntry:
     decision label. An admitted run goes to the delivery arm the
     repository's origin selects, whose fire graph is the scope composition.
     Writes nothing itself, and no lease, claim or in-progress mark is taken
-    for any refusal (KOD-788).
+    for any refusal.
     """
 
     def __init__(
@@ -35,13 +35,13 @@ class ScopeEntry:
         *,
         approvals: TrackerScopeApprovalReader,
         registry: JobRegistry,
+        preflight: ScopeReadPreflight,
         arm_for: Callable[[str | None], WorkflowEngine],
-        issue_labels: Mapping[str, str],
     ) -> None:
         self._approvals = approvals
         self._registry = registry
+        self._preflight = preflight
         self._arm_for = arm_for
-        self._issue_labels = issue_labels
 
     async def admit(self, *, scope: ScopeRef, job_id: str) -> None:
         """Raise unless the run may begin; return on success.
@@ -64,14 +64,8 @@ class ScopeEntry:
         # The groom and prep sessions' prompt names both labels: prep labels
         # the criteria it writes, and either session escalates a member by
         # its decision label. An operation missing one refuses here, typed,
-        # before a session spends a run on the board and its prompt fails to
-        # render.
-        for classification in ("criterion", "decision"):
-            if not self._issue_labels.get(classification):
-                raise OperationMemberAbsentError(
-                    missing=f"issue_labels['{classification}']",
-                    stops="the scope run's groom and prep sessions cannot run",
-                )
+        # before a session spends a run on the board.
+        self._preflight.require_scope_plan_reads()
 
     async def run(
         self,

@@ -1,12 +1,16 @@
 """The scoped arm's refusals, over the real entry."""
 
+from typing import NoReturn
+
 import pytest
 
 from kodezart.domain.errors import ScopeRunLiveError
 from kodezart.services.scope_entry import ScopeEntry
+from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.job import JobRecord, JobState
-from kodezart.types.domain.operation import ScopeLabel
+from kodezart.types.domain.operation import OperationMemberAbsentError, ScopeLabel
 from kodezart.types.domain.scope import ScopeContainer, ScopeKind, ScopeRef
+from kodezart.types.domain.session import PermissionMode
 from tests.fakes import FIXTURE_EPOCH, FakeJobQueue, FakeTrackerPort
 
 SCOPE = ScopeRef(kind=ScopeKind.PROJECT, key="scoped-project")
@@ -81,7 +85,32 @@ class CountingBoard:
         return counted
 
 
-def entry_over(*records):
+class Preflight:
+    """The scope-plan read assertion, refusing for one unmapped label or none.
+
+    Counts its calls, so a case states that the assertion was made rather
+    than inferring it from the absence of a refusal.
+    """
+
+    def __init__(self, *, unmapped: str | None = None) -> None:
+        self._unmapped = unmapped
+        self.calls = 0
+
+    def require_scope_plan_reads(self) -> None:
+        self.calls += 1
+        if self._unmapped is not None:
+            raise OperationMemberAbsentError(
+                missing=f"issue_labels[{self._unmapped!r}]",
+                stops="scope plan barriers cannot be read",
+            )
+
+    def require_issue_classification_reads(
+        self, *, additional_keys: frozenset[str] = frozenset()
+    ) -> None:
+        raise AssertionError("the entry asked for the issue classification reads")
+
+
+def entry_over(*records, preflight=None, arm_for=unreached_arm):
     """One entry whose registry holds *records*, in the order given."""
     board_double = CountingBoard()
     registry = FakeJobQueue()
@@ -91,8 +120,8 @@ def entry_over(*records):
         ScopeEntry(
             approvals=board_double,
             registry=registry,
-            arm_for=unreached_arm,
-            issue_labels={"criterion": "criterion", "decision": "decision"},
+            preflight=preflight if preflight is not None else Preflight(),
+            arm_for=arm_for,
         ),
         board_double,
     )
@@ -152,3 +181,48 @@ async def test_a_terminal_job_over_the_scope_does_not_refuse():
     await unit.admit(scope=SCOPE, job_id="next-job")
 
     assert board_double.calls["read_scope_labels"] == 1
+
+
+# ---------------------------------------------------------------------------
+# An operation that maps no criterion or no decision label is refused after
+# the approval read and before any session: the groom and prep prompts name
+# both labels.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("unmapped", ["criterion", "decision"])
+async def test_an_operation_missing_a_scope_plan_label_is_refused_before_delivery(
+    unmapped: str,
+) -> None:
+    """The refusal names the label, spends one approval read, reaches no arm."""
+    arms_asked: list[str | None] = []
+
+    def recording_arm(url: str | None) -> NoReturn:
+        arms_asked.append(url)
+        raise AssertionError("the entry reached for a delivery arm")
+
+    preflight = Preflight(unmapped=unmapped)
+    unit, board_double = entry_over(preflight=preflight, arm_for=recording_arm)
+
+    run = unit.run(
+        prompt="run the scope",
+        repo_path=None,
+        repo_url="https://example.invalid/repo",
+        base_spec=trunk_base("unused-request-default"),
+        scope=SCOPE,
+        permission_mode=PermissionMode.UNATTENDED,
+        allowed_tools=[],
+        cache_key="scoped-job",
+    )
+    with pytest.raises(OperationMemberAbsentError) as caught:
+        await anext(aiter(run))
+
+    assert caught.value.missing == f"issue_labels['{unmapped}']"
+    assert preflight.calls == 1
+    # Exactly the reads one admitted run's approval question spends, and
+    # nothing after them.
+    admitted, admitted_board = entry_over()
+    await admitted.admit(scope=SCOPE, job_id="scoped-job")
+    assert admitted_board.calls["read_scope_labels"] == 1
+    assert board_double.calls == admitted_board.calls
+    assert arms_asked == []
