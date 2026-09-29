@@ -1,4 +1,9 @@
-"""Real scheduled gate consumers restore only their interrupted window."""
+"""The dispatch tick restores only the window its gate was interrupted in.
+
+The prompt passes were a second consumer of this gate until 98678c1b made
+their gate an agent question; their cancellation cases live beside that
+question in ``test_prompt_pass``.
+"""
 
 import asyncio
 from datetime import timedelta
@@ -6,26 +11,22 @@ from datetime import timedelta
 import pytest
 
 from kodezart.types.domain.dispatch import PassRun, PassSignal
-from tests.fakes import FakeAgentRunner, FakeTrackerPort, make_tracker_issue
+from tests.fakes import FakeTrackerPort, make_tracker_issue
 from tests.services.test_dispatch_pass import TEAM_KEYS, TICK_STARTED_AT, failing_tick
-from tests.services.test_prompt_pass import bound_registry, run
 
 
-@pytest.fixture(params=["dispatch", "prompt"])
-def consumer(request):
+@pytest.fixture
+def consumer():
     tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
     tick, gate, dispatcher = failing_tick(tracker)
-    runner = FakeAgentRunner(events=[])
 
     async def invoke():
-        if request.param == "dispatch":
-            return await tick.run(TICK_STARTED_AT)
-        return await run(prompts=bound_registry(), runner=runner, gate=gate)
+        return await tick.run(TICK_STARTED_AT)
 
     def calls():
-        return dispatcher.calls if request.param == "dispatch" else len(runner.calls)
+        return dispatcher.calls
 
-    return request.param, tracker, gate, invoke, calls
+    return tracker, gate, invoke, calls
 
 
 async def cancel_at_log(gate, invoke, monkeypatch, *, while_paused=None):
@@ -49,7 +50,7 @@ async def cancel_at_log(gate, invoke, monkeypatch, *, while_paused=None):
 async def test_cancelled_gate_reasks_the_same_window_and_preserves_another_pass(
     consumer, monkeypatch
 ):
-    kind, tracker, gate, invoke, calls = consumer
+    tracker, gate, invoke, calls = consumer
     later = TICK_STARTED_AT + timedelta(hours=1)
     other_tracker = FakeTrackerPort(
         issues=[make_tracker_issue("K-2", updated_at=later)]
@@ -59,11 +60,8 @@ async def test_cancelled_gate_reasks_the_same_window_and_preserves_another_pass(
     assert calls() == 0
     assert gate.mark(PassSignal.approved_changed, container=TEAM_KEYS[0]) is None
     assert other_gate.mark(PassSignal.approved_changed, container=TEAM_KEYS[0]) == later
-    if kind == "dispatch":
-        with pytest.raises(TimeoutError):
-            await invoke()
-    else:
-        assert await invoke() is PassRun.RAN
+    with pytest.raises(TimeoutError):
+        await invoke()
     assert calls() == 1
     assert [scan.updated_since for scan in tracker.scans] == [None, None]
     assert other_gate.mark(PassSignal.approved_changed, container=TEAM_KEYS[0]) == later
@@ -73,7 +71,7 @@ async def test_cancelled_gate_reasks_the_same_window_and_preserves_another_pass(
 async def test_failure_before_observation_preserves_preexisting_mark(
     consumer, monkeypatch, previous_window
 ):
-    _, tracker, gate, invoke, calls = consumer
+    tracker, gate, invoke, calls = consumer
     if previous_window:
         await gate.delta()
     previous = gate.mark(PassSignal.approved_changed, container=TEAM_KEYS[0])
@@ -93,7 +91,7 @@ async def test_failure_before_observation_preserves_preexisting_mark(
 async def test_cancelled_quiet_delta_keeps_previous_completed_window(
     consumer, monkeypatch
 ):
-    _, tracker, gate, invoke, calls = consumer
+    tracker, gate, invoke, calls = consumer
     await gate.delta()
     previous = gate.mark(PassSignal.approved_changed, container=TEAM_KEYS[0])
     await cancel_at_log(gate, invoke, monkeypatch)

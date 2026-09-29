@@ -4,6 +4,7 @@ import ipaddress
 import logging
 import os
 import socket
+import sys
 from collections.abc import AsyncGenerator, Callable, Iterator
 
 import pytest
@@ -34,6 +35,26 @@ for _ambient in [name for name in os.environ if name.startswith("KODEZART_")]:
 AppConfig.model_config["env_file"] = None
 
 
+_LAZY_LOGGER = type(structlog.get_logger())
+
+
+def _forget_cached_loggers() -> None:
+    """Send every module logger back to the live configuration.
+
+    A boot configures logging with ``cache_logger_on_first_use``: a module
+    logger first used under it keeps that boot's processors for good, so
+    restoring the configuration never reaches it and a later
+    ``capture_logs`` sees nothing that module emits.  Dropping the cached
+    ``bind`` makes the logger read the configuration of the moment again.
+    """
+    for name, module in list(sys.modules.items()):
+        if name.split(".")[0] != "kodezart":
+            continue
+        for value in list(vars(module).values()):
+            if isinstance(value, _LAZY_LOGGER):
+                vars(value).pop("bind", None)
+
+
 @pytest.fixture(autouse=True)
 def _restore_logging_configuration() -> Iterator[None]:
     """A boot test must not leave handlers bound to its closed capture stream."""
@@ -47,6 +68,7 @@ def _restore_logging_configuration() -> Iterator[None]:
     try:
         yield
     finally:
+        _forget_cached_loggers()
         root.handlers = handlers
         for name, level in levels.items():
             logging.getLogger(name).setLevel(level)
