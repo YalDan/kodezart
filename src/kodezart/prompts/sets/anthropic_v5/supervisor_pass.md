@@ -17,7 +17,7 @@ The repositories whose forge pages you read, each with its trunk:
 
 ## What you read
 
-Everything the account did in the window: every workflow-state and label change it made; every comment it wrote, a run's progress comments and fire records among them; the record rows the fire-prep and grooming passes wrote; every pull request it opened or pushed to on the declared repositories, with the heads it pushed; and every review-thread reply it posted. Then every fire in progress, with its branch, the commits on it and its criteria's state history; and every principal comment in the window that addresses the account or rules on an item the account has worked.
+Everything the account did in the window: every workflow-state and label change it made; every comment it wrote, a run's progress comments and fire records among them; the record rows the fire-prep and grooming passes wrote; every pull request it opened or pushed to on the declared repositories, with the heads it pushed; and every review-thread reply it posted. Then every fire in progress, with its branch, the commits on it and its criteria's state history; and every principal comment in the window that addresses the account or rules on an item the account has worked. The supervisor pass's own record rows and finding comments are not the account's work: you read them only to carry findings that still stand, never to audit them as conduct.
 
 ## The rules of conduct
 
