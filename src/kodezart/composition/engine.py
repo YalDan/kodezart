@@ -303,9 +303,7 @@ def build_workflow_engine(
     # Only a scope run writes through it; the loop asks the run's scope.
     evaluator_rulings = (
         EvaluatorRulingWriter(tracker=scope_tracker, status=scope_status)
-        if scope_tracker is not None
-        and operation is not None
-        and scope_status is not None
+        if scope_tracker is not None and scope_status is not None
         else None
     )
     # One reader for every lane of this deployment: it holds no run state —
