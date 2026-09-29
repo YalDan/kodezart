@@ -259,25 +259,15 @@ GAP_COMPUTATION_MODULES = frozenset(
         "composition/delivery.py",
         "composition/engine.py",
         "composition/passes.py",
-        "composition/supervisor.py",
         "domain/gap.py",
         "domain/issue_tree.py",
-        "domain/lane_alarms.py",
-        "domain/run_alarm_table.py",
-        "domain/stream_signals.py",
-        "domain/tally_record.py",
         "main.py",
-        "services/alarm_supervisor.py",
         "services/audit_runtime.py",
         "services/audit_terminal.py",
         "services/barren_record_signals.py",
-        "services/escalation_ageing_supervisor.py",
-        "services/escalation_signals.py",
         "services/mandate_graph.py",
-        "services/run_alarm_recorder.py",
         "services/run_shape.py",
         "services/scope_dispatcher.py",
-        "services/supervisor_pass.py",
     }
 )
 #: Every module of the tree that spells the change stamp, and the reason it
@@ -1368,9 +1358,6 @@ CALL_SITES_NOT_RUN = {
     "criteria reader, run on a reading its tracker port took; it hands the "
     "family to compute_gap and each record to gap_membership, which the trap "
     "runs as entry points.",
-    ("domain/stream_signals.py", "lapse_undischarged"): "Folds alarm "
-    "readings, a workflow kind among them, and takes no tracker record, so no "
-    "record's change stamp reaches it for the trap to hold.",
     ("services/mandate_graph.py", "observe_ruling_growth"): "Async; reads "
     "criteria and ruling projections through the tracker port.",
     ("services/audit_terminal.py", "AuditTerminalReader.observe"): "Async; a "
@@ -1404,9 +1391,8 @@ def test_every_call_site_the_fixtures_can_run_is_run_under_the_trap():
     ``CALL_SITES_NOT_RUN`` with why: the criteria reader's ``_finished``,
     ``observe_ruling_growth``, ``read_barren_tick`` and the audit terminal
     reader's ``observe``, each of which needs a tracker port, a service
-    instance or the composition's wiring; and
-    ``lapse_undischarged``, which takes alarm readings and no tracker
-    record.  A new call site reds here until it is one or the other.  Each
+    instance or the composition's wiring.  A new call site reds here until
+    it is one or the other.  Each
     case answers what it was built for over the baseline stamp.
     """
     points = arithmetic_entry_points()

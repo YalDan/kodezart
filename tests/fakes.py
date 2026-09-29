@@ -5446,13 +5446,6 @@ class FakeCriterionMinter(
     """The ``CriterionMinter`` role, composed of its role doubles."""
 
 
-class FakeEscalationSignalReader(
-    FakeEscalationResolutionReader,
-    FakeTrackerCommentReader,
-):
-    """The ``EscalationSignalReader`` role, composed of its role doubles."""
-
-
 class FakeFireRulingTracker(
     FakeTrackerArtifactReader,
     FakeCommentRecordWriter,
@@ -5559,21 +5552,6 @@ class FakeScopeReadyReader(
     FakeExecutionApprovalReader,
 ):
     """The ``ScopeReadyReader`` role, composed of its role doubles."""
-
-
-class FakeScopeRosterReader(
-    FakeScopeFamilyReader,
-    FakePlanningIssueReader,
-):
-    """The ``ScopeRosterReader`` role, composed of its role doubles."""
-
-
-class FakeScopeTallyReader(
-    FakeScopeFamilyReader,
-    FakePlanningIssueReader,
-    FakeScopeReadPreflight,
-):
-    """The ``ScopeTallyReader`` role, composed of its role doubles."""
 
 
 class FakeSubjectCriteriaReader(

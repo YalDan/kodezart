@@ -124,8 +124,8 @@ async def read_scope_ready(
 
     With *stage_barriers* on, as the walker reads, the scope, each consulted
     descendant tree and the final re-read all go through the named stage
-    barriers, so a scope holding an open decision refuses. With them off, as
-    the supervisor reads, the same three reads take membership and
+    barriers, so a scope holding an open decision refuses. With them off, the
+    same three reads take membership and
     dependencies alone, and the members classified for decision that have
     criterion children are carried in ``held`` with the criteria beneath
     them. To the closure they are lanes, so a lane they block is blocked

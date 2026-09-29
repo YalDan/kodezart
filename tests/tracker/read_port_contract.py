@@ -14,7 +14,6 @@ from kodezart.domain.errors import CriterionResolutionError
 from kodezart.services.assertion_drift import AssertionDriftDetector
 from kodezart.services.audit_sources import AuditSourceReader
 from kodezart.services.criterion_sources import NativeCriterionResolver
-from kodezart.services.escalation_records import EscalationRecordReader
 from kodezart.services.fire_context import FireContextAssembler
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.services.recorded_assertion_drift import RecordedAssertionDriftDetector
@@ -63,7 +62,6 @@ async def compose(
     comments = CommentInput()
     criteria = CriterionInput()
     records = LaneRecordReader(tracker=comments, operation=operation)
-    EscalationRecordReader(tracker=comments, operation=operation)
     rulings = RulingRecordReader(tracker=comments, operation=operation)
     sources = AuditSourceReader(
         resolver=ResolverInput(),

@@ -62,6 +62,16 @@ RUN_RECORD_EXEMPTION = frozenset(
     {"record_run_alarm", "read_run_alarms", "post_run_event", "lane_run_events"}
 )
 
+#: What the supervisor's code observers alone took from the port, held after
+#: those observers were merged into the supervisor pass (a session, which
+#: reaches the tracker through its own server): the run-alarm role, which
+#: declares two of the run-record members above and goes with them, and the
+#: escalation-resolution read the ageing observer made, whose adapter method
+#: and conformance rows are a tracker-adapter change of their own. Named, so
+#: a new caller of either reddens the guard until its entry goes.
+SUPERVISOR_MERGE_ROLES = frozenset({"RunAlarmTracker", "EscalationResolutionReader"})
+SUPERVISOR_MERGE_MEMBERS = frozenset({"read_escalation_resolution"})
+
 #: The authorship read KOD-390 names as the read its body refusal uses. It has
 #: no production caller until that criterion adds one, and that build deletes
 #: this exemption by adding the caller.
@@ -71,14 +81,17 @@ EXEMPT_UNTIL_KOD_390 = frozenset({"read_surface_authorship"})
 #: The roles only a consumer nothing constructs takes. The record signals
 #: over the run-shape reading are imported by no module the entry point
 #: reaches at this head, so the role they take is named in its own modules
-#: and nowhere the run goes; the scope tally's two roles left this list when
-#: the supervisor's scope arm wired the tally into the run, and the two
-#: escalation roles left it when the supervisor's ageing arm wired the
-#: escalation signal and the run-shape resolution read into the run
-#: (KOD-892). Named rather than scanned: wiring one of those consumers takes
+#: and nowhere the run goes. The scope tally's and the escalation signal's
+#: roles were deleted with the supervisor's code observers, their only
+#: takers; the scope plan and scope-ready reads joined this list then,
+#: because the scope walker and the scope planning that take them were
+#: reached only through the supervisor's scope arm. Named rather than
+#: scanned: wiring one of those consumers takes
 #: its role off the unreached list and reddens the reachability guard until
 #: the entry here goes too.
-UNWIRED_CONSUMER_ROLES = frozenset({"RecordSignalReader"})
+UNWIRED_CONSUMER_ROLES = frozenset(
+    {"RecordSignalReader", "ScopePlanReader", "ScopeReadyReader"}
+)
 
 
 def port_members() -> frozenset[str]:

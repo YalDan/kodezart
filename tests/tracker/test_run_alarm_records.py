@@ -11,7 +11,6 @@ from kodezart.domain.errors import (
     SurfaceLeaseError,
     SurfaceLeaseLostError,
 )
-from kodezart.domain.lane_alarms import stored_alarm
 from kodezart.domain.run_alarm_record import render_run_alarm, run_alarm_marker
 from kodezart.services.run_surface_lease import RunSurfaceLease
 from kodezart.types.domain.operation import OperationMemberAbsentError
@@ -144,10 +143,14 @@ async def store(port, *values, holder=JOB):
 
 async def read(port, value):
     """The record at *value*'s address, picked out of the carrier's one listing."""
-    return stored_alarm(
-        await port.read_run_alarms(issue_key=APPROVED_ISSUE),
-        subject=value.subject,
-        signal=value.signal,
+    records = await port.read_run_alarms(issue_key=APPROVED_ISSUE)
+    return next(
+        (
+            record
+            for record in records
+            if record.subject == value.subject and record.signal is value.signal
+        ),
+        None,
     )
 
 

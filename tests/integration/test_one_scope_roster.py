@@ -1,5 +1,5 @@
-"""One declared scope roster serves the audit and the observation tick, and
-the keys it replaced are refused at load (KOD-885).
+"""One declared scope roster serves the audit, and the keys it replaced are
+refused at load (KOD-885).
 
 The composition cases go through the real factory rather than the two
 builders, because what the criterion is about is which table a BOOT reads: a
@@ -10,7 +10,6 @@ import pytest
 
 from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.composition import audit as audit_composition
-from kodezart.composition import supervisor as supervisor_composition
 from kodezart.core.errors import OperationConfigError
 from kodezart.types.domain.operation import OperationConfig, OrganizeScopeBinding
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
@@ -30,7 +29,6 @@ STRAY = ScopeRef(kind=ScopeKind.PROJECT, key="stray-project")
 #: THIS composition hands over.
 COMPOSED = {
     "audit": (audit_composition, "AuditTarget", "audit"),
-    "supervisor": (supervisor_composition, "SupervisorPass", "supervisor"),
 }
 
 
@@ -58,7 +56,7 @@ def two_scope_deployment():
 
 @pytest.mark.parametrize("pass_name", list(COMPOSED))
 async def test_each_pass_is_composed_from_the_one_roster(monkeypatch, pass_name):
-    """The registered pass holds exactly the declared rows, for each of the two.
+    """The registered pass holds exactly the declared rows.
 
     Recorded at the constructor the composition reaches for, so what is checked
     is the handover and not a re-derivation of it: a wrapper that recorded
@@ -97,25 +95,16 @@ async def test_each_pass_is_composed_from_the_one_roster(monkeypatch, pass_name)
     )
 
     assert registered_as in {entry.name for entry in registered}
-    if pass_name == "supervisor":
-        # One construction for the whole roster, projected to bare scope refs:
-        # the tick reads tracker state, so the repository and the report
-        # destination beside each scope are no part of what it is handed.
-        assert [call["scopes"] for call in calls] == [
-            tuple(row.scope for row in declared)
-        ]
-    else:
-        # One construction per row, and the WHOLE row each time, in the order
-        # the table declares it.
-        assert [call["binding"] for call in calls] == declared
-        if pass_name == "audit":
-            # The destination is a sibling keyword of the row, not a member of
-            # it, so the comparison above does not reach it: a roster where one
-            # scope's report destination stood in for another's would compose a
-            # pass that reports scope B's verified summary onto scope A's issue.
-            assert [call["report_issue_key"] for call in calls] == [
-                row.report_issue_key for row in declared
-            ]
+    # One construction per row, and the WHOLE row each time, in the order
+    # the table declares it.
+    assert [call["binding"] for call in calls] == declared
+    # The destination is a sibling keyword of the row, not a member of it, so
+    # the comparison above does not reach it: a roster where one scope's
+    # report destination stood in for another's would compose a pass that
+    # reports scope B's verified summary onto scope A's issue.
+    assert [call["report_issue_key"] for call in calls] == [
+        row.report_issue_key for row in declared
+    ]
     # Composition only: the boot opened no session and wrote nothing.
     assert server.comments == []
 
@@ -153,7 +142,8 @@ REFUSALS = {
         "[[organize_scopes]] row carrying its report_issue_key"
     ),
     "supervisor_scopes": (
-        "supervisor_scopes: retired, declare each observed scope once as an "
+        "supervisor_scopes: retired, the supervisor pass reads the declared "
+        "teams and repositories; a scope is declared once as an "
         "[[organize_scopes]] row"
     ),
 }

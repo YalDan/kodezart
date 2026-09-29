@@ -1657,30 +1657,6 @@ class ScopePlanReader(
 
 
 @runtime_checkable
-class ScopeRosterReader(
-    ScopeFamilyReader,
-    PlanningIssueReader,
-    Protocol,
-):
-    """A scope's roster and each member's classification, read twice to agree."""
-
-
-@runtime_checkable
-class ScopeTallyReader(
-    ScopeRosterReader,
-    ScopeReadPreflight,
-    Protocol,
-):
-    """The roster a tally is counted over, behind the classification preflight.
-
-    Exactly what a scope's stage barrier is read from: its roster and each
-    member's stage markers. It names no event read and no write, so a holder
-    of it can observe a scope's stall from those and from nothing keyed to
-    the scope — there is no such thing for it to read.
-    """
-
-
-@runtime_checkable
 class ScopeReadyReader(
     ScopePlanReader,
     ExecutionApprovalReader,
@@ -1886,15 +1862,6 @@ class AuditPublicationWriter(
     Protocol,
 ):
     """The record an audit publishes, under the lease that publication holds."""
-
-
-@runtime_checkable
-class EscalationSignalReader(
-    EscalationResolutionReader,
-    TrackerCommentReader,
-    Protocol,
-):
-    """The resolution and the records an escalation's ageing is observed from."""
 
 
 @runtime_checkable

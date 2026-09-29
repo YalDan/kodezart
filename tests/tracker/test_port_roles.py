@@ -79,6 +79,8 @@ from tests.tracker.role_register import (
     EXEMPT_UNTIL_KOD_390,
     PORT_MODULE,
     RUN_RECORD_EXEMPTION,
+    SUPERVISOR_MERGE_MEMBERS,
+    SUPERVISOR_MERGE_ROLES,
     TESTS,
     UNWIRED_CONSUMER_ROLES,
     adapter_importers,
@@ -176,7 +178,9 @@ def classes_holding_a_deleted_write(
 
 def test_no_port_member_lacks_a_production_caller_beyond_the_exemptions():
     assert (
-        zero_callers(source_tree(), scanned_members()) - RUN_RECORD_EXEMPTION
+        zero_callers(source_tree(), scanned_members())
+        - RUN_RECORD_EXEMPTION
+        - SUPERVISOR_MERGE_MEMBERS
         == EXEMPT_UNTIL_KOD_390
     )
 
@@ -205,6 +209,7 @@ def test_every_exempted_member_is_a_member_of_the_port_today():
         {"record_run_alarm", "read_run_alarms", "post_run_event", "lane_run_events"}
     )
     assert RUN_RECORD_EXEMPTION <= port_members()
+    assert SUPERVISOR_MERGE_MEMBERS <= port_members()
     assert EXEMPT_UNTIL_KOD_390 <= port_members()
 
 
@@ -819,7 +824,7 @@ def test_every_role_is_taken_by_a_module_the_run_reaches():
     sources = source_tree()
 
     assert unreached_roles(sources, port_module_text()) == (
-        UNWIRED_CONSUMER_ROLES | {kod_390_role()}
+        UNWIRED_CONSUMER_ROLES | SUPERVISOR_MERGE_ROLES | {kod_390_role()}
     )
 
 

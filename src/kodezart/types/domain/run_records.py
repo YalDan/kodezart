@@ -1,6 +1,7 @@
 """The structural run record — what the RUNNER backfills when a run left none.
 
-One value, three producers: the two scheduled passes and the fire.  The
+One value, three kinds of producer: the scheduled prompt passes, the audit
+and the fire.  The
 runner's obligation is that ONE record exists per run: the session's rich
 row through the rendered mechanism IS the record when the session wrote
 one, and the runner verifies before writing rather than writing beside it

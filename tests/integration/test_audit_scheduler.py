@@ -216,18 +216,16 @@ async def runtime(
 async def test_actual_scheduled_audit_collects_and_verifies_native_summary(observing):
     """The configured audit is registered, runs, and reports once per window.
 
-    One declared roster composes both passes, so this deployment registers the
-    observation tick as well. The tick is registered after the audit and appends
-    itself to the same schedule, so the audit registration is only safe if
-    nothing in that arm edits what stands before it: both names are asserted,
-    and the audit pass read below and everything asserted about it are the same
-    either way.
+    The supervisor pair is set, so this deployment registers the supervisor
+    pass as well. It is registered after the audit and appends itself to the
+    same schedule, so the audit registration is only safe if nothing in that
+    arm edits what stands before it: both names are asserted, and the audit
+    pass read below and everything asserted about it are the same either way.
 
     The two arms differ in what the dialled tracker's reconciled copy declares —
-    the same object on one, an emptied roster on the other — and the tick
-    registers either way, because every arm of the factory reads the copy it was
-    handed. A tick composed from the other copy would observe rows the organize
-    tick beside it never grooms.
+    the same object on one, an emptied roster on the other — and the
+    supervisor pass registers either way, because it reads the declared teams
+    and repositories, not the scope rows.
     """
     config, operation, server, tracker, forge = dependencies()
     reconciled = (
@@ -238,7 +236,8 @@ async def test_actual_scheduled_audit_collects_and_verifies_native_summary(obser
     )
     names = {entry.name for entry in registered}
     assert "audit" in names
-    assert "supervisor" in names
+    assert "supervisor_pass" in names
+    assert "supervisor" not in names
     (scheduled,) = [entry for entry in registered if entry.name == "audit"]
     assert scheduled.interval_seconds == 60
     assert scheduled.timeout_seconds == 17

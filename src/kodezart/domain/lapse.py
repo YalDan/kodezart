@@ -203,7 +203,7 @@ def held_standing(
 def lapse_escalation_key(criterion: str) -> str:
     """The occurrence key of the one question a lapsed observation raises.
 
-    Spelled once, so the writer that raises the question and the supervisor
-    that ages it address the same occurrence.
+    Spelled once, so the writer that raises the question and every reader
+    of it address the same occurrence.
     """
     return f"{criterion}:lapse"
