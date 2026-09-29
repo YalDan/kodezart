@@ -939,8 +939,8 @@ async def _scoped_refusal(
     rather than as a count.
     """
     mark = len(wired.calls)
-    walk = app.state.workflow_engine.run(
-        prompt="",
+    run = app.state.workflow_engine.run(
+        prompt="run the addressed scope",
         repo_path=None,
         repo_url="https://example.invalid/repo",
         base_spec=trunk_base("unused-request-default"),
@@ -951,8 +951,8 @@ async def _scoped_refusal(
     )
     with pytest.raises(OperationMemberAbsentError) as caught:
         async with asyncio.timeout(WALK_BOUND_SECONDS):
-            await anext(aiter(walk))
-    await walk.aclose()
+            await anext(aiter(run))
+    await run.aclose()
     return caught.value, [tool for tool, _ in wired.calls[mark:]]
 
 
@@ -1004,19 +1004,18 @@ async def test_a_boot_without_a_criterion_mapping_refuses_the_first_scoped_read(
     capsys: pytest.CaptureFixture[str],
     wired: ManagedFakeLinearMcpServer,
 ) -> None:
-    """KOD-465: the refusal is the first scoped READ's, and it costs no write.
+    """The scope entry refuses an operation it cannot groom or prep, and no write.
 
-    The fixture operation declares no ``[issue_labels]`` at all, so the first
-    classification the scoped path asks for is ``criterion``. It does declare
-    the admission vocabulary, and the run is addressed at an issue carrying the
-    workspace's own approval label, so the question asked ahead of the read is
-    answered rather than refused and the read is reached.
+    The fixture operation declares no ``[issue_labels]`` at all, so the scope
+    plan's criterion label is unmapped. It does declare the admission
+    vocabulary, and the run is addressed at an issue carrying the workspace's
+    own approval label, so the approval question is answered rather than
+    refused, and the entry's label assertion is reached after it.
 
     What the refusal costs is asserted as the calls themselves and not as a
     count: exactly the one read that answered the approval question, and no
-    write. A read the ready set made before it noticed the mapping was absent
-    would be a fact about a board the operation cannot classify, and the check
-    is the read's first statement so there is none.
+    write. The assertion is a configuration check that calls no tool, and it
+    is made before any groom or prep session could spend a run on the board.
     """
     monkeypatch.setenv("KODEZART_GITHUB_TOKEN", "fixture-forge-token")
     _configure(
