@@ -52,7 +52,12 @@ re-exports it, by a string naming it, or in an annotation read at run time (a
 class-body field of a model, a ``TypedDict`` or a dataclass, defined inside a
 function or not, and a decorated signature such as ``validate_call``'s) — it
 spells the carrier's word where it uses it; the planted rows put each route at
-each place.  An annotation only the type check reads — an undecorated
+each place.  The route through a module-level adapter another module built over
+a carrier is planted only while such an adapter exists: commit 015684fb deleted
+``services/scope_runtime.py``, which held the last one, so the derived list of
+them is empty at head and that route has no subject to plant; the first such
+adapter the tree binds again puts the route back without a line here.  An
+annotation only the type check reads — an undecorated
 function's parameter or return, a variable outside a class body — is not a
 spelling, and a control holds that too.
 
@@ -479,14 +484,18 @@ def test_where_the_arm_holds_a_tracker_body_it_reaches_no_carrier():
 
 
 def test_every_derived_list_of_the_carrier_stop_is_populated():
-    """Not parametrised: an empty derivation fails here, not silently."""
+    """Not parametrised: an empty derivation fails here, not silently.
+
+    Module-level carrier adapters are the one derivation allowed to be empty:
+    commit 015684fb deleted the module holding the last of them, and the
+    route planting one is derived from the same list (``CARRIER_PLANT_ROUTES``).
+    """
     union = {name for name, value in vars(partition).items() if value is FireSpec}
     assert union
     assert {DRAFT, CARRIER, RemediationRequest.__name__, WorkflowState.__name__} | (
         union
     ) <= CARRIER_WORDS
     assert METHOD_WORDS
-    assert ADAPTERS
     assert TRACKER_BODY_MODULES >= {module for module, *_ in BODY_PLANT_SITES}
     assert TRACKER_MODULE in TRACKER_BODY_MODULES
     assert REEXPORT
@@ -617,6 +626,7 @@ METHOD_WORDS = sorted(
     CARRIER_WORDS - {name for module in MODULES for name in vars(module)}
 )
 #: A module-level adapter built over a carrier, and the module binding it.
+#: Empty since commit 015684fb deleted ``services/scope_runtime.py``.
 ADAPTERS = sorted(
     (module.__name__, name)
     for module in MODULES
@@ -724,11 +734,12 @@ def planted_carrier(route: str, module: str, body: str) -> tuple[str, str, str]:
             f"{{'fire_spec': {data}}})",
         ),
         "method_returning_a_carrier": ("", f"held.{METHOD_WORDS[0]}({body})"),
-        "adapter_built_elsewhere": (
-            f"from {ADAPTERS[0][0]} import {ADAPTERS[0][1]}\n",
-            f"{ADAPTERS[0][1]}.validate_python({data})",
-        ),
     }
+    for home, adapter in ADAPTERS[:1]:
+        routes["adapter_built_elsewhere"] = (
+            f"from {home} import {adapter}\n",
+            f"{adapter}.validate_python({data})",
+        )
     imports, expression = routes[route]
     return imports, "", expression
 
@@ -745,11 +756,10 @@ CARRIER_PLANT_ROUTES = (
     "string_naming_the_union",
     "workflow_state_already_in_scope",
     "method_returning_a_carrier",
-    "adapter_built_elsewhere",
     "function_local_model_over_the_carrier",
     "function_local_model_over_the_union_by_relative_import",
     "validate_call_signature",
-)
+) + (("adapter_built_elsewhere",) if ADAPTERS else ())
 
 
 def _plant(
