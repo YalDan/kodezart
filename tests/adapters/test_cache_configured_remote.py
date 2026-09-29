@@ -3,9 +3,11 @@
 Warm ones carry their local heads forward to that remote after each fetch.
 """
 
+import asyncio
 from pathlib import Path
 
 import pytest
+import structlog
 
 from kodezart.adapters.git.bare_repo_cache import LocalBareRepoCache
 from kodezart.adapters.git.service import SubprocessGitService
@@ -108,3 +110,72 @@ async def test_a_head_a_worktree_has_checked_out_is_left_alone(
 
     assert await _run_git_output(["git", "rev-parse", "main"], cwd=clone) == first
     assert await git.has_changes(str(worktree)) is False
+
+
+async def test_concurrent_refreshes_of_one_clone_all_succeed(
+    git_repo: Path, tmp_path: Path
+):
+    """Passes that tick together share one clone; none may fail on the head move."""
+    git = SubprocessGitService(remote="origin")
+    cache = LocalBareRepoCache(git=git, base_dir=str(tmp_path / "cache"))
+    clone = Path(await cache.ensure_available(git_repo.as_uri()))
+    tip = await _advance(git_repo)
+
+    paths = await asyncio.gather(
+        *(cache.ensure_available(git_repo.as_uri()) for _ in range(4))
+    )
+
+    assert set(paths) == {str(clone)}
+    assert await _run_git_output(["git", "rev-parse", "main"], cwd=clone) == tip
+
+
+class _RacedGit(SubprocessGitService):
+    """Another writer moves ``main`` just before this service's own move of it."""
+
+    async def update_ref(self, cwd: str, ref: str, new_sha: str, old_sha: str):
+        if ref == "refs/heads/main":
+            await _run_git(["git", "update-ref", ref, new_sha, old_sha], cwd=Path(cwd))
+        await super().update_ref(cwd, ref, new_sha, old_sha)
+
+
+async def test_a_head_another_writer_moved_is_logged_and_the_rest_still_move(
+    git_repo: Path, tmp_path: Path
+):
+    await _run_git(["git", "branch", "dev"], cwd=git_repo)
+    git = _RacedGit(remote="origin")
+    cache = LocalBareRepoCache(git=git, base_dir=str(tmp_path / "cache"))
+    clone = Path(await cache.ensure_available(git_repo.as_uri()))
+    tip = await _advance(git_repo)
+    await _run_git(["git", "update-ref", "refs/heads/dev", tip], cwd=git_repo)
+
+    with structlog.testing.capture_logs() as logs:
+        await cache.ensure_available(git_repo.as_uri())
+
+    for name in ("main", "dev"):
+        assert await _run_git_output(["git", "rev-parse", name], cwd=clone) == tip
+    moved = [e for e in logs if e["event"] == "clone_head_moved_by_another_writer"]
+    assert [e["ref"] for e in moved] == ["refs/heads/main"]
+
+
+async def test_a_head_left_behind_by_divergence_is_logged(
+    git_repo: Path, tmp_path: Path
+):
+    """A trunk frozen by divergence must say so, or it stays stale unseen."""
+    git = SubprocessGitService(remote="origin")
+    cache = LocalBareRepoCache(git=git, base_dir=str(tmp_path / "cache"))
+    clone = Path(await cache.ensure_available(git_repo.as_uri()))
+    tree = await _run_git_output(["git", "rev-parse", "main^{tree}"], cwd=clone)
+    only_here = await _run_git_output(
+        ["git", "commit-tree", tree, "-p", "main", "-m", "only in the clone"],
+        cwd=clone,
+    )
+    await _run_git(["git", "update-ref", "refs/heads/main", only_here], cwd=clone)
+    tip = await _advance(git_repo)
+
+    with structlog.testing.capture_logs() as logs:
+        await cache.ensure_available(git_repo.as_uri())
+
+    left = [e for e in logs if e["event"] == "clone_head_not_fast_forwardable"]
+    assert [(e["ref"], e["local_sha"], e["remote_sha"]) for e in left] == [
+        ("refs/heads/main", only_here, tip)
+    ]
