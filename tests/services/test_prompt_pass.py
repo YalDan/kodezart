@@ -253,6 +253,9 @@ class GateAnsweringRunner:
     pass's own session and plays *events*.  Records what
     :class:`FakeAgentRunner` records, so a case can assert on the gate
     call and the pass call in one shape.
+
+    *hang_on_call* names the one call, counted from one, whose session
+    opens and never ends: the gate or the pass a tick is cancelled in.
     """
 
     def __init__(
@@ -260,10 +263,14 @@ class GateAnsweringRunner:
         *,
         answers: Sequence[object | None],
         events: Sequence[AgentEvent] = (),
+        hang_on_call: int | None = None,
     ) -> None:
         self._answers: list[object | None] = list(answers)
         self._events: tuple[AgentEvent, ...] = tuple(events)
+        self._hang_on_call: int | None = hang_on_call
         self.calls: list[dict[str, object]] = []
+        self.entered = asyncio.Event()
+        self.cancelled: bool = False
 
     async def stream_in_workspace(
         self,
@@ -295,6 +302,13 @@ class GateAnsweringRunner:
                 "output_format": output_format,
             }
         )
+        if len(self.calls) == self._hang_on_call:
+            try:
+                self.entered.set()
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                self.cancelled = True
+                raise
         if output_format is None:
             for event in self._events:
                 yield event
@@ -672,6 +686,87 @@ class TestTheGateQuestion:
             await pass_.run(TICK)
 
         assert pass_.window_start is None
+
+    async def test_a_gate_cancelled_mid_question_asks_the_same_window_again(
+        self,
+    ) -> None:
+        """A tick abandoned in its gate opens no session and moves no window.
+
+        The cancellation propagates to the scheduler that bounded the tick;
+        the next tick asks over the window the last completed run left, and
+        another pass ticking meanwhile keeps its own window.
+        """
+        registry = bound_registry()
+        runner = GateAnsweringRunner(
+            answers=[gate_answer(run=False, reason="quiet")], hang_on_call=2
+        )
+        pass_ = prompt_pass(prompts=registry, runner=runner)
+        other_runner = GateAnsweringRunner(
+            answers=[gate_answer(run=True, reason="moved")]
+        )
+        other = prompt_pass(
+            prompts=registry, runner=other_runner, key=PromptKey.FIRE_PREP_PASS
+        )
+        await pass_.run(TICK)
+        await other.run(TICK)
+
+        asking = asyncio.create_task(pass_.run(NEXT_TICK))
+        await asyncio.wait_for(runner.entered.wait(), timeout=5.0)
+        assert await other.run(NEXT_TICK) is PassRun.RAN
+        asking.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await asking
+
+        assert runner.cancelled
+        assert len(runner.pass_calls()) == 1, "only the boot tick opened a session"
+        assert pass_.window_start == TICK
+        assert other.window_start == NEXT_TICK
+        assert await pass_.run(THIRD_TICK) is PassRun.SKIPPED
+        assert [call["prompt"] for call in runner.gate_calls()] == [
+            gate_prompt(registry, key=PromptKey.GROOMING_PASS, window_start=TICK)
+        ] * 2
+        assert len(runner.pass_calls()) == 1
+        assert pass_.window_start == TICK
+
+    async def test_a_tick_cancelled_after_its_answer_keeps_the_window(self) -> None:
+        """An answer observed is not a window consumed: only a run moves it.
+
+        The gate said run and the session opened, then the tick was
+        abandoned: no terminal pass event claims it ended, and the next
+        question is asked over the same window as the cancelled one.
+        """
+        registry = bound_registry()
+        runner = GateAnsweringRunner(
+            answers=[
+                gate_answer(run=True, moved=["KOD-1"], reason="one moved"),
+                gate_answer(run=True, moved=["KOD-1"], reason="one moved"),
+            ],
+            events=[result_event()],
+            hang_on_call=3,
+        )
+        pass_ = prompt_pass(prompts=registry, runner=runner)
+        await pass_.run(TICK)
+
+        with structlog.testing.capture_logs() as logs:
+            running = asyncio.create_task(pass_.run(NEXT_TICK))
+            await asyncio.wait_for(runner.entered.wait(), timeout=5.0)
+            running.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await running
+
+        assert runner.cancelled
+        assert terminal_event(logs, "pass_gate_answered")["run"] is True
+        assert [
+            record["event"]
+            for record in logs
+            if record["event"].startswith("prompt_pass")
+        ] == []
+        assert pass_.window_start == TICK
+        assert await pass_.run(THIRD_TICK) is PassRun.RAN
+        assert runner.gate_calls()[-1]["prompt"] == gate_prompt(
+            registry, key=PromptKey.GROOMING_PASS, window_start=TICK
+        )
+        assert pass_.window_start == THIRD_TICK
 
     def test_the_gate_prompt_is_stable_up_to_its_per_tick_values(self) -> None:
         """Everything before the pass name and the window is the same text.
