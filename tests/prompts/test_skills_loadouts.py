@@ -41,6 +41,8 @@ UTILITY_KEYS = (
     PromptKey.PR_DESCRIPTION,
     PromptKey.FIRE_PREP_PASS,
     PromptKey.GROOMING_PASS,
+    # Reads the tracker and the forge and edits neither: nothing to load.
+    PromptKey.SUPERVISOR_PASS,
     PromptKey.CONTENT_AUDIT,
     PromptKey.KNOWLEDGE_MAP,
     PromptKey.FIRE_RECORD,

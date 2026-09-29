@@ -47,12 +47,14 @@ from tests.prompts.test_v5_fragments import (
 FRAGMENT_NAME = "board_hierarchy"
 
 #: The roles that read or write placement: the judge whose verdict is the
-#: only door to a placement repair, the author that proposes one, and the
-#: two scheduled passes that groom a board no organize tick walks.
+#: only door to a placement repair, the author that proposes one, the
+#: two scheduled passes that groom a board no organize tick walks, and the
+#: supervisor pass, which places the one kind of issue it files.
 CARRIERS = frozenset(
     {
         PromptKey.GROOMING_PASS.value,
         PromptKey.FIRE_PREP_PASS.value,
+        PromptKey.SUPERVISOR_PASS.value,
         PromptKey.ORGANIZE_ASSESS.value,
         PromptKey.ORGANIZE_AUTHOR.value,
     },
@@ -732,12 +734,13 @@ def test_the_board_hierarchy_is_pinned_whole() -> None:
 
 
 def test_the_board_hierarchy_resolves_into_exactly_its_four_carriers() -> None:
-    """Countable carriers: the four roles that read or write placement.
+    """Countable carriers: the roles that read or write placement.
 
-    Counted over the composed lens bodies too, not the function keys
-    alone. A lens declared by the set resolves its fragments the same way
+    The four the name counts, plus the supervisor pass that files one kind
+    of issue and places it. Counted over the composed lens bodies too, not
+    the function keys alone. A lens declared by the set resolves its fragments the same way
     and is dispatched as an agent definition, so a `{{board_hierarchy}}`
-    placed in a lens body renders the standard into a fifth composed
+    placed in a lens body renders the standard into another composed
     prompt that a PromptKey census cannot see. No lens carries it.
     """
     standard = fragment(FRAGMENT_NAME)

@@ -35,7 +35,11 @@ from tests.prompts.test_prompt_wiring import load_registry
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EXAMPLE = REPO_ROOT / "docs" / "operation.example.toml"
 SRC = REPO_ROOT / "src" / "kodezart"
-PASS_KEYS = (PromptKey.FIRE_PREP_PASS, PromptKey.GROOMING_PASS)
+PASS_KEYS = (
+    PromptKey.FIRE_PREP_PASS,
+    PromptKey.GROOMING_PASS,
+    PromptKey.SUPERVISOR_PASS,
+)
 
 # A sentence, for the purpose of "carries its addressable name alongside its
 # id": the run of text between full stops.  Nothing numeric is chosen here —
@@ -126,18 +130,23 @@ def test_both_pass_templates_actually_emit_an_addressed_reference() -> None:
     artifacts (KOD-60 R20(d)): the fire-prep routine reads its own record
     row for the window and writes the run log it names (KOD-245); the
     grooming routine's checkpoint is the initiative status update, and what
-    it addresses by id is its own log destination.
+    it addresses by id is its own log destination. The supervisor pass reads
+    its window from its own log and writes its conduct report there.
     """
     config = example_config()
     run_log = config.records[RunKind.FIRE_PREP.value]
     grooming_log = config.records[RunKind.GROOMING.value]
+    supervisor_log = config.records[RunKind.SUPERVISOR.value]
     rendered = rendered_passes()
     fire = rendered[PromptKey.FIRE_PREP_PASS]
     grooming = rendered[PromptKey.GROOMING_PASS]
+    supervisor = rendered[PromptKey.SUPERVISOR_PASS]
     assert run_log.id in fire
     assert run_log.name in fire
     assert grooming_log.id in grooming
     assert grooming_log.name in grooming
+    assert supervisor_log.id in supervisor
+    assert supervisor_log.name in supervisor
 
 
 def test_a_document_entry_without_a_system_is_unconstructable() -> None:

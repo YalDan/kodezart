@@ -8,7 +8,7 @@ Vocabulary: kodezart is the autonomous coding agent that executes prepared work;
 ## What you act on
 
 The teams this operation declares:
-{{#each teams}}- {{this.name}} ({{this.key}}){{#if this.repository}} — {{this.repository}}{{/if}}{{#if this.scope}} — in scope: only issues in {{this.scope}}{{/if}}
+{{#each teams}}- {{this.name}} ({{this.key}}){{#if this.repository}} — {{this.repository}}{{/if}}{{#if this.repository_absent}} — the only repository this operation declares{{/if}}{{#if this.repository_recorded}} — the repository recorded on each staged issue{{/if}}{{#if this.scope}} — in scope: only issues in {{this.scope}}{{/if}}
 {{/each}}
 The repositories whose forge pages you read, each with its trunk:
 {{#each repos}}- {{this.slug}} — trunk {{this.trunk}}
