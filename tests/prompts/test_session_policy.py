@@ -116,7 +116,7 @@ def test_every_role_runs_at_the_top_of_the_ladder() -> None:
         PromptKey.SUPERVISOR_PASS.value
     ]
     assert metadata.session_roles[SessionRole.SUPERVISOR].skills == []
-    assert PromptKey.SUPERVISOR_PASS.value not in metadata.utility_keys
+    assert PromptKey.SUPERVISOR_PASS.value in metadata.utility_keys
     assert set(metadata.session_roles[SessionRole.QUESTION].keys) == {
         PromptKey.PASS_GATE.value,
         PromptKey.SCOPE_SCAN.value,

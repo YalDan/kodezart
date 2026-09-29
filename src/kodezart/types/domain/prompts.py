@@ -259,13 +259,14 @@ class PromptSetMetadata(BaseModel):
         depth_free = [
             policy
             for role, policy in self.session_roles.items()
-            if role in (SessionRole.UTILITY, SessionRole.QUESTION)
+            if role
+            in (SessionRole.UTILITY, SessionRole.QUESTION, SessionRole.SUPERVISOR)
         ]
         rostered = {key for policy in depth_free for key in policy.keys}
         if depth_free and rostered != set(self.utility_keys):
             msg = (
                 f"prompt set {self.name!r} declares a utility roster that "
-                "disagrees with the utility and question roles' keys"
+                "disagrees with the utility, question and supervisor roles' keys"
             )
             raise ValueError(msg)
         return self

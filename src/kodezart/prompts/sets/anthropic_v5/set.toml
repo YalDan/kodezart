@@ -14,7 +14,7 @@ engines = ["claude-opus-5-5", "claude-fable-5-1", "claude-sonnet-5-5"]
 # key at authoring time — the knowledge map is here because it is a
 # prelude, and a prelude carrying its own depth block would put a second
 # one inside the prompt it joins.
-utility_keys = ["branch_name", "commit_message", "pr_description", "knowledge_map", "fire_record", "native_writer_contract", "mutation_survival", "organize_spec_rubric", "pass_gate", "scope_scan", "scope_done"]
+utility_keys = ["branch_name", "commit_message", "pr_description", "knowledge_map", "fire_record", "native_writer_contract", "mutation_survival", "organize_spec_rubric", "pass_gate", "scope_scan", "scope_done", "supervisor_pass"]
 
 # Which fan-out primitive this set's roles are told to use, set from a
 # measured verdict and never model-judged. The workflow primitive needs the
@@ -332,7 +332,8 @@ keys = ["fire_prep_pass", "grooming_pass"]
 
 # The supervisor pass reads what the operation's own account did and reports
 # its conduct; it edits nothing and needs no skill to read the tracker and
-# the forge. A judgment role, so it keeps the depth block, at the floor:
+# the forge. One prompt on the smaller engine at the floor, like the
+# question role, so it carries no depth block and is on utility_keys above:
 # the deployment pins its engine through KODEZART_AGENT__SESSION_MODELS.
 [session_roles.supervisor]
 effort = "low"
@@ -366,8 +367,9 @@ effort = "max"
 skills = ["code-review"]
 keys = ["implementation", "fix"]
 
-# This roster and the question roster below together are utility_keys
-# above, and the metadata model refuses a set where they disagree.
+# This roster, the question roster and the supervisor roster together are
+# utility_keys above, and the metadata model refuses a set where they
+# disagree.
 [session_roles.utility]
 effort = "max"
 skills = []
