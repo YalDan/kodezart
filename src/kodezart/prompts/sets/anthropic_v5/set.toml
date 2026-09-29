@@ -339,6 +339,15 @@ skills = [
 ]
 keys = ["fire_prep_pass", "grooming_pass"]
 
+# The supervisor pass reads what the operation's own account did and reports
+# its conduct; it edits nothing and needs no skill to read the tracker and
+# the forge. A judgment role, so it keeps the depth block, at the floor:
+# the deployment pins its engine through KODEZART_AGENT__SESSION_MODELS.
+[session_roles.supervisor]
+effort = "low"
+skills = []
+keys = ["supervisor_pass"]
+
 [session_roles.evaluative]
 effort = "max"
 skills = ["code-review", "security-review"]

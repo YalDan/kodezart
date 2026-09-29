@@ -42,6 +42,7 @@ from kodezart.types.domain.session import HttpKnowledge, StdioKnowledge
 RECORD_KIND_BY_PASS: dict[PromptKey, RunKind] = {
     PromptKey.FIRE_PREP_PASS: RunKind.FIRE_PREP,
     PromptKey.GROOMING_PASS: RunKind.GROOMING,
+    PromptKey.SUPERVISOR_PASS: RunKind.SUPERVISOR,
 }
 
 
