@@ -59,7 +59,10 @@ async def test_native_failure_preserves_exact_cause_and_never_repeats_unsafe_wri
     with pytest.raises(expected) as caught:
         await tracker.post_comment(issue_key=ROOT.key, body="changed")
     assert caught.value.__cause__ is failure
-    assert boundary.attempts == 1
+    # An unanswered write is never resent. A refused one was never executed,
+    # so it is presented once per silence and once more to give up (the
+    # silences run at zero here, see conftest).
+    assert boundary.attempts == (5 if credential else 1)
 
 
 class _PausedPage(ScopeMcpServer):

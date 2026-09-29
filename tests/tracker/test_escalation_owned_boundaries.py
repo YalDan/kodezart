@@ -206,7 +206,10 @@ async def test_classification_failure_taxonomy_never_resends_an_unrepeatable_wri
         assert caught.value is error
     else:
         assert caught.value.__cause__ is error
-    assert attempts == 1
+    # A refused write was never executed, so it is presented once per silence
+    # and once more to give up (the silences run at zero here, see conftest);
+    # an unanswered or failed one is never resent.
+    assert attempts == (5 if failure == "credential" else 1)
     assert len(questions(board)) == 1
     assert not board.grants()
     assert ("decision-needed" in board.server.issues[CLAIMED_ISSUE].labels) is (
