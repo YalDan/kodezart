@@ -306,9 +306,12 @@ class GitService(Protocol):
         base_ref: str,
         head_ref: str,
     ) -> ChangesetDigest:
-        """File paths and commit subjects for ``base_ref..head_ref``.
+        """What *head_ref* added since it split from *base_ref*.
 
-        Empty digest when refs are equal.
+        Paths from ``git diff --name-only base...head`` (the merge base to
+        the head) and subjects from ``git log base..head``, so commits
+        *base_ref* gained after the split add nothing. Empty digest when refs
+        are equal.
         """
         ...
 

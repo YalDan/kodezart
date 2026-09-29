@@ -419,6 +419,28 @@ async def test_diff_summary_returns_changeset_digest(
     assert "feat: add x" in digest.commit_subjects
 
 
+async def test_diff_summary_names_only_what_the_branch_added_since_it_split(
+    git_service: SubprocessGitService, git_repo: Path
+) -> None:
+    """A trunk that moves on after the split adds nothing to the branch's digest."""
+    split = await git_service.current_sha(str(git_repo))
+    await _run_git(["git", "checkout", "-b", "loop"], cwd=git_repo)
+    (git_repo / "branch.txt").write_text("the branch's own work")
+    await _run_git(["git", "add", "branch.txt"], cwd=git_repo)
+    await _run_git(["git", "commit", "-m", "feat: branch work"], cwd=git_repo)
+    await _run_git(["git", "checkout", "main"], cwd=git_repo)
+    (git_repo / "trunk.txt").write_text("landed on the trunk after the split")
+    await _run_git(["git", "add", "trunk.txt"], cwd=git_repo)
+    await _run_git(["git", "commit", "-m", "feat: trunk work"], cwd=git_repo)
+    assert await git_service.current_sha(str(git_repo)) != split
+
+    digest = await git_service.diff_summary(str(git_repo), "main", "loop")
+
+    assert digest.file_paths == ["branch.txt"]
+    assert digest.commit_subjects == ["feat: branch work"]
+    assert digest.commit_count == 1
+
+
 async def test_diff_summary_reads_the_commit_record_not_the_working_tree(
     git_service: SubprocessGitService, git_repo: Path
 ) -> None:
