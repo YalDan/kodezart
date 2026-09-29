@@ -118,8 +118,8 @@ STAGE_TAKING: dict[tuple[type, str], frozenset[str]] = {
 #: parameter on any role joins the scan.
 STATE_MOVES = frozenset({*(name for _, name in STAGE_TAKING), RESTORE_STATE})
 #: A scope run moves a criterion its evaluator failed back to in progress
-#: when the board holds it in review or done; the structural-write census
-#: registers the same call site.
+#: when the board holds it in a started or completed kind; the
+#: structural-write census registers the same call site.
 EVALUATOR_RULINGS = "services/evaluator_rulings.py"
 EVALUATOR_RULING_MOVES = frozenset(
     {

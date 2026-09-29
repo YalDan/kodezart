@@ -2809,7 +2809,8 @@ STRUCTURAL_CALL_SITES = frozenset(
             method="set_workflow_state",
         ),
         # A scope run moves a criterion its evaluator failed back to in
-        # progress when the board holds it in review or done (KOD-1273).
+        # progress when the board holds it in a started or completed kind
+        # (KOD-1273).
         CallSite(
             module="services/evaluator_rulings.py",
             function="EvaluatorRulingWriter.record",
