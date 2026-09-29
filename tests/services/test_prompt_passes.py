@@ -1911,3 +1911,11 @@ def test_the_supervisor_pass_renders_as_the_one_supervisor(prompt_set: str) -> N
         " rank." in rendered
     )
     assert "on every fire in progress" in gate
+    assert (
+        "except the supervisor pass's own record rows and finding comments,"
+        " which are never its work." in gate
+    )
+    assert (
+        "The supervisor pass's own record rows and finding comments are not the"
+        " account's work" in rendered
+    )
