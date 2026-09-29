@@ -52,7 +52,6 @@ from kodezart.domain.errors import (
     DuplicateIssueIdentityError,
     DuplicateWorkRefError,
     EscalationReadError,
-    GitOperationError,
     IssueLabelReadError,
     MergeConflictError,
     OrganizeWriteRefusalError,
@@ -564,10 +563,6 @@ class FakeGitService:
         missing_objects: set[str] | None = None,
     ) -> None:
         self.calls: list[tuple[str, ...]] = []
-        #: The local heads that have a remote-tracking ref, by ref; none
-        #: unless a test seeds them, so ``update_ref`` refuses as git would.
-        #: Not ``heads``: subclasses keep a tree-to-sha table under that name.
-        self.tracked: dict[str, TrackedHead] = {}
         #: Object names the repository does not hold; every other name is held.
         self.missing_objects: set[str] = set(missing_objects or ())
         self._merge_conflicts: dict[str, tuple[str, ...]] = dict(merge_conflicts or {})
@@ -635,7 +630,7 @@ class FakeGitService:
 
     async def tracked_heads(self, cwd: str) -> tuple[TrackedHead, ...]:
         self.calls.append(("tracked_heads", cwd))
-        return tuple(self.tracked.values())
+        return ()
 
     async def update_ref(
         self,
@@ -645,11 +640,6 @@ class FakeGitService:
         old_sha: str,
     ) -> None:
         self.calls.append(("update_ref", cwd, ref, new_sha, old_sha))
-        head = self.tracked.get(ref)
-        if head is None or head.sha != old_sha:
-            # git refuses a compare-and-swap whose old value is stale.
-            raise GitOperationError(f"git update-ref {ref} failed: not at {old_sha}")
-        self.tracked[ref] = head.model_copy(update={"sha": new_sha})
 
     async def create_worktree(
         self,
