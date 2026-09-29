@@ -11,6 +11,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from kodezart.adapters.git.clone_lock import clone_lock
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.prompt_namespaces import repo_display
 from kodezart.core.protocols import GitService, RepoCache
@@ -81,13 +82,16 @@ class GitWorktreeProvider:
                 if parent is None
                 else str(Path(parent) / repo_display(repo_url or resolved)[0])
             )
-            await self._git.create_worktree(
-                resolved,
-                ref,
-                wt_path,
-                branch_name,
-                create_branch=create_branch,
-            )
+            # The cache reads a head as free and then moves it under this
+            # lock; adding the worktree under it too keeps the two apart.
+            async with clone_lock(resolved):
+                await self._git.create_worktree(
+                    resolved,
+                    ref,
+                    wt_path,
+                    branch_name,
+                    create_branch=create_branch,
+                )
 
             self._workspaces[wt_path] = _WorkspaceInfo(
                 repo_path=resolved,
