@@ -24,6 +24,7 @@ BOARD = {
         False,
     ),
     "c/done": ("done", WorkflowStateKind.COMPLETED, False),
+    "c/triage": ("Triage", WorkflowStateKind.TRIAGE, False),
     "c/todo": ("Todo", WorkflowStateKind.UNSTARTED, False),
     "c/backlog": ("Backlog", WorkflowStateKind.BACKLOG, False),
     "c/canceled": ("Canceled", WorkflowStateKind.CANCELED, False),
@@ -49,10 +50,15 @@ def _evaluation() -> AcceptanceCriteriaOutput:
 async def test_a_failed_claim_moves_back_from_started_or_completed_only() -> None:
     """In review and done move to in progress; in progress is read and left.
 
-    A criterion in an unstarted, backlog, canceled or duplicate state is not
-    moved, nor is one the evaluation passed, and ``state_moves`` counts only
-    the moves that changed the state.
+    A criterion in a triage, unstarted, backlog, canceled or duplicate state
+    is not moved, nor is one the evaluation passed, and ``state_moves``
+    counts only the moves that changed the state.  The board holds a failed
+    criterion in every kind, so a kind added later is red here until it is
+    placed on one side of the selection by a diff.
     """
+    assert {kind for _, kind, passed in BOARD.values() if not passed} == set(
+        WorkflowStateKind
+    )
     tracker = FakeEvaluatorRulingTracker(
         issues=[
             make_tracker_issue(PARENT),
