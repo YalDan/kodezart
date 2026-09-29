@@ -5,9 +5,15 @@ from kodezart.core.protocols import EvaluatorRulingTracker, ScopeStatusWriter
 from kodezart.domain.derived_writes import derived_writes
 from kodezart.domain.evaluator_rulings import rulings_to_record
 from kodezart.types.domain.agent import AcceptanceCriteriaOutput
-from kodezart.types.domain.operation import LifecycleStage, OperationConfig
+from kodezart.types.domain.operation import LifecycleStage
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.scope_terminal import STATUS_UPDATE_SCOPE_KINDS
+from kodezart.types.domain.tracker import WorkflowStateKind
+
+#: The kinds a criterion stands in once the implementer claims it: started
+#: (in progress or in review) or completed. Moving one already in progress
+#: is a read and no write.
+_CLAIMED_KINDS = frozenset({WorkflowStateKind.STARTED, WorkflowStateKind.COMPLETED})
 
 
 class EvaluatorRulingWriter:
@@ -21,17 +27,10 @@ class EvaluatorRulingWriter:
         self,
         *,
         tracker: EvaluatorRulingTracker,
-        operation: OperationConfig,
         status: ScopeStatusWriter,
     ) -> None:
         self._tracker = tracker
         self._status = status
-        # The states a criterion stands in once the implementer claims it.
-        self._claimed = frozenset(
-            operation.workflow_states[stage]
-            for stage in (LifecycleStage.IN_REVIEW, LifecycleStage.DONE)
-            if stage in operation.workflow_states
-        )
         self._log: BoundLogger = get_logger(__name__)
 
     @derived_writes("post_comment", "set_workflow_state", "post_status_update")
@@ -72,11 +71,12 @@ class EvaluatorRulingWriter:
             try:
                 issue = await self._tracker.read_issue(issue_key=key)
                 parent = issue.parent_key or "no parent"
-                if issue.state_name in self._claimed:
-                    await self._tracker.set_workflow_state(
+                if issue.state_kind in _CLAIMED_KINDS:
+                    placed = await self._tracker.set_workflow_state(
                         issue_key=key, stage=LifecycleStage.IN_PROGRESS
                     )
-                    moved += 1
+                    if placed.state_name != issue.state_name:
+                        moved += 1
             except Exception:
                 await self._log.aexception(
                     "ruling_record_failed", scope=scope.key, criterion=key
