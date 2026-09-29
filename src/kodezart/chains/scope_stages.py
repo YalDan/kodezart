@@ -2,17 +2,13 @@
 
 from langchain_core.runnables import RunnableConfig
 
+from kodezart.chains.criteria import criterion_set
 from kodezart.core.constants import UNATTENDED_PERMISSION_MODE
 from kodezart.core.protocols import AgentRunner, PromptSetProvider
+from kodezart.domain.fire_spec import criterion_ref
 from kodezart.domain.prompt_variables import scope_variables
 from kodezart.services.agent_question import ask
 from kodezart.types.domain.agent import ScopeItemsOutput
-from kodezart.types.domain.criteria import (
-    CriterionId,
-    TrackerCriterion,
-    TrackerCriterionSet,
-)
-from kodezart.types.domain.criterion_ref import CriterionRef
 from kodezart.types.domain.fire_spec import IssueRef, TrackerSpec
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.scope import ScopeRef
@@ -64,21 +60,22 @@ class ScopeStages:
         ctx = ExecutionContext.from_configurable(config)
         scope = _scope_of(config)
         await self._session(scope, phase="phase_criteria")
-        criteria = [
-            TrackerCriterion(id=CriterionId(item.key), text=item.text)
+        checks = {
+            item.key: item.text
             for item in (await self._items(scope)).items
             if item.criterion
-        ]
-        if not criteria:
+        }
+        if not checks:
             return {"criteria_infeasible": True}
+        roster = criterion_set(checks)
         return {
             "fire_spec": TrackerSpec(
                 subject=IssueRef(scope.key),
                 body=ctx.prompt,
-                criteria=tuple(CriterionRef(c.id) for c in criteria),
+                criteria=tuple(criterion_ref(c.id) for c in roster.criteria),
                 read_at_version="board",
             ),
-            "criterion_set": TrackerCriterionSet(criteria=criteria),
+            "criterion_set": roster,
         }
 
     async def scope_done(

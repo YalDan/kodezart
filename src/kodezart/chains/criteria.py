@@ -62,7 +62,7 @@ _TRANSPORT_FAILURES = (
 )
 
 
-def _criterion_set(checks: Mapping[str, str]) -> TrackerCriterionSet:
+def criterion_set(checks: Mapping[str, str]) -> TrackerCriterionSet:
     """The one shaping of a reading's result, so the readings compare equal.
 
     A barrier compares the set it holds with the set a later reading
@@ -249,7 +249,7 @@ class TrackerCriteria:
                 issue_key=issue_key,
                 reason="the subtree has no Todo criteria to execute",
             )
-        return _criterion_set(owed)
+        return criterion_set(owed)
 
     async def read_current(
         self, *, spec: TrackerSpec, held: TrackerCriterionSet | None = None
@@ -341,7 +341,7 @@ class TrackerCriteria:
                 issue_key=spec.subject,
                 reason="the subtree has no criteria to deliver",
             )
-        return _criterion_set(roster)
+        return criterion_set(roster)
 
 
 async def current_native_criteria(
