@@ -177,7 +177,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             executor=RateLimitBackoffExecutor(
                 executor,
                 floor_seconds=config.retry_rate_limit_floor_seconds,
-                max_wait_seconds=config.agent.rate_limit_max_wait_seconds,
+                max_wait_seconds=config.retry_rate_limit_max_wait_seconds,
             ),
             workspace=stack.workspace,
             persister=stack.persister,

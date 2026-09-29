@@ -67,21 +67,3 @@ class AgentSettings(BaseModel):
             "exactly that."
         ),
     )
-    rate_limit_max_wait_seconds: float = Field(
-        default=18000.0,
-        ge=0.0,
-        le=604800.0,
-        description=(
-            "Total seconds one session may spend waiting out provider rate "
-            "limits before it gives up. A session the provider stops on a "
-            "rate limit is run again after a wait: until the reset the "
-            "provider states, plus a small jitter, or, when it states none, "
-            "an exponential back-off from "
-            "retry_rate_limit_floor_seconds doubling to a 30-minute cap. The "
-            "job and its workspace stay while it waits. Once this total is "
-            "spent the existing failure path runs unchanged, and later "
-            "rate-limited sessions stop waiting until one session ends "
-            "without a rate limit or this many seconds pass. 0 turns the wait "
-            "off. Default 18000, five hours."
-        ),
-    )
