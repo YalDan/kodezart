@@ -624,7 +624,12 @@ class SubprocessGitService:
         base_ref: str,
         head_ref: str,
     ) -> ChangesetDigest:
-        """Return a ``ChangesetDigest`` for ``base_ref..head_ref``."""
+        """What *head_ref* added since it split from *base_ref*.
+
+        Paths are diffed from the merge base (``base...head``), the same
+        interval whose commits ``git log base..head`` names, so commits
+        *base_ref* gained after the split add no paths.
+        """
         if base_ref == head_ref:
             return ChangesetDigest(
                 file_paths=[],
@@ -632,7 +637,7 @@ class SubprocessGitService:
                 commit_count=0,
             )
         files_output = await self._run_output(
-            ["git", "diff", "--name-only", f"{base_ref}..{head_ref}"],
+            ["git", "diff", "--name-only", f"{base_ref}...{head_ref}"],
             cwd=cwd,
         )
         subjects_output = await self._run_output(
