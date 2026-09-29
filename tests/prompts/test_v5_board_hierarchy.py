@@ -733,12 +733,13 @@ def test_the_board_hierarchy_is_pinned_whole() -> None:
     assert fragment(FRAGMENT_NAME) == WHOLE_FRAGMENT
 
 
-def test_the_board_hierarchy_resolves_into_exactly_its_four_carriers() -> None:
+def test_the_board_hierarchy_resolves_into_exactly_its_carriers() -> None:
     """Countable carriers: the roles that read or write placement.
 
-    The four the name counts, plus the supervisor pass that files one kind
-    of issue and places it. Counted over the composed lens bodies too, not
-    the function keys alone. A lens declared by the set resolves its fragments the same way
+    The groom judge, the repair author and the two intake passes, plus the
+    supervisor pass that files one kind of issue and places it. Counted over
+    the composed lens bodies too, not the function keys alone. A lens
+    declared by the set resolves its fragments the same way
     and is dispatched as an agent definition, so a `{{board_hierarchy}}`
     placed in a lens body renders the standard into another composed
     prompt that a PromptKey census cannot see. No lens carries it.

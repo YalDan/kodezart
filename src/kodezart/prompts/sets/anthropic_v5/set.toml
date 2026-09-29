@@ -140,7 +140,7 @@ nothing is written to one.{{/if}}\
 """
 
 # The board's shape, stated once for every role that reads or writes
-# placement: the groom judge, the repair author, and the two scheduled
+# placement: the groom judge, the repair author, and the scheduled
 # passes. Creating a project or a milestone is no capability of the
 # tracker port, so the last sentence flags instead of inventing. One
 # sentence per line, so no guard over this text depends on a reflow.
@@ -156,7 +156,7 @@ A rare or improbable edge case found along the way is its own backlog issue for 
 An issue's finish line stays its stated criteria.\
 """
 
-# The delivery standard, composed into the two scheduled passes, the run's
+# The delivery standard, composed into the three scheduled passes, the run's
 # own groom and prep session and the implementer: what a finishable unit
 # is and how it is delivered (owner ruling of 2026-09-25, after a scope
 # whose units were too broad looped without landing anything).
@@ -291,7 +291,8 @@ keys = [
     "organize_session",
 ]
 
-# The two scheduled passes: one unattended session each, working a whole
+# The two intake passes (the supervisor pass has its own row): one
+# unattended session each, working a whole
 # board as the product and project manager. Their loadout is the skills the
 # adopted routines name for that work (KOD-50): the product-management
 # activities of grooming, the engineering, design, data and operations
