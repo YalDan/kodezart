@@ -134,7 +134,7 @@ example:
 | `KODEZART_TRACKER__TOKEN` | the Linear personal API key | The process's tracker credential. |
 | `KODEZART_GITHUB_TOKEN` | the fine-grained token | The forge credential. |
 | `KODEZART_AGENT__MODEL` | `claude-opus-5-5` | The engine every session runs on unless a key is pinned. |
-| `KODEZART_AGENT__SESSION_MODELS` | `{"pass_gate":"claude-opus-5-5","scope_scan":"claude-opus-5-5","scope_done":"claude-opus-5-5"}` | Pins the three board questions: the intake gate, the cron's scan and the "is it done" question. |
+| `KODEZART_AGENT__SESSION_MODELS` | `{"pass_gate":"claude-sonnet-5-5","scope_scan":"claude-sonnet-5-5","scope_done":"claude-sonnet-5-5","pr_description":"claude-sonnet-5-5","branch_name":"claude-sonnet-5-5","commit_message":"claude-sonnet-5-5","knowledge_map":"claude-sonnet-5-5","fire_record":"claude-sonnet-5-5","native_writer_contract":"claude-sonnet-5-5","mutation_survival":"claude-sonnet-5-5","organize_spec_rubric":"claude-sonnet-5-5"}` | Pins every cheap session (the board questions, the pull-request description and the utility keys) to Sonnet, which the prompt set runs at low effort: these answers are short and structured, so Opus buys nothing there. |
 | `KODEZART_DISPATCH_PASS_INTERVAL_SECONDS` | `300` | The cron's cadence. It also paces the per-issue dispatch passes. |
 | `KODEZART_DISPATCH_PASS_TIMEOUT_SECONDS` | `240` | The longest one cron tick may take. |
 | `KODEZART_FIRE_PREP_PASS_INTERVAL_SECONDS` | `1800` | Fire prep every 30 minutes. |
@@ -170,7 +170,7 @@ export KODEZART_OPERATION_CONFIG=/path/to/operation.toml
 export KODEZART_TRACKER__TOKEN=<the Linear personal API key>
 export KODEZART_GITHUB_TOKEN=<the GitHub token>
 export KODEZART_AGENT__MODEL=claude-opus-5-5
-export KODEZART_AGENT__SESSION_MODELS='{"pass_gate":"claude-opus-5-5","scope_scan":"claude-opus-5-5","scope_done":"claude-opus-5-5"}'
+export KODEZART_AGENT__SESSION_MODELS='{"pass_gate":"claude-sonnet-5-5","scope_scan":"claude-sonnet-5-5","scope_done":"claude-sonnet-5-5","pr_description":"claude-sonnet-5-5","branch_name":"claude-sonnet-5-5","commit_message":"claude-sonnet-5-5","knowledge_map":"claude-sonnet-5-5","fire_record":"claude-sonnet-5-5","native_writer_contract":"claude-sonnet-5-5","mutation_survival":"claude-sonnet-5-5","organize_spec_rubric":"claude-sonnet-5-5"}'
 export KODEZART_DISPATCH_PASS_INTERVAL_SECONDS=300
 export KODEZART_DISPATCH_PASS_TIMEOUT_SECONDS=240
 export KODEZART_FIRE_PREP_PASS_INTERVAL_SECONDS=1800
