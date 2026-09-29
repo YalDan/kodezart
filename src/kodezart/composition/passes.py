@@ -522,7 +522,11 @@ async def build_prompt_passes(
                 session_type=SessionType.SCHEDULED_PASS,
             ).run,
             report=run_report(recorder, _record_kind_for(key), key.value),
-            # The intake runs when the process comes up (owner, 2026-09-24).
+            # Every pass here ticks when the process comes up: the intake by
+            # the owner's ruling of 2026-09-24, and the supervisor pass with
+            # it, so a restart never leaves the account's conduct unread for
+            # a whole interval. Each restart therefore opens one supervisor
+            # session too (docs/configuration.md, docs/deploying.md).
             tick_at_boot=True,
         )
         for key, row in schedule.items()
