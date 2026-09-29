@@ -302,16 +302,36 @@ A v0.2 file boots into the same per-issue flow, with these deliberate changes:
 
 - A stalled pull request is watched for its checks like any other.
 - A red check is classified before remediation is attempted.
-- The pull request body ends with a `Tracker issue:` line naming the issue
-  (KOD-739).
+- The pull request body ends with a `Tracker issue:` line naming the issue.
 - A granted `ticket_fire` session gets the fire record clause where
-  `records.fire` declares its columns (KOD-742).
+  `records.fire` declares its columns.
 - A verified merge moves the issue's queue state to done and no longer moves
   its workflow state to Done.
 - The terminal outcome is one comment per job under the `run_outcome` marker,
   rewritten in place, where v0.2 posted a new plain comment.
 - A fire log's title line spells its start instant in v0.3's ISO form, with
   sub-second precision, where v0.2 wrote it to the second.
+
+## 4e. Turning on the scope workflow
+
+Nothing above turns on the v0.3 scope workflow; a v0.2 deployment keeps its
+per-issue flow until it opts in. [docs/workflows-v02-v03.md](workflows-v02-v03.md)
+sets the two workflows side by side, and [docs/running-a-scope.md](running-a-scope.md)
+walks a first run against [docs/operation.scope.toml](operation.scope.toml).
+The operation file gains these tables for it:
+
+| Table | What it does |
+| --- | --- |
+| `[scope_labels]` | The tracker labels for `triage`, `proposed` and `approved`; a declared table must name all three. Applying the `approved` label is the one human act that admits a scope. |
+| `[marker_prefixes]` | The markers the scope path writes. Boot refuses naming every purpose a scheduled pass can ask for that the table leaves out. |
+| `[[organize_mandates]]` | The `ticket` and `criteria` rows; a declared table needs both. The scope run does not read it (its groom and prep stages are one session each over the whole parent), but `[[organize_scopes]]` requires it. |
+| `[[organize_scopes]]` | One row per scope with the declared repository it is judged against (and `report_issue_key` for a configured audit). A row requires `[[organize_mandates]]`. Rows turn on the supervisor tick and a configured audit, and switch nothing else off. |
+
+The standing scopes' heartbeat, the cron that submits each approved, unfinished
+scope as a run, is scheduled wherever a tracker is dialled, `[scope_labels]` is
+declared and the dispatch cadence pair is set; it reads no `[[organize_scopes]]`
+row. The supervisor tick and the audit need their own cadence pairs from
+[4b](#4b-scheduled-pass-cadences-have-no-default).
 
 ## 5. Removed with no replacement
 
@@ -337,6 +357,18 @@ current name expresses the same choice.
   `KODEZART_AGGREGATE_ISSUE_IDENTIFIER_PATTERN` and
   `KODEZART_AGGREGATE_IDENTIFIER_SEPARATOR_PATTERN` — the same retirement, for
   the aggregate half of that scanner.
+
+### Names only pre-release v0.3 builds carried
+
+A deployment that ran a pre-release v0.3 build may carry these. Each is refused
+at startup:
+
+| Name | What to do |
+| --- | --- |
+| `KODEZART_DISPATCH_WORKFLOW` | Delete it. The per-issue dispatch passes and the standing scopes' heartbeat both run on the dispatch cadence pair. |
+| `KODEZART_FIRE_PREP_PASS_GATE_SIGNALS`, `KODEZART_GROOMING_PASS_GATE_SIGNALS` | Delete them. The fire-prep and grooming passes ask an agent whether to run (the `pass_gate` key of `KODEZART_AGENT__SESSION_MODELS` picks its engine). |
+| `KODEZART_WRITE_BACK_MAX_VERIFY_ROUNDS` | Rename to `KODEZART_WRITE_BACK__MAX_VERIFY_ROUNDS`. |
+| `KODEZART_ORGANIZE__INTERVAL_SECONDS`, `KODEZART_ORGANIZE__TIMEOUT_SECONDS` | Delete them. The organize stages run inside the scope run the heartbeat submits on the dispatch pair; the organize section refuses a cadence field. |
 
 ## 6. Checking the result
 
