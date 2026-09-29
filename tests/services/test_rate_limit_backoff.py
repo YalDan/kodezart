@@ -1,5 +1,6 @@
 """A provider rate limit is waited out at the executor port, not died on."""
 
+import asyncio
 from collections.abc import AsyncGenerator, Sequence
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -359,6 +360,36 @@ async def test_zero_turns_the_wait_off() -> None:
     assert len(inner.calls) == 1
     assert clock.sleeps == []
     assert REJECTED in events
+
+
+async def test_a_cancelled_wait_reaches_the_caller_and_runs_nothing_more() -> None:
+    """A timeout or shutdown around the session must cut the wait, not be eaten."""
+    inner = ScriptedExecutor([_limited(), _answered()])
+    waiting = asyncio.Event()
+    never = asyncio.Event()
+
+    async def blocked(seconds: float) -> None:
+        waiting.set()
+        await never.wait()
+
+    executor = RateLimitBackoffExecutor(
+        inner,
+        floor_seconds=60.0,
+        max_wait_seconds=18000.0,
+        sleep=blocked,
+        now=lambda: NOON_BERLIN,
+        monotonic=lambda: 0.0,
+        jitter=lambda: 7.0,
+    )
+    consumer = asyncio.create_task(_run(executor, output_format=SCHEMA))
+    await waiting.wait()
+
+    consumer.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await consumer
+    assert consumer.cancelled()
+    assert len(inner.calls) == 1
 
 
 # ------------------------------------------- through the service every job uses
