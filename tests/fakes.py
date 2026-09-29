@@ -4951,8 +4951,16 @@ class FakeSurfaceLeaseTracker(_FakeTrackerState):
                 del self.leases[surface]
 
 
+class FakeIssueCommentWriter(_FakeTrackerState):
+    """The ``IssueCommentWriter`` role of this double."""
+
+    async def post_comment(self, *, issue_key: str, body: str) -> TrackerComment:
+        return await self._post_comment(issue_key=issue_key, body=body)
+
+
 class FakeLifecycleStateWriter(
     FakeCommentRecordWriter,
+    FakeIssueCommentWriter,
     FakeWorkflowStateWriter,
     FakeWorkRefRecorder,
     FakeStateRestorer,
@@ -4978,9 +4986,6 @@ class FakeLifecycleStateWriter(
         self.issues[issue_key] = updated
         self._wrote(issue_key)
         return updated
-
-    async def post_comment(self, *, issue_key: str, body: str) -> TrackerComment:
-        return await self._post_comment(issue_key=issue_key, body=body)
 
 
 class FakePlanningIssueReader(_FakeTrackerState):
@@ -5622,6 +5627,14 @@ class FakeFireRulingTracker(
     FakeScopeFamilyReader,
 ):
     """The ``FireRulingTracker`` role, composed of its role doubles."""
+
+
+class FakeEvaluatorRulingTracker(
+    FakeIssueCommentWriter,
+    FakeWorkflowStateWriter,
+    FakeIssueReader,
+):
+    """The ``EvaluatorRulingTracker`` role, composed of its role doubles."""
 
 
 class FakeLaneEscalationTracker(

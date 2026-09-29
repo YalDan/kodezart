@@ -342,7 +342,7 @@ STEPS: tuple[tuple[str, Step], ...] = (
         lambda t: t.set_queue_state(issue_key=APPROVED_ISSUE, state=QueueState.DONE),
     ),
     (
-        "LifecycleStateWriter",
+        "IssueCommentWriter",
         lambda t: t.post_comment(issue_key=APPROVED_ISSUE, body="call log"),
     ),
 )
@@ -794,8 +794,8 @@ RECORDED_CALL_LOG: tuple[Entry, ...] = (
     ("LifecycleStateWriter", "get_issue", ("id", "includeRelations")),
     ("LifecycleStateWriter", "save_issue", ("id", "labels")),
     ("LifecycleStateWriter", "returned", ()),
-    ("LifecycleStateWriter", "save_comment", ("body", "issueId")),
-    ("LifecycleStateWriter", "returned", ()),
+    ("IssueCommentWriter", "save_comment", ("body", "issueId")),
+    ("IssueCommentWriter", "returned", ()),
     ("ContainerMetadataReader", "get_project", ("query",)),
     ("ContainerMetadataReader", "get_initiative", ("includeSubInitiatives", "query")),
     ("ContainerMetadataReader", "returned", ()),
