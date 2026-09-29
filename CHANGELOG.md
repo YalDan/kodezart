@@ -116,12 +116,13 @@ Each of these needs an action from a v0.2 operator; the steps are in
   every one groomed and fire-ready gets `scope_labels.proposed` from those
   passes (`prompts/sets/anthropic_v5/grooming_pass.md`, `fire_prep_pass.md`);
   the grooming pass also flags target dates out of order with the graph.
-  `scope_labels.approved` stays the one human act, and it is what the run's
-  first stage gates on: the shipped `ticket` row's `gate_label_key` is
-  `scope_labels.approved` (`docs/operation.scope.toml`). Every organize table
-  row runs inside the approved scope run; `MandatePhaseRole` gains
-  `prompt_phase`, the binding the organize session prompt selects the stage's
-  rubric by, so the session owner dispatches on no mandate kind.
+  `scope_labels.approved` stays the one human act: the heartbeat submits only
+  approved scopes, and the shipped `ticket` row's `gate_label_key` is
+  `scope_labels.approved` (`docs/operation.scope.toml`). A scope run's groom
+  and prep stages are one organize session each over the whole parent, in the
+  prompt's ticket and then criteria phase (`chains/scope_stages.py`);
+  `MandatePhaseRole` gains `prompt_phase`, the binding the organize session
+  prompt selects the stage's rubric by.
 - The fire-prep and grooming prompts (`anthropic_v5`) carry a standing rule:
   the simplest solution, verified; scopes pushed to a decision; a decision asked
   for in one short comment with options, a lean and a table or diagram when
