@@ -59,7 +59,6 @@ from tests.chains.test_write_back_adoption import (
     LANE_STATE_WRITES,
     LIFECYCLE,
     TRACKER_SURFACE,
-    WALKER,
     CallSite,
     Production,
     Source,
@@ -118,9 +117,22 @@ STAGE_TAKING: dict[tuple[type, str], frozenset[str]] = {
 #: that puts a board-read state name back, so a member that grows a stage
 #: parameter on any role joins the scan.
 STATE_MOVES = frozenset({*(name for _, name in STAGE_TAKING), RESTORE_STATE})
+#: A scope run moves a criterion its evaluator failed back to in progress
+#: when the board holds it in review or done; the structural-write census
+#: registers the same call site.
+EVALUATOR_RULINGS = "services/evaluator_rulings.py"
+EVALUATOR_RULING_MOVES = frozenset(
+    {
+        CallSite(
+            module=EVALUATOR_RULINGS,
+            function="EvaluatorRulingWriter.record",
+            method=SET_STATE,
+        ),
+    }
+)
 PERMITTED = frozenset(
     site
-    for site in KOD_806_STATE_MOVES | LANE_STATE_WRITES
+    for site in KOD_806_STATE_MOVES | LANE_STATE_WRITES | EVALUATOR_RULING_MOVES
     if site.method in STATE_MOVES
 )
 #: The keyword a restore hands the state name it puts back under: its one
@@ -171,8 +183,8 @@ def test_the_permitted_modules_are_the_two_named_authors_per_move():
         for method in STATE_MOVES
     }
     assert authors == {
-        SET_STATE: frozenset({LANE_STATE, LIFECYCLE}),
-        RESTORE_STATE: frozenset({LIFECYCLE, WALKER}),
+        SET_STATE: frozenset({LANE_STATE, LIFECYCLE, EVALUATOR_RULINGS}),
+        RESTORE_STATE: frozenset({LIFECYCLE}),
     }
 
 
