@@ -174,7 +174,8 @@ class TrackerLaneStateWriter:
         having written half of it. The three git reads are then observations
         of the workspace this commit was made in: the head the receipt
         names, the remote branch tip as its own three-state value, and the
-        base..head changeset. The prior record is parsed before the new one
+        changeset head added since it split from base (merge-base paths,
+        base..head commits). The prior record is parsed before the new one
         is composed, so a damaged record refuses rather than being replaced
         by a fresh one.
 

@@ -52,22 +52,27 @@ class GitBranchMerger:
              resolve a feature-tip SHA (origin/feature_branch or
              origin/base_branch) and return SOURCE_MISSING without
              acquiring a worktree.
-          2. Acquire a worktree on ``feature_branch`` (creating from
-             ``base_branch`` if absent).  ``fetch`` to refresh local
-             origin/* refs needed by ``is_ancestor``.
+          2. Acquire a worktree on ``feature_branch``, creating it if absent
+             from the commit the source split from ``base_branch`` (their
+             merge base), not from ``base_branch`` itself: a trunk that moved
+             after the source was cut would otherwise leave the new feature
+             branch and the source each holding commits the other lacks.
+             ``fetch`` to refresh local origin/* refs needed by
+             ``is_ancestor``.
           3. If origin/source is an ancestor of HEAD → ALREADY_INTEGRATED.
           4. If HEAD is an ancestor of origin/source → ff-merge, push,
              delete source from remote when its tip still equals the
              commit that was integrated → FAST_FORWARDED.
           5. Otherwise → DIVERGENT.
         """
-        source_tip = await self._workspace_remote_branch_sha(
+        cut_point = await self._source_cut_point(
             repo_path=repo_path,
             repo_url=repo_url,
             cache_key=cache_key,
-            branch=source_branch,
+            base_branch=base_branch,
+            source_branch=source_branch,
         )
-        if source_tip is None:
+        if cut_point is None:
             feature_tip = await self._resolve_feature_tip_or_raise(
                 repo_path=repo_path,
                 repo_url=repo_url,
@@ -88,7 +93,7 @@ class GitBranchMerger:
         workspace_path = await self._workspace.acquire(
             repo_path=repo_path,
             repo_url=repo_url,
-            ref=base_branch,
+            ref=cut_point,
             branch_name=feature_branch,
             create_branch=True,
             cache_key=cache_key,
@@ -196,19 +201,23 @@ class GitBranchMerger:
 
     # -- internals -----------------------------------------------------------
 
-    async def _workspace_remote_branch_sha(
+    async def _source_cut_point(
         self,
         *,
         repo_path: str | None,
         repo_url: str | None,
         cache_key: str | None,
-        branch: str,
+        base_branch: str,
+        source_branch: str,
     ) -> str | None:
-        """Probe a branch on origin without acquiring a feature worktree.
+        """Where a new feature branch starts, or ``None`` when the source is absent.
 
-        Uses a transient workspace on HEAD purely as a cwd for the
-        ls-remote subprocess call (the GitService API requires a cwd
-        even for remote-side queries).
+        Probes the source on origin without acquiring a feature worktree,
+        from a transient workspace on HEAD (the GitService API requires a
+        cwd even for remote-side queries). When the source exists, the
+        answer is the merge base of ``base_branch`` and the fetched source:
+        the commit the source was cut from, however far the trunk has moved
+        since. With no merge base, ``base_branch`` itself.
         """
         workspace_path = await self._workspace.acquire(
             repo_path=repo_path,
@@ -217,11 +226,20 @@ class GitBranchMerger:
             cache_key=cache_key,
         )
         try:
-            return await self._git.remote_branch_sha(
+            source_tip = await self._git.remote_branch_sha(
                 workspace_path,
                 self._remote,
-                branch,
+                source_branch,
             )
+            if source_tip is None:
+                return None
+            await self._git.fetch(workspace_path)
+            split = await self._git.merge_base(
+                workspace_path,
+                base_branch,
+                f"{self._remote}/{source_branch}",
+            )
+            return base_branch if split is None else split
         finally:
             await self._workspace.release(workspace_path)
 

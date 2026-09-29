@@ -661,3 +661,40 @@ async def test_an_unchanged_source_branch_is_deleted_against_real_git(
     assert [e for e in logs if e["event"] == "branch_cleanup_skipped"] == []
     assert [e for e in logs if e["event"] == "branch_cleanup_source_advanced"] == []
     assert [e for e in logs if e["event"] == "branch_cleanup_failed"] == []
+
+
+async def test_a_trunk_that_moved_after_the_loop_cut_still_fast_forwards(
+    git_env: tuple[Path, Path],
+    tmp_path: Path,
+) -> None:
+    """The cache moves the clone's trunk on; the feature is cut where the loop was.
+
+    Cutting the new feature branch from the moved trunk would leave it and
+    the loop branch each holding commits the other lacks, and consolidation
+    would report them divergent.
+    """
+    repo, bare = git_env
+    (repo / "trunk.txt").write_text("trunk moved on")
+    await _git(["git", "add", "trunk.txt"], cwd=repo)
+    await _git(["git", "commit", "-m", "trunk moved on"], cwd=repo)
+    await _git(["git", "push", "origin", "main"], cwd=repo)
+    source_tip = await _git_output(["git", "rev-parse", "ralph-source"], cwd=repo)
+
+    git = SubprocessGitService(remote="origin")
+    cache = LocalBareRepoCache(git=git, base_dir=str(tmp_path / "cache-moved"))
+    workspace = GitWorktreeProvider(git=git, cache=cache)
+    merger = GitBranchMerger(git=git, workspace=workspace, remote="origin")
+
+    outcome = await merger.consolidate(
+        repo_path=None,
+        repo_url=bare.as_uri(),
+        base_branch="main",
+        feature_branch="feat/moved-trunk",
+        source_branch="ralph-source",
+        cache_key="job",
+    )
+
+    assert outcome.status is ConsolidationStatus.FAST_FORWARDED
+    assert outcome.feature_tip_sha == source_tip
+    feature = ["git", "rev-parse", "refs/heads/feat/moved-trunk"]
+    assert await _git_output(feature, cwd=bare) == source_tip

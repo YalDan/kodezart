@@ -143,6 +143,7 @@ from kodezart.types.domain.gating import (
     TrackerAggregate,
     WriterShape,
 )
+from kodezart.types.domain.git import TrackedHead
 from kodezart.types.domain.issue_identity import IssueIdentity
 from kodezart.types.domain.job import JobRecord, JobState
 from kodezart.types.domain.operation import (
@@ -634,6 +635,19 @@ class FakeGitService:
     async def fetch(self, repo_path: str) -> None:
         self.calls.append(("fetch", repo_path))
 
+    async def tracked_heads(self, cwd: str) -> tuple[TrackedHead, ...]:
+        self.calls.append(("tracked_heads", cwd))
+        return ()
+
+    async def update_ref(
+        self,
+        cwd: str,
+        ref: str,
+        new_sha: str,
+        old_sha: str,
+    ) -> None:
+        self.calls.append(("update_ref", cwd, ref, new_sha, old_sha))
+
     async def create_worktree(
         self,
         repo_path: str,
@@ -745,6 +759,15 @@ class FakeGitService:
     ) -> bool:
         self.calls.append(("is_ancestor", cwd, ancestor_ref, descendant_ref))
         return (ancestor_ref, descendant_ref) in self._ancestor_pairs
+
+    async def merge_base(
+        self,
+        cwd: str,
+        first_ref: str,
+        second_ref: str,
+    ) -> str | None:
+        self.calls.append(("merge_base", cwd, first_ref, second_ref))
+        return None
 
     async def has_object(self, cwd: str, object_sha: str) -> bool:
         self.calls.append(("has_object", cwd, object_sha))

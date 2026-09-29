@@ -310,6 +310,27 @@ async def test_is_ancestor_returns_false_when_not_ancestor(
     assert await git_service.is_ancestor(str(git_repo), "main", "branch-c") is False
 
 
+async def test_merge_base_names_the_commit_two_lines_split_from(
+    git_service: SubprocessGitService, git_repo: Path
+) -> None:
+    split = await git_service.current_sha(str(git_repo))
+    await _run_git(["git", "branch", "side"], cwd=git_repo)
+    await _run_git(["git", "commit", "--allow-empty", "-m", "main"], cwd=git_repo)
+    await _run_git(["git", "checkout", "side"], cwd=git_repo)
+    await _run_git(["git", "commit", "--allow-empty", "-m", "side"], cwd=git_repo)
+
+    assert await git_service.merge_base(str(git_repo), "main", "side") == split
+
+
+async def test_merge_base_is_none_for_unrelated_histories(
+    git_service: SubprocessGitService, git_repo: Path
+) -> None:
+    await _run_git(["git", "checkout", "--orphan", "other"], cwd=git_repo)
+    await _run_git(["git", "commit", "--allow-empty", "-m", "other"], cwd=git_repo)
+
+    assert await git_service.merge_base(str(git_repo), "main", "other") is None
+
+
 async def test_is_ancestor_raises_on_unknown_ref(
     git_service: SubprocessGitService, git_repo: Path
 ) -> None:
@@ -419,6 +440,28 @@ async def test_diff_summary_returns_changeset_digest(
     assert "feat: add x" in digest.commit_subjects
 
 
+async def test_diff_summary_names_only_what_the_branch_added_since_it_split(
+    git_service: SubprocessGitService, git_repo: Path
+) -> None:
+    """A trunk that moves on after the split adds nothing to the branch's digest."""
+    split = await git_service.current_sha(str(git_repo))
+    await _run_git(["git", "checkout", "-b", "loop"], cwd=git_repo)
+    (git_repo / "branch.txt").write_text("the branch's own work")
+    await _run_git(["git", "add", "branch.txt"], cwd=git_repo)
+    await _run_git(["git", "commit", "-m", "feat: branch work"], cwd=git_repo)
+    await _run_git(["git", "checkout", "main"], cwd=git_repo)
+    (git_repo / "trunk.txt").write_text("landed on the trunk after the split")
+    await _run_git(["git", "add", "trunk.txt"], cwd=git_repo)
+    await _run_git(["git", "commit", "-m", "feat: trunk work"], cwd=git_repo)
+    assert await git_service.current_sha(str(git_repo)) != split
+
+    digest = await git_service.diff_summary(str(git_repo), "main", "loop")
+
+    assert digest.file_paths == ["branch.txt"]
+    assert digest.commit_subjects == ["feat: branch work"]
+    assert digest.commit_count == 1
+
+
 async def test_diff_summary_reads_the_commit_record_not_the_working_tree(
     git_service: SubprocessGitService, git_repo: Path
 ) -> None:
@@ -517,6 +560,24 @@ async def _run_git_output(cmd: list[str], cwd: Path) -> str:
     )
     stdout, _ = await proc.communicate()
     return stdout.decode().strip()
+
+
+async def test_update_ref_refuses_a_ref_that_moved_since_it_was_read(
+    git_service: SubprocessGitService, git_repo: Path
+) -> None:
+    """The old value makes the update a compare-and-swap, never a clobber."""
+    read_at = await git_service.current_sha(str(git_repo))
+    for message in ("moved by another writer", "the caller's target"):
+        await _run_git(["git", "commit", "--allow-empty", "-m", message], cwd=git_repo)
+    target = await git_service.current_sha(str(git_repo))
+    moved_to = await _run_git_output(["git", "rev-parse", "HEAD~"], cwd=git_repo)
+    await _run_git(["git", "branch", "lane", moved_to], cwd=git_repo)
+    assert len({read_at, moved_to, target}) == 3
+
+    with pytest.raises(GitOperationError):
+        await git_service.update_ref(str(git_repo), "refs/heads/lane", target, read_at)
+
+    assert await _run_git_output(["git", "rev-parse", "lane"], cwd=git_repo) == moved_to
 
 
 async def test_reset_hard_moves_head_to_ref(

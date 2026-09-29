@@ -489,7 +489,8 @@ criterion cross-off beside it. Its calls follow. `record_commit` runs inside the
 persisting phase of a native execution, between the push and the completion of
 the phase, so a commit and what it is recorded as are one operation: a record
 write that fails takes the phase with it. It reads
-the workspace head, the remote branch tip and the base..head changeset, parses
+the workspace head, the remote branch tip and the changeset the head added since
+it split from the base (paths from the merge base, commits from base..head), parses
 the prior record before composing the next one, and edits the marker comment in
 place under `marker_prefixes.run_state`. That edit is unleased — the lane is the
 record's single writer, and the comment's own preconditions (one comment per
@@ -1029,7 +1030,12 @@ The default maximum is 5 iterations (configurable via
 
 `LocalBareRepoCache` maintains bare Git clones in the configured cache
 directory (`/tmp/kodezart-clones` by default). Remote repositories are cloned
-once and fetched on subsequent requests.
+once and fetched on subsequent requests. After each fetch, every local head the
+clone already holds is moved forward to the remote's tip, except a head a
+worktree has checked out and a head the remote's tip does not contain (the
+latter is logged); a branch the remote gained after the clone was made gets no
+local head. Fetch, fast-forward and worktree creation on one clone run under
+one per-directory lock.
 
 ### Disposable Worktrees
 

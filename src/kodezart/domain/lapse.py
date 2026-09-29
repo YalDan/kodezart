@@ -84,8 +84,11 @@ def graded_state(
     holds both specs.  The comparison therefore stays at one site and this
     expression stays the one place a grading's worth is weighed.
 
-    *changeset* is the digest of ``graded_sha..head_sha``, taken from the
-    commit record; this function never asks a tree anything.
+    *changeset* is the digest of what *head_sha* added since it split from
+    *graded_sha* (paths from ``graded_sha...head_sha``, commits from
+    ``graded_sha..head_sha``; the same interval while the graded sha is an
+    ancestor of the head), taken from the commit record; this function never
+    asks a tree anything.
     """
     return (
         GradedState.lapsed
