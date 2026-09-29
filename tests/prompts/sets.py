@@ -167,6 +167,10 @@ EXTENDED_CASES: dict[str, tuple[PromptKey, dict[str, object]]] = {
         PromptKey.GROOMING_PASS,
         pass_render_variables(PromptKey.GROOMING_PASS),
     ),
+    "supervisor_pass": (
+        PromptKey.SUPERVISOR_PASS,
+        pass_render_variables(PromptKey.SUPERVISOR_PASS),
+    ),
     #: services/prompt_pass.py ``PromptPass._ask``: the pass the question is
     #: for and where its window starts, the two per-tick values.
     "pass_gate": (

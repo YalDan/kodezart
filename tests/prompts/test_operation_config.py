@@ -70,7 +70,11 @@ assert {DOCS / "configuration.md", DOCS / "operation.scope.toml"} <= set(
     PROSE_AND_SHIPPED_FILES
 )
 SET_DIR = REPO_ROOT / "src" / "kodezart" / "prompts" / "sets" / "claude-opus"
-PASS_KEYS = (PromptKey.FIRE_PREP_PASS, PromptKey.GROOMING_PASS)
+PASS_KEYS = (
+    PromptKey.FIRE_PREP_PASS,
+    PromptKey.GROOMING_PASS,
+    PromptKey.SUPERVISOR_PASS,
+)
 
 # Names a shipped template references from inside an ``{{#each}}`` frame
 # WITHOUT the ``this.`` root, so the renderer resolves them off the current

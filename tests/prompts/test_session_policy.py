@@ -37,11 +37,14 @@ LADDER: tuple[SessionEffort, ...] = tuple(SessionEffort)
 #: The set's own declared role → effort. The judgment roles run at the
 #: maximum and the question and utility roles at the floor (rulings of
 #: 2026-09-24 and 2026-09-29); the maximum replaced the fire-time ruling
-#: FR-2 that ran judgment one level below authoring.
+#: FR-2 that ran judgment one level below authoring. The supervisor pass
+#: reads and reports, and runs at the floor on the engine the deployment
+#: pins for it.
 EXPECTED_EFFORT: dict[SessionRole, SessionEffort] = {
     **dict.fromkeys(SessionRole, SessionEffort.MAX),
     SessionRole.QUESTION: SessionEffort.LOW,
     SessionRole.UTILITY: SessionEffort.LOW,
+    SessionRole.SUPERVISOR: SessionEffort.LOW,
 }
 
 
@@ -100,8 +103,9 @@ def test_the_registry_serves_each_key_the_effort_of_its_role(key: PromptKey) -> 
 
 def test_every_role_runs_at_the_top_of_the_ladder() -> None:
     """The substance of the policy since 2026-09-24: no judgment role thinks
-    less; the question and utility roles alone run at the floor (owner rulings
-    of 2026-09-24, 2026-09-25 and 2026-09-29)."""
+    less; the question and utility roles run at the floor (owner rulings
+    of 2026-09-24, 2026-09-25 and 2026-09-29), and so does the supervisor
+    pass, which reads and reports and edits nothing."""
     top = LADDER[-1]
     assert top is SessionEffort.MAX
     metadata = v5_metadata()
@@ -110,7 +114,13 @@ def test_every_role_runs_at_the_top_of_the_ladder() -> None:
         **dict.fromkeys(SessionRole, top),
         SessionRole.QUESTION: LADDER[0],
         SessionRole.UTILITY: LADDER[0],
+        SessionRole.SUPERVISOR: LADDER[0],
     }
+    assert metadata.session_roles[SessionRole.SUPERVISOR].keys == [
+        PromptKey.SUPERVISOR_PASS.value
+    ]
+    assert metadata.session_roles[SessionRole.SUPERVISOR].skills == []
+    assert PromptKey.SUPERVISOR_PASS.value not in metadata.utility_keys
     assert set(metadata.session_roles[SessionRole.QUESTION].keys) == {
         PromptKey.PASS_GATE.value,
         PromptKey.SCOPE_SCAN.value,
