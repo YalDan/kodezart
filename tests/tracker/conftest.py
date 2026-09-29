@@ -762,9 +762,8 @@ def _instant_refusal_waits(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(tracker_module, "_REFUSAL_WAIT_SECONDS", 0.0)
 
 
-async def stored_alarm(tracker: RunAlarmTracker, value: RunAlarm) -> RunAlarm | None:
-    """The record at *value*'s address, picked out of the carrier's one listing."""
-    records = await tracker.read_run_alarms(issue_key=APPROVED_ISSUE)
+def picked_alarm(records: Sequence[RunAlarm], value: RunAlarm) -> RunAlarm | None:
+    """The record at *value*'s address in one carrier listing, if it holds one."""
     return next(
         (
             record
@@ -773,3 +772,8 @@ async def stored_alarm(tracker: RunAlarmTracker, value: RunAlarm) -> RunAlarm | 
         ),
         None,
     )
+
+
+async def stored_alarm(tracker: RunAlarmTracker, value: RunAlarm) -> RunAlarm | None:
+    """The record at *value*'s address, picked out of the carrier's one listing."""
+    return picked_alarm(await tracker.read_run_alarms(issue_key=APPROVED_ISSUE), value)
