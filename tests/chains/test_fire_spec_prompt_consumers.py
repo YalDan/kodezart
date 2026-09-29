@@ -19,6 +19,7 @@ from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.criteria import ConjunctionVerdict, CriteriaArtifact
 from kodezart.types.domain.fire_spec import AuthoredSpec
 from kodezart.types.domain.gating import RepoVisibility
+from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.session import PermissionMode
 from kodezart.types.domain.workflow import ExecutionContext
 from tests.chains.test_ralph_workflow import _make_engine
@@ -113,7 +114,7 @@ def entry_digest(entries: Mapping[str, str | None]) -> str:
     ).hexdigest()
 
 
-async def capture_prompts(family, ticket, monkeypatch):
+async def capture_prompts(family, ticket, monkeypatch, scope=None):
     provider = RecordingPromptProvider(load_registry(default_set=family))
     execution = ExecutionContext(
         prompt="The original dispatched prompt.",
@@ -123,6 +124,7 @@ async def capture_prompts(family, ticket, monkeypatch):
         base_spec=trunk_base("selected-base"),
         permission_mode=PermissionMode.ACCEPT_EDITS,
         allowed_tools=["Read"],
+        scope=scope,
     )
     quality_gate = FakeQualityGate(
         events=[],
@@ -299,3 +301,50 @@ def test_the_entry_digest_reads_one_mapping_the_same_however_it_is_spelled() -> 
     assert entry_digest({"a/0/fix": "1", "a/1/fix": "2"}) == entry_digest(
         {"a/1/fix": "2", "a/0/fix": "1"}
     )
+
+
+#: The sentences a scope run's sessions carry and a per-issue fire never does,
+#: each with the site it renders at: the lane rules of the three prompt
+#: commits (memory-only fan-out hold, push at each commit with the draft pull
+#: request at first push, [skip ci] checkpoints) and the delivery rules the
+#: same line added beside them.
+SCOPE_ONLY_RULES = (
+    (
+        "implementation",
+        "hold new agents only while free memory is under a gigabyte or swap is growing",
+    ),
+    (
+        "implementation",
+        "Every lane you dispatch opens the unit's draft pull request at its first push",
+    ),
+    (
+        "implementation",
+        "a checkpoint that has not carries `[skip ci]` in its message",
+    ),
+    ("implementation", "Deliverable units."),
+    ("implementation", "argue against your own change"),
+    ("workflow_pr", "one per line in the form `Delivers: ABC-123`"),
+)
+
+
+async def test_the_lane_rules_reach_a_scope_run_and_never_a_per_issue_fire(
+    monkeypatch,
+) -> None:
+    """A per-issue fire renders its recorded bytes; a scope run adds the rules."""
+    golden = json.loads(GOLDENS.read_text())["prompts"][V5_SET]["0"]
+    per_issue = await capture_prompts(V5_SET, CORPUS[0], monkeypatch)
+    scoped = await capture_prompts(
+        V5_SET,
+        CORPUS[0],
+        monkeypatch,
+        scope=ScopeRef(kind=ScopeKind.PROJECT, key="project-uuid"),
+    )
+    assert {
+        site: hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+        for site, prompt in per_issue.items()
+    } == golden
+    for site, rule in SCOPE_ONLY_RULES:
+        assert rule not in per_issue[site], (site, rule)
+        assert scoped[site].count(rule) == 1, (site, rule)
+    # The fix prompt names no parent on either arm.
+    assert scoped["fix"] == per_issue["fix"]
