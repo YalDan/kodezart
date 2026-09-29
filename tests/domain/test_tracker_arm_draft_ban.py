@@ -206,10 +206,12 @@ TRACKER_MODULE = "adapters/linear/tracker.py"
 
 #: Where a tracker body is in hand, the name holding it, and the function the
 #: report would name.  Each anchor is asserted unique before it is replaced.
+#: The spec capture holds its subject issue before it validates the Checks;
+#: the construction itself is a private helper both readings share.
 PLANT_SITES = (
     (
         "domain/fire_spec.py",
-        "    return TrackerSpec(\n",
+        "    for criterion in counting:\n",
         "subject",
         "tracker_spec_from_issues",
     ),

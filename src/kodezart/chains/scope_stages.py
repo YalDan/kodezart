@@ -5,11 +5,10 @@ from langchain_core.runnables import RunnableConfig
 from kodezart.core.constants import UNATTENDED_PERMISSION_MODE
 from kodezart.core.protocols import AgentRunner, PromptSetProvider
 from kodezart.domain.criteria import criterion_set
-from kodezart.domain.fire_spec import criterion_ref
+from kodezart.domain.fire_spec import tracker_spec_from_board
 from kodezart.domain.prompt_variables import scope_variables
 from kodezart.services.agent_question import ask
 from kodezart.types.domain.agent import ScopeItemsOutput
-from kodezart.types.domain.fire_spec import IssueRef, TrackerSpec
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.scope import ScopeRef
 from kodezart.types.domain.session import SessionType
@@ -69,11 +68,10 @@ class ScopeStages:
             return {"criteria_infeasible": True}
         roster = criterion_set(checks)
         return {
-            "fire_spec": TrackerSpec(
-                subject=IssueRef(scope.key),
+            "fire_spec": tracker_spec_from_board(
+                subject_key=scope.key,
                 body=ctx.prompt,
-                criteria=tuple(criterion_ref(c.id) for c in roster.criteria),
-                read_at_version="board",
+                criterion_keys=[c.id for c in roster.criteria],
             ),
             "criterion_set": roster,
         }

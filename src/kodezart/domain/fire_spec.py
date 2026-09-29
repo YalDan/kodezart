@@ -262,11 +262,49 @@ def tracker_spec_from_issues(
         raise EmptyFireCriteriaError(issue_key=subject.issue_key)
     for criterion in counting:
         criterion_check(criterion=criterion, issue_key=subject.issue_key)
-    return TrackerSpec(
+    return _tracker_spec(
         subject=IssueRef(subject.issue_key),
         body=subject.body,
-        criteria=tuple(criterion_ref(criterion.issue_key) for criterion in counting),
+        keys=[criterion.issue_key for criterion in counting],
         read_at_version=subject.updated_at.isoformat(),
+    )
+
+
+#: The version a scope run's spec records: its prep read the criteria off the
+#: board, with no one issue version to capture.
+BOARD_READ_VERSION = "board"
+
+
+def tracker_spec_from_board(
+    *, subject_key: str, body: str, criterion_keys: Sequence[str]
+) -> TrackerSpec:
+    """A scope run's spec: its parent, its own text, the board's criterion keys.
+
+    The prep's session wrote the criteria and the board answered with their
+    keys and Checks, so there is nothing here to validate or drop; the keys
+    are carried in the order the prep shaped them.
+    """
+    return _tracker_spec(
+        subject=IssueRef(subject_key),
+        body=body,
+        keys=criterion_keys,
+        read_at_version=BOARD_READ_VERSION,
+    )
+
+
+def _tracker_spec(
+    *, subject: IssueRef, body: str, keys: Sequence[str], read_at_version: str
+) -> TrackerSpec:
+    """The one construction of a tracker spec, for both of its readings.
+
+    Every criterion identity either reading captures is minted here through
+    :func:`criterion_ref`, so neither caller names the mint.
+    """
+    return TrackerSpec(
+        subject=subject,
+        body=body,
+        criteria=tuple(criterion_ref(key) for key in keys),
+        read_at_version=read_at_version,
     )
 
 
