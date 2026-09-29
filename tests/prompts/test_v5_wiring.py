@@ -141,9 +141,7 @@ EMPTY_CHANGESET_CLAUSE = (
 )
 
 #: The informational bound of AC-7, against a legacy evaluator of ~1,540.
-#: Raised from 400, where the evaluator stood at 398, when the graders began
-#: judging a pull request's draft state (owner ruling of 2026-09-29).
-EVALUATION_WORD_BOUND = 500
+EVALUATION_WORD_BOUND = 400
 
 
 def test_the_tag_expectation_covers_every_case() -> None:

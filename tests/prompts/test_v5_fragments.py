@@ -215,11 +215,12 @@ DELIVERY_CARRIERS = frozenset(
 
 #: When a pull request leaves draft (owner ruling of 2026-09-29), whole.
 DRAFT_RULE = (
-    "Each pull request stays a draft while its unit is work in progress — any"
-    " criterion open, any review comment unanswered, its checks red or its base"
-    " conflicting at the pushed head — and when every criterion is done, every"
-    " review comment addressed, its checks green and its base not conflicting at"
-    " the pushed head, the session delivering the unit marks it ready for review"
+    "The session delivering the unit keeps each pull request a draft whenever"
+    " its unit is work in progress — any criterion open, any review comment"
+    " unanswered, its checks red or its base conflicting at the pushed head —"
+    " returning it to draft if it was marked ready; when every criterion is"
+    " done, every review comment addressed, its checks green and its base not"
+    " conflicting at the pushed head, it marks the pull request ready for review"
     " and stops there; a person merges it, never a session."
 )
 
@@ -229,12 +230,9 @@ MERGE_CLAUSE = "a person merges it, never a session"
 #: The same rule as the two changeset graders apply it, whole.
 DRAFT_RULE_REVIEW = (
     "Judge each pull request of the unit at its pushed head as well, and raise"
-    " any of these as a concern in your own name: a failed check when it is"
-    " marked ready for review while a criterion fails, a review comment is"
-    " unanswered, its checks are red or its base conflicts; a finding the"
-    " session fixes by marking it ready when it is still a draft once none of"
-    " that holds and its checks are green; a violation of the first rank when a"
-    " session has merged it."
+    " as a concern in your own name any one marked ready for review while its"
+    " unit is unfinished, still a draft once its unit is finished, or merged by"
+    " a session."
 )
 
 
@@ -255,20 +253,28 @@ def test_the_delivery_standard_resolves_into_exactly_its_four_carriers() -> None
 
 
 def test_the_draft_rule_is_declared_once() -> None:
-    """One fragment of the manifest states it, and no member file does."""
-    assert prose(SET_TOML.read_text(encoding="utf-8")).count(DRAFT_RULE) == 1
-    assert member_files_carrying(DRAFT_RULE) == []
+    """One fragment of the manifest states each wording, and no member file does."""
+    manifest = prose(SET_TOML.read_text(encoding="utf-8"))
+    for rule in (DRAFT_RULE, DRAFT_RULE_REVIEW):
+        assert manifest.count(rule) == 1
+        assert member_files_carrying(rule) == []
 
 
 def test_the_changeset_graders_judge_the_pull_request_by_the_draft_rule() -> None:
-    """Exactly the two graders, each before its data boundary."""
+    """Exactly the two graders, each inside its scope block.
+
+    A per-request run opens its pull request only after the loop and the
+    review, so only a scope run has one for the grader to judge.
+    """
+    assert prose(fragment("draft_review")) == DRAFT_RULE_REVIEW
     bodies = {key: prose(body) for key, body in v5_bodies().items()}
     graders = {key for key, body in bodies.items() if DRAFT_RULE_REVIEW in body}
     assert graders == DESIGN_REVIEW_CONSUMERS
     for key in sorted(graders):
         body = bodies[key]
-        boundary = data_boundary_sentences(body)[0]
-        assert body.index(DRAFT_RULE_REVIEW) < body.index(boundary)
+        rule_at = body.index(DRAFT_RULE_REVIEW)
+        scope_open = body.index("{{#if scope_key}}")
+        assert scope_open < rule_at < body.index("{{/if}}", scope_open)
 
 
 def test_the_delivery_standard_names_no_cadence() -> None:
