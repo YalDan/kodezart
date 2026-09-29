@@ -4,7 +4,6 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
 
-import kodezart
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.skills import SettingSource, SkillsMode, SkillsSelection
 
@@ -31,7 +30,7 @@ class AgentSettings(BaseModel):
         default="~/.claude", description="Host user-scope skills and plugins directory."
     )
     workflows_plugin_dir: str = Field(
-        default=str(Path(kodezart.__file__).resolve().parents[2] / ".claude"),
+        default=str(Path(__file__).resolve().parents[3] / ".claude"),
         description=(
             "Local Claude Code plugin every session loads, so the named "
             "workflows in its workflows/ folder can be launched from any "
