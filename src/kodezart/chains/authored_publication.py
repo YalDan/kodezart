@@ -31,6 +31,7 @@ from kodezart.domain.pr_body import (
     append_tracker_issue,
     require_tracker_issue,
 )
+from kodezart.domain.prompt_variables import scope_variables
 from kodezart.domain.stall_report import stall_pr_body, stall_pr_title
 from kodezart.domain.ticket import fire_spec_title, format_fire_spec
 from kodezart.domain.workflow_state import (
@@ -231,12 +232,14 @@ class AuthoredPublication:
                 cache_key=ctx.cache_key,
             )
 
-        # Generate PR description via agent
+        # Generate PR description via agent; a scope run's description is
+        # told the parent it delivers below.
         prompt = self._prompts.template_for(PromptKey.PR_DESCRIPTION).render(
             {
                 "task_md": format_fire_spec(spec),
                 "acceptance_criteria": validated_criteria(state),
                 "total_iterations": state["total_iterations"],
+                **({} if ctx.scope is None else scope_variables(ctx.scope)),
             },
         )
         result_event, rate_limit_rejected = await drain(
