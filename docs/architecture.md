@@ -816,8 +816,10 @@ or already has a run going.
 
 Approval is read once per run, at its entry. `ScopeEntry.admit`
 (`services/scope_entry.py`) refuses a scope that already has a live job, and
-then one that is not approved, before anything else is read. Nothing after the
-entry reads approval again: withdrawing it during a run stops no session, the
+then one that is not approved, before anything else is read. After the approval
+read, and before any session, it refuses an operation that maps no criterion or
+no decision label (`OperationMemberAbsentError`), since the groom and prep
+prompts name both. Nothing after the entry reads approval again: withdrawing it during a run stops no session, the
 cron's next scan leaves the node out, and a new run's entry would refuse it.
 No act of a run comes before approval.
 
