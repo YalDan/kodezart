@@ -278,6 +278,19 @@ class GitService(Protocol):
         """
         ...
 
+    async def merge_base(
+        self,
+        cwd: str,
+        first_ref: str,
+        second_ref: str,
+    ) -> str | None:
+        """The best common ancestor of the two refs, or ``None`` when none.
+
+        Maps to ``git merge-base`` (exit 0 → the SHA, exit 1 → None, any
+        other exit raises).
+        """
+        ...
+
     async def has_object(self, cwd: str, object_sha: str) -> bool:
         """True iff the repository at *cwd* holds the object *object_sha*.
 

@@ -760,6 +760,15 @@ class FakeGitService:
         self.calls.append(("is_ancestor", cwd, ancestor_ref, descendant_ref))
         return (ancestor_ref, descendant_ref) in self._ancestor_pairs
 
+    async def merge_base(
+        self,
+        cwd: str,
+        first_ref: str,
+        second_ref: str,
+    ) -> str | None:
+        self.calls.append(("merge_base", cwd, first_ref, second_ref))
+        return None
+
     async def has_object(self, cwd: str, object_sha: str) -> bool:
         self.calls.append(("has_object", cwd, object_sha))
         return object_sha not in self.missing_objects
