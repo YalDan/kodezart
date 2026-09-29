@@ -4,16 +4,25 @@ from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import EvaluatorRulingTracker, ScopeStatusWriter
 from kodezart.domain.derived_writes import derived_writes
 from kodezart.domain.evaluator_rulings import rulings_to_record
+from kodezart.domain.gap import state_membership
 from kodezart.types.domain.agent import AcceptanceCriteriaOutput
+from kodezart.types.domain.gap import GapMembership
 from kodezart.types.domain.operation import LifecycleStage
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.scope_terminal import STATUS_UPDATE_SCOPE_KINDS
 from kodezart.types.domain.tracker import WorkflowStateKind
 
-#: The kinds a criterion stands in once the implementer claims it: started
-#: (in progress or in review) or completed. Moving one already in progress
-#: is a read and no write.
-_CLAIMED_KINDS = frozenset({WorkflowStateKind.STARTED, WorkflowStateKind.COMPLETED})
+
+def _claimed(kind: WorkflowStateKind) -> bool:
+    """Whether a criterion in *kind* stands where the implementer's claim put it.
+
+    Started (in progress or in review), or discharged as the gap rule reads
+    it. Moving one already in progress is a read and no write.
+    """
+    return (
+        kind is WorkflowStateKind.STARTED
+        or state_membership(kind) is GapMembership.DISCHARGED
+    )
 
 
 class EvaluatorRulingWriter:
@@ -71,7 +80,7 @@ class EvaluatorRulingWriter:
             try:
                 issue = await self._tracker.read_issue(issue_key=key)
                 parent = issue.parent_key or "no parent"
-                if issue.state_kind in _CLAIMED_KINDS:
+                if _claimed(issue.state_kind):
                     placed = await self._tracker.set_workflow_state(
                         issue_key=key, stage=LifecycleStage.IN_PROGRESS
                     )
