@@ -98,10 +98,11 @@ def test_the_registry_serves_each_key_the_effort_of_its_role(key: PromptKey) -> 
 
 
 def test_every_role_runs_at_the_top_of_the_ladder() -> None:
-    """The substance of the policy since 2026-09-24: no judgment role thinks
-    less; the three board questions and the pull-request description run at
-    the floor (owner rulings of 2026-09-24 and 2026-09-25), and so does the
-    supervisor pass, which reads and reports and edits nothing."""
+    """The substance of the policy since 2026-09-24: every judgment role runs
+    at the top and none thinks less; the three board questions and the
+    pull-request description run at the floor (owner rulings of 2026-09-24
+    and 2026-09-25), and so does the supervisor pass, which reads and reports
+    and edits nothing (owner ruling of 2026-09-29)."""
     top = LADDER[-1]
     assert top is SessionEffort.MAX
     metadata = v5_metadata()
@@ -122,6 +123,17 @@ def test_every_role_runs_at_the_top_of_the_ladder() -> None:
         PromptKey.SCOPE_DONE.value,
         PromptKey.PR_DESCRIPTION.value,
     }
+
+
+def test_the_served_set_is_authored_for_exactly_its_three_engines() -> None:
+    """The judgment roles run on Opus or Fable and the cheap sessions on
+    Sonnet (owner ruling of 2026-09-29); an engine added or dropped by hand
+    changes what boot compares every configured engine against."""
+    assert v5_metadata().engines == [
+        "claude-opus-5-5",
+        "claude-fable-5-1",
+        "claude-sonnet-5-5",
+    ]
 
 
 def test_a_key_no_role_claims_is_a_typed_boot_error(tmp_path: Path) -> None:
