@@ -46,13 +46,18 @@ Each of these needs an action from a v0.2 operator; the steps are in
   are both set; unset, the pass is not scheduled and boot logs the new
   `scheduled_pass_not_configured` event naming the pass and the two settings.
   One half of a pair without the other refuses at load naming both
-  (`config/app.py`, `CADENCE_SETTINGS`). The `audit_pass_not_wired` event is
-  replaced by `scheduled_pass_not_configured` for the audit. A deployment that
-  relied on a default cadence must now set it.
+  (`config/app.py`, `CADENCE_SETTINGS`). A deployment that relied on a
+  default cadence must now set it.
 - `KODEZART_DENY_PATTERNS` and `KODEZART_DENY_PATTERN_VERDICTS` are gone with
   no replacement and refused at boot: outbound admission is a judgment session
   plus a typed reference classification, and the operation config's private
   surface description states what must not leave.
+- `KODEZART_FIRE_PREP_PASS_GATE_SIGNALS` and
+  `KODEZART_GROOMING_PASS_GATE_SIGNALS`, added in 0.2.0, are gone and refused
+  at boot: the fire-prep and grooming passes ask an agent whether to run
+  instead (see Added). `PassGate` and `PassGateReader` remain for the dispatch
+  pass alone, and the 0.2.0 events `prompt_pass_gates_absent_no_tracker` and
+  `prompt_pass_skipped_no_delta` are no longer emitted.
 
 ### Added
 
@@ -71,9 +76,10 @@ Each of these needs an action from a v0.2 operator; the steps are in
   both sets) over the window since its last tick that ran, answered in the
   `PassGateOutput` schema (`run`, `moved`, `reason`): `run: false` skips the
   tick (`scheduled_pass_skipped`), anything else runs it, and an answer that
-  is missing or unreadable is named (`pass_gate_unanswered`) and runs the
-  pass. `pass_gate_asked` and `pass_gate_answered` carry the window, engine,
-  effort and answer. The question's engine is the `pass_gate` key of
+  is missing or unreadable is named in `agent_question_unanswered` and runs
+  the pass. `agent_question_asked` (key `pass_gate`) carries the engine and
+  effort, and `pass_gate_answered` carries the answer. The question's engine
+  is the `pass_gate` key of
   `KODEZART_AGENT__SESSION_MODELS`, meant for the cheapest engine the provider
   offers. The passes no longer read the tracker through the process's own
   credential before a tick; the per-issue dispatch pass keeps its
@@ -178,10 +184,6 @@ Each of these needs an action from a v0.2 operator; the steps are in
   source: `KODEZART_DISPATCH_WORKFLOW` (the v0.2 per-issue dispatch passes and
   the standing scopes' heartbeat both run on the dispatch cadence pair, and
   `scheduled_pass_not_selected` is no longer emitted);
-  `KODEZART_FIRE_PREP_PASS_GATE_SIGNALS` and
-  `KODEZART_GROOMING_PASS_GATE_SIGNALS` (`PassGate` and `PassGateReader`
-  remain for the dispatch pass alone, and `prompt_pass_gates_absent_no_tracker`
-  and `prompt_pass_skipped_no_delta` are no longer emitted);
   `KODEZART_ORGANIZE_MAX_ADMISSION_ROUNDS`,
   `KODEZART_ORGANIZE_MAX_CONVERGENCE_ROUNDS`,
   `KODEZART_UNION_CHECK_CLEANUP_POLL_INTERVAL_SECONDS` and the
