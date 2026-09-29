@@ -1922,8 +1922,8 @@ def evaluative_sites(source: str, schema_name: str) -> list[str]:
 async def test_each_dispatch_of_one_run_carries_the_effort_its_role_declares() -> None:
     """Both tiers in a single run: implementation authors, evaluation grades.
 
-    The ralph loop dispatches both, so the policy — every role at the top of
-    the ladder since the 2026-09-24 ruling — is observable in one run rather
+    The ralph loop dispatches both, so the policy — every judgment role at the top
+    of the ladder since the 2026-09-24 ruling — is observable in one run rather
     than inferred across two.
     """
     from kodezart.types.domain.prompts import PromptKey, SessionRole

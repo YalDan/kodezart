@@ -6,7 +6,7 @@ name = "anthropic_v5"
 # The engines this corpus is authored for, by their model ids: the one
 # declaration boot compares KODEZART_AGENT__MODEL and every per-key engine
 # against. A model outside this list is logged as a mismatch, never refused.
-engines = ["claude-opus-5-5", "claude-fable-5-1"]
+engines = ["claude-opus-5-5", "claude-fable-5-1", "claude-sonnet-5-5"]
 
 # Roles that carry no reasoning-depth instruction: they emit a name, a
 # message, a description, or a prelude composed into another session's
@@ -291,7 +291,8 @@ keys = [
     "organize_session",
 ]
 
-# The three scheduled passes: one unattended session each, working a whole
+# The two intake passes (the supervisor pass has its own row): one
+# unattended session each, working a whole
 # board as the product and project manager. Their loadout is the skills the
 # adopted routines name for that work (KOD-50): the product-management
 # activities of grooming, the engineering, design, data and operations
@@ -327,7 +328,16 @@ skills = [
     "cloudflare:durable-objects",
     "cloudflare:agents-sdk",
 ]
-keys = ["fire_prep_pass", "grooming_pass", "supervisor_pass"]
+keys = ["fire_prep_pass", "grooming_pass"]
+
+# The supervisor pass reads what the operation's own account did and reports
+# its conduct; it edits nothing and needs no skill to read the tracker and
+# the forge. A judgment role, so it keeps the depth block, at the floor:
+# the deployment pins its engine through KODEZART_AGENT__SESSION_MODELS.
+[session_roles.supervisor]
+effort = "low"
+skills = []
+keys = ["supervisor_pass"]
 
 [session_roles.evaluative]
 effort = "max"

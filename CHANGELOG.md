@@ -12,8 +12,8 @@ concerns.
 ### Changed
 
 - The supervisor is a third prompt pass, `supervisor_pass` (template
-  `supervisor_pass.md` in both sets, record kind `supervisor`, in the
-  `[session_roles.scheduled_pass]` row at max effort), on the existing
+  `supervisor_pass.md` in both sets, record kind `supervisor`, role row
+  `[session_roles.supervisor]` at low effort), on the existing
   `KODEZART_SUPERVISOR_PASS_INTERVAL_SECONDS` /
   `KODEZART_SUPERVISOR_PASS_TIMEOUT_SECONDS` pair. It reads what the
   operation's own account did since its last pass and reports its conduct:
