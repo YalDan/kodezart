@@ -52,6 +52,7 @@ from kodezart.domain.errors import (
     DuplicateIssueIdentityError,
     DuplicateWorkRefError,
     EscalationReadError,
+    GitOperationError,
     IssueLabelReadError,
     MergeConflictError,
     OrganizeWriteRefusalError,
@@ -143,6 +144,7 @@ from kodezart.types.domain.gating import (
     TrackerAggregate,
     WriterShape,
 )
+from kodezart.types.domain.git import TrackedHead
 from kodezart.types.domain.issue_identity import IssueIdentity
 from kodezart.types.domain.job import JobRecord, JobState
 from kodezart.types.domain.operation import (
@@ -569,6 +571,9 @@ class FakeGitService:
         missing_objects: set[str] | None = None,
     ) -> None:
         self.calls: list[tuple[str, ...]] = []
+        #: The local heads that have a remote-tracking ref, by ref; none
+        #: unless a test seeds them, so ``update_ref`` refuses as git would.
+        self.heads: dict[str, TrackedHead] = {}
         #: Object names the repository does not hold; every other name is held.
         self.missing_objects: set[str] = set(missing_objects or ())
         self._merge_conflicts: dict[str, tuple[str, ...]] = dict(merge_conflicts or {})
@@ -633,6 +638,24 @@ class FakeGitService:
 
     async def fetch(self, repo_path: str) -> None:
         self.calls.append(("fetch", repo_path))
+
+    async def tracked_heads(self, cwd: str) -> tuple[TrackedHead, ...]:
+        self.calls.append(("tracked_heads", cwd))
+        return tuple(self.heads.values())
+
+    async def update_ref(
+        self,
+        cwd: str,
+        ref: str,
+        new_sha: str,
+        old_sha: str,
+    ) -> None:
+        self.calls.append(("update_ref", cwd, ref, new_sha, old_sha))
+        head = self.heads.get(ref)
+        if head is None or head.sha != old_sha:
+            # git refuses a compare-and-swap whose old value is stale.
+            raise GitOperationError(f"git update-ref {ref} failed: not at {old_sha}")
+        self.heads[ref] = head.model_copy(update={"sha": new_sha})
 
     async def create_worktree(
         self,

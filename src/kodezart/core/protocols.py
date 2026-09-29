@@ -38,6 +38,7 @@ from kodezart.types.domain.gating import (
     TrackerAggregate,
     WriterShape,
 )
+from kodezart.types.domain.git import TrackedHead
 from kodezart.types.domain.issue_identity import IssueIdentity
 from kodezart.types.domain.job import JobRecord
 from kodezart.types.domain.native_execution import NativeAuthoritySnapshot
@@ -162,6 +163,29 @@ class GitService(Protocol):
     async def clone_bare(self, url: str, target: str) -> None: ...
 
     async def fetch(self, repo_path: str) -> None: ...
+
+    async def tracked_heads(self, cwd: str) -> tuple[TrackedHead, ...]:
+        """Every local head that has a remote-tracking ref of the same name.
+
+        Pairs ``refs/heads/<name>`` with ``refs/remotes/<remote>/<name>`` of
+        the remote ``fetch`` refreshes, and says whether a worktree of the
+        repository has the head checked out (``git worktree list``).
+        """
+        ...
+
+    async def update_ref(
+        self,
+        cwd: str,
+        ref: str,
+        new_sha: str,
+        old_sha: str,
+    ) -> None:
+        """Point *ref* at *new_sha*, refusing when it no longer points at *old_sha*.
+
+        Maps to ``git update-ref <ref> <new_sha> <old_sha>``; git's refusal
+        raises.
+        """
+        ...
 
     async def create_worktree(
         self,
