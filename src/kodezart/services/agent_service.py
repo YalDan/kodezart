@@ -3,6 +3,7 @@
 import shutil
 import sys
 import tempfile
+import threading
 from collections.abc import AsyncGenerator, Sequence
 
 from kodezart.core.error_egress import build_error_event
@@ -37,6 +38,27 @@ from kodezart.types.domain.subagents import (
     AgentDefinition,
     SessionPolicy,
 )
+
+
+def _remove_off_the_loop(path: str) -> None:
+    """Remove *path* on a thread of its own, and wait for none of it.
+
+    The directory holds whatever the session left beside its checkouts,
+    which can run to hundreds of thousands of files.  Removed on the event
+    loop's thread, it stopped every task for minutes: at shutdown the
+    cancelled job's cleanup held the queue's stop, the lifespan and the
+    termination signal behind it (KOD-1301).  The removal is housekeeping,
+    so it holds neither the job nor the process: the thread is a daemon,
+    and whatever it has not removed when the process exits stays in the
+    temporary directory, as it does when the process is killed.
+    """
+    threading.Thread(
+        target=shutil.rmtree,
+        args=(path,),
+        kwargs={"ignore_errors": True},
+        name="kodezart-workspace-removal",
+        daemon=True,
+    ).start()
 
 
 class AgentService:
@@ -477,10 +499,4 @@ class AgentService:
                         "workspace_cleanup_failed",
                         error=str(cleanup_exc),
                     )
-            try:
-                shutil.rmtree(parent)
-            except OSError as cleanup_exc:
-                await self._log.awarning(
-                    "workspace_cleanup_failed",
-                    error=str(cleanup_exc),
-                )
+            _remove_off_the_loop(parent)
