@@ -860,3 +860,121 @@ async def test_actual_lifespan_tracker_section_reaches_native_boot_and_recorder(
                 == ("Token " if custom else "Bearer ") + TOKEN
             )
     assert all(client.is_closed for client in endpoint.clients)
+
+
+#: How long the stand-in removal holds whichever thread runs it.  Where that
+#: thread is the event loop's, the whole process stands still for this long,
+#: so it is kept short: the test then fails on what finished first, not by
+#: hanging.
+REMOVAL_HOLD_SECONDS = 2.0
+
+
+async def test_shutdown_does_not_wait_on_removing_a_cancelled_sessions_directory(
+    resources, monkeypatch
+):
+    """A job in flight at shutdown is cancelled, and its directory never holds it.
+
+    KOD-1301: a stop requested during a session over two repositories
+    logged both ``workspace_released`` and then nothing, for seven minutes.
+    The sample of the hung process had the event loop's own thread inside
+    a recursive directory removal: the session's parent directory, removed
+    synchronously after its checkouts were released, holding every task,
+    the shutdown sequence and the termination signal behind it.
+
+    The removal here is a stand-in that holds its thread, and the queue,
+    the lifespan and the session service are the real ones. Shutdown must
+    finish while the removal is still going, and the removal must be off
+    the loop's thread.
+    """
+    import threading
+
+    from kodezart.services import agent_service as agent_service_module
+    from kodezart.services.agent_service import AgentService
+    from kodezart.types.domain.agent import AssistantTextEvent
+    from kodezart.types.domain.branch import trunk_base
+    from kodezart.types.domain.operation import RepoEntry
+    from kodezart.types.domain.session import SessionType
+    from kodezart.types.domain.workflow import WorkflowSubmission
+    from tests.fakes import (
+        SUPPRESS_ALL_SKILLS,
+        FakeGitService,
+        FakeRepoCache,
+        FakeWorkspaceProvider,
+    )
+
+    loop_thread = threading.current_thread()
+    removal_started, may_finish, removed = (threading.Event() for _ in range(3))
+    removals = []
+
+    def held_removal(path, **_kwargs):
+        removals.append((path, threading.current_thread()))
+        removal_started.set()
+        may_finish.wait(REMOVAL_HOLD_SECONDS)
+        removed.set()
+
+    real_shutil = agent_service_module.shutil
+    monkeypatch.setattr(
+        agent_service_module, "shutil", SimpleNamespace(rmtree=held_removal)
+    )
+
+    serving = asyncio.Event()
+
+    class Session:
+        async def stream(self, **kwargs):
+            yield AssistantTextEvent(text="working", model="fixture")
+            serving.set()
+            await asyncio.Event().wait()
+
+    service = AgentService(
+        executor=Session(),
+        workspace=FakeWorkspaceProvider(),
+        git_base_url="https://forge.invalid",
+        git=FakeGitService(remote_branch_shas={"work": None}),
+        cache=FakeRepoCache(),
+    )
+
+    class Engine:
+        async def run(self, **kwargs):
+            async for event in service.stream(
+                prompt=kwargs["prompt"],
+                branch="work",
+                permission_mode=PermissionMode.UNATTENDED,
+                allowed_tools=["Read"],
+                skills=SUPPRESS_ALL_SKILLS,
+                session_type=SessionType.TICKET_FIRE,
+                repositories=(
+                    RepoEntry(url="https://forge.invalid/one", trunk="main"),
+                    RepoEntry(url="https://forge.invalid/two", trunk="main"),
+                ),
+            ):
+                yield event
+
+    monkeypatch.setattr(main, "build_workflow_engine", lambda **_kwargs: Engine())
+    try:
+        async with resources.app.router.lifespan_context(resources.app):
+            await resources.queues[0].submit(
+                lane="lane",
+                request=WorkflowSubmission(
+                    prompt="work",
+                    repo_path=None,
+                    repo_url="https://forge.invalid/one",
+                    base_spec=trunk_base("main"),
+                    implied_base=None,
+                    scope=None,
+                    permission_mode=PermissionMode.UNATTENDED,
+                    allowed_tools=["Read"],
+                ),
+            )
+            await asyncio.wait_for(serving.wait(), 5)
+
+        assert removal_started.wait(5)
+        assert not removed.is_set(), "shutdown waited for the directory removal"
+        ((_, removing_thread),) = removals
+        assert removing_thread is not loop_thread
+        assert released(resources) == list(RELEASES)
+        assert "application_shutdown" in resources.events
+    finally:
+        may_finish.set()
+        for path, _ in removals:
+            real_shutil.rmtree(path, ignore_errors=True)
+        await settle_fixture(resources)

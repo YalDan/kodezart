@@ -20,8 +20,8 @@ import ast
 import asyncio
 import re
 from collections import Counter
-from collections.abc import Mapping
-from datetime import datetime
+from collections.abc import AsyncGenerator, Mapping
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -35,7 +35,9 @@ from kodezart.core.errors import (
 )
 from kodezart.core.protocols import RunRecordSink
 from kodezart.services.pass_scheduler import PassScheduler, RunReport, ScheduledPass
+from kodezart.services.rate_limit_backoff import RateLimitBackoffExecutor
 from kodezart.services.run_recorder import RunRecorder
+from kodezart.types.domain.agent import AgentEvent
 from kodezart.types.domain.dispatch import PassRun
 from kodezart.types.domain.operation import (
     DocumentSystem,
@@ -43,7 +45,13 @@ from kodezart.types.domain.operation import (
     RunKind,
 )
 from kodezart.types.domain.run_records import RunOutcome, RunRecord, RunRecordFailure
-from tests.fakes import RecordingLogger, RefusingRecordSink
+from kodezart.types.domain.session import PermissionMode, SessionType
+from tests.fakes import SUPPRESS_ALL_SKILLS, RecordingLogger, RefusingRecordSink
+from tests.services.test_rate_limit_backoff import (
+    ScriptedExecutor,
+    _answered,
+    _limited,
+)
 
 SCHEDULER_SOURCE = (
     Path(__file__).resolve().parents[2]
@@ -1075,3 +1083,149 @@ async def test_a_real_run_beside_a_skipped_tick_still_records_its_row(
     assert [entry.fields["name"] for entry in log.named("scheduled_pass_skipped")] == [
         "fire_prep_pass",
     ]
+
+
+# ------------------------------------------ a provider wait inside a tick (KOD-1303)
+
+#: A budget the tick's own work never approaches, and a stated reset well
+#: past it: the two numbers the live pass met (3,600 s of budget, 12,300 s
+#: of wait), scaled to a test.
+WAITING_BUDGET = 0.2
+RESET_AHEAD = 0.5
+
+
+class HangingSessions(ScriptedExecutor):
+    """The scripted sessions, and from call *hang_from* on, one that never returns."""
+
+    def __init__(self, sessions: list[list[AgentEvent]], *, hang_from: int) -> None:
+        super().__init__(sessions)
+        self._hang_from = hang_from
+
+    async def stream(self, **kwargs: object) -> AsyncGenerator[AgentEvent, None]:
+        if len(self.calls) + 1 >= self._hang_from:
+            self.calls.append(kwargs)
+            await asyncio.Event().wait()
+        async for event in super().stream(**kwargs):
+            yield event
+
+
+def _backing_off(inner: ScriptedExecutor) -> RateLimitBackoffExecutor:
+    """The production wrapper over *inner*, on the real clock.
+
+    The wait is real, because the budget it is measured against is the
+    event loop's own timer and nothing else can stand in for it.  The
+    jitter is zeroed so the wait is exactly the stated reset.
+    """
+    return RateLimitBackoffExecutor(
+        inner,
+        floor_seconds=0.0,
+        max_wait_seconds=GENEROUS_TIMEOUT,
+        jitter=lambda: 0.0,
+    )
+
+
+def _limited_past_the_budget() -> list[AgentEvent]:
+    return _limited(datetime.now(UTC) + timedelta(seconds=RESET_AHEAD))
+
+
+def _session_pass(
+    executor: RateLimitBackoffExecutor, report: RunReport
+) -> ScheduledPass:
+    """A pass whose tick is one session through *executor*."""
+
+    async def run(started_at: datetime) -> PassRun:
+        async for _ in executor.stream(
+            prompt="p",
+            cwd="/w",
+            permission_mode=PermissionMode.UNATTENDED,
+            allowed_tools=[],
+            skills=SUPPRESS_ALL_SKILLS,
+            session_type=SessionType.SCHEDULED_PASS,
+        ):
+            pass
+        return PassRun.RAN
+
+    return ScheduledPass(
+        name="fire_prep_pass",
+        interval_seconds=FAST_INTERVAL,
+        timeout_seconds=WAITING_BUDGET,
+        run=run,
+        report=report,
+    )
+
+
+async def test_a_provider_wait_longer_than_the_budget_does_not_time_the_tick_out() -> (
+    None
+):
+    """The wait for a stated reset is not the pass's work (KOD-1303).
+
+    The live pass slept 2,340 s into a 12,300 s wait and was cancelled by
+    its 3,600 s budget, so its closing acts never ran and the next interval
+    met the same limit.  The wait lies outside the tick's clock: the pass
+    resumes after the reset, finishes, and reports COMPLETED.
+    """
+    reports = ReportLog()
+    inner = ScriptedExecutor([_limited_past_the_budget(), _answered()])
+
+    with structlog.testing.capture_logs() as logs:
+        log = await _one_tick(_session_pass(_backing_off(inner), reports.report))
+
+    waits = [entry for entry in logs if entry["event"] == "rate_limit_backoff"]
+    assert len(waits) == 1
+    assert waits[0]["wait_seconds"] > WAITING_BUDGET
+    assert len(inner.calls) == 2
+    assert [outcome for outcome, _, _ in reports.reports] == [RunOutcome.COMPLETED]
+    assert "scheduled_pass_timed_out" not in [event.event for event in log.events]
+
+
+async def test_the_budget_still_bounds_the_work_around_a_provider_wait() -> None:
+    """Only the wait leaves the clock: a session that hangs after it times out.
+
+    The deadline moves by the wait and no further, so the tick ends at the
+    budget plus the wait, never at the budget alone and never not at all.
+    The wait is the one the backoff logged, not RESET_AHEAD: the reset is
+    stamped before the tick starts, so the wait is short by that setup.
+    """
+    reports = ReportLog()
+    inner = HangingSessions([_limited_past_the_budget()], hang_from=2)
+
+    with structlog.testing.capture_logs() as logs:
+        log = await _one_tick(_session_pass(_backing_off(inner), reports.report))
+
+    assert len(inner.calls) == 2
+    assert [outcome for outcome, _, _ in reports.reports] == [RunOutcome.TIMED_OUT]
+    (wait,) = [e["wait_seconds"] for e in logs if e["event"] == "rate_limit_backoff"]
+    (timed_out,) = [e for e in log.events if e.event == "scheduled_pass_timed_out"]
+    moved_deadline = WAITING_BUDGET + wait
+    assert timed_out.fields["duration_seconds"] >= moved_deadline
+    # Well short of a deadline moved by any more than the wait.
+    assert timed_out.fields["duration_seconds"] < moved_deadline + RESET_AHEAD / 2
+
+
+async def test_a_pass_that_meets_no_limit_keeps_the_budget_it_was_given() -> None:
+    """The normal case: no wait, so the deadline stays where the budget put it."""
+    reports = ReportLog()
+    inner = HangingSessions([_answered()], hang_from=1)
+
+    log = await _one_tick(_session_pass(_backing_off(inner), reports.report))
+
+    assert [outcome for outcome, _, _ in reports.reports] == [RunOutcome.TIMED_OUT]
+    (timed_out,) = [e for e in log.events if e.event == "scheduled_pass_timed_out"]
+    assert timed_out.fields["duration_seconds"] < WAITING_BUDGET + RESET_AHEAD
+
+
+async def test_a_provider_wait_outside_any_tick_moves_no_deadline() -> None:
+    """A job's session has no tick: its wait runs exactly as before."""
+    inner = ScriptedExecutor([_limited_past_the_budget(), _answered()])
+
+    async for _ in _backing_off(inner).stream(
+        prompt="p",
+        cwd="/w",
+        permission_mode=PermissionMode.UNATTENDED,
+        allowed_tools=[],
+        skills=SUPPRESS_ALL_SKILLS,
+        session_type=SessionType.TICKET_FIRE,
+    ):
+        pass
+
+    assert len(inner.calls) == 2

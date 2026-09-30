@@ -162,3 +162,60 @@ async def test_authored_persistence_failure_keeps_workspace_cleanup(monkeypatch)
         ]
     assert caught.value is failure
     assert workspace.calls[-1] == ("release", "/tmp/fake-workspace")
+
+
+async def test_a_session_over_several_repositories_leaves_no_directory_behind() -> None:
+    """The shared parent directory is removed after the session (KOD-1301).
+
+    The removal runs on a thread of its own so it never holds the event
+    loop, which makes its end something to wait for rather than a fact at
+    the moment the stream closes.
+    """
+    import asyncio
+    from pathlib import Path
+
+    from kodezart.types.domain.operation import RepoEntry
+    from tests.fakes import FakeGitService, FakeRepoCache
+
+    class LeavesAFile:
+        """A session that writes beside the checkouts, as a live one does."""
+
+        def __init__(self) -> None:
+            self.cwd: Path | None = None
+
+        async def stream(self, **kwargs: object):
+            self.cwd = Path(str(kwargs["cwd"]))
+            (self.cwd / "left-by-the-session").write_text("x")
+            yield AssistantTextEvent(text="done", model="m")
+
+    executor = LeavesAFile()
+    service = AgentService(
+        git_base_url="https://forge.invalid",
+        executor=executor,
+        workspace=FakeWorkspaceProvider(),
+        git=FakeGitService(remote_branch_shas={"work": None}),
+        cache=FakeRepoCache(),
+    )
+    [
+        e
+        async for e in service.stream(
+            skills=SUPPRESS_ALL_SKILLS,
+            session_type=FAKE_SESSION_TYPE,
+            prompt="x",
+            branch="work",
+            permission_mode=PermissionMode.UNATTENDED,
+            allowed_tools=["Read"],
+            repositories=(
+                RepoEntry(url="https://forge.invalid/one", trunk="main"),
+                RepoEntry(url="https://forge.invalid/two", trunk="main"),
+            ),
+        )
+    ]
+
+    parent = executor.cwd
+    assert parent is not None
+    for _ in range(500):
+        if not parent.exists():
+            break
+        await asyncio.sleep(0.01)
+    assert not parent.exists()
