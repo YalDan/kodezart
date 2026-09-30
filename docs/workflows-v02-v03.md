@@ -93,10 +93,10 @@ criterion or no decision label (`OperationMemberAbsentError`).
   parent, splits items that are too large, and escalates a choice only a
   person can make with the `decision` label. It never touches a scope label
   and never moves a workflow state.
-- `prep` runs the same prompt for the criteria phase, then asks the
-  `scope_done` question and keeps every criterion sub-issue it lists, with its
-  Check, as the run's criteria. No criterion found ends the run
-  `criteria_infeasible`.
+- `prep` runs the same prompt for the criteria phase, then reads every
+  criterion sub-issue below the parent through the tracker port, one listing
+  page at a time and each Check whole, and keeps them as the run's criteria.
+  No criterion found ends the run `criteria_infeasible`.
 - `run_ralph_loop` runs the implementation session over a checkout of every
   declared repository. The session reads the parent and everything below it on
   the tracker, builds in blocking order, commits in whichever repository the
@@ -104,9 +104,9 @@ criterion or no decision label (`OperationMemberAbsentError`).
   criterion's Check against what the repositories show.
 - `merge_to_feature` merges the loop branch into the deliverable branch in
   every repository the loop committed in.
-- `scope_done` asks the board, through one short session, whether every issue
-  below the parent is completed or canceled. The issues still open become the
-  feedback for the next round.
+- `scope_done` counts, through the same tracker port and no session, the
+  issues below the parent whose state is still open. Their number and a few
+  of their keys become the feedback for the next round.
 - `review_against_ticket`, `remediate`, `land_best_iteration` and `complete`
   are the same nodes as in v0.2. On the scope graph `remediate` returns to the
   loop, not to criteria generation.
@@ -124,7 +124,6 @@ The session kind decides which MCP servers a session is given
 | --- | --- | --- | --- |
 | The cron's scan | `scope_scan` | `scheduled_pass` | question, low |
 | `groom`, `prep` | `organize_session` | `organize_pass` | generative, max |
-| `prep`, `scope_done` question | `scope_done` | `scheduled_pass` | question, low |
 | Loop implementation | `implementation` | `organize_pass` | implementation, max |
 | Loop evaluation | `evaluation` | `ticket_fire` | evaluative, max |
 | `review_against_ticket` | `post_merge_review` | `ticket_fire` | evaluative, max |

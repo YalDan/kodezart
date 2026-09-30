@@ -1,14 +1,29 @@
 """Native membership and closure of a complete addressed issue subtree."""
 
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 
 from kodezart.domain.errors import EmptyFireCriteriaError, ScopeReadError
-from kodezart.domain.gap import compute_gap
+from kodezart.domain.gap import compute_gap, open_state_kind
 from kodezart.types.domain.gap import CriterionGap
 from kodezart.types.domain.scope import ScopeRef
 from kodezart.types.domain.tracker import TrackerIssue
 
 RECORD_KINDS = frozenset({"tracker", "decision"})
+
+
+def open_work(rows: Iterable[TrackerIssue]) -> tuple[TrackerIssue, ...]:
+    """The rows of *rows* that still owe work, in the order they came.
+
+    A record (an issue labelled with one of :data:`RECORD_KINDS`) is not
+    work: it is left out whatever its state. Whether the rest owe anything
+    is the one reading in :func:`kodezart.domain.gap.state_membership`,
+    asked at the kind level; nothing here reads a state on its own.
+    """
+    return tuple(
+        issue
+        for issue in rows
+        if not (issue.issue_labels & RECORD_KINDS) and open_state_kind(issue.state_kind)
+    )
 
 
 def index_issue_tree(

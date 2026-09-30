@@ -254,6 +254,7 @@ GAP_COMPUTATION_MODULES = frozenset(
         "chains/ralph_loop.py",
         "chains/ralph_workflow.py",
         "chains/remediation.py",
+        "chains/scope_stages.py",
         "chains/scope_walker.py",
         "composition/audit.py",
         "composition/delivery.py",
@@ -1366,6 +1367,10 @@ CALL_SITES_NOT_RUN = {
     "the git and forge ports.",
     ("services/run_shape.py", "read_barren_tick"): "Async; reads criteria "
     "through the tracker port.",
+    ("domain/issue_tree.py", "open_work"): "The scope-done gate's selection "
+    "over one listing page: leaves the records out and asks open_state_kind, "
+    "an entry point the trap runs, about each of the rest; it takes issues, "
+    "not criteria, so the arithmetic's fixtures do not apply (KOD-1288).",
 }
 
 
@@ -1389,9 +1394,10 @@ def test_every_call_site_the_fixtures_can_run_is_run_under_the_trap():
     already runs is either a case of ``call_site_cases`` —
     ``SubtreeClosure._walk`` and ``SubtreeClosure.scope_gap`` — or named in
     ``CALL_SITES_NOT_RUN`` with why: the criteria reader's ``_finished``,
-    ``observe_ruling_growth``, ``read_barren_tick`` and the audit terminal
-    reader's ``observe``, each of which needs a tracker port, a service
-    instance or the composition's wiring.  A new call site reds here until
+    ``observe_ruling_growth``, ``read_barren_tick``, the audit terminal
+    reader's ``observe`` and the scope-done gate's ``open_work``, each of
+    which needs a tracker port, a service instance, the composition's wiring
+    or a page of issues rather than criteria.  A new call site reds here until
     it is one or the other.  Each
     case answers what it was built for over the baseline stamp.
     """

@@ -947,6 +947,36 @@ class ScopeFamilyReader(Protocol):
 
 
 @runtime_checkable
+class ScopeMemberPager(Protocol):
+    """The issues below a scope, one listing page at a time, and nothing else.
+
+    Narrowed out of the port beside ``ScopeFamilyReader`` rather than folded
+    into it: that read hydrates every member one issue at a time for its
+    relations, which a scope of a thousand members cannot afford, while a
+    consumer that only selects rows by label and state needs the listing
+    pages alone (KOD-1288).
+    """
+
+    def scope_member_pages(
+        self, *, ref: ScopeRef, whole_bodies: bool = False
+    ) -> AsyncIterator[Sequence[TrackerIssue]]:
+        """Each listing page of the unarchived issues below *ref*, in order.
+
+        Container scopes page their member issues and then the criterion
+        sub-issues beneath those members: a criterion is minted with no
+        project of its own, so a container listing alone never reaches it
+        and the read would answer a scope with none of its criteria. An
+        issue scope pages its descendants and leaves the issue itself out.
+        Rows carry no relations. A listing may cut a long body short;
+        *whole_bodies* asks for each cut row to be read whole, which a
+        consumer of the bodies (a Check) needs and a consumer of the states
+        (the done gate) does not pay for. A page that cannot be read or
+        advanced raises; it never ends the iteration early.
+        """
+        ...
+
+
+@runtime_checkable
 class StateHistoryReader(Protocol):
     """When the issue entered the state it is in, with that same snapshot."""
 
@@ -1989,6 +2019,7 @@ class TrackerPort(
     CriterionMintWriter,
     DescriptionWriter,
     ScopeFamilyReader,
+    ScopeMemberPager,
     PassGateReader,
     IssueScanReader,
     RecordedRepositoryReader,
