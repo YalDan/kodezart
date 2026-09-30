@@ -40,7 +40,7 @@ from kodezart.types.domain.subagents import (
 )
 
 
-def _remove_off_the_loop(path: str) -> None:
+def _discard_tree_off_the_loop(path: str) -> None:
     """Remove *path* on a thread of its own, and wait for none of it.
 
     The directory holds whatever the session left beside its checkouts,
@@ -499,4 +499,4 @@ class AgentService:
                         "workspace_cleanup_failed",
                         error=str(cleanup_exc),
                     )
-            _remove_off_the_loop(parent)
+            _discard_tree_off_the_loop(parent)
