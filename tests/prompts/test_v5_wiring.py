@@ -347,6 +347,68 @@ def test_fire_prep_names_no_base_branch_wrapper_field(text: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# KOD-1305 — grooming keeps units and edges true (item 7), stops its noise
+# (item 8), and KOD-1283 — never ends a process by pattern
+# ---------------------------------------------------------------------------
+
+GROOMING_GRAPH_TEXTS = (
+    "a dependency, base-branch or prerequisite line there becomes, once"
+    " verified, the blocking edge between units it stands for, and is removed"
+    " with a fields-only edit plus a comment, touching nothing else; a line"
+    " relaying a principal's hold goes only when that principal's later ruling"
+    " is recorded, and hold text a principal wrote is never edited: ask that"
+    " principal once whether it becomes an edge.",
+    "build each unit's request head that moved since the window started, for a"
+    " verdict of its own, then the composition of the graph's ends — the open"
+    " units no other open unit is blocked by — merged in your clone, and report"
+    " the composition's verdict beside the per-unit verdicts, never folded into"
+    " one of them;",
+    "each request is attached to the one unit issue whose issues it carries,"
+    " and a missing attachment is yours to add; act on the supervisor pass's"
+    " findings addressed to you:",
+    "a request whose head holds another open unit's work gets an edge only when"
+    " that dependency is real.",
+    "An edge between issues of two different units is set between their unit"
+    " issues, because the unit is what merges.",
+    "Compose in your clone and push nothing you composed; delete the composition"
+    " branches earlier passes of this kind pushed.",
+    "Never end a process by pattern: end only a process id this pass started.",
+    "One status update per initiative whose health changed or under which"
+    " something moved in the window, and none for the others, whose trace is"
+    " this pass's record row; it opens with the land queue — the requests that"
+    " can merge now: based on the trunk, ready for review, every blocker merged"
+    " and no hold open — derived this pass.",
+    "or whose health changed, every pass:",
+)
+
+GROOMING_RETIRED_TEXTS = (
+    "push them",
+    "Push what you composed",
+    "the most recently updated on a tie",
+    "every pass, even when nothing changed",
+    "or carries a target date, every pass",
+    "is never a reason to withhold the composition",
+)
+
+
+@pytest.mark.parametrize("text", GROOMING_GRAPH_TEXTS)
+def test_grooming_keeps_units_and_edges_true_and_composes_without_pushing(
+    text: str,
+) -> None:
+    """Each sentence renders exactly once in the grooming prompt."""
+    assert _rendered_pass(PromptKey.GROOMING_PASS).count(text) == 1
+
+
+@pytest.mark.parametrize("text", GROOMING_RETIRED_TEXTS)
+def test_grooming_pushes_no_composition_and_reports_only_on_change(
+    text: str,
+) -> None:
+    """The recency tie-break, the pushed compositions and the per-pass status
+    update on unchanged initiatives are gone."""
+    assert text not in _rendered_pass(PromptKey.GROOMING_PASS)
+
+
+# ---------------------------------------------------------------------------
 # KOD-290 — the Record clause prescribes the runner's own title
 # ---------------------------------------------------------------------------
 
