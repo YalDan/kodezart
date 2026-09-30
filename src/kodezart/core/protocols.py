@@ -958,14 +958,20 @@ class ScopeMemberPager(Protocol):
     """
 
     def scope_member_pages(
-        self, *, ref: ScopeRef
+        self, *, ref: ScopeRef, whole_bodies: bool = False
     ) -> AsyncIterator[Sequence[TrackerIssue]]:
         """Each listing page of the unarchived issues below *ref*, in order.
 
-        Container scopes page their member issues; an issue scope pages its
-        descendants and leaves the issue itself out. Rows carry no
-        relations. A page that cannot be read or advanced raises; it never
-        ends the iteration early.
+        Container scopes page their member issues and then the criterion
+        sub-issues beneath those members: a criterion is minted with no
+        project of its own, so a container listing alone never reaches it
+        and the read would answer a scope with none of its criteria. An
+        issue scope pages its descendants and leaves the issue itself out.
+        Rows carry no relations. A listing may cut a long body short;
+        *whole_bodies* asks for each cut row to be read whole, which a
+        consumer of the bodies (a Check) needs and a consumer of the states
+        (the done gate) does not pay for. A page that cannot be read or
+        advanced raises; it never ends the iteration early.
         """
         ...
 

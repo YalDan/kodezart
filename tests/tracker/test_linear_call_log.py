@@ -706,6 +706,9 @@ RECORDED_CALL_LOG: tuple[Entry, ...] = (
     ("ScopeMemberPager", "get_project", ("query",)),
     ("ScopeMemberPager", "list_issues", ("limit", "project")),
     ("ScopeMemberPager", "list_issues", ("cursor", "limit", "project")),
+    # The criteria below the members: listed by label on each member's
+    # team, because a minted criterion has no project (KOD-1288).
+    ("ScopeMemberPager", "list_issues", ("label", "limit", "team")),
     ("ScopeMemberPager", "returned", ()),
 )
 

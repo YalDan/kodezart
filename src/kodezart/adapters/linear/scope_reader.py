@@ -125,6 +125,19 @@ class LinearScopeReader:
             case _:
                 assert_never(ref.kind)
 
+    async def labelled_pages(
+        self, *, team: str, label: str
+    ) -> AsyncIterator[tuple[LinearIssueWire, ...]]:
+        """Each listing page of *team*'s unarchived issues carrying *label*.
+
+        The listing a container scope reads its criterion sub-issues from:
+        they belong to no project, so only their label and their team reach
+        them in one listing, whoever their parent is. The caller keeps the
+        rows whose parent it holds.
+        """
+        async for rows in self._member_pages({"team": team, "label": label}):
+            yield rows
+
     async def _member_pages(
         self, filters: Mapping[str, object]
     ) -> AsyncIterator[tuple[LinearIssueWire, ...]]:

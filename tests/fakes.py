@@ -4744,8 +4744,10 @@ class FakeScopeMemberPager(_FakeTrackerState):
     """The ``ScopeMemberPager`` role of this double, a few members per page."""
 
     async def scope_member_pages(
-        self, *, ref: ScopeRef
+        self, *, ref: ScopeRef, whole_bodies: bool = False
     ) -> AsyncIterator[Sequence[TrackerIssue]]:
+        """The double's bodies are never cut, so *whole_bodies* changes nothing."""
+        _ = whole_bodies
         if ref.kind is ScopeKind.ISSUE:
             if ref.key not in self.issues:
                 raise ScopeReadError("issue is missing", ref=ref)
@@ -4763,6 +4765,15 @@ class FakeScopeMemberPager(_FakeTrackerState):
             if ref not in self.scope_containers and ref not in self.scope_memberships:
                 raise ScopeReadError("container is missing", ref=ref)
             keys = list(dict.fromkeys(self.scope_memberships.get(ref, ())))
+            # A container's criterion sub-issues sit below its members with
+            # no project of their own, as the adapter reads them.
+            keys.extend(
+                issue.issue_key
+                for issue in self.issues.values()
+                if issue.parent_key in keys
+                and issue.issue_key not in keys
+                and "criterion" in issue.issue_labels
+            )
         for start in range(0, len(keys), FAKE_MEMBER_PAGE_SIZE):
             page: list[TrackerIssue] = []
             for key in keys[start : start + FAKE_MEMBER_PAGE_SIZE]:

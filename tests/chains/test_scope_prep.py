@@ -1,4 +1,4 @@
-"""The scope run's stages: prep reads the board's criteria, the gate counts."""
+"""The scope run's stages: prep reads the criteria whole, the gate counts states."""
 
 from collections.abc import AsyncIterator, Sequence
 from pathlib import Path
@@ -15,7 +15,6 @@ from kodezart.core.prompt_namespaces import bindings_for
 from kodezart.core.protocols import AgentRunner, PromptSetProvider, ScopeMemberPager
 from kodezart.domain.criterion_creation import criterion_body
 from kodezart.services.agent_service import AgentService
-from kodezart.types.domain.agent import ResultEvent, ScopeItem, ScopeOpenCount
 from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.criteria import (
     CriterionId,
@@ -23,7 +22,7 @@ from kodezart.types.domain.criteria import (
     TrackerCriterionSet,
 )
 from kodezart.types.domain.fire_spec import TrackerSpec
-from kodezart.types.domain.scope import ScopeKind, ScopeRef
+from kodezart.types.domain.scope import ScopeContainer, ScopeKind, ScopeRef
 from kodezart.types.domain.session import PermissionMode, SessionType
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.ticket_review import TicketReviewMode
@@ -78,18 +77,6 @@ def _issue(
     )
 
 
-def _answer(structured: dict[str, object] | None) -> ResultEvent:
-    return ResultEvent(
-        subtype="success",
-        duration_ms=1,
-        duration_api_ms=1,
-        is_error=False,
-        num_turns=1,
-        session_id="scope",
-        structured_output=structured,
-    )
-
-
 def _config() -> dict[str, object]:
     execution = ExecutionContext(
         prompt="Deliver the parent.",
@@ -112,17 +99,6 @@ def _stages(runner: FakeAgentRunner, board: FakeTrackerPort) -> ScopeStages:
         members=board,
         working_dir="/work",
     )
-
-
-def _done(
-    open_count: int, *, total: int | None = None, keys: tuple[str, ...] = ()
-) -> dict[str, object]:
-    return ScopeOpenCount(
-        open_count=open_count,
-        total_count=total,
-        sample=[ScopeItem(key=key, title=f"Title of {key}") for key in keys],
-        reason="Read from one filtered query.",
-    ).model_dump(by_alias=True)
 
 
 async def test_prep_reads_every_criterion_below_the_parent_across_pages() -> None:
@@ -185,10 +161,12 @@ class _Pages:
 
     def __init__(self, *pages: tuple[TrackerIssue, ...]) -> None:
         self._pages = pages
+        self.asked_whole: list[bool] = []
 
     async def scope_member_pages(
-        self, *, ref: ScopeRef
+        self, *, ref: ScopeRef, whole_bodies: bool = False
     ) -> AsyncIterator[Sequence[TrackerIssue]]:
+        self.asked_whole.append(whole_bodies)
         for page in self._pages:
             yield page
 
@@ -234,65 +212,125 @@ async def test_prep_with_no_criterion_below_the_parent_has_nothing_to_grade() ->
     assert update == {"criteria_infeasible": True}
 
 
-async def test_the_gate_passes_when_the_count_of_open_members_is_zero() -> None:
-    runner = FakeAgentRunner([_answer(_done(0, total=1575))])
+async def test_prep_reads_each_check_whole_and_the_gate_reads_states_only() -> None:
+    """A listing may cut a Check short: prep asks for whole bodies, the gate not."""
+    board = _Pages((_issue("c/one", check="first text"),))
+    stages = ScopeStages(
+        runner=FakeAgentRunner([]),
+        prompts=load_registry(bindings=dict(bindings_for(example_config()))),
+        skills=SUPPRESS_ALL_SKILLS,
+        members=board,
+        working_dir="/work",
+    )
 
-    update = await _stages(runner, FakeTrackerPort()).scope_done(_EMPTY, _config())
+    await stages.prep(_EMPTY, _config())
+    await stages.scope_done(_EMPTY, _config())
+
+    assert board.asked_whole == [True, False]
+
+
+PROJECT = ScopeRef(kind=ScopeKind.PROJECT, key="project-one")
+
+
+def _project_config() -> dict[str, object]:
+    configurable = _config()["configurable"]
+    assert isinstance(configurable, dict)
+    return {"configurable": {**configurable, "scope": PROJECT.model_dump()}}
+
+
+async def test_prep_reads_the_criteria_below_a_projects_members() -> None:
+    """A criterion is minted with no project: the container's members carry it.
+
+    The board lists two members in the project; each has a criterion child
+    that no project listing reaches. Prep's roster still holds both.
+    """
+    board = FakeTrackerPort(
+        issues=[
+            _issue("FIRE-1", parent=None),
+            _issue("FIRE-2", parent=None),
+            _issue("FIRE-3", parent="FIRE-1", check="The third holds."),
+            _issue("FIRE-4", parent="FIRE-2", check="The fourth holds."),
+            _issue("FIRE-5", parent="ELSEWHERE-1", check="Not below a member."),
+        ],
+        scope_containers=[
+            ScopeContainer(
+                ref=PROJECT,
+                name="project-one",
+                description="",
+                url="https://tracker.invalid/project/project-one",
+                parent=None,
+            )
+        ],
+        scope_memberships={PROJECT: ["FIRE-1", "FIRE-2"]},
+    )
+
+    update = await _stages(FakeAgentRunner([]), board).prep(_EMPTY, _project_config())
+
+    spec = update["fire_spec"]
+    assert isinstance(spec, TrackerSpec)
+    assert spec.criteria == ("FIRE-3", "FIRE-4")
+
+
+def _board(*issues: TrackerIssue) -> FakeTrackerPort:
+    return FakeTrackerPort(issues=[_issue(PARENT.key, parent=None), *issues])
+
+
+async def test_the_gate_passes_when_nothing_below_the_parent_is_open() -> None:
+    board = _board(
+        _issue("FIRE-2", state=WorkflowStateKind.COMPLETED),
+        _issue("FIRE-3", state=WorkflowStateKind.CANCELED),
+        _issue(
+            "FIRE-4", parent="FIRE-2", check="Held.", state=WorkflowStateKind.COMPLETED
+        ),
+    )
+    runner = FakeAgentRunner([])
+
+    update = await _stages(runner, board).scope_done(_EMPTY, _config())
 
     assert update == {"review_passed": True}
-    [call] = runner.calls
-    assert call["output_format"] == {
-        "type": "json_schema",
-        "schema": ScopeOpenCount.model_json_schema(),
+    assert runner.calls == []
+
+
+async def test_the_gate_fails_with_the_count_and_the_keys_read_off_every_page() -> None:
+    """The one open issue sits on the last page: every page is read (KOD-1288)."""
+    board = _board(
+        _issue("FIRE-2", state=WorkflowStateKind.COMPLETED),
+        _issue("FIRE-3", state=WorkflowStateKind.COMPLETED),
+        _issue("FIRE-4", state=WorkflowStateKind.COMPLETED),
+        _issue("FIRE-5", state=WorkflowStateKind.COMPLETED),
+        _issue("FIRE-6", state=WorkflowStateKind.STARTED),
+    )
+
+    update = await _stages(FakeAgentRunner([]), board).scope_done(_EMPTY, _config())
+
+    assert update == {
+        "review_passed": False,
+        "review_feedback": "Open below the parent: 1 of 5, among them FIRE-6.",
     }
+    assert board.issue_reads == ["FIRE-2", "FIRE-3", "FIRE-4", "FIRE-5", "FIRE-6"]
 
 
-async def test_the_gate_fails_with_the_count_and_the_keys_it_was_given() -> None:
-    runner = FakeAgentRunner([_answer(_done(3, total=40, keys=("K-0", "K-1", "K-2")))])
+async def test_the_gate_names_at_most_ten_open_keys() -> None:
+    board = _board(*(_issue(f"K-{n}") for n in range(12)))
 
-    update = await _stages(runner, FakeTrackerPort()).scope_done(_EMPTY, _config())
+    update = await _stages(FakeAgentRunner([]), board).scope_done(_EMPTY, _config())
 
     assert update == {
         "review_passed": False,
         "review_feedback": (
-            "Open below the parent: 3 of 40, among them K-0, K-1, K-2. "
-            "Read from one filtered query."
+            "Open below the parent: 12 of 12, among them "
+            + ", ".join(f"K-{n}" for n in range(10))
+            + "."
         ),
     }
 
 
-async def test_the_gate_names_at_most_ten_keys_and_no_total_it_was_not_given() -> None:
-    keys = tuple(f"K-{n}" for n in range(12))
-    runner = FakeAgentRunner([_answer(_done(250, keys=keys))])
-
-    update = await _stages(runner, FakeTrackerPort()).scope_done(_EMPTY, _config())
-
-    assert update["review_passed"] is False
-    assert update["review_feedback"] == (
-        "Open below the parent: 250, among them "
-        + ", ".join(keys[:10])
-        + ". Read from one filtered query."
-    )
-
-
-async def test_an_unanswered_gate_fails_and_says_so() -> None:
-    """The 1,575-member case: the session ends with no structured answer."""
-    runner = FakeAgentRunner([_answer(None)])
-
-    update = await _stages(runner, FakeTrackerPort()).scope_done(_EMPTY, _config())
+async def test_a_parent_with_nothing_below_it_is_not_finished() -> None:
+    update = await _stages(FakeAgentRunner([]), _board()).scope_done(_EMPTY, _config())
 
     assert update == {
         "review_passed": False,
-        "review_feedback": "The scope-done question went unanswered.",
-    }
-
-
-def test_the_scope_done_answer_carries_a_count_and_no_member_list() -> None:
-    assert set(ScopeOpenCount.model_json_schema()["properties"]) == {
-        "openCount",
-        "totalCount",
-        "sample",
-        "reason",
+        "review_feedback": "Nothing was read below the parent.",
     }
 
 

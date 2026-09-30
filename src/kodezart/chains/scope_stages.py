@@ -1,4 +1,4 @@
-"""The scope run's own nodes: groom and prep the parent, then ask if it is done."""
+"""The scope run's own nodes: groom and prep the parent, then count what is open."""
 
 from langchain_core.runnables import RunnableConfig
 
@@ -7,16 +7,15 @@ from kodezart.core.protocols import AgentRunner, PromptSetProvider, ScopeMemberP
 from kodezart.domain.criteria import criterion_set
 from kodezart.domain.fire_spec import criterion_check, tracker_spec_from_board
 from kodezart.domain.prompt_variables import scope_variables
-from kodezart.services.agent_question import ask
-from kodezart.types.domain.agent import ScopeOpenCount
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.scope import ScopeRef
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.subagents import NO_SUBAGENTS
+from kodezart.types.domain.tracker import is_open
 from kodezart.types.domain.workflow import ExecutionContext, WorkflowState
 
-#: The open keys a failed scope-done answer names in its feedback, at most.
+#: The open keys a failed scope-done gate names in its feedback, at most.
 _FEEDBACK_KEYS = 10
 
 
@@ -29,9 +28,11 @@ class ScopeStages:
     what happens. Prep then reads the criterion sub-issues below the parent
     through the tracker port, page by page, and their keys with their Checks
     are what the loop and the review grade. After the merge the scope-done
-    question answers how many issues below the parent are still open, with a
-    few of their keys, never the whole list (KOD-1288). Nothing here writes
-    to the tracker itself: the sessions do.
+    gate counts, through the same port, how many issues below the parent are
+    still open: arithmetic over the board's states, no session and no list
+    handed back through a structured answer, which at a thousand members no
+    longer fit one (KOD-1288). Nothing here writes to the tracker itself:
+    the sessions do.
     """
 
     def __init__(
@@ -81,43 +82,48 @@ class ScopeStages:
     async def scope_done(
         self, state: WorkflowState, config: RunnableConfig
     ) -> dict[str, object]:
-        """Passed when nothing below the parent is open; else the count, a few keys."""
+        """Passed when nothing below the parent is open; else the count, a few keys.
+
+        Every page is read: an open issue on the last page is as open as one
+        on the first. A parent with nothing below it is not finished, it is
+        unread work.
+        """
         _ = state
-        answer = await ask(
-            runner=self._runner,
-            prompts=self._prompts,
-            skills=self._skills,
-            workspace_path=self._working_dir,
-            key=PromptKey.SCOPE_DONE,
-            bindings=scope_variables(_scope_of(config)),
-            answer=ScopeOpenCount,
-        )
-        if answer is None:
+        open_keys: list[str] = []
+        total = 0
+        async for page in self._members.scope_member_pages(ref=_scope_of(config)):
+            for issue in page:
+                total += 1
+                if is_open(issue.state_kind):
+                    open_keys.append(issue.issue_key)
+        if total == 0:
             return {
                 "review_passed": False,
-                "review_feedback": "The scope-done question went unanswered.",
+                "review_feedback": "Nothing was read below the parent.",
             }
-        if answer.open_count == 0:
+        if not open_keys:
             return {"review_passed": True}
-        of_total = "" if answer.total_count is None else f" of {answer.total_count}"
-        named = ", ".join(item.key for item in answer.sample[:_FEEDBACK_KEYS])
+        named = ", ".join(open_keys[:_FEEDBACK_KEYS])
         return {
             "review_passed": False,
             "review_feedback": (
-                f"Open below the parent: {answer.open_count}{of_total}"
-                f"{f', among them {named}' if named else ''}. {answer.reason}"
+                f"Open below the parent: {len(open_keys)} of {total}, "
+                f"among them {named}."
             ),
         }
 
     async def _checks(self, scope: ScopeRef) -> dict[str, str]:
         """Each criterion sub-issue below *scope* with its Check, in board order.
 
-        Read through the tracker port one listing page at a time. A key the
-        pages repeat is held once, where it first stood, with the Check it
-        was read with last.
+        Read through the tracker port one listing page at a time, each body
+        whole: a listing may cut a Check short, and a cut Check is not the
+        board's. A key the pages repeat is held once, where it first stood,
+        with the Check it was read with last.
         """
         checks: dict[str, str] = {}
-        async for page in self._members.scope_member_pages(ref=scope):
+        async for page in self._members.scope_member_pages(
+            ref=scope, whole_bodies=True
+        ):
             for issue in page:
                 if "criterion" in issue.issue_labels:
                     checks[issue.issue_key] = criterion_check(

@@ -786,9 +786,9 @@ the tracker server its kind is given — the deployment's own server under the
 tracker key, or, with the host MCP opt-in on, the host's own — and what it
 writes there is the whole of what happens: kodezart takes no lease, writes no
 marker, keeps no record and runs no verifier. After its criteria session,
-`prep` asks the `scope_done` question and keeps each criterion sub-issue the
-board lists, with its Check, as the run's criteria; a board that lists none
-ends the run `criteria_infeasible`. There is no stage barrier and no marker
+`prep` reads the criterion sub-issues below the parent through the tracker
+port, one listing page at a time and each Check whole, and keeps them as the
+run's criteria; a board that lists none ends the run `criteria_infeasible`. There is no stage barrier and no marker
 roster: a run submitted again after a failure grooms and preps again from
 what the board holds.
 
