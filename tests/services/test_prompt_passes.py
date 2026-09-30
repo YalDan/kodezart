@@ -1923,3 +1923,26 @@ def test_the_supervisor_pass_renders_as_the_one_supervisor(prompt_set: str) -> N
         "The supervisor pass's own record rows and finding comments are not the"
         " account's work" in rendered
     )
+    # The pass stays read-only (KOD-1290), and it judges the graph (KOD-1305):
+    # every pull request sits where the blocking edges put it, and no stack
+    # is ever rewritten. Each sentence exactly once. The graph rules are the
+    # served set's; the older set carries the read-only sentence alone.
+    assert (
+        rendered.count(
+            "You edit nothing, you rule on nothing, you never fire and you never"
+            " approve."
+        )
+        == 1
+    )
+    if prompt_set != V5_SET:
+        return
+    assert rendered.count("- A pull request sits where the graph puts it.") == 1
+    assert rendered.count("- A stack is never rewritten.") == 1
+    assert (
+        "a squash merge of such a branch is a finding for the run of each request"
+        " above it, naming the merge it must take." in rendered
+    )
+    assert (
+        "read every pull request merged on the declared repositories in the"
+        " window, with the way it was merged." in rendered
+    )
