@@ -281,6 +281,59 @@ def test_the_changeset_graders_judge_the_pull_request_by_the_draft_rule() -> Non
         assert scope_open < rule_at < body.index("{{/if}}", scope_open)
 
 
+#: The graph rule and the base rule (owner ruling KOD-1305, 2026-09-30): the
+#: blocking edges between unit issues are the delivery order, and a unit's
+#: base is derived from them, never chosen by the lane.
+GRAPH_RULE = (
+    "The graph is the blocking edges between unit issues and nothing else: a"
+    " dependency between issues of two units is an edge between their unit"
+    " issues, the edges give the order the pull requests merge in, and no"
+    " description, wrapper field, comment, title or pull-request text states a"
+    " base, a stack or a merge order; a principal's hold is an edge from the"
+    " issue that carries it, which only that principal closes or removes."
+)
+BASE_RULE = (
+    "Its base follows from the graph: of the units it is blocked by that have"
+    " an open pull request in that repository, drop any whose head another"
+    " one's head contains; none left is the trunk, one is that unit's branch,"
+    " and two or more are the unit's union."
+)
+
+#: The three sentences the graph rule replaced, which must not survive
+#: anywhere in the set: a milestone as the unit, a ban on unmerged work, and
+#: a stack chosen by recency.
+RETIRED_DELIVERY_TEXTS = (
+    "A milestone, or the parent issue where a project has none, is the unit of"
+    " delivery",
+    "and no dependency on unmerged work except the unit it stacks on",
+    "named after the project and the unit, stacked on the project's previous"
+    " unit only where it depends on it",
+)
+
+
+#: The union has one writer, and no stack is rewritten by a session.
+UNION_WRITER_RULE = "the session delivering the unit is its only writer."
+NO_REWRITE_RULE = (
+    "No session rebases, force-pushes or squashes a branch that a pull request"
+    " or a union builds on."
+)
+
+
+def test_the_delivery_standard_states_the_graph_and_base_rules_once() -> None:
+    """Each rule is declared once in the manifest and in no member file."""
+    manifest = prose(SET_TOML.read_text(encoding="utf-8"))
+    for rule in (GRAPH_RULE, BASE_RULE, UNION_WRITER_RULE, NO_REWRITE_RULE):
+        assert manifest.count(rule) == 1
+        assert member_files_carrying(rule) == []
+
+
+@pytest.mark.parametrize("retired", RETIRED_DELIVERY_TEXTS)
+def test_the_retired_delivery_texts_are_gone_from_the_set(retired: str) -> None:
+    """The milestone unit, the unmerged-work ban and the recency stack left."""
+    assert retired not in prose(SET_TOML.read_text(encoding="utf-8"))
+    assert member_files_carrying(retired) == []
+
+
 def test_the_delivery_standard_names_no_cadence() -> None:
     """Both scheduled passes carry it, and scheduling lives in their config."""
     standard = fragment("delivery_units").lower()

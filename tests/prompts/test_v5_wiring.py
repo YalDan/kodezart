@@ -288,6 +288,169 @@ def test_the_critique_hands_the_critic_the_task_the_content_and_the_draft() -> N
 
 
 # ---------------------------------------------------------------------------
+# KOD-1305 — fire-prep prepares each fire as a unit with edges (item 6), and
+# KOD-1285 — a tick stages a bounded number of fires
+# ---------------------------------------------------------------------------
+
+#: Each sentence item 6 put in, once; the wrapper carries no base line.
+FIRE_PREP_GRAPH_TEXTS = (
+    "a base, a pinned target or a dependency is never a wrapper field, because"
+    " the delivery rule below derives the base from blocking edges.",
+    "list the open pull requests and the unit issue each is attached to,",
+    "the base is what its unit's blocking edges now give",
+    "Read the real code at the base the delivery rule gives the unit — the"
+    " heads of the units it is blocked by, merged or not, their union, or the"
+    " trunk — and treat something as missing only when it is absent there.",
+    "exists on the branches of the units it is blocked by, merged or not,",
+    "its dependencies are blocking edges to the unit issues that carry them,"
+    " set with the fire and never written in its body",
+    "Wrap it in the issue as scope, ticket type, the consulted section",
+    "blocked by that request's unit",
+    "each with the units it is blocked by;",
+)
+
+#: The recency base rule and the wrapper base fields, gone.
+FIRE_PREP_RETIRED_TEXTS = (
+    "base-branch mode",
+    "the head of the latest open request when one exists, else the trunk",
+    "find the head of the latest one",
+    "with the base pinned to that request's branch",
+    "each with its resolved base branch",
+)
+
+#: KOD-1285: one tick's work is bounded, so it ends inside its budget.
+FIRE_PREP_TICK_CAP = (
+    "One tick takes up at most eight problem groups, the oldest triage items"
+    " first, and stops; the rest wait for the next tick, so a tick ends inside"
+    " its budget with its record row written instead of being cancelled"
+    " mid-draft. The row names every triage item and every response-set item"
+    " left untaken, so the next tick's gate counts them as work and its sweeps"
+    " read them again whether or not they moved."
+)
+
+#: The cap's neighbours agree with it: the finish promise, the one-act rule
+#: and the record row all speak of the items the tick took up (KOD-1285).
+FIRE_PREP_CAP_NEIGHBOURS = (
+    "You finish the prep of every item you take up: nothing is left for the"
+    " grooming pass except a genuine principal decision, and what the tick's"
+    " cap leaves untaken is named in the record row for the next tick.",
+    "By the end of a run each triaged item the tick took up is a fire-ready issue,",
+    "First, once every disposition and reply of the items you took up is"
+    " complete, write this run's record row, naming what the cap left untaken",
+)
+
+#: Texts a retired rule could sneak back through, inside a conditional no
+#: render of the example config reaches: guarded on the files themselves.
+FIRE_PREP_FILE_ABSENT_TEXTS = (
+    *FIRE_PREP_RETIRED_TEXTS,
+    "keep staging until every",
+    "nothing is left for the grooming pass or for a future run",
+)
+
+
+def _rendered_pass(key: PromptKey) -> str:
+    return (
+        v5_registry()
+        .template_for(key)
+        .render({"skills_reference": "", **pass_render_variables(key)})
+    )
+
+
+def _pass_source(key: PromptKey) -> str:
+    """The member file itself, every conditional branch included."""
+    return (default_sets_root() / V5_SET / f"{key.value}.md").read_text(
+        encoding="utf-8"
+    )
+
+
+@pytest.mark.parametrize(
+    "text", (*FIRE_PREP_GRAPH_TEXTS, FIRE_PREP_TICK_CAP, *FIRE_PREP_CAP_NEIGHBOURS)
+)
+def test_fire_prep_grounds_each_fire_on_its_blockers_branches(text: str) -> None:
+    """Each sentence renders exactly once in the fire-prep prompt."""
+    assert _rendered_pass(PromptKey.FIRE_PREP_PASS).count(text) == 1
+
+
+@pytest.mark.parametrize("text", FIRE_PREP_FILE_ABSENT_TEXTS)
+def test_fire_prep_names_no_base_branch_wrapper_field(text: str) -> None:
+    """The base follows from the edges; no wrapper field and no recency rule,
+    in the file itself, so no conditional branch can carry one."""
+    assert text.casefold() not in _rendered_pass(PromptKey.FIRE_PREP_PASS).casefold()
+    assert text.casefold() not in _pass_source(PromptKey.FIRE_PREP_PASS).casefold()
+
+
+# ---------------------------------------------------------------------------
+# KOD-1305 — grooming keeps units and edges true (item 7), stops its noise
+# (item 8), and KOD-1283 — never ends a process by pattern
+# ---------------------------------------------------------------------------
+
+GROOMING_GRAPH_TEXTS = (
+    "a dependency, base-branch or prerequisite line there becomes, once"
+    " verified, the blocking edge between units it stands for, and is removed"
+    " with a fields-only edit plus a comment, touching nothing else; a line"
+    " relaying a principal's hold goes only when that principal's later ruling"
+    " is recorded, and hold text a principal wrote is never edited: ask that"
+    " principal once whether it becomes an edge.",
+    "build each unit's request head that moved since the window started, for a"
+    " verdict of its own, then the composition of the graph's ends — the open"
+    " units no other open unit is blocked by — merged in your clone, and report"
+    " the composition's verdict beside the per-unit verdicts, never folded into"
+    " one of them;",
+    "each request is attached to the one unit issue whose issues it carries,"
+    " and a missing attachment is yours to add; act on the supervisor pass's"
+    " findings addressed to you:",
+    "a request whose head holds another open unit's work gets an edge only when"
+    " that dependency is real.",
+    "An edge between issues of two different units is set between their unit"
+    " issues, because the unit is what merges.",
+    "Compose in your clone and push nothing you composed; delete the composition"
+    " branches earlier passes of this kind pushed.",
+    "Never end a process by pattern: end only a process id this pass started.",
+    "One status update per initiative whose health changed or under which"
+    " something moved in the window, and none for the others, whose trace is"
+    " this pass's record row; it opens with the land queue — the requests that"
+    " can merge now: based on the trunk, ready for review, every blocker merged"
+    " and no hold open — derived this pass.",
+    "or whose health changed, every pass:",
+    "a pass with a healthy build, no findings and no initiative that moved posts"
+    " no update and sends no notification.",
+    "record the query, its empty result and what you did not cover in this"
+    " pass's record row, and in the status update of an initiative only when"
+    " that initiative gets one this pass, never as a comment,",
+)
+
+GROOMING_RETIRED_TEXTS = (
+    "push them",
+    "Push what you composed",
+    "the most recently updated on a tie",
+    "every pass, even when nothing changed",
+    "or carries a target date, every pass",
+    "is never a reason to withhold the composition",
+    "still posts the initiative updates",
+    "in the initiative status update, never as a comment",
+    "pkill",
+)
+
+
+@pytest.mark.parametrize("text", GROOMING_GRAPH_TEXTS)
+def test_grooming_keeps_units_and_edges_true_and_composes_without_pushing(
+    text: str,
+) -> None:
+    """Each sentence renders exactly once in the grooming prompt."""
+    assert _rendered_pass(PromptKey.GROOMING_PASS).count(text) == 1
+
+
+@pytest.mark.parametrize("text", GROOMING_RETIRED_TEXTS)
+def test_grooming_pushes_no_composition_and_reports_only_on_change(
+    text: str,
+) -> None:
+    """The recency tie-break, the pushed compositions and the per-pass status
+    update on unchanged initiatives are gone, from the file itself."""
+    assert text.casefold() not in _rendered_pass(PromptKey.GROOMING_PASS).casefold()
+    assert text.casefold() not in _pass_source(PromptKey.GROOMING_PASS).casefold()
+
+
+# ---------------------------------------------------------------------------
 # KOD-290 — the Record clause prescribes the runner's own title
 # ---------------------------------------------------------------------------
 
