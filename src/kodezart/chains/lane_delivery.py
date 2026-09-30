@@ -51,7 +51,6 @@ from kodezart.types.domain.delivery import (
 from kodezart.types.domain.fire_spec import TrackerSpec
 from kodezart.types.domain.gating import ContentClass, OutboundDestination, WriterShape
 from kodezart.types.domain.operation import RepoEntry
-from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.pr_state import PRLifecycle
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run_state import LanePR
@@ -198,7 +197,12 @@ class LaneDeliveryCoordinator:
                 remediation_pending=pending,
             ),
         )
-        if result.outcome is WorkflowOutcome.ci_passed:
+        finished = (
+            result.checks_passed
+            and not result.stalled
+            and not result.remediation_pending
+        )
+        if finished:
             # The lane is finished: its criteria were accepted before this
             # step ran and the checks are green at the published head.
             # Every lane pull request opens as a draft (KOD-1294); this is
@@ -216,6 +220,7 @@ class LaneDeliveryCoordinator:
                 await self._log.aerror(
                     "mark_ready_failed",
                     pr_number=pr.number,
+                    repo_url=repo_url,
                     error=str(exc),
                     error_kind=type(exc).__name__,
                 )
