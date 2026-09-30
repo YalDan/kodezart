@@ -325,14 +325,12 @@ SCOPE_ONLY_RULES = (
     ("implementation", "argue against your own change"),
     (
         "implementation",
-        "When a lint rule refuses a placement, fix the placement to the rule's "
-        "intent or file the rule's defect; never satisfy a directory rule by "
-        "relocating what it rejected.",
+        "never satisfy a directory rule by relocating what is not data",
     ),
     (
         "implementation",
-        "you and every agent you dispatch to verify it apply the review below "
-        "beside its Check",
+        "you and every agent you dispatch, to build or to verify, apply the rule "
+        "above and the review below beside its Check",
     ),
     ("implementation", "Neighbour review, a second lens beside each criterion"),
     ("workflow_pr", "one per line in the form `Delivers: ABC-123`"),
