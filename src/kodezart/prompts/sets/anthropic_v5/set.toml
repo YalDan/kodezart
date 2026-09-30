@@ -123,6 +123,28 @@ written or covers a case that cannot occur, and handling added for an improbable
 each breach KISS; name it with file:line and fail the criteria that rest on that file.\
 """
 
+# The neighbour lens (KOD-1306), one source composed into the two changeset
+# graders and into the implementer's scope block, where the session applies
+# it before an item is Done and passes it to every verifier it briefs: a
+# criterion's own Check never asks whether a change reads like the files
+# beside it, so this does.
+neighbour_review = """\
+Neighbour review, a second lens beside each criterion: for every file the change adds,
+moves or reshapes, name its sibling files and say whether the file follows their pattern
+(the same directory, the same port, the same builder or library); a departure from that
+pattern is a finding unless the change shows its own shape is the simpler one. A file
+under `constants/` or `config/` that holds a query, a statement, a template with
+placeholders or other executable text is a finding. A move made to satisfy a lint rule is
+reported with the rule's name, and is a finding unless the rule's intent is met. A schema
+at a boundary states shape and per-field constraints: a business rule, a cross-object
+consistency check or a decision that belongs to the operation producing the value is a
+finding when a schema carries it, and so is any clever construct carrying logic a plain
+function would carry, unless the change shows it is the simplest correct place; name the
+operation or function it belongs in. A finding here fails the criterion the change was
+made for, with the file:line and the principle breached, named as your house rules name
+it.\
+"""
+
 # The store mechanism every scheduled pass owes. Window and Record ride in
 # each member beside its own kind's declared destination instead (KOD-170,
 # amended per the founder's one-surface ruling): the record row a pass

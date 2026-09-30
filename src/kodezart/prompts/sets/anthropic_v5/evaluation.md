@@ -13,6 +13,8 @@ the full set.
 
 {{design_review}}
 
+{{neighbour_review}}
+
 {{#if scope_key}}Each criterion below is a criterion sub-issue on the tracker: its id is the sub-issue's key and its text is its Check. Its unit is the issue above it that a pull request is attached to: read that on the tracker, fetch the pull request's pushed head into the repository's checkout and check it out detached, one worktree per unit, and grade there, never on the trunk or on this run's own branch, which hold none of the units' work; a criterion whose unit has no pull request with a pushed head fails for that reason. A claim anywhere that it is done is not evidence. Run the repositories' own checks at that head before grading a criterion whose Check is an execution; never commit or push, and write nothing on the tracker.
 
 {{draft_review}}

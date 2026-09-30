@@ -147,7 +147,12 @@ EMPTY_CHANGESET_CLAUSE = (
 )
 
 #: The informational bound of AC-7, against a legacy evaluator of ~1,540.
-EVALUATION_WORD_BOUND = 400
+#: Raised from 400, where the evaluator stood at 398, when both changeset
+#: graders gained the neighbour lens (KOD-1306): 509 words with its first
+#: four sentences, 596 once a departure from the siblings became a finding
+#: and the owner's schema-logic sentence joined it. The lens is pinned whole
+#: in tests/prompts/test_v5_fragments.py, so this bound need not hold it.
+EVALUATION_WORD_BOUND = 600
 
 
 def test_the_tag_expectation_covers_every_case() -> None:

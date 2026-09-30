@@ -125,6 +125,11 @@ class PromptSetFragments(BaseModel):
     #: violation. Nullable like the proxy, so a set declaring none composes
     #: unchanged.
     design_review: str | None = None
+    #: The neighbour lens: whether each added, moved or reshaped file reads
+    #: like its siblings.  One source composed into the two changeset graders
+    #: and the implementer's scope block, so the verifiers a scope session
+    #: briefs carry the same text the graders do.
+    neighbour_review: str | None = None
     ultrathink_instruction: str | None = None
     ultracode_instruction: str | None = None
     #: The shared fan-out spec both orchestration fragments carry, and the

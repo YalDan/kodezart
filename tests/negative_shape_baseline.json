@@ -298,7 +298,7 @@
   "tests/prompts/test_supervision_adoption.py": 20,
   "tests/prompts/test_supervision_block_adoption.py": 30,
   "tests/prompts/test_v5_board_hierarchy.py": 31,
-  "tests/prompts/test_v5_fragments.py": 56,
+  "tests/prompts/test_v5_fragments.py": 71,
   "tests/prompts/test_v5_lenses.py": 6,
   "tests/prompts/test_v5_orchestration.py": 23,
   "tests/prompts/test_v5_style_rules.py": 13,
@@ -4477,7 +4477,17 @@
    "test_utility_templates_carry_no_depth_instruction",
    "test_every_judgment_template_ends_with_the_depth_block",
    "test_the_depth_block_is_declared_once_and_carried_by_no_member_file",
-   "test_the_ultracode_token_is_declared_and_used_by_no_member"
+   "test_the_ultracode_token_is_declared_and_used_by_no_member",
+   "test_the_neighbour_review_is_declared_exactly_once",
+   "test_the_neighbour_review_reads_whole",
+   "test_the_neighbour_review_resolves_into_the_graders_and_the_implementer",
+   "test_each_grader_renders_the_lens_once",
+   "test_the_rendered_evaluator_finds_the_schema_logic_sentence_once",
+   "test_every_scope_kind_carries_the_relocation_rule_and_the_lens",
+   "test_each_grader_keeps_the_lens_slot_bare_and_ahead_of_its_data_blocks",
+   "test_the_implementer_keeps_both_rules_and_the_slot_bare_in_the_scope_block",
+   "test_each_grader_renders_the_lens_for_tracker_criteria",
+   "test_a_per_issue_implementer_carries_neither_rule_nor_the_lens"
   ],
   "tests/prompts/test_v5_lenses.py": [
    "test_the_set_declares_exactly_the_three_lenses",
