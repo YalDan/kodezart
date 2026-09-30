@@ -1076,7 +1076,7 @@ async def build_dispatch_runtime(
         heartbeat = build_scope_heartbeat(
             config=config,
             operation=operation,
-            tracker_present=dialled is not None,
+            tracker=None if dialled is None else dialled.tracker,
             queue=queue,
             registry=registry,
             runner=runner,

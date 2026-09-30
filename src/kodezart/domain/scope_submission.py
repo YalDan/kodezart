@@ -1,8 +1,30 @@
-"""Pure facts about a scope's submissions: which of two live ones goes first."""
+"""Pure facts about a scope's submissions: whether one is owed, which goes first."""
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 
 from kodezart.types.domain.job import JobRecord
+from kodezart.types.domain.tracker import TrackerIssue, is_open
+
+#: The configured label key of an issue that is a record, not work: it counts
+#: neither as open nor as closed when a scope is asked whether work remains.
+TRACKER_RECORD_LABEL = "tracker"
+
+
+def open_work_count(members: Iterable[TrackerIssue]) -> int:
+    """How many of a scope's *members* are open work.
+
+    A member counts when its workflow state is open and it does not carry
+    the ``tracker`` label. Zero means there is nothing for a run to do: every
+    member is completed, canceled or a duplicate, or the scope has no member
+    but tracker records, or none at all. This is the count the scope
+    heartbeat guards a submission with, read from the board in code rather
+    than taken from the scope scan's answer (KOD-1302).
+    """
+    return sum(
+        1
+        for issue in members
+        if is_open(issue.state_kind) and TRACKER_RECORD_LABEL not in issue.issue_labels
+    )
 
 
 def prior_live_job(*, live: Sequence[JobRecord], job_id: str) -> JobRecord | None:

@@ -1387,6 +1387,18 @@ class TrackerScopeApprovalReader(
 
 
 @runtime_checkable
+class ScopeHeartbeatReader(TrackerScopeApprovalReader, ScopeFamilyReader, Protocol):
+    """The two board reads the scope heartbeat guards a submission with.
+
+    Approval, read the way a run's entry reads it, and the scope's family, to
+    count its open work. Nothing else: the heartbeat writes nothing and reads
+    no other fact from the tracker (interface segregation), so the cheap
+    scan's answer decides which nodes are asked about, never whether one is
+    submitted (KOD-1302).
+    """
+
+
+@runtime_checkable
 class WorkRefReader(Protocol):
     """The one read base resolution makes to find a blocker's branch.
 

@@ -352,6 +352,7 @@
   "tests/services/test_scope_classification_static.py": 13,
   "tests/services/test_scope_dispatcher.py": 147,
   "tests/services/test_scope_entry.py": 14,
+  "tests/services/test_scope_heartbeat.py": 18,
   "tests/services/test_scope_planning.py": 17,
   "tests/services/test_scope_resolution.py": 7,
   "tests/services/test_scope_terminal.py": 84,
@@ -5346,6 +5347,13 @@
    "test_a_run_the_registry_does_not_hold_yields_to_any_live_one",
    "test_a_terminal_job_over_the_scope_does_not_refuse",
    "test_an_operation_missing_a_scope_plan_label_is_refused_before_delivery"
+  ],
+  "tests/services/test_scope_heartbeat.py": [
+   "test_an_approved_scope_with_open_work_is_submitted",
+   "test_an_approved_scope_whose_members_are_all_closed_is_rejected",
+   "test_an_approved_scope_with_no_member_at_all_is_rejected",
+   "test_a_scope_the_board_does_not_approve_is_rejected",
+   "test_a_rejected_node_does_not_stop_the_next_one"
   ],
   "tests/services/test_scope_planning.py": [
    "test_an_offending_key_under_a_deliverable_child_refuses_the_plan",

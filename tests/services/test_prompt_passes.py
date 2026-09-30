@@ -315,9 +315,13 @@ def approving_board() -> FakeTrackerPort:
 
     The container as well as the label, because the approval question reads
     a node's labels AND its parent edge: a board holding the label and no
-    container answers a question no workspace answers.
+    container answers a question no workspace answers. And one open member,
+    because the heartbeat submits only a scope with open work on the board
+    (KOD-1302): an approved project holding nothing is finished, not due.
     """
     return FakeTrackerPort(
+        issues=[make_tracker_issue("STANDING-1")],
+        scope_memberships={STANDING_SCOPE: ["STANDING-1"]},
         scope_containers=[
             ScopeContainer(
                 ref=STANDING_SCOPE,
