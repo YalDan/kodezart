@@ -10,18 +10,15 @@ monitored all stay drafts.
 import uuid
 
 from kodezart.chains.scope_stages import ScopeStages
+from kodezart.domain.criterion_creation import criterion_body
 from kodezart.domain.errors import ForgeAPIError
-from kodezart.types.domain.agent import (
-    ResultEvent,
-    ScopeItem,
-    ScopeItemsOutput,
-    WorkflowCompleteEvent,
-)
+from kodezart.types.domain.agent import ResultEvent, WorkflowCompleteEvent
 from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.ci import CIStatus
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.session import PermissionMode
+from kodezart.types.domain.tracker import WorkflowStateKind
 from tests.chains.test_ralph_workflow import (
     _APP,
     _LIB,
@@ -36,7 +33,9 @@ from tests.fakes import (
     FakeCIMonitor,
     FakePRCreator,
     FakeQualityGate,
+    FakeTrackerPort,
     make_passing_evaluation_over,
+    make_tracker_issue,
 )
 from tests.prompts.sets import operation_registry
 
@@ -176,26 +175,24 @@ class _ReviewOverScope(FakeAgentExecutor):
             yield event
 
 
-def _finished_board() -> FakeAgentRunner:
-    """Every issue below the parent is done, so the review runs."""
-    return FakeAgentRunner(
-        events=[
-            ResultEvent(
-                subtype="result",
-                duration_ms=1,
-                duration_api_ms=1,
-                is_error=False,
-                num_turns=1,
-                session_id="fake",
-                structured_output=ScopeItemsOutput(
-                    items=[
-                        ScopeItem(
-                            key="SCOPE-2", criterion=True, text="It works", done=True
-                        )
-                    ],
-                    reason="Every issue below the parent is done.",
-                ).model_dump(by_alias=True),
-            )
+def _finished_board() -> FakeTrackerPort:
+    """Every issue below the parent is done, so the review runs.
+
+    The scope-done gate counts the board's states through the paged read
+    (KOD-1288), so the board itself says the one criterion is completed;
+    no session answers the question.
+    """
+    return FakeTrackerPort(
+        issues=[
+            make_tracker_issue("SCOPE-1"),
+            make_tracker_issue(
+                "SCOPE-2",
+                parent_key="SCOPE-1",
+                state_kind=WorkflowStateKind.COMPLETED,
+                state_name=WorkflowStateKind.COMPLETED.value,
+                body=criterion_body(parent_key="SCOPE-1", check="It works", do="Do."),
+                issue_labels=frozenset({"criterion"}),
+            ),
         ]
     )
 
@@ -213,9 +210,10 @@ async def _run_finished_scope(
         git=_CommitsBeyondTrunk(commits_beyond),
         repositories=(_APP, _LIB),
         stages=ScopeStages(
-            runner=_finished_board(),
+            runner=FakeAgentRunner(events=[]),
             prompts=operation_registry(),
             skills=SUPPRESS_ALL_SKILLS,
+            members=_finished_board(),
             working_dir=str(tmp_path),
         ),
     )
