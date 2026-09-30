@@ -288,6 +288,65 @@ def test_the_critique_hands_the_critic_the_task_the_content_and_the_draft() -> N
 
 
 # ---------------------------------------------------------------------------
+# KOD-1305 — fire-prep prepares each fire as a unit with edges (item 6), and
+# KOD-1285 — a tick stages a bounded number of fires
+# ---------------------------------------------------------------------------
+
+#: Each sentence item 6 put in, once; the wrapper carries no base line.
+FIRE_PREP_GRAPH_TEXTS = (
+    "a base, a pinned target or a dependency is never a wrapper field, because"
+    " the delivery rule below derives the base from blocking edges.",
+    "list the open pull requests and the unit issue each is attached to,",
+    "the base is what its unit's blocking edges now give",
+    "Read the real code at the base the delivery rule gives the unit — the"
+    " heads of the units it is blocked by, merged or not, their union, or the"
+    " trunk — and treat something as missing only when it is absent there.",
+    "exists on the branches of the units it is blocked by, merged or not,",
+    "its dependencies are blocking edges to the unit issues that carry them,"
+    " set with the fire and never written in its body",
+    "Wrap it in the issue as scope, ticket type, the consulted section",
+    "blocked by that request's unit",
+    "each with the units it is blocked by;",
+)
+
+#: The recency base rule and the wrapper base fields, gone.
+FIRE_PREP_RETIRED_TEXTS = (
+    "base-branch mode",
+    "the head of the latest open request when one exists, else the trunk",
+    "find the head of the latest one",
+    "with the base pinned to that request's branch",
+    "each with its resolved base branch",
+)
+
+#: KOD-1285: one tick's work is bounded, so it ends inside its budget.
+FIRE_PREP_TICK_CAP = (
+    "One tick stages at most eight fires, the oldest triage items first, and"
+    " stops; the rest wait for the next tick, so a tick ends inside its budget"
+    " with its record row written instead of being cancelled mid-draft."
+)
+
+
+def _rendered_pass(key: PromptKey) -> str:
+    return (
+        v5_registry()
+        .template_for(key)
+        .render({"skills_reference": "", **pass_render_variables(key)})
+    )
+
+
+@pytest.mark.parametrize("text", FIRE_PREP_GRAPH_TEXTS + (FIRE_PREP_TICK_CAP,))
+def test_fire_prep_grounds_each_fire_on_its_blockers_branches(text: str) -> None:
+    """Each sentence renders exactly once in the fire-prep prompt."""
+    assert _rendered_pass(PromptKey.FIRE_PREP_PASS).count(text) == 1
+
+
+@pytest.mark.parametrize("text", FIRE_PREP_RETIRED_TEXTS)
+def test_fire_prep_names_no_base_branch_wrapper_field(text: str) -> None:
+    """The base follows from the edges; no wrapper field and no recency rule."""
+    assert text not in _rendered_pass(PromptKey.FIRE_PREP_PASS)
+
+
+# ---------------------------------------------------------------------------
 # KOD-290 — the Record clause prescribes the runner's own title
 # ---------------------------------------------------------------------------
 
