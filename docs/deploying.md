@@ -326,6 +326,7 @@ The cron is the `scope_heartbeat` pass. It ticks once at boot and then every
 | `scope_heartbeat_scanned` | `listed` is how many approved, unfinished nodes the scan found; `reason` is the scan's own account, including what it left out and why. |
 | `scope_heartbeat_scope_live` | A listed node already has a queued or running job: nothing is submitted. |
 | `scope_heartbeat_repository_undeclared` | The scan named no repository, or one the operation does not declare. |
+| `scope_heartbeat_scan_rejected` | The board refused a node the scan listed: `reason` is `not_approved` (the approval label does not reach it) or `no_open_member` (no open member other than tracker records). Nothing is submitted. |
 | `scope_heartbeat_run_submitted` | A run was queued, with its `job_id`. `job_submitted` and, once a worker takes it, `job_started` follow. |
 | `scope_heartbeat_scope_failed` | Checking or submitting one node raised. The others still run, and the tick then fails. |
 | `scheduled_pass_completed` or `scheduled_pass_skipped` | The tick submitted something, or nothing. |
