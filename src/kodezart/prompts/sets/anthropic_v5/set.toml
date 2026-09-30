@@ -109,7 +109,9 @@ and are not a substitute for it.\
 
 # One source, composed into the two members that grade a changeset. The
 # standard it refutes against is the house_rules append the same session
-# already carries, so the principles are never restated here.
+# already carries, so the principles are never restated here. Its second
+# paragraph is the neighbour lens (KOD-1306): a criterion's own text never
+# asks whether a change reads like the files beside it, so this does.
 design_review = """\
 Design refutation. For every changed file, try to refute that the change meets the
 engineering standard in your house rules (SOLID, DRY, hexagonal, KISS): name the simpler
@@ -120,7 +122,16 @@ reasoning. A violation in a file no criterion rests on is a concern raised in yo
 name rather than against one criterion's verdict. Refute the size as well: a setting,
 layer, record, file or test suite no criterion needs, a test that pins how the code is
 written or covers a case that cannot occur, and handling added for an improbable edge case
-each breach KISS; name it with file:line and fail the criteria that rest on that file.\
+each breach KISS; name it with file:line and fail the criteria that rest on that file.
+
+Neighbour review, a second lens beside each criterion: for every file the change adds or
+moves, name its sibling files and say whether the file follows their pattern (the same
+directory, the same port, the same builder or library). A file under `constants/` or
+`config/` that holds a query, a statement, a template with placeholders or other executable
+text is a finding. A move made to satisfy a lint rule is reported with the rule's name, and
+is a finding unless the rule's intent is met. A finding here fails the criterion the change
+was made for, with the file:line and the principle breached, named as your house rules name
+it.\
 """
 
 # The store mechanism every scheduled pass owes. Window and Record ride in

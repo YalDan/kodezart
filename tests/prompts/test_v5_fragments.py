@@ -168,6 +168,16 @@ DESIGN_REVIEW_CLAUSES: tuple[str, ...] = (
     "fail every criterion whose evidence rests on that file",
     "passed=false, with the principle and the file:line in reasoning",
     "a concern raised in your own name rather than against one criterion's verdict",
+    # The neighbour lens (KOD-1306), one sentence per case.
+    "Neighbour review, a second lens beside each criterion: for every file the "
+    "change adds or moves, name its sibling files and say whether the file follows "
+    "their pattern (the same directory, the same port, the same builder or library).",
+    "A file under `constants/` or `config/` that holds a query, a statement, a "
+    "template with placeholders or other executable text is a finding.",
+    "A move made to satisfy a lint rule is reported with the rule's name, and is a "
+    "finding unless the rule's intent is met.",
+    "A finding here fails the criterion the change was made for, with the file:line "
+    "and the principle breached, named as your house rules name it.",
 )
 
 
