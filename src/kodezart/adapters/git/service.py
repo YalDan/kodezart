@@ -644,9 +644,11 @@ class SubprocessGitService:
     ) -> ChangesetDigest:
         """What *head_ref* added since it split from *base_ref*.
 
-        Paths are diffed from the merge base (``base...head``), the same
-        interval whose commits ``git log base..head`` names, so commits
-        *base_ref* gained after the split add no paths.
+        Paths are diffed from the merge base, the same interval whose
+        commits ``git log base..head`` names, so commits *base_ref* gained
+        after the split add no paths. The split point is resolved first and
+        diffed two-dot, which is what git's three-dot diff does; with no
+        common ancestor the diff runs from *base_ref* itself.
         """
         if base_ref == head_ref:
             return ChangesetDigest(
@@ -654,8 +656,9 @@ class SubprocessGitService:
                 commit_subjects=[],
                 commit_count=0,
             )
+        split = await self.merge_base(cwd, base_ref, head_ref) or base_ref
         files_output = await self._run_output(
-            ["git", "diff", "--name-only", f"{base_ref}...{head_ref}"],
+            ["git", "diff", "--name-only", f"{split}..{head_ref}"],
             cwd=cwd,
         )
         subjects_output = await self._run_output(
