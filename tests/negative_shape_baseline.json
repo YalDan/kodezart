@@ -342,7 +342,7 @@
   "tests/services/test_parent_rollup_authority.py": 4,
   "tests/services/test_pass_delta_cancellation.py": 14,
   "tests/services/test_pass_gate.py": 91,
-  "tests/services/test_pass_scheduler.py": 98,
+  "tests/services/test_pass_scheduler.py": 99,
   "tests/services/test_prompt_pass.py": 120,
   "tests/services/test_prompt_passes.py": 140,
   "tests/services/test_rate_limit_backoff.py": 44,

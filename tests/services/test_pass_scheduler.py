@@ -1183,16 +1183,23 @@ async def test_the_budget_still_bounds_the_work_around_a_provider_wait() -> None
 
     The deadline moves by the wait and no further, so the tick ends at the
     budget plus the wait, never at the budget alone and never not at all.
+    The wait is the one the backoff logged, not RESET_AHEAD: the reset is
+    stamped before the tick starts, so the wait is short by that setup.
     """
     reports = ReportLog()
     inner = HangingSessions([_limited_past_the_budget()], hang_from=2)
 
-    log = await _one_tick(_session_pass(_backing_off(inner), reports.report))
+    with structlog.testing.capture_logs() as logs:
+        log = await _one_tick(_session_pass(_backing_off(inner), reports.report))
 
     assert len(inner.calls) == 2
     assert [outcome for outcome, _, _ in reports.reports] == [RunOutcome.TIMED_OUT]
+    (wait,) = [e["wait_seconds"] for e in logs if e["event"] == "rate_limit_backoff"]
     (timed_out,) = [e for e in log.events if e.event == "scheduled_pass_timed_out"]
-    assert timed_out.fields["duration_seconds"] >= WAITING_BUDGET + RESET_AHEAD
+    moved_deadline = WAITING_BUDGET + wait
+    assert timed_out.fields["duration_seconds"] >= moved_deadline
+    # Well short of a deadline moved by any more than the wait.
+    assert timed_out.fields["duration_seconds"] < moved_deadline + RESET_AHEAD / 2
 
 
 async def test_a_pass_that_meets_no_limit_keeps_the_budget_it_was_given() -> None:
