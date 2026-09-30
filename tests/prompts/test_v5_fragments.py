@@ -249,13 +249,8 @@ def test_the_delivery_standard_keeps_a_pull_request_a_draft_until_it_is_finished
     assert standard.count(MERGE_CLAUSE) == 1
 
 
-def test_the_delivery_standard_resolves_into_exactly_its_four_carriers() -> None:
-    """The implementer is among them, so the loop's iterations carry the rule.
-
-    The name counts the carriers the standard was cut for; the supervisor
-    pass joined them as its reader, and the name is kept because the
-    declaration record pins it.
-    """
+def test_the_delivery_standard_resolves_into_exactly_its_carriers() -> None:
+    """The implementer is among them, so the loop's iterations carry the rule."""
     standard = fragment("delivery_units")
     consumers = {key for key, body in v5_bodies().items() if standard in body}
     assert consumers == DELIVERY_CARRIERS

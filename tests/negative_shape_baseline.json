@@ -4460,7 +4460,7 @@
    "test_the_design_review_resolves_into_exactly_the_two_changeset_graders",
    "test_the_design_review_keeps_each_load_bearing_clause",
    "test_the_delivery_standard_keeps_a_pull_request_a_draft_until_it_is_finished",
-   "test_the_delivery_standard_resolves_into_exactly_its_four_carriers",
+   "test_the_delivery_standard_resolves_into_exactly_its_carriers",
    "test_the_draft_rule_is_declared_once",
    "test_the_changeset_graders_judge_the_pull_request_by_the_draft_rule",
    "test_the_delivery_standard_names_no_cadence",
