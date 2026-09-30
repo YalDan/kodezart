@@ -63,11 +63,7 @@ from kodezart.domain.thread_id import ralph_thread_id
 from kodezart.domain.trajectory import fold_trajectory
 from kodezart.services.audit_sessions import judge_in_workspace
 from kodezart.services.evaluator_rulings import EvaluatorRulingWriter
-from kodezart.services.gained_commits import (
-    folded,
-    gained_commits,
-    scope_repositories,
-)
+from kodezart.services.gained_commits import scope_repositories
 from kodezart.services.git_observations import read_workspace_head
 from kodezart.services.mutation_survival import MutationSurvivalReader
 from kodezart.services.native_amendments import NativeAmendments
@@ -623,20 +619,14 @@ class RalphLoop:
             else None
         )
         evaluation_ref = native_ref if native_ref is not None else ctx.ralph_branch
-        # A scope run reads what the loop branch holds in every repository
-        # it committed in, each against that repository's own trunk.
         repositories = scope_repositories(ctx.scope, self._repositories)
+        # A scope run's grader works at each unit's pull-request head, which
+        # its prompt tells it to fetch, so the loop branch's changeset is
+        # neither read nor shown to it: that branch holds none of the units'
+        # work.
         changeset = (
-            folded(
-                await gained_commits(
-                    git=self._git,
-                    cache=self._cache,
-                    repositories=repositories,
-                    branch=ctx.ralph_branch,
-                    cache_key=ctx.cache_key,
-                )
-            )
-            if repositories
+            None
+            if ctx.scope is not None
             else await self._git.diff_summary(
                 cwd=cwd,
                 base_ref=ctx.base_branch,
@@ -743,7 +733,7 @@ class RalphLoop:
             eval_prompt = self._prompts.template_for(PromptKey.EVALUATION).render(
                 {
                     **execution_criteria_variables(for_session),
-                    **changeset_variables(changeset),
+                    **({} if changeset is None else changeset_variables(changeset)),
                     **({} if ctx.scope is None else scope_variables(ctx.scope)),
                 },
             )
