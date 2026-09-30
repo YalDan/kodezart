@@ -6,13 +6,13 @@ from kodezart.core.constants import UNATTENDED_PERMISSION_MODE
 from kodezart.core.protocols import AgentRunner, PromptSetProvider, ScopeMemberPager
 from kodezart.domain.criteria import criterion_set
 from kodezart.domain.fire_spec import criterion_check, tracker_spec_from_board
+from kodezart.domain.issue_tree import open_work
 from kodezart.domain.prompt_variables import scope_variables
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.scope import ScopeRef
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.subagents import NO_SUBAGENTS
-from kodezart.types.domain.tracker import is_open
 from kodezart.types.domain.workflow import ExecutionContext, WorkflowState
 
 #: The open keys a failed scope-done gate names in its feedback, at most.
@@ -82,20 +82,20 @@ class ScopeStages:
     async def scope_done(
         self, state: WorkflowState, config: RunnableConfig
     ) -> dict[str, object]:
-        """Passed when nothing below the parent is open; else the count, a few keys.
+        """Passed when nothing below the parent owes work; else the count, a few keys.
 
         Every page is read: an open issue on the last page is as open as one
-        on the first. A parent with nothing below it is not finished, it is
-        unread work.
+        on the first. What owes work is the domain's one reading
+        (:func:`open_work`): a record labelled tracker or decision is not
+        work, and a state's meaning is the gap rule's. A parent with nothing
+        below it is not finished, it is unread work.
         """
         _ = state
         open_keys: list[str] = []
         total = 0
         async for page in self._members.scope_member_pages(ref=_scope_of(config)):
-            for issue in page:
-                total += 1
-                if is_open(issue.state_kind):
-                    open_keys.append(issue.issue_key)
+            total += len(page)
+            open_keys.extend(issue.issue_key for issue in open_work(page))
         if total == 0:
             return {
                 "review_passed": False,

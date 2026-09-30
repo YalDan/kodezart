@@ -916,6 +916,25 @@ async def test_linear_container_pages_reach_the_criteria_below_their_members(
     assert server.tool_calls("get_issue") == []
 
 
+async def test_linear_container_pages_hold_a_member_criterion_once() -> None:
+    """A labelled criterion filed into the project is listed twice and kept once."""
+    server = _with_criteria(ScopeMcpServer())
+    server.issues["FIX-9"] = ScopeMcpIssue(
+        id="FIX-9",
+        parent_id=ROOT.key,
+        labels=[ISSUE_LABELS["criterion"]],
+        project_key=PROJECT.key,
+        milestone_key=None,
+    )
+
+    pages = await _paged_keys(linear_over_fake_mcp(server), PROJECT)
+
+    keys = [key for page in pages for key in page]
+    assert keys.count("FIX-9") == 1
+    assert keys.count("FIX-6") == 1
+    assert len(keys) == len(set(keys))
+
+
 async def test_linear_issue_pages_reach_their_criteria_by_parent_alone() -> None:
     server = _with_criteria(ScopeMcpServer())
 

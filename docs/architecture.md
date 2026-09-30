@@ -138,6 +138,7 @@ does not exist.
 | ScopeMemberReader | LinearMcpTracker | The scope family and each member's criteria, which is what scope membership resolves |
 | ScopePlanReader | LinearMcpTracker | Everything a scope plan is read from, with no write in it: the plan and delivery coordinator readings |
 | ScopeReadyReader | LinearMcpTracker | The scope plan plus the approval an entry asks for: what the scope walker and the dispatcher read |
+| ScopeMemberPager | LinearMcpTracker | Each listing page below a scope with its rows read off the page, the criteria beneath a container's members by their label, and a cut body read whole on request: what the scope-done gate counts and prep reads (KOD-1288) |
 | FireSubjectReader | LinearMcpTracker | The admitted subject of a fire over the family it is measured against: the criteria stage's reads |
 | PassGateReader | LinearMcpTracker | The board and review scans the dispatch pass's gate decides on, with no write |
 | TrackerArtifactReader | LinearMcpTracker | Every read a tracker artifact is assembled from; taken by the audit pass, the sweep's verifier and the artifact reader itself |

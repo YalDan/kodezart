@@ -51,6 +51,9 @@ from tests.prompts.test_prompt_wiring import load_registry
 from tests.services.test_prompt_pass import example_config
 
 PARENT = ScopeRef(kind=ScopeKind.ISSUE, key="FIRE-1")
+CRITERION = frozenset({"criterion"})
+TRACKER = frozenset({"tracker"})
+DECISION = frozenset({"decision"})
 # Prep reads nothing off the graph state; the run's address is the config.
 _EMPTY = cast(WorkflowState, {})
 
@@ -61,6 +64,7 @@ def _issue(
     parent: str | None = PARENT.key,
     check: str | None = None,
     state: WorkflowStateKind = WorkflowStateKind.UNSTARTED,
+    labels: frozenset[str] = frozenset(),
 ) -> TrackerIssue:
     """A member below the parent; a criterion when it is given a Check."""
     return make_tracker_issue(
@@ -73,7 +77,7 @@ def _issue(
             if check is None
             else criterion_body(parent_key=parent or "", check=check, do="Do it.")
         ),
-        issue_labels=frozenset() if check is None else frozenset({"criterion"}),
+        issue_labels=labels | (frozenset() if check is None else CRITERION),
     )
 
 
@@ -321,6 +325,39 @@ async def test_the_gate_names_at_most_ten_open_keys() -> None:
             "Open below the parent: 12 of 12, among them "
             + ", ".join(f"K-{n}" for n in range(10))
             + "."
+        ),
+    }
+
+
+async def test_a_record_below_the_parent_is_not_open_work() -> None:
+    """A tracker or decision record is a record, not work, whatever its state."""
+    board = _board(
+        _issue("FIRE-2", state=WorkflowStateKind.COMPLETED),
+        _issue("FIRE-3", state=WorkflowStateKind.STARTED, labels=TRACKER),
+        _issue("FIRE-4", state=WorkflowStateKind.BACKLOG, labels=DECISION),
+    )
+
+    update = await _stages(FakeAgentRunner([]), board).scope_done(_EMPTY, _config())
+
+    assert update == {"review_passed": True}
+
+
+async def test_every_owed_kind_below_the_parent_counts_as_open() -> None:
+    """Backlog and Triage owe work as much as Todo and In Progress do (the gap rule)."""
+    board = _board(
+        _issue("FIRE-2", state=WorkflowStateKind.BACKLOG),
+        _issue("FIRE-3", state=WorkflowStateKind.TRIAGE),
+        _issue("FIRE-4", state=WorkflowStateKind.UNSTARTED),
+        _issue("FIRE-5", state=WorkflowStateKind.STARTED),
+        _issue("FIRE-6", state=WorkflowStateKind.DUPLICATE),
+    )
+
+    update = await _stages(FakeAgentRunner([]), board).scope_done(_EMPTY, _config())
+
+    assert update == {
+        "review_passed": False,
+        "review_feedback": (
+            "Open below the parent: 4 of 5, among them FIRE-2, FIRE-3, FIRE-4, FIRE-5."
         ),
     }
 
