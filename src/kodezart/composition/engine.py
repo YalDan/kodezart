@@ -499,6 +499,7 @@ def build_workflow_engine(
             runner=agent_service,
             prompts=prompts,
             skills=skills,
+            members=scope_tracker,
             working_dir=str(working_dir),
         )
         scoped_arm = ScopeEntry(

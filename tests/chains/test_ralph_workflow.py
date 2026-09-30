@@ -26,6 +26,7 @@ from kodezart.core.protocols import AgentExecutor, OutboundContentGate, TicketGe
 from kodezart.core.retry import DelayFloor
 from kodezart.domain.accept_gate import accept_verdict
 from kodezart.domain.agent import best_iteration_ref
+from kodezart.domain.criterion_creation import criterion_body
 from kodezart.domain.errors import (
     CriteriaFanInError,
     ForgeAPIError,
@@ -41,8 +42,6 @@ from kodezart.types.domain.agent import (
     AssistantTextEvent,
     RateLimitWarningEvent,
     ResultEvent,
-    ScopeItem,
-    ScopeItemsOutput,
     TicketDraftOutput,
     WorkflowArtifactsEvent,
     WorkflowCIEvent,
@@ -109,6 +108,7 @@ from tests.fakes import (
     FakeRemediator,
     FakeRepoCache,
     FakeTicketGenerator,
+    FakeTrackerPort,
     FakeWorkspaceProvider,
     PassThroughGate,
     RecordingPromptProvider,
@@ -118,6 +118,7 @@ from tests.fakes import (
     make_passing_evaluation_of_fake_criteria,
     make_passing_evaluation_over,
     make_prompt_provider,
+    make_tracker_issue,
     no_delay_floor,
 )
 from tests.prompts.sets import operation_registry
@@ -5291,24 +5292,15 @@ async def test_an_accepted_scope_run_that_gained_no_commit_ends_with_nothing_to_
     tip, nothing is merged, no remediation round or pull request follows,
     and the run reaches its terminal instead of raising.
     """
-    board = FakeAgentRunner(
-        events=[
-            ResultEvent(
-                subtype="result",
-                duration_ms=1,
-                duration_api_ms=1,
-                is_error=False,
-                num_turns=1,
-                session_id="fake",
-                structured_output=ScopeItemsOutput(
-                    items=[
-                        ScopeItem(
-                            key="SCOPE-2", criterion=True, text="It works", done=False
-                        )
-                    ],
-                    reason="One criterion is open.",
-                ).model_dump(by_alias=True),
-            )
+    board = FakeTrackerPort(
+        issues=[
+            make_tracker_issue("SCOPE-1"),
+            make_tracker_issue(
+                "SCOPE-2",
+                parent_key="SCOPE-1",
+                body=criterion_body(parent_key="SCOPE-1", check="It works", do="Do."),
+                issue_labels=frozenset({"criterion"}),
+            ),
         ]
     )
     merger = FakeBranchMerger()
@@ -5324,9 +5316,10 @@ async def test_an_accepted_scope_run_that_gained_no_commit_ends_with_nothing_to_
         git=_CommitsBeyondTrunk({}),
         repositories=(_APP, _LIB),
         stages=ScopeStages(
-            runner=board,
+            runner=FakeAgentRunner(events=[]),
             prompts=operation_registry(),
             skills=SUPPRESS_ALL_SKILLS,
+            members=board,
             working_dir=str(tmp_path),
         ),
     )
