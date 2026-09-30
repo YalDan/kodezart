@@ -520,6 +520,49 @@ async def test_the_boot_tick_asks_no_gate_and_the_next_tick_does(
     assert runner.calls[1]["session_type"] is SessionType.SCHEDULED_PASS
 
 
+@pytest.mark.parametrize(
+    "name",
+    [
+        PromptKey.FIRE_PREP_PASS.value,
+        PromptKey.GROOMING_PASS.value,
+        PromptKey.SUPERVISOR_PASS.value,
+    ],
+)
+def test_the_gate_wakes_on_merges_and_on_triage_that_moved(name: str) -> None:
+    """The gate's window (KOD-1305 item 5, KOD-1287): fire-prep wakes only on
+    triage items that were created, updated or whose blockers moved, never on
+    parked stubs; a principal's merge or close wakes the passes that act on
+    pull requests. Each clause renders exactly once for every pass."""
+    prompts = load_registry(
+        default_set=V5_SET, bindings=dict(bindings_for(example_config()))
+    )
+    gate = prompts.template_for(PromptKey.PASS_GATE).render(
+        gate_render_bindings(name=name, window_start=FIXTURE_EPOCH)
+    )
+    assert "{{" not in gate
+    assert (
+        gate.count(
+            "items created or updated in the window, or whose blocking issues or"
+            " their pull requests moved in it;"
+        )
+        == 1
+    )
+    assert (
+        gate.count(
+            "and on any pull request on the declared repositories merged or"
+            " closed in the window;"
+        )
+        == 1
+    )
+    assert (
+        gate.count(
+            "the review threads of the declared repositories, and their pull"
+            " requests merged or closed in the window."
+        )
+        == 1
+    )
+
+
 async def test_the_boot_seam_registers_the_prompt_passes(tmp_path: Path) -> None:
     """Deleting the schedule-extending call must redden something.
 
