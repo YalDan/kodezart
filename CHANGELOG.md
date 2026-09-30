@@ -11,9 +11,14 @@ concerns.
 
 ## [0.3.1] - 2026-09-30
 
-Fixes from running v0.3 live against a real board for five days. Nothing
-changes in the operation file; three environment names retire and four are
-new, all listed under Changed and Removed.
+Fixes from running v0.3 live against a real board for five days. One
+environment name is new (`KODEZART_RETRY_RATE_LIMIT_MAX_WAIT_SECONDS`, under
+Added); the `KODEZART_SUPERVISOR_PASS_INTERVAL_SECONDS` and
+`KODEZART_SUPERVISOR_PASS_TIMEOUT_SECONDS` pair already existed and now
+schedules the prompt pass; three names retire (under Removed). The operation
+file gains an optional `[records.supervisor]` table and `supervisor` in the
+record-kind list (`docs/operation.example.toml`); a file without them boots
+as before.
 
 ### Added
 
@@ -31,10 +36,12 @@ new, all listed under Changed and Removed.
   (`services/rate_limit_backoff.py`, `KODEZART_RETRY_RATE_LIMIT_MAX_WAIT_SECONDS`,
   default 18000): the wait runs to the reset the provider states, read in the
   Claude adapter (`adapters/claude/limit_reset.py`), else to the configured
-  floor with jitter; every session the composition starts goes through it, and
+  floor with jitter; every session the composition starts goes through it
+  except the outbound content scan, and
   `rate_limit_backoff` is logged with the wait and `resets_at`.
 - An investigate question may name the model its fan-out agents run on
-  (`workflows/investigate`); the prompt set picks fan-out models by task.
+  (`.claude/workflows/kodezart-investigate.js`); the prompt set picks fan-out
+  models by task.
 
 ### Changed
 
@@ -47,17 +54,23 @@ new, all listed under Changed and Removed.
   maximum. `docs/deploying.md` pins every cheap key to Sonnet.
 - The clone cache fast-forwards its local heads to the remote after every
   fetch, so a loop branch is cut from the current trunk and not from the tip
-  the first clone recorded (`adapters/git/service.py`); a diverged or
+  the first clone recorded (`adapters/git/bare_repo_cache.py`,
+  `LocalBareRepoCache`, with `adapters/git/clone_lock.py` and
+  `adapters/git/branch_merger.py`; `adapters/git/service.py` gains the port
+  methods); a diverged or
   checked-out head stays and is logged; concurrent refreshes of one clone
   take the head move under the clone lock; changesets diff from the merge
   base, so a trunk that moved adds no files to a branch's changeset.
 - A pull request stays a draft until its unit is finished and leaves draft
-  the moment it is; only the scope graders judge that, and a session never
+  the moment it is; the scope graders and the supervisor pass judge that,
+  and a session never
   merges (`delivery_units` in `prompts/sets/anthropic_v5/set.toml`, carried by
   the intake passes, the organize session, the implementer and the supervisor
   pass).
 - An accepted scope run that gained no commits ends as already integrated
-  instead of raising (`chains/fire_consolidation.py`, `RunOutcome`).
+  instead of raising: it classifies into `WorkflowOutcome.zero_commit_no_pr`
+  (`types/domain/outcome.py`, `domain/outcome.py`), routed in
+  `chains/ralph_workflow.py`.
 - `claude-agent-sdk` is pinned at 0.2.161 (`pyproject.toml`).
 
 ### Removed
