@@ -1218,7 +1218,7 @@ CONSTRUCTION_SITE: dict[Callable[..., object], str] = {
     fire_terminal: "266b5d0a53e674c24e69768ca423520c429d26bdc93cdb06813cb2bff99b3285",
     gate_cleared: "d946d1754e3e827be61ef888723ad0fa88ef5ef5845e4c48409c76ac905426f3",
     classify_outcome: (
-        "d6bb8236eee686089a804e475ec56791712d7242887343223a6b0656aedb0f35"
+        "7ee7be367ffd6cbed43d40ad4dcf37bbccf5074116d7aed7e233e727a563ca22"
     ),
 }
 
