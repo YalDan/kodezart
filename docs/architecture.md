@@ -971,6 +971,14 @@ and the principle breached fails every criterion whose evidence rests on that
 file, and a violation in a file no criterion rests on is raised as a flag in
 the session's own name, which the accept gate carries to the pull request.
 
+Beside it, the `neighbour_review` fragment asks whether each added, moved or
+reshaped file reads like its sibling files, and names three findings of its
+own: executable text under `constants/` or `config/`, a move made only to
+satisfy a lint rule, and logic that belongs to an operation sitting in a
+schema or a clever construct. It is composed into the same two graders and
+into the implementer's scope block, where the scope session applies it before
+an item is Done and passes it word for word to every verifier it briefs.
+
 The default maximum is 5 iterations (configurable via
 `KODEZART_MAX_ITERATIONS`).
 

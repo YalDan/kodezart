@@ -13,8 +13,10 @@ import pytest
 
 from kodezart.adapters.claude.agents_mapping import map_system_prompt
 from kodezart.adapters.in_repo_prompt_registry import default_sets_root
+from kodezart.domain.prompt_variables import scope_variables
 from kodezart.types.domain.prompts import PromptKey
-from tests.prompts.sets import V5_SET, v5_registry
+from kodezart.types.domain.scope import ScopeKind, ScopeRef
+from tests.prompts.sets import ALL_CASES, V5_SET, render_v5_case, v5_registry
 from tests.prompts.style_detectors import data_boundary_sentences
 from tests.prompts.test_operation_config import CADENCE_WORDS
 from tests.prompts.test_prompt_wiring import DEFAULT_SET, load_registry
@@ -168,16 +170,6 @@ DESIGN_REVIEW_CLAUSES: tuple[str, ...] = (
     "fail every criterion whose evidence rests on that file",
     "passed=false, with the principle and the file:line in reasoning",
     "a concern raised in your own name rather than against one criterion's verdict",
-    # The neighbour lens (KOD-1306), one sentence per case.
-    "Neighbour review, a second lens beside each criterion: for every file the "
-    "change adds or moves, name its sibling files and say whether the file follows "
-    "their pattern (the same directory, the same port, the same builder or library).",
-    "A file under `constants/` or `config/` that holds a query, a statement, a "
-    "template with placeholders or other executable text is a finding.",
-    "A move made to satisfy a lint rule is reported with the rule's name, and is a "
-    "finding unless the rule's intent is met.",
-    "A finding here fails the criterion the change was made for, with the file:line "
-    "and the principle breached, named as your house rules name it.",
 )
 
 
@@ -206,6 +198,138 @@ def test_the_design_review_resolves_into_exactly_the_two_changeset_graders() -> 
 def test_the_design_review_keeps_each_load_bearing_clause(clause: str) -> None:
     """Named one by one, so removing any one of them reds its own case."""
     assert clause in prose(fragment("design_review"))
+
+
+# ---------------------------------------------------------------------------
+# neighbour_review — the change reads like its neighbours (KOD-1306)
+# ---------------------------------------------------------------------------
+
+#: Where the lens is composed: the two changeset graders, and the
+#: implementer, whose scope session applies it before an item is Done and
+#: passes it to every verifier it briefs.
+NEIGHBOUR_REVIEW_CONSUMERS = DESIGN_REVIEW_CONSUMERS | {PromptKey.IMPLEMENTATION.value}
+
+#: The owner's schema-logic judgment, added to the lens on 2026-09-30.
+SCHEMA_LOGIC_SENTENCE = (
+    "A schema at a boundary states shape and per-field constraints: a business "
+    "rule, a cross-object consistency check or a decision that belongs to the "
+    "operation producing the value is a finding when a schema carries it, and so "
+    "is any clever construct carrying logic a plain function would carry, unless "
+    "the change shows it is the simplest correct place; name the operation or "
+    "function it belongs in."
+)
+
+#: The lens whole. Equality rather than one containment pin per sentence, so
+#: a sentence added to it (one that takes the lens back, say) reds as surely
+#: as one rewritten or dropped.
+NEIGHBOUR_REVIEW = " ".join(
+    (
+        "Neighbour review, a second lens beside each criterion: for every file the "
+        "change adds, moves or reshapes, name its sibling files and say whether the "
+        "file follows their pattern (the same directory, the same port, the same "
+        "builder or library); a departure from that pattern is a finding unless the "
+        "change shows its own shape is the simpler one.",
+        "A file under `constants/` or `config/` that holds a query, a statement, a "
+        "template with placeholders or other executable text is a finding.",
+        "A move made to satisfy a lint rule is reported with the rule's name, and is "
+        "a finding unless the rule's intent is met.",
+        SCHEMA_LOGIC_SENTENCE,
+        "A finding here fails the criterion the change was made for, with the "
+        "file:line and the principle breached, named as your house rules name it.",
+    ),
+)
+
+#: The implementer's two scope-block lines, each pinned as a whole line so a
+#: clause appended to either reds.
+RELOCATION_RULE = (
+    "When a lint rule refuses a placement, fix the placement to the rule's intent "
+    "or file the rule's defect; never satisfy a directory rule by relocating what "
+    "it rejected."
+)
+VERIFIER_BRIEF_RULE = (
+    "Before an item moves to Done, you and every agent you dispatch to verify it "
+    "apply the review below beside its Check: pass it word for word in each "
+    "verifier's brief, and an item that carries a finding under it is not Done."
+)
+
+#: Every changeset a grader can be handed, and every run it can grade in.
+CHANGESET_CASES = ("evaluation", "evaluation__empty_changeset")
+SCOPES: tuple[ScopeKind | None, ...] = (None, *ScopeKind)
+
+
+def render_in_scope(key: PromptKey, case: str, kind: ScopeKind | None) -> str:
+    """*key* rendered with *case*'s variables, in a run of *kind* (None: per issue)."""
+    _, variables = ALL_CASES[case]
+    scope = {} if kind is None else scope_variables(ScopeRef(kind=kind, key="scope"))
+    template = v5_registry().template_for(key)
+    return template.render({**variables, **scope, "skills_reference": ""})
+
+
+def test_the_neighbour_review_is_declared_exactly_once() -> None:
+    """One source: the members ask for it by name, the set supplies it."""
+    assert member_files_carrying(fragment("neighbour_review").splitlines()[0]) == []
+
+
+def test_the_neighbour_review_reads_whole() -> None:
+    """Every case of the lens, and nothing beside them."""
+    assert prose(fragment("neighbour_review")) == NEIGHBOUR_REVIEW
+
+
+def test_the_neighbour_review_resolves_into_the_graders_and_the_implementer() -> None:
+    """Composed into exactly its three consumers, never twice into one."""
+    lens = fragment("neighbour_review")
+    bodies = v5_bodies()
+    assert {key for key, body in bodies.items() if lens in body} == (
+        NEIGHBOUR_REVIEW_CONSUMERS
+    )
+    for key in sorted(NEIGHBOUR_REVIEW_CONSUMERS):
+        assert bodies[key].count(lens) == 1
+
+
+@pytest.mark.parametrize("kind", SCOPES)
+@pytest.mark.parametrize("case", CHANGESET_CASES)
+@pytest.mark.parametrize(
+    "key",
+    [PromptKey.EVALUATION, PromptKey.POST_MERGE_REVIEW],
+    ids=lambda key: key.value,
+)
+def test_each_grader_renders_the_lens_once(
+    key: PromptKey,
+    case: str,
+    kind: ScopeKind | None,
+) -> None:
+    """What the grader reads, per issue and in every scope kind, with or
+    without commits: a condition wrapped around the lens reds a case here."""
+    rendered = render_in_scope(key, case, kind)
+    assert prose(rendered).count(NEIGHBOUR_REVIEW) == 1
+
+
+def test_the_rendered_evaluator_finds_the_schema_logic_sentence_once() -> None:
+    """The owner's addition, read where the evaluator reads it."""
+    assert prose(render_v5_case("evaluation")).count(SCHEMA_LOGIC_SENTENCE) == 1
+
+
+@pytest.mark.parametrize("kind", list(ScopeKind))
+def test_every_scope_kind_carries_the_relocation_rule_and_the_lens(
+    kind: ScopeKind,
+) -> None:
+    """The implementer of any scope run, each line whole and once.
+
+    The incident's scope was an initiative, so no one kind stands for the
+    rest; and a whole-line match reds a clause appended to either rule.
+    """
+    rendered = render_in_scope(PromptKey.IMPLEMENTATION, "implementation", kind)
+    lines = rendered.splitlines()
+    assert lines.count(RELOCATION_RULE) == 1
+    assert lines.count(VERIFIER_BRIEF_RULE) == 1
+    assert prose(rendered).count(NEIGHBOUR_REVIEW) == 1
+
+
+def test_a_per_issue_implementer_carries_neither_rule_nor_the_lens() -> None:
+    """Both rules sit in the scope block; a per-issue fire's bytes are recorded."""
+    rendered = prose(render_in_scope(PromptKey.IMPLEMENTATION, "implementation", None))
+    for text in (RELOCATION_RULE, VERIFIER_BRIEF_RULE, NEIGHBOUR_REVIEW):
+        assert text not in rendered
 
 
 # ---------------------------------------------------------------------------

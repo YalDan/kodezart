@@ -329,6 +329,12 @@ SCOPE_ONLY_RULES = (
         "intent or file the rule's defect; never satisfy a directory rule by "
         "relocating what it rejected.",
     ),
+    (
+        "implementation",
+        "you and every agent you dispatch to verify it apply the review below "
+        "beside its Check",
+    ),
+    ("implementation", "Neighbour review, a second lens beside each criterion"),
     ("workflow_pr", "one per line in the form `Delivers: ABC-123`"),
 )
 
