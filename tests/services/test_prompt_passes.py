@@ -529,10 +529,13 @@ async def test_the_boot_tick_asks_no_gate_and_the_next_tick_does(
     ],
 )
 def test_the_gate_wakes_on_merges_and_on_triage_that_moved(name: str) -> None:
-    """The gate's window (KOD-1305 item 5, KOD-1287): fire-prep wakes only on
-    triage items that were created, updated or whose blockers moved, never on
-    parked stubs; a principal's merge or close wakes the passes that act on
-    pull requests. Each clause renders exactly once for every pass."""
+    """The gate's window (KOD-1305 item 5, KOD-1287): fire-prep counts a
+    triage item as work only when it has no open blocker (the owner's rule of
+    2026-09-29, mirroring the pass's frontier rule), a blocked one only when a
+    blocker or its pull request moved, lists the discounted ones, and always
+    counts what the last record row left untaken (KOD-1285); a principal's
+    merge or close wakes the passes that act on pull requests. Each clause
+    renders exactly once for every pass."""
     prompts = load_registry(
         default_set=V5_SET, bindings=dict(bindings_for(example_config()))
     )
@@ -542,11 +545,16 @@ def test_the_gate_wakes_on_merges_and_on_triage_that_moved(name: str) -> None:
     assert "{{" not in gate
     assert (
         gate.count(
-            "items created or updated in the window, or whose blocking issues or"
-            " their pull requests moved in it;"
+            "items with no open blocker (a blocked-by relation to an issue not yet"
+            " closed, re-read every tick), which the frontier rule inside the pass"
+            " routes; a blocked one is work only when a blocker or its pull request"
+            " moved in the window; list the discounted items with their blockers in"
+            " your answer so a person sees them, and an item the last record row of"
+            " this pass names as left for the next tick is work;"
         )
         == 1
     )
+    assert "created or updated in the window, or whose blocking" not in gate
     assert (
         gate.count(
             "and on any pull request on the declared repositories merged or"
@@ -1981,6 +1989,20 @@ def test_the_supervisor_pass_renders_as_the_one_supervisor(prompt_set: str) -> N
         return
     assert rendered.count("- A pull request sits where the graph puts it.") == 1
     assert rendered.count("- A stack is never rewritten.") == 1
+    assert (
+        rendered.count(
+            "and a merge into anything but the trunk or ahead of a blocker's"
+            " request are each a finding."
+        )
+        == 1
+    )
+    assert (
+        rendered.count(
+            "A rebase or force-push by the account of a branch that an open pull"
+            " request or a union builds on is a finding of the first rank;"
+        )
+        == 1
+    )
     assert (
         "a squash merge of such a branch is a finding for the run of each request"
         " above it, naming the merge it must take." in rendered

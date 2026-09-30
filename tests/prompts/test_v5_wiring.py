@@ -320,9 +320,31 @@ FIRE_PREP_RETIRED_TEXTS = (
 
 #: KOD-1285: one tick's work is bounded, so it ends inside its budget.
 FIRE_PREP_TICK_CAP = (
-    "One tick stages at most eight fires, the oldest triage items first, and"
-    " stops; the rest wait for the next tick, so a tick ends inside its budget"
-    " with its record row written instead of being cancelled mid-draft."
+    "One tick takes up at most eight problem groups, the oldest triage items"
+    " first, and stops; the rest wait for the next tick, so a tick ends inside"
+    " its budget with its record row written instead of being cancelled"
+    " mid-draft. The row names every triage item and every response-set item"
+    " left untaken, so the next tick's gate counts them as work and its sweeps"
+    " read them again whether or not they moved."
+)
+
+#: The cap's neighbours agree with it: the finish promise, the one-act rule
+#: and the record row all speak of the items the tick took up (KOD-1285).
+FIRE_PREP_CAP_NEIGHBOURS = (
+    "You finish the prep of every item you take up: nothing is left for the"
+    " grooming pass except a genuine principal decision, and what the tick's"
+    " cap leaves untaken is named in the record row for the next tick.",
+    "By the end of a run each triaged item the tick took up is a fire-ready issue,",
+    "First, once every disposition and reply of the items you took up is"
+    " complete, write this run's record row, naming what the cap left untaken",
+)
+
+#: Texts a retired rule could sneak back through, inside a conditional no
+#: render of the example config reaches: guarded on the files themselves.
+FIRE_PREP_FILE_ABSENT_TEXTS = (
+    *FIRE_PREP_RETIRED_TEXTS,
+    "keep staging until every",
+    "nothing is left for the grooming pass or for a future run",
 )
 
 
@@ -334,16 +356,27 @@ def _rendered_pass(key: PromptKey) -> str:
     )
 
 
-@pytest.mark.parametrize("text", FIRE_PREP_GRAPH_TEXTS + (FIRE_PREP_TICK_CAP,))
+def _pass_source(key: PromptKey) -> str:
+    """The member file itself, every conditional branch included."""
+    return (default_sets_root() / V5_SET / f"{key.value}.md").read_text(
+        encoding="utf-8"
+    )
+
+
+@pytest.mark.parametrize(
+    "text", (*FIRE_PREP_GRAPH_TEXTS, FIRE_PREP_TICK_CAP, *FIRE_PREP_CAP_NEIGHBOURS)
+)
 def test_fire_prep_grounds_each_fire_on_its_blockers_branches(text: str) -> None:
     """Each sentence renders exactly once in the fire-prep prompt."""
     assert _rendered_pass(PromptKey.FIRE_PREP_PASS).count(text) == 1
 
 
-@pytest.mark.parametrize("text", FIRE_PREP_RETIRED_TEXTS)
+@pytest.mark.parametrize("text", FIRE_PREP_FILE_ABSENT_TEXTS)
 def test_fire_prep_names_no_base_branch_wrapper_field(text: str) -> None:
-    """The base follows from the edges; no wrapper field and no recency rule."""
-    assert text not in _rendered_pass(PromptKey.FIRE_PREP_PASS)
+    """The base follows from the edges; no wrapper field and no recency rule,
+    in the file itself, so no conditional branch can carry one."""
+    assert text.casefold() not in _rendered_pass(PromptKey.FIRE_PREP_PASS).casefold()
+    assert text.casefold() not in _pass_source(PromptKey.FIRE_PREP_PASS).casefold()
 
 
 # ---------------------------------------------------------------------------
@@ -379,6 +412,11 @@ GROOMING_GRAPH_TEXTS = (
     " can merge now: based on the trunk, ready for review, every blocker merged"
     " and no hold open — derived this pass.",
     "or whose health changed, every pass:",
+    "a pass with a healthy build, no findings and no initiative that moved posts"
+    " no update and sends no notification.",
+    "record the query, its empty result and what you did not cover in this"
+    " pass's record row, and in the status update of an initiative only when"
+    " that initiative gets one this pass, never as a comment,",
 )
 
 GROOMING_RETIRED_TEXTS = (
@@ -388,6 +426,9 @@ GROOMING_RETIRED_TEXTS = (
     "every pass, even when nothing changed",
     "or carries a target date, every pass",
     "is never a reason to withhold the composition",
+    "still posts the initiative updates",
+    "in the initiative status update, never as a comment",
+    "pkill",
 )
 
 
@@ -404,8 +445,9 @@ def test_grooming_pushes_no_composition_and_reports_only_on_change(
     text: str,
 ) -> None:
     """The recency tie-break, the pushed compositions and the per-pass status
-    update on unchanged initiatives are gone."""
-    assert text not in _rendered_pass(PromptKey.GROOMING_PASS)
+    update on unchanged initiatives are gone, from the file itself."""
+    assert text.casefold() not in _rendered_pass(PromptKey.GROOMING_PASS).casefold()
+    assert text.casefold() not in _pass_source(PromptKey.GROOMING_PASS).casefold()
 
 
 # ---------------------------------------------------------------------------

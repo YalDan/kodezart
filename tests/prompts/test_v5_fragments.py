@@ -311,10 +311,18 @@ RETIRED_DELIVERY_TEXTS = (
 )
 
 
+#: The union has one writer, and no stack is rewritten by a session.
+UNION_WRITER_RULE = "the session delivering the unit is its only writer."
+NO_REWRITE_RULE = (
+    "No session rebases, force-pushes or squashes a branch that a pull request"
+    " or a union builds on."
+)
+
+
 def test_the_delivery_standard_states_the_graph_and_base_rules_once() -> None:
     """Each rule is declared once in the manifest and in no member file."""
     manifest = prose(SET_TOML.read_text(encoding="utf-8"))
-    for rule in (GRAPH_RULE, BASE_RULE):
+    for rule in (GRAPH_RULE, BASE_RULE, UNION_WRITER_RULE, NO_REWRITE_RULE):
         assert manifest.count(rule) == 1
         assert member_files_carrying(rule) == []
 
