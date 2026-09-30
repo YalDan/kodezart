@@ -22,8 +22,13 @@ from kodezart.adapters.in_repo_prompt_registry import (
 from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.core.prompt_namespaces import operation_bindings
 from kodezart.core.prompt_rendering import free_binding_names
+from kodezart.domain.prompt_variables import (
+    execution_criteria_variables,
+    scope_variables,
+)
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run_records import RunIdentity, RunOutcome, RunRecord
+from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.ticket_review import TicketReviewMode
 from tests.fakes import fixture_run_identity, pass_render_variables
 from tests.prompts.sets import (
@@ -38,7 +43,7 @@ from tests.prompts.style_detectors import (
     data_boundary_sentences,
     unbalanced_artifact_tags,
 )
-from tests.prompts.test_prompt_wiring import load_registry
+from tests.prompts.test_prompt_wiring import CRITERIA, load_registry
 
 #: Which named tag each injected artifact must arrive inside. Keyed by the
 #: shared fixture case, so the expectation is stated per rendering rather
@@ -517,3 +522,58 @@ def test_no_other_runs_title_reaches_the_clause(key: PromptKey) -> None:
     )
 
     assert neighbour.title() not in rendered
+
+
+# ---------------------------------------------------------------------------
+# KOD-1304 — a scope run's grader works at each unit's pull-request head
+# ---------------------------------------------------------------------------
+
+#: The clauses of the scope grader's instruction, each its own case, so a
+#: rewrite that drops any one of them reds on its own. None of them is in a
+#: scope run's rendered evaluation before KOD-1304: the draft rule already
+#: says "pushed head", so that phrase alone proves nothing.
+SCOPE_GRADING_CLAUSES: tuple[str, ...] = (
+    "fetch the pull request's pushed head into the repository's checkout",
+    "check it out detached, one worktree per unit, and grade there",
+    "never on the trunk or on this run's own branch",
+    "a criterion whose unit has no pull request with a pushed head fails "
+    "for that reason",
+    "never commit or push, and write nothing on the tracker",
+)
+
+
+def _scope_evaluation() -> str:
+    """The evaluation a scope run renders: criteria and scope, no changeset."""
+    return (
+        v5_registry()
+        .template_for(PromptKey.EVALUATION)
+        .render(
+            {
+                **execution_criteria_variables(CRITERIA),
+                **scope_variables(ScopeRef(kind=ScopeKind.PROJECT, key="project")),
+                "skills_reference": "",
+            }
+        )
+    )
+
+
+@pytest.mark.parametrize("clause", SCOPE_GRADING_CLAUSES)
+def test_a_scope_run_grades_each_unit_at_its_pull_request_head(clause: str) -> None:
+    """Rendered for a scope run, and absent from every per-issue evaluation."""
+    assert clause in _scope_evaluation()
+    for case in ("evaluation", "evaluation__empty_changeset"):
+        assert clause not in render_v5_case(case), case
+
+
+def test_a_scope_run_is_shown_no_loop_branch_changeset() -> None:
+    """The loop branch holds none of the units' work, so nothing of it is shown.
+
+    A per-issue evaluation still carries the changeset block and, when the
+    branch is empty, the clause that says so.
+    """
+    scoped = _scope_evaluation()
+    assert "<changeset>" not in scoped
+    assert "No commits between" not in scoped
+    assert "Evaluate whether the changeset below" not in scoped
+    assert "<changeset>" in render_v5_case("evaluation")
+    assert "No commits between" in render_v5_case("evaluation__empty_changeset")

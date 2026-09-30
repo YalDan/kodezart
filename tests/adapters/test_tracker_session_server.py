@@ -22,6 +22,10 @@ import pytest
 from pydantic import SecretStr
 
 from kodezart import main
+from kodezart.adapters.claude.host_mcp_servers import (
+    host_mcp_server_names,
+    user_claude_config_file,
+)
 from kodezart.adapters.mcp.mapping import (
     BOARD_SESSION_TYPES,
     TrackerSessionServer,
@@ -106,7 +110,7 @@ def test_the_scheduled_pass_and_the_organize_pass_are_given_the_tracker_server(
 def test_the_host_opt_in_leaves_the_board_to_the_host_login(
     session_type: SessionType,
 ) -> None:
-    """With the opt-in on, no kind is described the deployment's tracker server.
+    """Opt-in on, host declares the tracker: no kind is described the deployment's.
 
     The host's own tracker login reaches the board sessions through the
     guard that is now off, under its own request budget; describing the
@@ -119,9 +123,54 @@ def test_the_host_opt_in_leaves_the_board_to_the_host_login(
         session_type,
         dangerously_allow_host_mcp=True,
         tracker=server,
+        host_servers=frozenset({server.server_name, "other"}),
     )
     assert opened["mcp_servers"] == {}
     assert opened["strict_mcp_config"] is False
+
+
+@pytest.mark.parametrize("session_type", list(SessionType))
+def test_the_host_opt_in_without_a_host_tracker_keeps_the_deployments_server(
+    session_type: SessionType,
+) -> None:
+    """Opt-in on, host declares no tracker: the board kinds get the deployment's.
+
+    Without it a board session, a scope run's grader among them, would reach
+    no tracker at all.  Every other kind is still described nothing.
+    """
+    server = _server()
+    opened = map_knowledge_mcp(
+        NO_KNOWLEDGE_GRANT,
+        session_type,
+        dangerously_allow_host_mcp=True,
+        tracker=server,
+        host_servers=frozenset({"other"}),
+    )
+    expected = (
+        {server.server_name: server.definition}
+        if session_type in BOARD_SESSION_TYPES
+        else {}
+    )
+    assert opened["mcp_servers"] == expected
+    assert opened["strict_mcp_config"] is False
+
+
+@pytest.mark.parametrize("session_type", list(SessionType))
+def test_the_host_servers_are_not_read_with_the_opt_in_off(
+    session_type: SessionType,
+) -> None:
+    """Opt-in off: what the host declares cannot reach a session; it changes nothing."""
+    server = _server()
+    guarded = map_knowledge_mcp(
+        NO_KNOWLEDGE_GRANT,
+        session_type,
+        tracker=server,
+        host_servers=frozenset({server.server_name}),
+    )
+    assert guarded == map_knowledge_mcp(
+        NO_KNOWLEDGE_GRANT, session_type, tracker=server
+    )
+    assert guarded["strict_mcp_config"] is True
 
 
 def test_the_tracker_server_sits_beside_the_granted_knowledge_server() -> None:
@@ -174,6 +223,50 @@ async def test_an_organize_pass_session_carries_the_tracker_server(module: str) 
     assert organize.options.strict_mcp_config is True
 
 
+@pytest.mark.parametrize("module", EXECUTOR_MODULES)
+async def test_an_executor_hands_the_host_servers_to_the_mapping(module: str) -> None:
+    """Both adapters: with the opt-in on, the host's servers decide the fallback."""
+    server = _server()
+    hosted = await recorded_session(
+        module,
+        session_type=SessionType.ORGANIZE_PASS,
+        dangerously_allow_host_mcp=True,
+        tracker_server=server,
+        host_mcp_servers=frozenset({server.server_name}),
+    )
+    absent = await recorded_session(
+        module,
+        session_type=SessionType.ORGANIZE_PASS,
+        dangerously_allow_host_mcp=True,
+        tracker_server=server,
+    )
+    assert hosted.options.mcp_servers == {}
+    assert absent.options.mcp_servers == {server.server_name: server.definition}
+
+
 def test_the_composition_root_builds_the_server_from_the_tracker_settings() -> None:
     source = Path(inspect.getfile(main)).read_text(encoding="utf-8")
     assert "tracker_server=tracker_session_server(settings=config.tracker)" in source
+    assert "host_mcp_servers=host_mcp_server_names(user_claude_config_file())" in source
+
+
+def test_the_host_servers_are_read_by_name_from_the_user_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Names only; a missing, malformed or serverless file declares nothing."""
+    config = tmp_path / ".claude.json"
+    config.write_text(
+        '{"mcpServers": {"linear": {"type": "http"}, "notion": {}}, "other": 1}',
+        encoding="utf-8",
+    )
+    assert host_mcp_server_names(config) == {"linear", "notion"}
+    assert host_mcp_server_names(tmp_path / "missing.json") == frozenset()
+    config.write_text("not json", encoding="utf-8")
+    assert host_mcp_server_names(config) == frozenset()
+    config.write_text('{"projects": {}}', encoding="utf-8")
+    assert host_mcp_server_names(config) == frozenset()
+
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+    assert user_claude_config_file() == config
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR")
+    assert user_claude_config_file() == Path.home() / ".claude.json"

@@ -556,6 +556,7 @@ async def test_the_unwired_executor_is_covered_by_the_same_grant_logic() -> None
             "            session_type,\n"
             "            dangerously_allow_host_mcp=self._dangerously_allow_host_mcp,\n"
             "            tracker=self._tracker_server,\n"
+            "            host_servers=self._host_mcp_servers,\n"
             "        )"
         ) in source
 

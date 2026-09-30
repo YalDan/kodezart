@@ -398,6 +398,7 @@ def executor_for(
     fire_record: PromptTemplate | None = None,
     dangerously_allow_host_mcp: bool = False,
     tracker_server: TrackerSessionServer | None = None,
+    host_mcp_servers: frozenset[str] = frozenset(),
 ):
     """Build the adapter that lives in *module* with configured setting sources."""
     if module.endswith("client_executor"):
@@ -409,6 +410,7 @@ def executor_for(
             output_style=output_style,
             dangerously_allow_host_mcp=dangerously_allow_host_mcp,
             tracker_server=tracker_server,
+            host_mcp_servers=host_mcp_servers,
         )
     return ClaudeAgentExecutor(
         setting_sources=DEFAULT_SETTING_SOURCES,
@@ -416,6 +418,7 @@ def executor_for(
         fire_record=fire_record,
         dangerously_allow_host_mcp=dangerously_allow_host_mcp,
         tracker_server=tracker_server,
+        host_mcp_servers=host_mcp_servers,
     )
 
 
@@ -503,6 +506,7 @@ async def recorded_session(
     run_identity: RunIdentity | None = None,
     dangerously_allow_host_mcp: bool = False,
     tracker_server: TrackerSessionServer | None = None,
+    host_mcp_servers: frozenset[str] = frozenset(),
 ) -> RecordedSession:
     """Run one session through *module*'s adapter against a recording transport."""
     recorded: list[RecordedSession] = []
@@ -520,6 +524,7 @@ async def recorded_session(
         fire_record=fire_record,
         dangerously_allow_host_mcp=dangerously_allow_host_mcp,
         tracker_server=tracker_server,
+        host_mcp_servers=host_mcp_servers,
     )
     events: list[AgentEvent] = []
 

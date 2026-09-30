@@ -8,6 +8,10 @@ from pathlib import Path
 from fastapi import FastAPI
 
 from kodezart.adapters.claude.client_executor import ClaudeClientExecutor
+from kodezart.adapters.claude.host_mcp_servers import (
+    host_mcp_server_names,
+    user_claude_config_file,
+)
 from kodezart.adapters.job_registry import InMemoryJobRegistry
 from kodezart.adapters.toml_operation_config import read_operation_file
 from kodezart.api.v1.router import v1_router
@@ -144,6 +148,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             setting_sources=config.agent.setting_sources,
             dangerously_allow_host_mcp=config.agent.dangerously_allow_host_mcp,
             tracker_server=tracker_session_server(settings=config.tracker),
+            host_mcp_servers=host_mcp_server_names(user_claude_config_file()),
             knowledge_grant=await boot_knowledge_grant(
                 knowledge=config.knowledge,
                 prompts=prompts,
