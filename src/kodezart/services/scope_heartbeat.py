@@ -29,8 +29,9 @@ class ScopeHeartbeat:
     The scan is a cheap question and its answer on one board is not stable:
     on 2026-09-29 it left a finished project out and listed it five minutes
     later, and this submitted it (KOD-1302). So the scan only nominates; the
-    two facts that decide a submission are read from the board here, and the
-    same board gives the same decision on every tick. Nothing is remembered
+    two facts that decide a submission are read from the board here, so a
+    node the board refuses is refused on every tick that lists it. A node the
+    scan leaves out is not asked about on that tick. Nothing is remembered
     between ticks.
     """
 

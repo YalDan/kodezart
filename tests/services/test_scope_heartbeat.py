@@ -8,6 +8,7 @@ that does or does not admit it, and read what reached the queue and the log.
 
 from collections.abc import Mapping, Sequence
 
+import pytest
 import structlog.testing
 
 from kodezart.core.constants import DEFAULT_LANE
@@ -208,3 +209,76 @@ async def test_a_rejected_node_does_not_stop_the_next_one() -> None:
     assert outcome is PassRun.RAN
     assert [request.scope for _, request in queue.submissions] == [OTHER]
     assert _rejections(logs) == [(PROJECT.key, "no_open_member")]
+
+
+@pytest.mark.parametrize(
+    "kind",
+    [
+        WorkflowStateKind.TRIAGE,
+        WorkflowStateKind.BACKLOG,
+        WorkflowStateKind.UNSTARTED,
+        WorkflowStateKind.STARTED,
+    ],
+)
+async def test_a_member_in_any_state_that_still_owes_work_is_open(
+    kind: WorkflowStateKind,
+) -> None:
+    """Open is what the one state rule says owes work, not Todo alone (KOD-443)."""
+    queue = FakeJobQueue()
+    member = make_tracker_issue("S-2", state_name=kind.value, state_kind=kind)
+    board = _board(members=[_closed("S-1"), member])
+
+    outcome = await _heartbeat(board, queue, _scan(PROJECT)).run(FIXTURE_EPOCH)
+
+    assert outcome is PassRun.RAN
+    assert [request.scope for _, request in queue.submissions] == [PROJECT]
+
+
+async def test_approval_granted_above_the_scope_admits_it() -> None:
+    """Approval cascades down from a container, as a run's entry reads it."""
+    queue = FakeJobQueue()
+    initiative = ScopeRef(kind=ScopeKind.INITIATIVE, key="approved-initiative")
+    member = make_tracker_issue("S-1")
+    board = FakeTrackerPort(
+        issues=[member],
+        scope_memberships={PROJECT: [member.issue_key], initiative: []},
+        scope_containers=[
+            ScopeContainer(
+                ref=PROJECT,
+                name=PROJECT.key,
+                description="",
+                url=f"https://tracker.invalid/project/{PROJECT.key}",
+                parent=initiative,
+            ),
+            ScopeContainer(
+                ref=initiative,
+                name=initiative.key,
+                description="",
+                url=f"https://tracker.invalid/initiative/{initiative.key}",
+            ),
+        ],
+        scope_label_members={initiative: frozenset({ScopeLabel.APPROVED})},
+    )
+
+    with structlog.testing.capture_logs() as logs:
+        outcome = await _heartbeat(board, queue, _scan(PROJECT)).run(FIXTURE_EPOCH)
+
+    assert outcome is PassRun.RAN
+    assert [request.scope for _, request in queue.submissions] == [PROJECT]
+    assert _rejections(logs) == []
+
+
+async def test_each_tick_reads_the_board_afresh() -> None:
+    """A rejection is not remembered: open work added later is submitted."""
+    queue = FakeJobQueue()
+    board = _board(members=[_closed("S-1")])
+    heartbeat = _heartbeat(board, queue, _scan(PROJECT), _scan(PROJECT))
+
+    first = await heartbeat.run(FIXTURE_EPOCH)
+    reopened = make_tracker_issue("S-2")
+    board.issues[reopened.issue_key] = reopened
+    board.scope_memberships[PROJECT] = (*board.scope_memberships[PROJECT], "S-2")
+    second = await heartbeat.run(FIXTURE_EPOCH)
+
+    assert (first, second) == (PassRun.SKIPPED, PassRun.RAN)
+    assert [request.scope for _, request in queue.submissions] == [PROJECT]

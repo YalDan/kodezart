@@ -108,7 +108,8 @@ does not exist.
 | FireCriteriaReader | TrackerCriteria | Refreshes current native criterion obligations at execution, retry and replay barriers, and answers the same obligations from a subtree reading the caller already holds (the native writer's authority read) |
 | FireCriteriaSource | TrackerCriteria | Composes the typed native subject specification from the admitted subject and its subtree's criteria, and supplies current criterion reads |
 | TrackerContextReader | LinearMcpTracker | Referenced assets and document bodies for fire context |
-| TrackerScopeApprovalReader | LinearMcpTracker | The reads a scope-member question needs, composed from the cascade and the container metadata roles and declaring the scope's own labels; a scope run's entry and the heartbeat depend on it alone |
+| TrackerScopeApprovalReader | LinearMcpTracker | The reads a scope-member question needs, composed from the cascade and the container metadata roles and declaring the scope's own labels; a scope run's entry depends on it alone, and the heartbeat's read composes it |
+| ScopeHeartbeatReader | LinearMcpTracker | The two board reads the scope heartbeat guards a submission with: approval, composed from the scope-approval read, and the scope family, composed from the family read, to count open work that is not a tracker record. It declares no member of its own |
 | LaneStateTracker | LinearMcpTracker | Exactly the tracker calls the lane's own state writer makes, composed from the comment, event, issue, description, state and criterion roles those calls belong to |
 | CriterionReopener | LinearMcpTracker | The one state move the audit makes (a refuted finished criterion back to unstarted), narrowed out of the port rather than added to it |
 | ContainerMetadataReader | LinearMcpTracker | What a container is, read on its own; composed into the approval read and taken by the tracker-artifact reader |
@@ -808,11 +809,16 @@ member as it is.
 Setting the approval label is what starts a scope run. On the dispatch
 cadence the `scope_heartbeat` pass asks the scope scan, one short agent session
 over the board, which approved nodes inside the declared teams are not finished,
-and submits a scope run for each one the record store holds no live job for and
-whose repository the operation declares, onto the queue `POST /fire` submits to.
-It makes no tracker write and remembers nothing between ticks: a finished node
-is left out of the scan, and the run's entry refuses a node that is not approved
-or already has a run going.
+and submits a scope run for each one the record store holds no live job for,
+whose repository the operation declares, and that the board itself admits, onto
+the queue `POST /fire` submits to. The scan only nominates: before submitting,
+the heartbeat reads approval through the resolver the run's entry uses
+(`services/scope_approval.py`) and counts the scope's open members that are not
+tracker records (`domain/scope_submission.py`). A node the board does not
+approve, or that holds no such open member, is logged
+`scope_heartbeat_scan_rejected` with its reason and skipped (KOD-1302). It
+makes no tracker write and remembers nothing between ticks, and the run's entry
+still refuses a node that is not approved or already has a run going.
 
 Approval is read once per run, at its entry. `ScopeEntry.admit`
 (`services/scope_entry.py`) refuses a scope that already has a live job, and

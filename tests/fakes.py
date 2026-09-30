@@ -5528,6 +5528,13 @@ class FakeRequestRecordReader(
     """The ``RequestRecordReader`` role, composed of its role doubles."""
 
 
+class FakeScopeHeartbeatReader(
+    FakeTrackerScopeApprovalReader,
+    FakeScopeFamilyReader,
+):
+    """The ``ScopeHeartbeatReader`` role, composed of its role doubles."""
+
+
 class FakeScopeMemberReader(
     FakeTrackerCriteriaReader,
     FakeScopeFamilyReader,
