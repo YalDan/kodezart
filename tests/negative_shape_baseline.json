@@ -17,7 +17,7 @@
   "tests/adapters/test_git_change_persister.py": 71,
   "tests/adapters/test_git_ref_publisher.py": 7,
   "tests/adapters/test_git_worktree_provider.py": 22,
-  "tests/adapters/test_github_api.py": 131,
+  "tests/adapters/test_github_api.py": 140,
   "tests/adapters/test_host_mcp_opt_in.py": 28,
   "tests/adapters/test_host_skill_inventory.py": 20,
   "tests/adapters/test_hosted_mcp_session.py": 13,
@@ -67,7 +67,7 @@
   "tests/chains/test_fire_graph.py": 146,
   "tests/chains/test_fire_spec_prompt_consumers.py": 17,
   "tests/chains/test_fresh_write_back_judge.py": 11,
-  "tests/chains/test_lane_delivery.py": 81,
+  "tests/chains/test_lane_delivery.py": 93,
   "tests/chains/test_lane_state_loop.py": 361,
   "tests/chains/test_m4_local_sdk_independent.py": 18,
   "tests/chains/test_m4_native_extension_independent.py": 2,
@@ -86,6 +86,7 @@
   "tests/chains/test_node_session_events.py": 24,
   "tests/chains/test_organize.py": 47,
   "tests/chains/test_outbound_gating.py": 24,
+  "tests/chains/test_pr_draft_flag.py": 18,
   "tests/chains/test_ralph_loop.py": 180,
   "tests/chains/test_ralph_workflow.py": 364,
   "tests/chains/test_remediation.py": 19,
@@ -741,6 +742,10 @@
   ],
   "tests/adapters/test_github_api.py": [
    "test_create_pr_success",
+   "test_create_pr_opens_a_draft",
+   "test_mark_ready_for_review_reads_the_node_id_then_mutates",
+   "test_mark_ready_for_review_refuses_a_request_left_in_draft",
+   "test_mark_ready_for_review_treats_a_graphql_error_as_a_forge_failure",
    "test_create_pr_http_error",
    "test_comment_on_pr_success",
    "test_retries_on_429_then_succeeds",
@@ -1537,6 +1542,9 @@
   ],
   "tests/chains/test_lane_delivery.py": [
    "test_green_opens_on_actual_head_and_resolved_base_and_round_trips",
+   "test_a_green_lane_opens_a_draft_and_marks_it_ready",
+   "test_an_unfinished_lane_keeps_its_pull_request_a_draft",
+   "test_a_refused_readiness_flip_is_logged_and_the_lane_still_delivers",
    "test_missing_or_changed_remote_head_refuses_before_pr",
    "test_missing_resolved_base_never_falls_back_to_trunk",
    "test_open_pr_replay_reuses_native_head_lookup_without_generation",
@@ -1811,6 +1819,13 @@
    "test_writer_matrix_over_every_visibility",
    "test_blocked_write_fails_loudly_and_posts_nothing",
    "test_private_target_sees_no_behavioral_change_beyond_the_events"
+  ],
+  "tests/chains/test_pr_draft_flag.py": [
+   "test_an_accepted_run_with_green_checks_marks_its_pull_request_ready",
+   "test_a_stalled_run_opens_a_draft_and_never_marks_it_ready",
+   "test_red_checks_leave_the_pull_request_a_draft",
+   "test_unmonitored_checks_leave_the_pull_request_a_draft",
+   "test_a_forge_refusal_of_the_flip_is_logged_and_the_run_still_completes"
   ],
   "tests/chains/test_ralph_loop.py": [
    "test_loop_single_iteration_accepted",

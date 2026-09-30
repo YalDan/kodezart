@@ -139,6 +139,11 @@ class AuthoredDeliveryCoordinator:
             retry_policy=self.fire.retry,
         )
         graph.add_node(
+            "mark_ready",
+            self.fire.floor(self.publication.mark_ready),
+            retry_policy=self.fire.retry,
+        )
+        graph.add_node(
             "delivery_remediation",
             self.fire.floor(self._delivery_remediation_node),
             retry_policy=self.fire.retry,
@@ -175,11 +180,13 @@ class AuthoredDeliveryCoordinator:
             {
                 "remediate": "delivery_remediation",
                 "comment_failure": "comment_failure",
+                "mark_ready": "mark_ready",
                 "complete": "complete",
             },
         )
         graph.add_edge("delivery_remediation", "fire")
         graph.add_edge("comment_failure", "complete")
+        graph.add_edge("mark_ready", "complete")
         graph.add_edge("complete", END)
         return graph
 
@@ -226,7 +233,25 @@ class AuthoredDeliveryCoordinator:
         return await self.fire.remediation.draft_remediation(state, request, config)
 
     def _route_after_ci(self, state: AuthoredWorkflowState) -> str:
-        """Route based on CI result, fix budget, and adapter preconditions."""
+        """Route based on CI result, fix budget, and adapter preconditions.
+
+        The readiness flip (KOD-1294) is the one route that needs every
+        condition at once: checks green at the pushed head, the acceptance
+        gate cleared and the final review passed.  A stalled run reaches
+        ``monitor_ci`` through ``open_stalled_pr`` with the gate not
+        cleared, so its pull request stays a draft whatever CI says; a
+        run whose checks are not monitored (``not_configured``,
+        ``not_monitored``) has no green head to show and stays a draft
+        too.
+        """
+        if state["ci_status"] is CIStatus.passed:
+            finished = (
+                gate_cleared(state["accept_verdict"])
+                and state["review_passed"]
+                and state["pr_number"] is not None
+                and self.publication.available
+            )
+            return "mark_ready" if finished else "complete"
         if state["ci_status"] is not CIStatus.failed:
             return "complete"
         if state.get("ci_red_class") is not CheckRedClass.WORK_DEFECT:

@@ -365,18 +365,7 @@ class AuthoredPublication:
         if pr_number is None:
             msg = "comment_failure requires pr_number but state['pr_number'] is None"
             raise RuntimeError(msg)
-        repositories = scope_repositories(ctx.scope, self._repositories)
-        if repositories:
-            # The pull request the state names is the first one opened: in the
-            # first repository the deliverable branch gained commits in.
-            gained = await gained_commits(
-                git=self._git,
-                cache=self._cache,
-                repositories=repositories,
-                branch=state["feature_branch"],
-                cache_key=ctx.cache_key,
-            )
-            repo_url = gained[0].repository.url
+        repo_url = await self._pr_repository(state, ctx, repo_url)
 
         comment_parts = [
             "## kodezart: remediation budget exhausted\n",
@@ -417,4 +406,75 @@ class AuthoredPublication:
                 error_kind=type(exc).__name__,
             )
 
+        return {}
+
+    async def _pr_repository(
+        self, state: AuthoredWorkflowState, ctx: ExecutionContext, repo_url: str
+    ) -> str:
+        """The repository of the pull request the state names.
+
+        The state keeps the first pull request opened: the one in the first
+        repository the deliverable branch gained commits in.  Every write
+        addressed to ``state["pr_number"]`` resolves its repository here,
+        so the comment and the readiness flip cannot disagree on which
+        request they mean.
+        """
+        repositories = scope_repositories(ctx.scope, self._repositories)
+        if not repositories:
+            return repo_url
+        gained = await gained_commits(
+            git=self._git,
+            cache=self._cache,
+            repositories=repositories,
+            branch=state["feature_branch"],
+            cache_key=ctx.cache_key,
+        )
+        return gained[0].repository.url
+
+    async def mark_ready(
+        self,
+        state: AuthoredWorkflowState,
+        config: RunnableConfig,
+    ) -> dict[str, object]:
+        """Take the delivered pull request out of draft (KOD-1294).
+
+        Reached only when the unit is finished: the acceptance gate
+        cleared, the final review passed and the checks are green at the
+        pushed head — the graph routes here from nowhere else.  Every
+        pull request the engine opens is a draft, so this is the one
+        write that says "review this".
+
+        A forge refusal here is LOGGED and the run reaches its terminal,
+        as ``comment_failure`` does: the work is delivered either way, and
+        a pull request left in draft with every criterion done is the
+        state the supervisor pass reports (KOD-1290), so nothing is lost
+        silently.
+        """
+        ctx = ExecutionContext.from_configurable(config)
+        pr_creator = self._pr_creator
+        if pr_creator is None:
+            msg = "mark_ready requires pr_creator but self._pr_creator is None"
+            raise RuntimeError(msg)
+        repo_url = ctx.repo_url
+        if repo_url is None:
+            msg = "mark_ready requires repo_url but ctx.repo_url is None"
+            raise RuntimeError(msg)
+        pr_number = state["pr_number"]
+        if pr_number is None:
+            msg = "mark_ready requires pr_number but state['pr_number'] is None"
+            raise RuntimeError(msg)
+        repo_url = await self._pr_repository(state, ctx, repo_url)
+        try:
+            await pr_creator.mark_ready_for_review(
+                repo_url=repo_url, pr_number=pr_number
+            )
+        except (ForgeAPIError, TransientAPIError) as exc:
+            await self._log.aerror(
+                "mark_ready_failed",
+                pr_number=pr_number,
+                error=str(exc),
+                error_kind=type(exc).__name__,
+            )
+            return {}
+        await self._log.ainfo("pr_marked_ready", pr_number=pr_number, repo_url=repo_url)
         return {}
