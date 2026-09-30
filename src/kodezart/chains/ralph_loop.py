@@ -125,6 +125,17 @@ from kodezart.types.domain.trajectory import IterationRecord
 from kodezart.types.domain.workflow import RalphLoopContext, RalphLoopState
 
 
+def _session_kind(scope: ScopeRef | None) -> SessionType:
+    """The session kind the loop's implementer and grader both open as.
+
+    A scope run's implementer keeps the board current as it works, and its
+    grader reads each unit's pull request on the tracker, so on a scope run
+    both run as the board session kind, which carries the tracker.  Any
+    other run's sessions are fires.
+    """
+    return SessionType.ORGANIZE_PASS if scope is not None else SessionType.TICKET_FIRE
+
+
 class RalphLoop:
     """Iterates agent work until acceptance criteria pass or max iterations.
 
@@ -442,13 +453,7 @@ class RalphLoop:
             permission_mode=ctx.permission_mode,
             allowed_tools=ctx.allowed_tools,
             skills=self._prompts.session_skills(PromptKey.IMPLEMENTATION, self._skills),
-            # A scope run's implementer keeps the board current as it works,
-            # so it runs as the board session kind, which carries the tracker.
-            session_type=(
-                SessionType.ORGANIZE_PASS
-                if ctx.scope is not None
-                else SessionType.TICKET_FIRE
-            ),
+            session_type=_session_kind(ctx.scope),
             run_identity=ctx.run_identity,
             session_policy=self._prompts.session_policy(PromptKey.IMPLEMENTATION),
             visibility=ctx.repo_visibility,
@@ -770,6 +775,7 @@ class RalphLoop:
                 )
             skills = self._prompts.session_skills(PromptKey.EVALUATION, self._skills)
             policy = self._prompts.session_policy(PromptKey.EVALUATION)
+            session_type = _session_kind(ctx.scope)
             observe = None if observer is None else observer.observe
             # What the observer saw open is put on the lane's stream whether
             # the drain returned or raised: a drain that opened sessions and
@@ -793,7 +799,7 @@ class RalphLoop:
                             ),
                             allowed_tools=ToolPreset.EVALUATION,
                             skills=skills,
-                            session_type=SessionType.TICKET_FIRE,
+                            session_type=session_type,
                             run_identity=ctx.run_identity,
                             # Evaluative: no lens is dispatched from here. Asking a
                             # template not to fan out is a request; an empty
@@ -829,7 +835,7 @@ class RalphLoop:
                                 permission_mode=EVAL_PERMISSION_MODE,
                                 allowed_tools=ToolPreset.EVALUATION,
                                 skills=skills,
-                                session_type=SessionType.TICKET_FIRE,
+                                session_type=session_type,
                                 run_identity=ctx.run_identity,
                                 agents=NO_SUBAGENTS,
                                 session_policy=policy,

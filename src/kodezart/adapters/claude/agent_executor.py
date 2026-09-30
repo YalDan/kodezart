@@ -65,12 +65,14 @@ class ClaudeAgentExecutor:
         fire_record: PromptTemplate | None = None,
         dangerously_allow_host_mcp: bool = False,
         tracker_server: TrackerSessionServer | None = None,
+        host_mcp_servers: frozenset[str] = frozenset(),
     ) -> None:
         self._setting_sources = setting_sources
         self._knowledge_grant = knowledge_grant
         self._fire_record = fire_record
         self._dangerously_allow_host_mcp = dangerously_allow_host_mcp
         self._tracker_server = tracker_server
+        self._host_mcp_servers = host_mcp_servers
         self._log: BoundLogger = get_logger(__name__)
 
     async def stream(
@@ -104,6 +106,7 @@ class ClaudeAgentExecutor:
             session_type,
             dangerously_allow_host_mcp=self._dangerously_allow_host_mcp,
             tracker=self._tracker_server,
+            host_servers=self._host_mcp_servers,
         )
         options = ClaudeAgentOptions(
             cwd=cwd,

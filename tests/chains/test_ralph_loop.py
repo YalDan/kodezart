@@ -26,6 +26,7 @@ from kodezart.domain.trajectory import fold_trajectory, landable_commit
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.accept import AcceptVerdict
 from kodezart.types.domain.agent import (
+    ACCEPTANCE_CRITERIA_SCHEMA,
     AcceptanceCriteriaOutput,
     AgentEvent,
     AssistantTextEvent,
@@ -49,6 +50,7 @@ from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.persist import PersistResult, PersistSource
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run_records import RunIdentity
+from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.session import PermissionMode, SessionType
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.subagents import (
@@ -977,6 +979,46 @@ async def test_evaluate_node_renders_the_changeset_digest_into_the_prompt() -> N
     assert "file_paths" in captured[0]
     assert "commit_subjects" in captured[0]
     assert "commit_count" in captured[0]
+
+
+async def test_a_scope_run_grades_at_the_unit_heads_as_a_board_session() -> None:
+    """KOD-1304: a scope run's grader reads no loop-branch changeset.
+
+    The loop branch holds none of the units' work, so the grader is shown no
+    digest of it, and git is never asked for one; it fetches each unit's
+    pull-request head itself and reads the pull request on the tracker, so
+    it opens as the board session kind, as the implementer does.  A
+    per-issue run is unchanged: a digest and a fire.
+    """
+    for scope, session_kind in (
+        (
+            ScopeRef(kind=ScopeKind.PROJECT, key="project-one"),
+            SessionType.ORGANIZE_PASS,
+        ),
+        (None, SessionType.TICKET_FIRE),
+    ):
+        git = FakeGitService()
+        prompts = RecordingPromptProvider(make_prompt_provider())
+        executor = _one_passing_evaluation()
+        loop = _make_loop(executor=executor, git=git, prompts=prompts)
+        _ = [e async for e in loop.run(**_run_kwargs(), scope=scope)]
+
+        captured = prompts.variables_for(PromptKey.EVALUATION)
+        assert captured, scope
+        graded = [
+            call
+            for call in executor.calls
+            if call["output_format"]
+            == {"type": "json_schema", "schema": ACCEPTANCE_CRITERIA_SCHEMA}
+        ]
+        assert [call["session_type"] for call in graded] == [session_kind], scope
+        if scope is None:
+            assert "commit_count" in captured[0]
+            assert [c for c in git.calls if c[0] == "diff_summary"]
+        else:
+            assert "commit_count" not in captured[0]
+            assert captured[0]["scope_key"] == "project-one"
+            assert [c for c in git.calls if c[0] == "diff_summary"] == []
 
 
 async def test_the_evaluation_prompt_states_each_criterion_verdict() -> None:
