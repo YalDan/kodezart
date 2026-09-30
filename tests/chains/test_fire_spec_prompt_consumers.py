@@ -323,6 +323,8 @@ SCOPE_ONLY_RULES = (
     ),
     ("implementation", "Deliverable units."),
     ("implementation", "argue against your own change"),
+    ("implementation", "is proved there, not rebuilt"),
+    ("implementation", "commit only on unit and union branches"),
     ("workflow_pr", "one per line in the form `Delivers: ABC-123`"),
 )
 
