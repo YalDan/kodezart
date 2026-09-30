@@ -613,6 +613,13 @@ async def read_scope(port: FakeTrackerPort) -> None:
     await port.scope_issues(ref=ScopeRef(kind=ScopeKind.ISSUE, key=ISSUE))
 
 
+async def read_scope_member_pages(port: FakeTrackerPort) -> None:
+    async for _page in port.scope_member_pages(
+        ref=ScopeRef(kind=ScopeKind.ISSUE, key=ISSUE)
+    ):
+        pass
+
+
 async def read_scan_capability(port: FakeTrackerPort) -> None:
     await port.verify_scan_capability(signals=tuple(PassSignal))
 
@@ -932,6 +939,11 @@ CASES: Mapping[str, Case] = {
     "a scope's issues read": Case(
         method="scope_issues",
         call=read_scope,
+        journals=frozenset(),
+    ),
+    "a scope's member pages read": Case(
+        method="scope_member_pages",
+        call=read_scope_member_pages,
         journals=frozenset(),
     ),
     "the scan capability verified": Case(

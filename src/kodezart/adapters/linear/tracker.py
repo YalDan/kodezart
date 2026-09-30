@@ -10,7 +10,7 @@ the whole live set and keeps only what that read confirms.
 """
 
 import asyncio
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
@@ -2769,6 +2769,31 @@ class _LinearTrackerSession:
             url=wire.url,
         )
 
+    async def _listed_issues(
+        self, wires: Sequence[LinearIssueWire]
+    ) -> tuple[TrackerIssue, ...]:
+        """The listed rows in domain vocabulary, leaving out an unnamed state.
+
+        An issue carrying a workflow-state kind the domain does not name is
+        EXCLUDED rather than unwinding the whole listing, and it is named as
+        it goes: its key, the tool that returned it and the raw value the
+        vendor sent, once per issue. A listing reads many issues, so one such
+        issue would take down every reader of it for as long as it sat there
+        (one groomed duplicate crash-looped the dispatch pass).
+        """
+        found: list[TrackerIssue] = []
+        for wire in wires:
+            if wire.status_type not in _STATE_KIND_BY_VALUE:
+                await self._log.aerror(
+                    "tracker_scan_issue_excluded",
+                    issue_key=wire.id,
+                    tool=_TOOL_LIST_ISSUES,
+                    status_type=wire.status_type,
+                )
+                continue
+            found.append(self._to_issue(wire))
+        return tuple(found)
+
     def _to_comment(
         self,
         wire: LinearCommentWire,
@@ -3504,18 +3529,7 @@ class LinearIssueScanReader(_LinearTrackerSession):
             arguments["updatedAt"] = query.updated_since.isoformat()
         payload = await self._call(_TOOL_LIST_ISSUES, arguments)
         listing = self._validate(LinearIssueListWire, payload, _TOOL_LIST_ISSUES)
-        found: list[TrackerIssue] = []
-        for wire in listing.issues:
-            if wire.status_type not in _STATE_KIND_BY_VALUE:
-                await self._log.aerror(
-                    "tracker_scan_issue_excluded",
-                    issue_key=wire.id,
-                    tool=_TOOL_LIST_ISSUES,
-                    status_type=wire.status_type,
-                )
-                continue
-            found.append(self._to_issue(wire))
-        return tuple(found)
+        return await self._listed_issues(listing.issues)
 
 
 class LinearLaneEventHistory(_LinearTrackerSession):
@@ -4012,6 +4026,22 @@ class LinearScopeFamilyReader(_LinearTrackerSession):
 
     async def _planning_issue(self, *, issue_key: str) -> TrackerIssue:
         return self._to_issue(await self._read_planning_wire(issue_key))
+
+
+class LinearScopeMemberPager(LinearIssueReader):
+    """The ``ScopeMemberPager`` role, over the shared session."""
+
+    async def scope_member_pages(
+        self, *, ref: ScopeRef
+    ) -> AsyncIterator[Sequence[TrackerIssue]]:
+        """Each listing page below *ref*, its rows read off the page itself.
+
+        No member is hydrated, so a scope of a thousand members costs its
+        listing pages and no more (KOD-1288).
+        """
+        reader = LinearScopeReader(call=self._call, read_issue=self.read_issue)
+        async for rows in reader.member_pages(ref=ref):
+            yield await self._listed_issues(rows)
 
 
 class LinearFireSubjectReader(
@@ -4693,6 +4723,7 @@ class LinearMcpTracker(
     LinearCriterionMintWriter,
     LinearContainerMetadataReader,
     LinearClassificationWriter,
+    LinearScopeMemberPager,
     _LinearTrackerSession,
 ):
     """``TrackerPort`` over the Linear MCP server.

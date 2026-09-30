@@ -947,6 +947,30 @@ class ScopeFamilyReader(Protocol):
 
 
 @runtime_checkable
+class ScopeMemberPager(Protocol):
+    """The issues below a scope, one listing page at a time, and nothing else.
+
+    Narrowed out of the port beside ``ScopeFamilyReader`` rather than folded
+    into it: that read hydrates every member one issue at a time for its
+    relations, which a scope of a thousand members cannot afford, while a
+    consumer that only selects rows by label and state needs the listing
+    pages alone (KOD-1288).
+    """
+
+    def scope_member_pages(
+        self, *, ref: ScopeRef
+    ) -> AsyncIterator[Sequence[TrackerIssue]]:
+        """Each listing page of the unarchived issues below *ref*, in order.
+
+        Container scopes page their member issues; an issue scope pages its
+        descendants and leaves the issue itself out. Rows carry no
+        relations. A page that cannot be read or advanced raises; it never
+        ends the iteration early.
+        """
+        ...
+
+
+@runtime_checkable
 class StateHistoryReader(Protocol):
     """When the issue entered the state it is in, with that same snapshot."""
 
@@ -1989,6 +2013,7 @@ class TrackerPort(
     CriterionMintWriter,
     DescriptionWriter,
     ScopeFamilyReader,
+    ScopeMemberPager,
     PassGateReader,
     IssueScanReader,
     RecordedRepositoryReader,

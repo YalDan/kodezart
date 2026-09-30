@@ -19,7 +19,7 @@ read off the adapter before the split like the log.
 """
 
 import ast
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from datetime import timedelta
 
 from kodezart.domain.run_event_stream import LaneRunEvent
@@ -324,11 +324,16 @@ SCOPE_STEPS: tuple[tuple[str, Step], ...] = (
         "FireDispatchTracker",
         lambda t: t.initiative_identifiers(project_id=PROJECT.key),
     ),
+    ("ScopeMemberPager", lambda t: _pages(t.scope_member_pages(ref=PROJECT))),
 )
 
 
 async def _sync(call: Callable[[], object]) -> object:
     return call()
+
+
+async def _pages(pages: AsyncIterator[object]) -> list[object]:
+    return [page async for page in pages]
 
 
 type Entry = tuple[str, str, tuple[str, ...]]
@@ -696,6 +701,12 @@ RECORDED_CALL_LOG: tuple[Entry, ...] = (
     ("ContainerMetadataReader", "returned", ()),
     ("FireDispatchTracker", "get_project", ("query",)),
     ("FireDispatchTracker", "returned", ()),
+    # Recorded when the scope member pager joined the port (KOD-1288): its
+    # listing pages and no per-member read.
+    ("ScopeMemberPager", "get_project", ("query",)),
+    ("ScopeMemberPager", "list_issues", ("limit", "project")),
+    ("ScopeMemberPager", "list_issues", ("cursor", "limit", "project")),
+    ("ScopeMemberPager", "returned", ()),
 )
 
 

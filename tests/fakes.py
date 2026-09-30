@@ -3,7 +3,14 @@
 import asyncio
 import copy
 import re
-from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping, Sequence
+from collections.abc import (
+    AsyncGenerator,
+    AsyncIterator,
+    Awaitable,
+    Callable,
+    Mapping,
+    Sequence,
+)
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
@@ -4728,6 +4735,45 @@ class FakeScopeFamilyReader(_FakeTrackerState):
         return tuple(selected.values())
 
 
+#: The scope member pager double's page size: small, so a consumer's test
+#: crosses a page boundary.
+FAKE_MEMBER_PAGE_SIZE = 2
+
+
+class FakeScopeMemberPager(_FakeTrackerState):
+    """The ``ScopeMemberPager`` role of this double, a few members per page."""
+
+    async def scope_member_pages(
+        self, *, ref: ScopeRef
+    ) -> AsyncIterator[Sequence[TrackerIssue]]:
+        if ref.kind is ScopeKind.ISSUE:
+            if ref.key not in self.issues:
+                raise ScopeReadError("issue is missing", ref=ref)
+            keys: list[str] = []
+            pending = [ref.key]
+            for parent in pending:
+                children = [
+                    issue.issue_key
+                    for issue in self.issues.values()
+                    if issue.parent_key == parent and issue.issue_key not in keys
+                ]
+                keys.extend(children)
+                pending.extend(children)
+        else:
+            if ref not in self.scope_containers and ref not in self.scope_memberships:
+                raise ScopeReadError("container is missing", ref=ref)
+            keys = list(dict.fromkeys(self.scope_memberships.get(ref, ())))
+        for start in range(0, len(keys), FAKE_MEMBER_PAGE_SIZE):
+            page: list[TrackerIssue] = []
+            for key in keys[start : start + FAKE_MEMBER_PAGE_SIZE]:
+                if key not in self.issues:
+                    raise ScopeReadError("scope member is missing", ref=ref)
+                await asyncio.sleep(0)
+                self.issue_reads.append(key)
+                page.append(self._issue_as_read(key))
+            yield tuple(page)
+
+
 class FakeFireSubjectReader(
     FakeExecutionApprovalReader, FakeTrackerCriteriaReader, FakeScopeFamilyReader
 ):
@@ -5393,6 +5439,7 @@ class FakeTrackerPort(
     FakeContainerMetadataReader,
     FakeCriterionMintWriter,
     FakeScopeReadPreflight,
+    FakeScopeMemberPager,
 ):
     """In-process ``TrackerPort`` — the double every port CONSUMER is tested on.
 

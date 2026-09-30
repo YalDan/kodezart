@@ -784,3 +784,68 @@ async def test_linear_container_metadata_refuses_a_parent_cycle(ref: ScopeRef) -
         await linear_over_fake_mcp(server).container_metadata(ref=ref)
 
     assert caught.value.ref == ref
+
+
+async def _paged_keys(tracker: TrackerPort, ref: ScopeRef) -> list[list[str]]:
+    return [
+        [issue.issue_key for issue in page]
+        async for page in tracker.scope_member_pages(ref=ref)
+    ]
+
+
+@pytest.mark.parametrize(
+    ("ref", "expected"),
+    [
+        (ROOT, {"FIX-2", "FIX-3"}),
+        (PROJECT, {ROOT.key, "FIX-2", "FIX-4"}),
+        (MILESTONE, {ROOT.key, "FIX-2"}),
+        (INITIATIVE, {ROOT.key, "FIX-2", "FIX-3", "FIX-4", "FIX-5"}),
+        (EMPTY_PROJECT, set()),
+        (EMPTY_INITIATIVE, set()),
+    ],
+)
+async def test_member_pages_hold_every_issue_below_the_scope_but_the_issue_itself(
+    scope_fixture: ScopeFixture, ref: ScopeRef, expected: set[str]
+) -> None:
+    pages = await _paged_keys(scope_fixture.tracker, ref)
+
+    keys = [key for page in pages for key in page]
+    assert set(keys) == expected
+    assert len(keys) == len(expected)
+
+
+@pytest.mark.parametrize("ref", [PROJECT, INITIATIVE])
+async def test_linear_member_pages_follow_the_cursor_and_hydrate_no_member(
+    ref: ScopeRef,
+) -> None:
+    """A thousand members cost their listing pages, not a read each (KOD-1288)."""
+    server = ScopeMcpServer()
+
+    pages = await _paged_keys(linear_over_fake_mcp(server), ref)
+
+    assert len(pages) > 1
+    assert all(len(page) <= PAGE_SIZE for page in pages)
+    listings = server.tool_calls("list_issues")
+    assert any("cursor" in args for args in listings)
+    assert all(args["limit"] == 250 for args in listings)
+    assert not any("includeArchived" in args for args in listings)
+    assert server.tool_calls("get_issue") == []
+
+
+async def test_linear_issue_member_pages_read_only_the_root_whole() -> None:
+    server = ScopeMcpServer()
+
+    pages = await _paged_keys(linear_over_fake_mcp(server), ROOT)
+
+    assert pages == [["FIX-2"], ["FIX-3"], []]
+    assert [args["id"] for args in server.tool_calls("get_issue")] == [ROOT.key]
+
+
+async def test_linear_member_pages_refuse_a_cursor_that_does_not_advance() -> None:
+    server = ScopeMcpServer()
+    server.repeat_cursor = True
+
+    with pytest.raises(TrackerProtocolError) as caught:
+        await _paged_keys(linear_over_fake_mcp(server), PROJECT)
+
+    assert caught.value.tool == "list_issues"
