@@ -85,6 +85,7 @@ class AuthoredDeliveryCoordinator:
             **fire_state,
             pr_url=None,
             pr_number=None,
+            opened_prs=(),
             ci_status=CIStatus.not_monitored,
             ci_summary=None,
             ci_red_class=None,

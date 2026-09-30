@@ -63,7 +63,8 @@ from kodezart.types.domain.workflow import ExecutionContext, WorkflowState
 class LaneDeliveryCoordinator:
     """The lane's existing head/base, open PR and coherent check observation.
 
-    No tracker port or PR mutation beyond creation and comments.
+    No tracker port; the PR writes are creation (as a draft), the readiness
+    flip once the checks are green, and comments.
     NativeLaneWorkflow owns the existing fire remediation transition.
     """
 

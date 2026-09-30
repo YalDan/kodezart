@@ -1980,6 +1980,11 @@ class FakePRCreator:
     ) -> None:
         self._pr_url = pr_url
         self._pr_number = pr_number
+        #: The number each repository's request got: the configured number
+        #: in the first repository opened, the next in each further one, so
+        #: a run over several repositories gets one number per request while
+        #: two runs in one repository still meet the same number.
+        self._numbers: dict[str, int] = {}
         self._fail_create = fail_create
         self._fail_comment = fail_comment
         self._fail_mark_ready = fail_mark_ready
@@ -2011,7 +2016,14 @@ class FakePRCreator:
         )
         if self._fail_create is not None:
             raise self._fail_create
-        pr_url, pr_number = self._pr_url, self._pr_number
+        pr_number = self._numbers.setdefault(
+            repo_url, self._pr_number + len(self._numbers)
+        )
+        pr_url = (
+            self._pr_url
+            if pr_number == self._pr_number
+            else f"{self._pr_url.rsplit('/', 1)[0]}/{pr_number}"
+        )
         self.drafts[pr_number] = True
         return (pr_url, pr_number)
 

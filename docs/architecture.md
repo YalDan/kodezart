@@ -89,7 +89,7 @@ does not exist.
 | WorkspaceProvider | GitWorktreeProvider      | Disposable Git worktrees in `/tmp`                   |
 | ChangePersister   | GitChangePersister       | Detects changes, generates commit message, commits, pushes |
 | BranchMerger      | GitBranchMerger          | Fast-forward merge and push                          |
-| PRCreator         | GitHubAPIClient          | Opens pull requests and comments on them             |
+| PRCreator         | GitHubAPIClient          | Opens pull requests as drafts, marks a finished one ready, comments |
 | PRStateReader | GitHubAPIClient | Reads exact native PR identity, head repository/branch/SHA, base repository/branch and open/closed/merged lifecycle; refuses foreign or unavailable head/base repositories; no mutation authority |
 | ForgeQuery | GitHubAPIClient | Reads the open pull request on a head ref for check-before-create, and composes a branch's web page from the origin's own host; no mutation authority |
 | CIMonitor         | GitHubAPIClient          | Returns a coherent completed, absent or incomplete check observation; re-observes Actions attempts at one commit |

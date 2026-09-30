@@ -17,7 +17,7 @@
   "tests/adapters/test_git_change_persister.py": 71,
   "tests/adapters/test_git_ref_publisher.py": 7,
   "tests/adapters/test_git_worktree_provider.py": 22,
-  "tests/adapters/test_github_api.py": 140,
+  "tests/adapters/test_github_api.py": 141,
   "tests/adapters/test_host_mcp_opt_in.py": 28,
   "tests/adapters/test_host_skill_inventory.py": 20,
   "tests/adapters/test_hosted_mcp_session.py": 13,
@@ -63,7 +63,7 @@
   "tests/chains/test_criteria_validation.py": 116,
   "tests/chains/test_delivery_coordinator.py": 50,
   "tests/chains/test_dispatch_definitions.py": 15,
-  "tests/chains/test_fire_extraction.py": 35,
+  "tests/chains/test_fire_extraction.py": 40,
   "tests/chains/test_fire_graph.py": 146,
   "tests/chains/test_fire_spec_prompt_consumers.py": 17,
   "tests/chains/test_fresh_write_back_judge.py": 11,
@@ -86,7 +86,7 @@
   "tests/chains/test_node_session_events.py": 24,
   "tests/chains/test_organize.py": 47,
   "tests/chains/test_outbound_gating.py": 24,
-  "tests/chains/test_pr_draft_flag.py": 18,
+  "tests/chains/test_pr_draft_flag.py": 29,
   "tests/chains/test_ralph_loop.py": 180,
   "tests/chains/test_ralph_workflow.py": 364,
   "tests/chains/test_remediation.py": 19,
@@ -1825,7 +1825,10 @@
    "test_a_stalled_run_opens_a_draft_and_never_marks_it_ready",
    "test_red_checks_leave_the_pull_request_a_draft",
    "test_unmonitored_checks_leave_the_pull_request_a_draft",
-   "test_a_forge_refusal_of_the_flip_is_logged_and_the_run_still_completes"
+   "test_a_forge_refusal_of_the_flip_is_logged_and_the_run_still_completes",
+   "test_a_finished_scope_run_marks_every_repository_s_pull_request_ready",
+   "test_the_flip_addresses_the_repository_the_request_was_opened_in",
+   "test_a_refused_flip_in_one_repository_still_flips_the_other"
   ],
   "tests/chains/test_ralph_loop.py": [
    "test_loop_single_iteration_accepted",

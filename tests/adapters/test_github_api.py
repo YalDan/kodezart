@@ -159,6 +159,15 @@ async def test_create_pr_success() -> None:
     )
     assert url == "https://github.com/owner/repo/pull/42"
     assert number == 42
+    assert payloads == [
+        {
+            "title": "feat: test",
+            "body": "Test body",
+            "head": "feature-branch",
+            "base": "main",
+            "draft": True,
+        }
+    ]
     await client.close()
 
 
