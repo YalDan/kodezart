@@ -11,7 +11,7 @@ from kodezart.types.domain.tracker import TrackerIssue
 TRACKER_RECORD_LABEL = "tracker"
 
 
-def open_work_count(members: Iterable[TrackerIssue]) -> int:
+def open_work_count(members: Iterable[TrackerIssue], *, root: str | None = None) -> int:
     """How many of a scope's *members* are open work.
 
     A member counts when its workflow state still owes work, read through
@@ -19,13 +19,23 @@ def open_work_count(members: Iterable[TrackerIssue]) -> int:
     KOD-443), and it does not carry the ``tracker`` label. Zero means there
     is nothing for a run to do: every member is completed, canceled or a
     duplicate, or the scope has no member but tracker records, or none at
-    all. This is the count the scope
-    heartbeat guards a submission with, read from the board in code rather
-    than taken from the scope scan's answer (KOD-1302).
+    all. This is the count the scope heartbeat guards a submission with,
+    read from the board in code rather than taken from the scope scan's
+    answer (KOD-1302).
+
+    *root* is the key of the issue an issue scope is addressed by. Its
+    family holds the root beside the issues below it, but the work a run
+    does and the question that ends a run judge only the issues below the
+    parent, so the root is not counted while anything else is in the
+    family. A root with nothing below it is the whole scope, and then it
+    is the work.
     """
+    rows = list(members)
+    if root is not None and any(issue.issue_key != root for issue in rows):
+        rows = [issue for issue in rows if issue.issue_key != root]
     return sum(
         1
-        for issue in members
+        for issue in rows
         if open_state_kind(issue.state_kind)
         and TRACKER_RECORD_LABEL not in issue.issue_labels
     )

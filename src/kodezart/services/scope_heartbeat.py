@@ -11,7 +11,7 @@ from kodezart.services.scope_approval import scope_approved
 from kodezart.types.domain.agent import ScopeScanNode, ScopeScanOutput
 from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.dispatch import PassRun
-from kodezart.types.domain.scope import ScopeRef
+from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.session import PermissionMode, ToolPreset
 from kodezart.types.domain.workflow import WorkflowSubmission
 
@@ -151,6 +151,8 @@ class ScopeHeartbeat:
         """
         if not await scope_approved(ref=scope, tracker=self._tracker):
             return "not_approved"
-        if open_work_count(await self._tracker.scope_issues(ref=scope)) == 0:
+        family = await self._tracker.scope_issues(ref=scope)
+        root = scope.key if scope.kind is ScopeKind.ISSUE else None
+        if open_work_count(family, root=root) == 0:
             return "no_open_member"
         return None

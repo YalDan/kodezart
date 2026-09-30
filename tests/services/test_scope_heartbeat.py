@@ -282,3 +282,96 @@ async def test_each_tick_reads_the_board_afresh() -> None:
 
     assert (first, second) == (PassRun.SKIPPED, PassRun.RAN)
     assert [request.scope for _, request in queue.submissions] == [PROJECT]
+
+
+ISSUE = ScopeRef(kind=ScopeKind.ISSUE, key="P-1")
+
+
+def _issue_board(
+    root: TrackerIssue, *below: TrackerIssue, approved: bool = True
+) -> FakeTrackerPort:
+    """A board holding the issue scope *root* with *below* as its descendants."""
+    return FakeTrackerPort(
+        issues=[root, *below],
+        scope_label_members=(
+            {ISSUE: frozenset({ScopeLabel.APPROVED})} if approved else {}
+        ),
+    )
+
+
+async def test_an_issue_scope_with_everything_below_it_done_is_rejected() -> None:
+    """The verifier's probe (KOD-1302, round 3): the root is open, all below it done.
+
+    The scan judges only the issues below the parent and so does the run's
+    own done question, so the heartbeat must not count the root as the
+    work that keeps the scope alive, whatever the scan lists on a tick.
+    """
+    queue = FakeJobQueue()
+    board = _issue_board(
+        make_tracker_issue("P-1"),
+        _closed("C-1"),
+        _closed("C-2"),
+        make_tracker_issue(
+            "AC-1",
+            parent_key="C-1",
+            state_name="Done",
+            state_kind=WorkflowStateKind.COMPLETED,
+        ),
+        make_tracker_issue(
+            "AC-2",
+            parent_key="C-2",
+            state_name="Done",
+            state_kind=WorkflowStateKind.COMPLETED,
+        ),
+    )
+    for child in ("C-1", "C-2"):
+        board.issues[child] = board.issues[child].model_copy(
+            update={"parent_key": "P-1"}
+        )
+    heartbeat = _heartbeat(board, queue, _scan(), _scan(ISSUE))
+
+    with structlog.testing.capture_logs() as logs:
+        first = await heartbeat.run(FIXTURE_EPOCH)
+        second = await heartbeat.run(FIXTURE_EPOCH)
+
+    assert (first, second) == (PassRun.SKIPPED, PassRun.SKIPPED)
+    assert queue.submissions == []
+    assert _rejections(logs) == [("P-1", "no_open_member")]
+
+
+async def test_an_issue_scope_with_open_work_below_it_is_submitted() -> None:
+    queue = FakeJobQueue()
+    board = _issue_board(
+        make_tracker_issue("P-1"),
+        _closed("C-1"),
+        make_tracker_issue("C-2"),
+    )
+    for child in ("C-1", "C-2"):
+        board.issues[child] = board.issues[child].model_copy(
+            update={"parent_key": "P-1"}
+        )
+
+    outcome = await _heartbeat(board, queue, _scan(ISSUE)).run(FIXTURE_EPOCH)
+
+    assert outcome is PassRun.RAN
+    assert [request.scope for _, request in queue.submissions] == [ISSUE]
+
+
+@pytest.mark.parametrize(
+    ("root", "expected"),
+    [
+        (make_tracker_issue("P-1"), PassRun.RAN),
+        (_closed("P-1"), PassRun.SKIPPED),
+    ],
+    ids=["open", "done"],
+)
+async def test_a_lone_issue_scope_is_its_own_work(
+    root: TrackerIssue, expected: PassRun
+) -> None:
+    """An issue with nothing below it is the whole scope, so its own state counts."""
+    queue = FakeJobQueue()
+    board = _issue_board(root)
+
+    outcome = await _heartbeat(board, queue, _scan(ISSUE)).run(FIXTURE_EPOCH)
+
+    assert outcome is expected
