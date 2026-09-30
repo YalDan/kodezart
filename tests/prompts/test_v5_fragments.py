@@ -202,15 +202,18 @@ def test_the_design_review_keeps_each_load_bearing_clause(clause: str) -> None:
 # delivery_units — a unit's pull request leaves draft only when it is finished
 # ---------------------------------------------------------------------------
 
-#: The members the delivery standard is composed into: the two scheduled
-#: passes, the run's own groom and prep session, and the implementer, whose
-#: prompt every later iteration of the loop carries as its prior prompt.
+#: The members the delivery standard is composed into: the two intake
+#: passes, the run's own groom and prep session, the implementer, whose
+#: prompt every later iteration of the loop carries as its prior prompt, and
+#: the supervisor pass, which judges the run's pull requests by the same
+#: standard it never applies itself.
 DELIVERY_CARRIERS = frozenset(
     {
         PromptKey.GROOMING_PASS.value,
         PromptKey.FIRE_PREP_PASS.value,
         PromptKey.ORGANIZE_SESSION.value,
         PromptKey.IMPLEMENTATION.value,
+        PromptKey.SUPERVISOR_PASS.value,
     },
 )
 
@@ -247,7 +250,12 @@ def test_the_delivery_standard_keeps_a_pull_request_a_draft_until_it_is_finished
 
 
 def test_the_delivery_standard_resolves_into_exactly_its_four_carriers() -> None:
-    """The implementer is among them, so the loop's iterations carry the rule."""
+    """The implementer is among them, so the loop's iterations carry the rule.
+
+    The name counts the carriers the standard was cut for; the supervisor
+    pass joined them as its reader, and the name is kept because the
+    declaration record pins it.
+    """
     standard = fragment("delivery_units")
     consumers = {key for key, body in v5_bodies().items() if standard in body}
     assert consumers == DELIVERY_CARRIERS
