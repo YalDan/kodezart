@@ -27,6 +27,7 @@ from kodezart.types.domain.lane_entry import LaneEntry
 from kodezart.types.domain.ralph_outcome import RalphOutcome
 from kodezart.types.domain.remediation import RemediationEntry, RemediationPlan
 from kodezart.types.domain.run_records import RunIdentity
+from kodezart.types.domain.run_state import OpenedPullRequest
 from kodezart.types.domain.scope import ScopeRef
 from kodezart.types.domain.session import AllowedTools, PermissionMode
 from kodezart.types.domain.ticket_review import TicketApproval
@@ -336,6 +337,10 @@ class AuthoredWorkflowState(WorkflowState):
 
     pr_url: str | None
     pr_number: int | None
+    #: Every pull request the run opened, one per repository (KOD-1294);
+    #: ``pr_url`` and ``pr_number`` name the first.  NotRequired so that
+    #: every existing state literal stays valid.
+    opened_prs: NotRequired[tuple[OpenedPullRequest, ...]]
     ci_status: CIStatus
     ci_summary: str | None
     ci_red_class: NotRequired[CheckRedClass | None]

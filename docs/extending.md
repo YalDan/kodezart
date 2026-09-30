@@ -387,7 +387,7 @@ With no knowledge base at all, see [ideal-setup.md](ideal-setup.md#without-notio
 
 | Port | Methods | Contract highlights |
 | --- | --- | --- |
-| `PRCreator` | `create_pr`, `comment_on_pr` | Returns the pull request's URL and number. Refusals are `ForgeAPIError` or `TransientAPIError`, never a transport's own exception. |
+| `PRCreator` | `create_pr`, `mark_ready_for_review`, `comment_on_pr` | `create_pr` opens a draft and returns the pull request's URL and number; `mark_ready_for_review` takes it out of draft once the unit is finished (KOD-1294). Refusals are `ForgeAPIError` or `TransientAPIError`, never a transport's own exception. |
 | `ForgeQuery` | `open_pr_for_head`, `branch_web_url` | `None` means the forge was asked and nothing is open on that head; a read that failed raises. More than one open pull request on one head raises. |
 | `PRStateReader` | `read_pr_state` | One pull request's state, read without write authority. |
 | `CIMonitor` | `rerun_checks`, `checks_declared`, `wait_for_checks` | `wait_for_checks` returns one observation: completed (with the commit, every check name and the failed ones), absent, or incomplete. |
@@ -424,6 +424,7 @@ GitLab's REST API has a counterpart for each forge call:
 | --- | --- |
 | `create_pr` | `POST /projects/:id/merge_requests` with `source_branch`, `target_branch` and `title` ([merge requests](https://docs.gitlab.com/api/merge_requests/)) |
 | `open_pr_for_head` | `GET /projects/:id/merge_requests?source_branch=<branch>&state=opened` (same page) |
+| `mark_ready_for_review` | `PUT /projects/:id/merge_requests/:merge_request_iid` with `title` stripped of its `Draft:` prefix, which is how GitLab marks a merge request ready ([merge requests](https://docs.gitlab.com/api/merge_requests/)) |
 | `comment_on_pr` | `POST /projects/:id/merge_requests/:merge_request_iid/notes` with `body` ([notes](https://docs.gitlab.com/api/notes/)) |
 | `wait_for_checks`, `checks_declared` | `GET /projects/:id/pipelines` filtered by `sha` or `ref`, and `GET /projects/:id/pipelines/:pipeline_id` ([pipelines](https://docs.gitlab.com/api/pipelines/)) |
 | `rerun_checks` | `POST /projects/:id/pipelines/:pipeline_id/retry` (same page) |

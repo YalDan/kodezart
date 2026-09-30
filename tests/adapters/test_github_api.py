@@ -1,6 +1,7 @@
 """Tests for GitHubAPIClient using httpx.MockTransport."""
 
 import asyncio
+import json
 
 import httpx
 import pytest
@@ -138,8 +139,11 @@ def sleeps(monkeypatch: pytest.MonkeyPatch) -> list[float]:
 async def test_create_pr_success() -> None:
     """create_pr returns (url, number) from 201 response."""
 
+    payloads: list[dict[str, object]] = []
+
     def handler(request: httpx.Request) -> httpx.Response:
         assert "/repos/owner/repo/pulls" in str(request.url)
+        payloads.append(json.loads(request.content))
         return httpx.Response(
             201,
             json={"html_url": "https://github.com/owner/repo/pull/42", "number": 42},
@@ -155,7 +159,127 @@ async def test_create_pr_success() -> None:
     )
     assert url == "https://github.com/owner/repo/pull/42"
     assert number == 42
+    assert payloads == [
+        {
+            "title": "feat: test",
+            "body": "Test body",
+            "head": "feature-branch",
+            "base": "main",
+            "draft": True,
+        }
+    ]
     await client.close()
+
+
+async def test_create_pr_opens_a_draft() -> None:
+    """Every pull request the engine opens is a draft (KOD-1294).
+
+    The flag is read off the wire, not off the double: the port promises
+    a draft and only the request body can show the promise is kept.
+    """
+    payloads: list[dict[str, object]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payloads.append(json.loads(request.content))
+        return httpx.Response(
+            201,
+            json={"html_url": "https://github.com/owner/repo/pull/7", "number": 7},
+        )
+
+    client = _make_client(handler)
+    await client.create_pr(
+        repo_url="https://github.com/owner/repo",
+        title="feat: test",
+        body="Test body",
+        head="feature-branch",
+        base="main",
+    )
+    await client.close()
+    assert payloads == [
+        {
+            "title": "feat: test",
+            "body": "Test body",
+            "head": "feature-branch",
+            "base": "main",
+            "draft": True,
+        }
+    ]
+
+
+def _readiness_handler(*, is_draft_after: bool, node_id: str = "PR_kwDOabc123"):
+    """A forge that answers the two requests readiness takes, recording both."""
+    seen: list[tuple[str, str, dict[str, object] | None]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content) if request.content else None
+        seen.append((request.method, request.url.path, body))
+        if request.method == "GET":
+            return httpx.Response(200, json={"node_id": node_id})
+        return httpx.Response(
+            200,
+            json={
+                "data": {
+                    "markPullRequestReadyForReview": {
+                        "pullRequest": {"isDraft": is_draft_after}
+                    }
+                }
+            },
+        )
+
+    return handler, seen
+
+
+async def test_mark_ready_for_review_reads_the_node_id_then_mutates() -> None:
+    """Readiness is the REST node id followed by the one GraphQL mutation."""
+    handler, seen = _readiness_handler(is_draft_after=False)
+    client = _make_client(handler)
+    await client.mark_ready_for_review(
+        repo_url="https://github.com/owner/repo", pr_number=42
+    )
+    await client.close()
+    assert [(method, path) for method, path, _ in seen] == [
+        ("GET", "/repos/owner/repo/pulls/42"),
+        ("POST", "/graphql"),
+    ]
+    mutation = seen[1][2]
+    assert mutation is not None
+    assert mutation["variables"] == {"pullRequestId": "PR_kwDOabc123"}
+    assert "markPullRequestReadyForReview" in str(mutation["query"])
+
+
+async def test_mark_ready_for_review_refuses_a_request_left_in_draft() -> None:
+    """A mutation the forge answered but did not apply is a forge failure."""
+    handler, _seen = _readiness_handler(is_draft_after=True)
+    client = _make_client(handler)
+    with pytest.raises(ForgeAPIError) as caught:
+        await client.mark_ready_for_review(
+            repo_url="https://github.com/owner/repo", pr_number=42
+        )
+    await client.close()
+    assert caught.value.status_code == 200
+    assert "#42" in caught.value.detail
+
+
+async def test_mark_ready_for_review_treats_a_graphql_error_as_a_forge_failure() -> (
+    None
+):
+    """GraphQL answers 200 with ``errors`` and no ``data``; that is a refusal."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET":
+            return httpx.Response(200, json={"node_id": "PR_kwDOabc123"})
+        return httpx.Response(
+            200, json={"errors": [{"message": "Resource not accessible"}]}
+        )
+
+    client = _make_client(handler)
+    with pytest.raises(ForgeAPIError) as caught:
+        await client.mark_ready_for_review(
+            repo_url="https://github.com/owner/repo", pr_number=42
+        )
+    await client.close()
+    assert not isinstance(caught.value, httpx.HTTPError)
+    assert caught.value.status_code == 200
 
 
 async def test_create_pr_http_error() -> None:
@@ -357,7 +481,12 @@ _UNREADABLE_BODIES = [
 ]
 #: The port methods that read a body. ``comment_on_pr`` reads none and is
 #: the control below.
-_BODY_READING_METHODS = ["create_pr", "open_delivery_exists", "wait_for_checks"]
+_BODY_READING_METHODS = [
+    "create_pr",
+    "mark_ready_for_review",
+    "open_delivery_exists",
+    "wait_for_checks",
+]
 
 
 class TestVendorFailureTranslation:
@@ -413,6 +542,10 @@ class TestVendorFailureTranslation:
                 pr_number=1,
                 body="body",
             ),
+            "mark_ready_for_review": lambda: client.mark_ready_for_review(
+                repo_url=self.REPO_URL,
+                pr_number=1,
+            ),
             "open_delivery_exists": lambda: client.open_delivery_exists(
                 repo_url=self.REPO_URL,
                 issue_key="KOD-1",
@@ -454,7 +587,13 @@ class TestVendorFailureTranslation:
 
     @pytest.mark.parametrize(
         "port_method",
-        ["create_pr", "comment_on_pr", "open_delivery_exists", "wait_for_checks"],
+        [
+            "create_pr",
+            "comment_on_pr",
+            "mark_ready_for_review",
+            "open_delivery_exists",
+            "wait_for_checks",
+        ],
     )
     @pytest.mark.parametrize("failure", [*_STATUSLESS_FAILURES, *_TRANSPORT_FAILURES])
     async def test_only_domain_errors_leave_a_port_method(

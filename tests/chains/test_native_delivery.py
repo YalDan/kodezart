@@ -133,6 +133,7 @@ class ForgeWire:
         self.creates = []
         self.comments = []
         self.watches = []
+        self.flips = []
         self.red_first = red_first
         self.pr = None
         self.pr_reads = []
@@ -155,6 +156,7 @@ class ForgeWire:
             sha = self.current_sha()
             data = {
                 "number": 17,
+                "node_id": "PR_kwDOnative17",
                 "html_url": "https://github.com/owner/repo/pull/17",
                 "state": "closed" if damage == "closed" else "open",
                 "merged": False,
@@ -208,6 +210,19 @@ class ForgeWire:
         if request.url.path.endswith("/comments"):
             self.comments.append(json.loads(request.content))
             return httpx.Response(201, json={})
+        if request.url.path == "/graphql":
+            # The readiness flip (KOD-1294): the one GraphQL write.
+            self.flips.append(json.loads(request.content))
+            return httpx.Response(
+                200,
+                json={
+                    "data": {
+                        "markPullRequestReadyForReview": {
+                            "pullRequest": {"isDraft": False}
+                        }
+                    }
+                },
+            )
         raise AssertionError(
             f"Unexpected forge capability: {request.method} {request.url}"
         )
@@ -965,6 +980,30 @@ def deliver_returning_green_checks_of_the_reused_pr(at):
     return deliver_returning_green_checks(at)
 
 
+def deliver_returning_after_the_flip(at):
+    """Green checks: the set arrives once the pull request is marked ready.
+
+    The readiness flip (KOD-1294) has its own re-check before it, which the
+    green-checks drive above meets; this drive arrives after the flip, so
+    the final re-check before the return is the barrier it meets.
+    """
+    creator = at.lane._delivery._pr_creator
+    flip = creator.mark_ready_for_review
+
+    async def flipped(**kwargs):
+        await flip(**kwargs)
+        at.arrive()
+
+    creator.mark_ready_for_review = flipped
+    return deliver_through(at)
+
+
+def deliver_returning_after_the_flip_of_the_reused_pr(at):
+    """The flip on a pull request delivery reused, then the final re-check."""
+    reusing_the_pr(at)
+    return deliver_returning_after_the_flip(at)
+
+
 def deliver_step_handing_to_the_coordinator(at):
     """A reviewed, merged fire: the set arrives as the step hands it over."""
     coordinator = at.lane._delivery
@@ -991,9 +1030,10 @@ def deliver_step_handing_to_the_coordinator(at):
 #: node that reaches that call.  In the coordinator's delivery, the pull
 #: request is opened or reused, and the comment is entered on red checks or
 #: on no run at the ref: the comment's re-check is reached on red checks of
-#: an opened or a reused pull request and on no run, and the final re-check
-#: on green checks of an opened or a reused pull request and after either
-#: comment posts.  A route whose call comes first is driven with the set in
+#: an opened or a reused pull request and on no run; the readiness re-check
+#: on green checks of an opened or a reused pull request; and the final
+#: re-check after the flip on either, and after either comment posts.  A
+#: route whose call comes first is driven with the set in
 #: the state from the start; a later one is driven through the node's
 #: earlier barriers on the tracker's roster, with the set arriving just
 #: before that call.
@@ -1044,9 +1084,13 @@ SNAPSHOT_GATED_REACH = {
         "return after the comment on no run at the ref": (
             deliver_returning_after_the_comment_on_no_run
         ),
-        "return on green checks": deliver_returning_green_checks,
-        "return on green checks of the reused PR": (
+        "readiness re-check on green checks": deliver_returning_green_checks,
+        "readiness re-check on green checks of the reused PR": (
             deliver_returning_green_checks_of_the_reused_pr
+        ),
+        "return after the flip": deliver_returning_after_the_flip,
+        "return after the flip of the reused PR": (
+            deliver_returning_after_the_flip_of_the_reused_pr
         ),
     },
     node_of(LaneDeliveryCoordinator._require_current): {
@@ -1344,11 +1388,14 @@ class DrivePullRequests(DrivePort):
 
     def __init__(self, at, outcome):
         super().__init__(at, outcome)
-        self.created, self.comments = [], []
+        self.created, self.comments, self.readied = [], [], []
 
     async def create_pr(self, *, repo_url, title, body, head, base):
         self.created.append((repo_url, title, body, head, base))
         return (GATED_PR.url, GATED_PR.number)
+
+    async def mark_ready_for_review(self, *, repo_url, pr_number):
+        self.readied.append((repo_url, pr_number))
 
     async def comment_on_pr(self, *, repo_url, pr_number, body):
         self.comments.append((repo_url, pr_number, body))
