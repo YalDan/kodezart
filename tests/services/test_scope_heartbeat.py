@@ -6,12 +6,13 @@ these tests drive the heartbeat with a scan that lists a node and a board
 that does or does not admit it, and read what reached the queue and the log.
 """
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 
 import pytest
 import structlog.testing
 
 from kodezart.core.constants import DEFAULT_LANE
+from kodezart.core.protocols import McpToolResult
 from kodezart.services.scope_heartbeat import ScopeHeartbeat
 from kodezart.types.domain.agent import ScopeScanNode, ScopeScanOutput
 from kodezart.types.domain.dispatch import PassRun
@@ -24,6 +25,8 @@ from tests.fakes import (
     FakeTrackerPort,
     make_tracker_issue,
 )
+from tests.tracker.conftest import FIRE_SCOPE_LABEL, linear_over_fake_mcp
+from tests.tracker.test_scope_reads import ROOT, ScopeMcpServer
 
 REPO_URL = "https://example.invalid/example-org/example-repo"
 PROJECT = ScopeRef(kind=ScopeKind.PROJECT, key="scratch-project")
@@ -85,17 +88,24 @@ def _scan(*refs: ScopeRef) -> ScopeScanOutput:
     )
 
 
-def _heartbeat(
-    board: FakeTrackerPort, queue: FakeJobQueue, *answers: ScopeScanOutput
-) -> ScopeHeartbeat:
-    """A heartbeat whose scan answers *answers* in turn, one per tick."""
+def _answers(
+    *answers: ScopeScanOutput,
+) -> Callable[[], Awaitable[ScopeScanOutput | None]]:
+    """A scan that answers *answers* in turn, one per tick."""
     pending = list(answers)
 
     async def ask() -> ScopeScanOutput | None:
         return pending.pop(0)
 
+    return ask
+
+
+def _heartbeat(
+    board: FakeTrackerPort, queue: FakeJobQueue, *answers: ScopeScanOutput
+) -> ScopeHeartbeat:
+    """A heartbeat whose scan answers *answers* in turn, one per tick."""
     return ScopeHeartbeat(
-        ask=ask,
+        ask=_answers(*answers),
         tracker=board,
         registry=queue,
         queue=queue,
@@ -375,3 +385,79 @@ async def test_a_lone_issue_scope_is_its_own_work(
     outcome = await _heartbeat(board, queue, _scan(ISSUE)).run(FIXTURE_EPOCH)
 
     assert outcome is expected
+
+
+def _uuid_board(*, open_below: bool) -> ScopeMcpServer:
+    """The shared scope workspace, FIX-1 approved with FIX-2 and FIX-3 below it.
+
+    The vendor answers FIX-1's UUID as an alias of the identifier: a scan
+    that names either must get the same answer from the heartbeat.
+    """
+    server = _UuidAliasServer()
+    server.issues[ROOT.key].labels = [FIRE_SCOPE_LABEL]
+    server.issues[ROOT.key].status = "Todo"
+    server.issues[ROOT.key].status_type = "unstarted"
+    for key in ("FIX-2", "FIX-3"):
+        server.issues[key].status = "Todo" if open_below else "Done"
+        server.issues[key].status_type = "unstarted" if open_below else "completed"
+    return server
+
+
+class _UuidAliasServer(ScopeMcpServer):
+    async def call_tool(
+        self, *, name: str, arguments: Mapping[str, object]
+    ) -> McpToolResult:
+        if name == "get_issue" and arguments.get("id") == ROOT_UUID:
+            payload = await super().call_tool(
+                name=name, arguments={**arguments, "id": ROOT.key}
+            )
+            assert isinstance(payload, Mapping)
+            return {**payload, "uuid": ROOT_UUID}
+        return await super().call_tool(name=name, arguments=arguments)
+
+
+ROOT_UUID = "00000000-0000-4000-8000-000000000073"
+ROOT_BY_UUID = ScopeRef(kind=ScopeKind.ISSUE, key=ROOT_UUID)
+
+
+@pytest.mark.parametrize(
+    ("open_below", "expected"),
+    [(False, PassRun.SKIPPED), (True, PassRun.RAN)],
+    ids=["all-below-done", "open-below"],
+)
+async def test_an_issue_scope_answers_the_same_by_identifier_and_by_uuid(
+    open_below: bool, expected: PassRun
+) -> None:
+    """The verifier's probe (KOD-1302, round 4), through the shipped Linear adapter.
+
+    The board keys the family by the identifier it answers, whatever
+    spelling the scan used, so the root is found in the family and the
+    UUID spelling cannot fail open where the identifier fails closed.
+    """
+    queue = FakeJobQueue()
+    tracker = linear_over_fake_mcp(_uuid_board(open_below=open_below))
+    heartbeat = ScopeHeartbeat(
+        ask=_answers(_scan(ROOT), _scan(ROOT_BY_UUID)),
+        tracker=tracker,
+        registry=queue,
+        queue=queue,
+        trunks={REPO_URL: "main"},
+    )
+
+    with structlog.testing.capture_logs() as logs:
+        by_identifier = await heartbeat.run(FIXTURE_EPOCH)
+        by_uuid = await heartbeat.run(FIXTURE_EPOCH)
+
+    assert (by_identifier, by_uuid) == (expected, expected)
+    if expected is PassRun.RAN:
+        assert [request.scope for _, request in queue.submissions] == [
+            ROOT,
+            ROOT_BY_UUID,
+        ]
+        assert _rejections(logs) == []
+    else:
+        assert queue.submissions == []
+        assert _rejections(logs) == [
+            (ROOT.key, "no_open_member"),
+            (ROOT_UUID, "no_open_member"),
+        ]

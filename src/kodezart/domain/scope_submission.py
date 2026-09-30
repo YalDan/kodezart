@@ -11,6 +11,23 @@ from kodezart.types.domain.tracker import TrackerIssue
 TRACKER_RECORD_LABEL = "tracker"
 
 
+def family_root(members: Iterable[TrackerIssue]) -> str | None:
+    """The key of the one member of an issue scope's family whose parent is outside it.
+
+    An issue scope's family is the addressed issue with everything below
+    it, and the read keys each row by the identifier the board answers,
+    whatever spelling the scan used to address the scope (an issue's UUID
+    is accepted as an alias, KOD-1302 round 4). So the root is found in the
+    family itself, as the member no other member is the parent of, never
+    by comparing keys with the scan's spelling. ``None`` when the family
+    has no such member or more than one: then nothing is left out.
+    """
+    rows = list(members)
+    keys = {issue.issue_key for issue in rows}
+    roots = [issue.issue_key for issue in rows if issue.parent_key not in keys]
+    return roots[0] if len(roots) == 1 else None
+
+
 def open_work_count(members: Iterable[TrackerIssue], *, root: str | None = None) -> int:
     """How many of a scope's *members* are open work.
 
@@ -23,8 +40,9 @@ def open_work_count(members: Iterable[TrackerIssue], *, root: str | None = None)
     read from the board in code rather than taken from the scope scan's
     answer (KOD-1302).
 
-    *root* is the key of the issue an issue scope is addressed by. Its
-    family holds the root beside the issues below it, but the work a run
+    *root* is the key of the issue an issue scope is addressed by, as the
+    family spells it (:func:`family_root`). The family holds the root
+    beside the issues below it, but the work a run
     does and the question that ends a run judge only the issues below the
     parent, so the root is not counted while anything else is in the
     family. A root with nothing below it is the whole scope, and then it

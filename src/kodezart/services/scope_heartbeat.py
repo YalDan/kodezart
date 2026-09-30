@@ -6,7 +6,7 @@ from datetime import datetime
 from kodezart.core.constants import DEFAULT_LANE
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import JobQueue, JobRegistry, ScopeHeartbeatReader
-from kodezart.domain.scope_submission import open_work_count
+from kodezart.domain.scope_submission import family_root, open_work_count
 from kodezart.services.scope_approval import scope_approved
 from kodezart.types.domain.agent import ScopeScanNode, ScopeScanOutput
 from kodezart.types.domain.branch import trunk_base
@@ -152,7 +152,7 @@ class ScopeHeartbeat:
         if not await scope_approved(ref=scope, tracker=self._tracker):
             return "not_approved"
         family = await self._tracker.scope_issues(ref=scope)
-        root = scope.key if scope.kind is ScopeKind.ISSUE else None
+        root = family_root(family) if scope.kind is ScopeKind.ISSUE else None
         if open_work_count(family, root=root) == 0:
             return "no_open_member"
         return None
