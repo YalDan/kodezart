@@ -144,6 +144,9 @@ class RecordingForge:
         self.calls.append("create_pr")
         return (f"{repo_url}/pull/1", 1)
 
+    async def mark_ready_for_review(self, *, repo_url: str, pr_number: int) -> None:
+        self.calls.append("mark_ready_for_review")
+
     async def comment_on_pr(
         self,
         *,

@@ -1976,12 +1976,18 @@ class FakePRCreator:
         pr_number: int = 1,
         fail_create: Exception | None = None,
         fail_comment: Exception | None = None,
+        fail_mark_ready: Exception | None = None,
     ) -> None:
         self._pr_url = pr_url
         self._pr_number = pr_number
         self._fail_create = fail_create
         self._fail_comment = fail_comment
+        self._fail_mark_ready = fail_mark_ready
         self.calls: list[dict[str, object]] = []
+        #: Pull requests this double opened and their draft state, by number.
+        #: Opened as drafts, as the port promises; ``mark_ready_for_review``
+        #: flips one, so a test reads what state the run left it in.
+        self.drafts: dict[int, bool] = {}
 
     async def create_pr(
         self,
@@ -2000,12 +2006,26 @@ class FakePRCreator:
                 "body": body,
                 "head": head,
                 "base": base,
+                "draft": True,
             }
         )
         if self._fail_create is not None:
             raise self._fail_create
         pr_url, pr_number = self._pr_url, self._pr_number
+        self.drafts[pr_number] = True
         return (pr_url, pr_number)
+
+    async def mark_ready_for_review(self, *, repo_url: str, pr_number: int) -> None:
+        self.calls.append(
+            {
+                "method": "mark_ready_for_review",
+                "repo_url": repo_url,
+                "pr_number": pr_number,
+            }
+        )
+        if self._fail_mark_ready is not None:
+            raise self._fail_mark_ready
+        self.drafts[pr_number] = False
 
     async def comment_on_pr(
         self,

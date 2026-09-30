@@ -543,7 +543,7 @@ class RefPublisher(Protocol):
 
 @runtime_checkable
 class PRCreator(Protocol):
-    """Opens pull requests and posts comments on a code hosting platform."""
+    """Opens pull requests, flips them ready, and posts comments on a forge."""
 
     async def create_pr(
         self,
@@ -553,7 +553,25 @@ class PRCreator(Protocol):
         body: str,
         head: str,
         base: str,
-    ) -> tuple[str, int]: ...
+    ) -> tuple[str, int]:
+        """Open a DRAFT pull request; returns its (url, number).
+
+        A pull request the engine opens is work in progress by
+        definition — no caller has a finished unit at that moment — so
+        the draft state is the port's contract, not a caller's choice.
+        ``mark_ready_for_review`` is the only way it changes.
+        """
+        ...
+
+    async def mark_ready_for_review(self, *, repo_url: str, pr_number: int) -> None:
+        """Take the pull request out of draft, or raise the forge's refusal.
+
+        Called exactly when the unit is finished: every criterion
+        accepted, the final review passed and the checks green at the
+        pushed head.  Raises ``ForgeAPIError`` / ``TransientAPIError``
+        like the other writes; never a vendor type.
+        """
+        ...
 
     async def comment_on_pr(
         self,

@@ -31,6 +31,8 @@ from kodezart.adapters.github.wire import (
     CheckRunsResponse,
     CommitIdentity,
     DeclaredWorkflowsResponse,
+    MarkReadyResponse,
+    PullRequestNodeResponse,
     PullRequestResponse,
     PullRequestStateResponse,
     PullRequestSummary,
@@ -117,6 +119,15 @@ class WorkflowsProbeResult(StrEnum):
     ACTIVE = "active"
     NONE_ACTIVE = "none_active"
     INDETERMINATE = "indeterminate"
+
+
+#: The one GraphQL write this adapter makes.  The REST API has no field for
+#: leaving draft, so readiness goes through the mutation GitHub documents.
+_MARK_READY_MUTATION = (
+    "mutation($pullRequestId: ID!) {"
+    " markPullRequestReadyForReview(input: {pullRequestId: $pullRequestId})"
+    " { pullRequest { isDraft } } }"
+)
 
 
 class GitHubAPIClient:
@@ -379,7 +390,14 @@ class GitHubAPIClient:
         head: str,
         base: str,
     ) -> tuple[str, int]:
-        """Open a pull request. Returns (html_url, number)."""
+        """Open a pull request as a draft. Returns (html_url, number).
+
+        Every pull request the engine opens starts as a draft (KOD-1294):
+        the flag is stated here, once, rather than chosen per caller,
+        because no caller of this port has a finished unit at the moment
+        it opens the request.  ``mark_ready_for_review`` is the one way
+        the flag changes.
+        """
         owner, repo = extract_owner_repo(repo_url)
         result = await self._parsed_with_retry(
             "POST",
@@ -390,9 +408,44 @@ class GitHubAPIClient:
                 "body": body,
                 "head": head,
                 "base": base,
+                "draft": True,
             },
         )
         return (result.html_url, result.number)
+
+    async def mark_ready_for_review(self, *, repo_url: str, pr_number: int) -> None:
+        """Take the pull request out of draft.
+
+        GitHub exposes the draft flag for writing through GraphQL only,
+        keyed on the pull request's node id, so this is two requests: the
+        node id from the REST view of the request, then the mutation.  A
+        mutation GitHub refuses answers 200 with ``errors`` and no
+        ``data``; the wire model treats that as an unreadable body, so it
+        leaves as ``ForgeAPIError`` like any other forge refusal.  A
+        request that is already ready answers with ``isDraft: false`` and
+        is not a failure.
+        """
+        owner, repo = extract_owner_repo(repo_url)
+        node = await self._parsed_with_retry(
+            "GET",
+            f"/repos/{owner}/{repo}/pulls/{pr_number}",
+            PullRequestNodeResponse.model_validate,
+        )
+        answer = await self._parsed_with_retry(
+            "POST",
+            "/graphql",
+            MarkReadyResponse.model_validate,
+            json={
+                "query": _MARK_READY_MUTATION,
+                "variables": {"pullRequestId": node.node_id},
+            },
+        )
+        if answer.data.mark_pull_request_ready_for_review.pull_request.is_draft:
+            raise ForgeAPIError(
+                "Forge kept the pull request in draft after the readiness mutation",
+                status_code=200,
+                detail=f"POST /graphql markPullRequestReadyForReview #{pr_number}",
+            )
 
     async def comment_on_pr(
         self,
