@@ -58,7 +58,7 @@ def clause_in_scope(
     every spelling the issue's placement answers to (its project's name
     and id, and the names and ids of the initiatives the caller resolved
     that project into), so a scope may be declared in whichever spelling
-    the operator reads on the tracker (KOD-169).
+    the operator reads on the tracker.
     """
     if not scope:
         return True
@@ -76,10 +76,9 @@ def clause_recorded_repository(
 
     A bound team's issues route by the binding, exactly as before.  An
     unbound team's issues route by the repository a judgment pass RECORDED
-    on the issue (KOD-169): equality with this pass's repository is the
+    on the issue: equality with this pass's repository is the
     whole predicate.  A missing record is an exclusion the report names —
-    never a claim by whichever tick arrives first, which is the KOD-157
-    defect this clause closes.
+    never a claim by whichever tick arrives first.
     """
     return team_bound or recorded == repo_url
 
@@ -87,8 +86,8 @@ def clause_recorded_repository(
 def clause_approved(issue: TrackerIssue) -> bool:
     """Clause 2: the issue carries the APPROVED queue state.
 
-    The state's PRESENCE is the whole predicate, by the founder's ruling
-    of 2026-08-25 on KOD-144.  This clause used to require more: that the
+    The state's PRESENCE is the whole predicate, as ruled on 2026-08-25.
+    This clause used to require more: that the
     transition into the state had been performed by the configured
     approver.  That requirement is unobtainable on the measured vendor
     surface — no tool on the live server attests who added a label, the
@@ -102,7 +101,7 @@ def clause_approved(issue: TrackerIssue) -> bool:
     remains the only human act in the loop and kodezart never performs it
     — what changed is that the tracker cannot say WHICH human performed
     it.  If the vendor ever exposes transition actors, reinstating the arm
-    is a new decision on KOD-144.
+    requires a new approval-provenance decision.
     """
     return QueueState.APPROVED in issue.queue_states
 

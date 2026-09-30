@@ -52,15 +52,15 @@ class AgentDefinition(CamelCaseModel):
 class WorkflowAccess(CamelCaseModel):
     """The harness gates a session needs before a named workflow can fire.
 
-    Measured on this harness: the workflow primitive is real and reachable
-    headlessly, but it needs a non-plan permission mode and an allowlist
-    entry, so a session that declares this still only fires a workflow when
-    its own configuration permits one.
+    Measured on this harness: a session launches a named workflow from any
+    working directory when the plugin holding it is loaded, in plan mode as
+    well as unattended, provided an allowlist, where it has one, names the
+    Workflow tool.
     """
 
     model_config = ConfigDict(frozen=True)
 
-    workflows_path: str = Field(min_length=1)
+    plugin_path: str = Field(min_length=1)
     size_guideline: int = Field(gt=0)
     enabled: bool
 

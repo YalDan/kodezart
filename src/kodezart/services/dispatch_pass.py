@@ -8,13 +8,13 @@ spend that work to discover nothing moved, every tick, forever.
 What the tick DID is reported through the log — it is driven by the
 scheduler, which has no caller to hand a report to.  What it returns is
 one bit narrower and belongs to the driver: whether a tick ran at all, so
-a skipped one is never recorded as a run (KOD-176).
+a skipped one is never recorded as a run.
 """
 
 from datetime import datetime
 
 from kodezart.core.logging import BoundLogger, get_logger
-from kodezart.services.fire_dispatcher import FireDispatcher
+from kodezart.core.protocols import DispatchProducer
 from kodezart.services.lifecycle_watcher import LifecycleWatcher
 from kodezart.services.pass_gate import PassGate
 from kodezart.types.domain.dispatch import DispatchOutcome, PassRun
@@ -27,11 +27,11 @@ class GatedDispatchPass:
         self,
         *,
         gate: PassGate | None,
-        dispatcher: FireDispatcher,
+        dispatcher: DispatchProducer,
         lifecycle: LifecycleWatcher,
     ) -> None:
         self._gate: PassGate | None = gate
-        self._dispatcher: FireDispatcher = dispatcher
+        self._dispatcher: DispatchProducer = dispatcher
         self._lifecycle: LifecycleWatcher = lifecycle
         self._log: BoundLogger = get_logger(__name__)
 
@@ -41,7 +41,7 @@ class GatedDispatchPass:
         The scheduler's start stamp is the run identity a pass prescribes
         its record's title from, and this pass has no record: a dispatch
         tick's outcome is the FIRE it starts, whose own run is recorded by
-        the watch that follows it (KOD-170).  The argument is taken and
+        the watch that follows it.  The argument is taken and
         not read, because every tick on the scheduler is driven the same
         way.
 
@@ -59,7 +59,7 @@ class GatedDispatchPass:
         returning on it would leave a running fire with no watch and no
         way to be put back, which is the state the watch exists for.
 
-        Anything that raises beneath the gate RE-ARMS it before unwinding.
+        Anything that raises while reading or acting on the gate RE-ARMS it.
         The gate advanced its marks to ask the question; the pass that was
         supposed to read the window it opened did not, so leaving the marks
         forward would spend that wake-up on nothing and — at the shipped
@@ -69,13 +69,13 @@ class GatedDispatchPass:
         eat the wake-up either.
         """
         changed: tuple[str, ...] = ()
-        if self._gate is not None:
-            delta = await self._gate.delta()
-            if not delta.has_delta():
-                await self._log.ainfo("dispatch_pass_skipped_no_delta")
-                return PassRun.SKIPPED
-            changed = delta.changed
         try:
+            if self._gate is not None:
+                delta = await self._gate.delta()
+                if not delta.has_delta():
+                    await self._log.ainfo("dispatch_pass_skipped_no_delta")
+                    return PassRun.SKIPPED
+                changed = delta.changed
             await self._dispatch(changed=changed)
         except BaseException:
             if self._gate is not None:

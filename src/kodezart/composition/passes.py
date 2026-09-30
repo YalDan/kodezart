@@ -7,13 +7,16 @@ than defines.
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from functools import partial
 from pathlib import Path
 
 from kodezart.adapters.no_forge_delivery import NoForgeDeliveryProbe
+from kodezart.composition.audit import build_audit_pass, verify_audit_configuration
+from kodezart.composition.organize import build_scope_heartbeat, scope_heartbeat_wires
 from kodezart.composition.records import RECORD_KIND_BY_PASS, run_report
+from kodezart.composition.supervisor import build_supervisor_pass
 from kodezart.composition.tracker import DialledTracker
-from kodezart.core.config import AppConfig
+from kodezart.config.app import CADENCE_SETTINGS, AppConfig, CadenceName
+from kodezart.config.knowledge import KnowledgeSettings
 from kodezart.core.constants import UNATTENDED_PERMISSION_MODE
 from kodezart.core.errors import (
     PassGateCapabilityError,
@@ -23,16 +26,24 @@ from kodezart.core.errors import (
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import (
     AgentRunner,
+    CIMonitor,
     DeliveryProbe,
+    DispatchProducer,
     GitService,
     JobQueue,
     JobRegistry,
     OutboundContentGate,
     PromptSetProvider,
+    PRStateReader,
     RepoCache,
+    ScanCapabilityReader,
     TrackerPort,
+    WorkspaceProvider,
 )
 from kodezart.domain.git_url import is_forge_less_origin
+from kodezart.domain.lane_alarms import OBSERVED_ALARMS
+from kodezart.domain.prompt_variables import scope_variables
+from kodezart.domain.run_alarm_table import ALARM_TABLE, require_alarm_table
 from kodezart.services.base_resolver import BaseResolver
 from kodezart.services.claim_heartbeat import ClaimHeartbeat
 from kodezart.services.dispatch_pass import GatedDispatchPass
@@ -41,18 +52,25 @@ from kodezart.services.fire_dispatcher import FireDispatcher, LaneCooldown
 from kodezart.services.lifecycle_watcher import FireReport, LifecycleWatcher
 from kodezart.services.pass_gate import PassGate
 from kodezart.services.pass_scheduler import PassScheduler, ScheduledPass
-from kodezart.services.prompt_pass import pass_render_bindings, run_prompt_pass
+from kodezart.services.prompt_pass import (
+    PromptPass,
+    gate_render_bindings,
+    pass_render_bindings,
+)
 from kodezart.services.run_recorder import RunRecorder
+from kodezart.services.supervisor_pass import SUPERVISOR_TICK_NAME
 from kodezart.services.tracker_lifecycle import TrackerLifecycleWriter
 from kodezart.types.domain.dispatch import PassSignal, SelfWriteLedger
 from kodezart.types.domain.operation import (
     DocumentSystem,
     OperationConfig,
+    OperationMemberAbsentError,
     RepoEntry,
     RunKind,
 )
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run_records import RunIdentity, RunOutcome
+from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
 
@@ -60,10 +78,15 @@ from kodezart.types.domain.skills import SkillsSelection
 #: meant, and prefixing the repository where one instance is.
 _DISPATCH_NAME = "dispatch"
 
+#: What the scope heartbeat is called.  One instance for the whole operation,
+#: because one scan reads every declared team's board: a pass per repository
+#: would ask the same question once per repository.
+_HEARTBEAT_NAME = "scope_heartbeat"
+
 
 @dataclass(frozen=True)
 class _PromptPassRow:
-    """One prompt pass's configuration: its cadence, its budget, its gate.
+    """One prompt pass's configuration: its cadence and its budget.
 
     Named fields rather than a positional tuple: the cadence and the
     budget are both seconds and both floats, and a pair of those is one
@@ -72,7 +95,6 @@ class _PromptPassRow:
 
     interval_seconds: float
     timeout_seconds: float
-    signals: Sequence[PassSignal]
 
 
 @dataclass(frozen=True)
@@ -83,7 +105,7 @@ class DispatchPasses:
     order and in two different ways: the passes stop FIRST, so none of them
     claims an issue into a queue that is closing, and the watches are
     DRAINED last — after the queue has ended their streams, because that
-    end is what makes each of them release its claim (KOD-152).
+    end is what makes each of them release its claim.
     """
 
     passes: tuple[ScheduledPass, ...]
@@ -112,7 +134,7 @@ def delivery_probe_for(repo_url: str, *, forge: DeliveryProbe) -> DeliveryProbe:
     forge behind it — and unlike the visibility resolver, the delivery
     probe has no containment, so that exception unwound the whole dispatch
     tick.  Every 300 seconds for half an hour on the first live run, before
-    any claim was attempted (KOD-145).
+    any claim was attempted.
 
     Selection lives HERE because this is where origins are known.  It is
     not a fallback inside the forge client, which keeps raising loudly on
@@ -135,17 +157,18 @@ def build_gate(
 ) -> PassGate | None:
     """A gate over *signals*, or none when the pass declares none.
 
-    That is the ONLY way a built gate is absent.  Having no tracker at all
-    is the caller's arm — it holds a dialled tracker or it does not — and
-    it is reported there, because "the gate is absent" and "nothing moved"
-    have opposite costs and must never be confused for one another.
+    The deterministic gate serves the per-issue dispatch tick alone: the
+    two prompt passes ask an agent instead (:class:`PromptPass`).  No
+    signals is the ONLY way a built gate is absent.  Having no tracker at
+    all is the caller's arm — it holds a dialled tracker or it does not —
+    and it is reported there, because "the gate is absent" and "nothing
+    moved" have opposite costs and must never be confused for one another.
 
     Both halves are REQUIRED, and the callers take them from one value, so
     no boot can hand this half of a tracker.  The port and its write ledger
     are one fact — the writer and the reader of the same issues — and while
     the ledger could go missing on its own this returned ``None``, and the
-    pass it guards ran ungated at full session cost with nothing saying so
-    (KOD-175, KOD-289).
+    pass it guards ran ungated at full session cost with nothing saying so.
 
     *team_keys* and *repo_urls* are the containers the pass is scoped to —
     the boards its issue signals ask within and the repositories its review
@@ -165,26 +188,23 @@ def build_gate(
     )
 
 
-def _assert_renders(*, key: PromptKey, prompts: PromptSetProvider) -> None:
-    """Render *key* and discard it, or refuse naming the pass and its holes.
+def _assert_renders(
+    *, key: PromptKey, prompts: PromptSetProvider, bindings: Mapping[str, object]
+) -> None:
+    """Render *key* over *bindings* and discard it, or refuse naming the holes.
 
     The rendered text is not kept: what is being established is that one
     exists at all.  The refusal carries the same type and the same
     ``missing`` list a tick would raise, with the pass named in the message
     because a boot wiring several of them owes an operator that.
 
-    Bound the way a TICK binds, off the identity a run beginning at this
-    instant would carry: the render a boot proves has to be the render a
-    pass will actually make, or the two namespaces differ and boot proves
-    the wrong one (KOD-290).
+    *bindings* are the way a TICK binds — a pass off the identity a run
+    beginning now would carry, the gate off a window starting now — so the
+    render a boot proves is the render a tick will actually make, or the
+    two namespaces differ and boot proves the wrong one.
     """
-    identity = RunIdentity(
-        kind=_record_kind_for(key),
-        name=key.value,
-        started_at=datetime.now(UTC),
-    )
     try:
-        prompts.template_for(key).render(pass_render_bindings(identity))
+        prompts.template_for(key).render(bindings)
     except PromptRenderError as error:
         msg = (
             f"scheduled pass {key.value} cannot render from this operation "
@@ -193,26 +213,47 @@ def _assert_renders(*, key: PromptKey, prompts: PromptSetProvider) -> None:
         raise PromptRenderError(msg, missing=error.missing) from error
 
 
-def prompt_pass_schedule(config: AppConfig) -> dict[PromptKey, _PromptPassRow]:
-    """One row per scheduled prompt pass: its cadence, its budget, its gate.
+#: Each prompt pass and the group of cadence settings that schedules it.
+_PROMPT_PASS_CADENCE: dict[PromptKey, CadenceName] = {
+    PromptKey.FIRE_PREP_PASS: "fire_prep",
+    PromptKey.GROOMING_PASS: "grooming",
+}
 
-    The table, on its own, because two things read it: the wiring below,
-    and the preflight that boot-renders and capability-checks exactly what
-    the wiring will build.  A second copy of the key set is a second
-    opinion about which passes this deployment schedules.
+
+def prompt_pass_schedule(config: AppConfig) -> dict[PromptKey, _PromptPassRow]:
+    """One row per prompt pass whose cadence is set: its cadence and budget.
+
+    The table, on its own, because two things read it: the wiring below and
+    the preflight that boot-renders exactly what the wiring will build. A
+    pass whose interval is unset has no row, so neither asks anything of a
+    pass that is not scheduled.
     """
-    return {
-        PromptKey.FIRE_PREP_PASS: _PromptPassRow(
-            interval_seconds=config.fire_prep_pass_interval_seconds,
-            timeout_seconds=config.fire_prep_pass_timeout_seconds,
-            signals=config.fire_prep_pass_gate_signals,
-        ),
-        PromptKey.GROOMING_PASS: _PromptPassRow(
-            interval_seconds=config.grooming_pass_interval_seconds,
-            timeout_seconds=config.grooming_pass_timeout_seconds,
-            signals=config.grooming_pass_gate_signals,
-        ),
-    }
+    rows: dict[PromptKey, _PromptPassRow] = {}
+    for key, name in _PROMPT_PASS_CADENCE.items():
+        cadence = config.pass_cadence(name)
+        if cadence is not None:
+            rows[key] = _PromptPassRow(
+                interval_seconds=cadence.interval_seconds,
+                timeout_seconds=cadence.timeout_seconds,
+            )
+    return rows
+
+
+async def _log_not_configured(
+    log: BoundLogger, *, name: str, cadence: CadenceName
+) -> None:
+    """Name a pass that would wire here and is not scheduled: its cadence is unset.
+
+    One event per such pass, with the two settings that would schedule it, so
+    an operator reading the boot log for "why is this pass not running?"
+    finds the answer by name rather than by its absence from
+    ``pass_scheduler_started``.
+    """
+    await log.ainfo(
+        "scheduled_pass_not_configured",
+        name=name,
+        settings=list(CADENCE_SETTINGS[cadence]),
+    )
 
 
 def absent_roster(operation: OperationConfig) -> tuple[str, ...]:
@@ -235,12 +276,178 @@ def absent_roster(operation: OperationConfig) -> tuple[str, ...]:
     )
 
 
+def runs_scope_flow(operation: OperationConfig) -> bool:
+    """Whether this operation declares scope rows for the supervisor and the audit.
+
+    A declared row turns those two ON, and it turns nothing else off. The
+    heartbeat reads no row: it asks the board which approved scopes are not
+    finished. Whether any other job runs is its cadence pair
+    (KOD-1238); where it works is the declared teams and repositories, a team
+    narrowed by the projects it names. Until 2026-09-24 this predicate also
+    withheld the two session passes and the dispatcher, a rule the owner never
+    stated and rejected on 2026-09-23.
+    """
+    return bool(operation.organize_scopes)
+
+
+def session_passes_wire(operation: OperationConfig) -> bool:
+    """Whether the two prompt passes run as agent sessions here.
+
+    One condition, named once: a roster a template could render over. Two
+    sites ask the same question — the wiring and the render preflight — and
+    a second copy of it is a second opinion about which passes this
+    deployment schedules.
+    """
+    return not absent_roster(operation)
+
+
+def dispatch_passes_wire(
+    operation: OperationConfig | None, *, tracker_present: bool, delivery_present: bool
+) -> bool:
+    """Whether the per-issue dispatch passes wire here.
+
+    A dialled tracker to claim on, a delivery probe to answer "is this issue
+    already delivered?", and an operation config. Named once: the wiring reads
+    it, and so does the marker prefix check that has to know which passes the
+    wiring will build.
+    """
+    return tracker_present and delivery_present and operation is not None
+
+
+def scope_passes_wire(
+    operation: OperationConfig | None, *, tracker_present: bool
+) -> bool:
+    """Whether the scope passes wire here: a dialled tracker and declared scopes.
+
+    The supervisor tick stands or falls on this answer, because it reads the
+    declared rows.
+    """
+    return tracker_present and operation is not None and runs_scope_flow(operation)
+
+
+#: The marker purposes each pass family asks the operation for. Measured
+#: 2026-09-24 by reading every ``configured_marker_prefix(purpose=...)``,
+#: ``_prefix("...")`` and ``*_PURPOSE`` site under ``src`` and the port
+#: methods behind them; a purpose asked some other way is a hole here.
+#:
+#: ``scope`` is the scope runs the heartbeat submits and the supervisor
+#: tick: ``claim`` on every leased write (the surface lease a stage releases
+#: was the first live refusal), ``issue_identity``
+#: on description edits and split creation, ``work_ref`` on a lane's base,
+#: ``run_state`` and ``run_event`` on the lane record, ``ruling``,
+#: ``escalation`` and ``decision`` on the questions a run raises and reads
+#: back, ``amendment`` on the write-back, ``run_alarm`` on the supervisor's
+#: record. ``dispatch`` is what the per-issue dispatch pass and its
+#: lifecycle writer ask at their own tick; the fire a dispatch queues asks
+#: for the lane purposes at its point of use, and that stays a point-of-use
+#: refusal so that a v0.2 operation file boots as it did. ``audit`` is the
+#: audit pass: its own ``audit`` records, published under a lease
+#: (``claim``), the lane records, run events and split children its sweep
+#: reads (``run_state``, ``run_event``, ``issue_identity``), the rulings
+#: its drift arm reads, the escalations it raises, and ``repository`` when
+#: it routes an unbound team's lane. The legacy prompt passes are agent
+#: sessions and ask for none: a session reaches the tracker through the MCP
+#: its host attaches, not through the tracker this process dialled.
+MARKER_PURPOSES_BY_FAMILY: Mapping[str, frozenset[str]] = {
+    "scope": frozenset(
+        {
+            "amendment",
+            "claim",
+            "decision",
+            "escalation",
+            "issue_identity",
+            "ruling",
+            "run_alarm",
+            "run_event",
+            "run_state",
+            "work_ref",
+        }
+    ),
+    "dispatch": frozenset(
+        {"base_spec", "claim", "repository", "run_outcome", "work_ref"}
+    ),
+    "audit": frozenset(
+        {
+            "audit",
+            "claim",
+            "escalation",
+            "issue_identity",
+            "repository",
+            "ruling",
+            "run_event",
+            "run_state",
+        }
+    ),
+}
+
+
+def wired_marker_purposes(
+    *,
+    config: AppConfig,
+    operation: OperationConfig | None,
+    tracker_present: bool,
+    delivery_present: bool,
+) -> frozenset[str]:
+    """Every marker purpose a pass that WILL wire on this deployment can ask for.
+
+    Read off the same predicates the wiring builds on, so a purpose only an
+    unwired family asks for is never demanded: a scope deployment is not
+    refused over ``base_spec``, and a per-issue one is not refused over
+    ``run_alarm``. With no tracker dialled nothing here writes through one,
+    and the answer is empty.
+    """
+    families: list[str] = []
+    if scope_passes_wire(operation, tracker_present=tracker_present):
+        families.append("scope")
+    if dispatch_passes_wire(
+        operation,
+        tracker_present=tracker_present,
+        delivery_present=delivery_present,
+    ):
+        families.append("dispatch")
+    if config.audit is not None and tracker_present:
+        families.append("audit")
+    return frozenset().union(*(MARKER_PURPOSES_BY_FAMILY[name] for name in families))
+
+
+def _verify_marker_prefixes(
+    *,
+    config: AppConfig,
+    operation: OperationConfig | None,
+    tracker: TrackerPort | None,
+    github_api: DeliveryProbe | None,
+) -> None:
+    """Refuse the boot over every marker prefix a wired pass can ask for and lacks.
+
+    All of them at once, sorted, in the same ``marker_prefixes['purpose']``
+    spelling the point-of-use refusal uses, so one boot names the whole
+    edit rather than one key per tick. Before this check the first grooming
+    tick with work refused 30 s in, at the surface lease's release, over a
+    file that boot had accepted four times (measured 2026-09-24).
+    """
+    if operation is None:
+        return
+    wanted = wired_marker_purposes(
+        config=config,
+        operation=operation,
+        tracker_present=tracker is not None,
+        delivery_present=github_api is not None,
+    )
+    missing = sorted(wanted - operation.marker_prefixes.keys())
+    if not missing:
+        return
+    raise OperationMemberAbsentError(
+        missing=", ".join(f"marker_prefixes[{purpose!r}]" for purpose in missing),
+        stops="a scheduled pass that reads or writes those comment identities",
+    )
+
+
 def _record_kind_for(key: PromptKey) -> RunKind:
     """The record kind a scheduled prompt pass reports as — total, or loud.
 
     A third scheduled pass added without a kind would otherwise KeyError
     inside a comprehension; a wiring gap is a named refusal here like
-    everywhere else in this lane (KOD-170).
+    everywhere else in this lane.
     """
     kind = RECORD_KIND_BY_PASS.get(key)
     if kind is None:
@@ -257,111 +464,82 @@ async def build_prompt_passes(
     config: AppConfig,
     operation: OperationConfig,
     prompts: PromptSetProvider,
-    dialled: DialledTracker | None,
     runner: AgentRunner,
     skills: SkillsSelection,
     recorder: RunRecorder,
 ) -> list[ScheduledPass]:
-    """The scheduled prompt passes — one table row each, and nothing in between.
+    """Bind the two prompt passes: the intake over the declared boards.
 
-    A row is a prompt key, its cadence, and the signals its gate asks; all
-    three are configuration.  The cron fires, the prompt renders from the
-    operation configuration, and the rendered text goes to the query path
-    as one session.  **Adding a pass is a row and its config fields** — no
-    second render path to keep in parity with the first, which is the
-    defect this shape exists to remove.
+    Each scans the declared boards on its own cadence pair, scope or no
+    scope: they wire wherever the roster renders
+    (:func:`session_passes_wire`). Every pass here whose cadence is unset is
+    not scheduled and is named as such. Preflight validates exactly those
+    active rows.
 
-    Wired only over a config that carries a ROSTER.  Every shipped template
-    enumerates the declared teams and the declared repositories, so a pass
-    scheduled over an operation declaring neither would render a hole every
-    interval, on a board nobody is watching.  Loading such a config stays
-    legitimate — an empty board boots — and what it costs is named here
-    rather than paid silently: the collections that are empty are logged,
-    and no pass is registered.  The boot render that guards the passes this
-    DOES wire is :func:`verify_pass_preflight`'s (KOD-150).
-
-    The ``PromptKey`` is still what the tick is bound to, not the rendered
-    string: the render stays inside the tick, where the gate has already
-    said there is work, so a quiet board pays for neither.
-    ``functools.partial`` rather than a closure, because a closure over
-    the loop variable would hand every pass the LAST key and one prompt
-    would silently never be sent.
-
-    A prompt pass acts on the whole operation, so its gate is scoped to
-    every declared team and every declared repository — the narrowing the
-    per-repository dispatch pass makes is a property of that pass, not of
-    the mechanism.
-
-    *dialled* is the tracker AND the ledger of this process's own writes,
-    as one value: a pass gated on a port whose self-writes it cannot
-    recognise wakes on the operation's own churn every tick (KOD-289).
+    No tracker port: a pass reaches the tracker through the server its
+    session is described, and so does the gate question it asks first
+    (:class:`PromptPass`).
     """
     log: BoundLogger = get_logger(__name__)
+    schedule = prompt_pass_schedule(config)
+    scheduled: list[ScheduledPass] = []
     absent = absent_roster(operation)
     if absent:
+        # One reason: a roster a template could not render over. An operator
+        # reading the log for "why no prompt pass?" finds which collection.
         await log.ainfo(
             "prompt_passes_not_wired",
             operation_config_present=True,
             absent=list(absent),
         )
-        return []
+        return scheduled
+    for key, cadence_name in _PROMPT_PASS_CADENCE.items():
+        if key not in schedule:
+            await _log_not_configured(log, name=key.value, cadence=cadence_name)
+    if not schedule:
+        return scheduled
     working_dir = Path(config.scheduled_pass_working_dir).expanduser()
     working_dir.mkdir(parents=True, exist_ok=True)
-    schedule = prompt_pass_schedule(config)
-    # Read only where a gate will actually be built: naming the operation's
-    # teams REFUSES when it declares none, and a deployment whose passes are
-    # all ungated has no scan for that refusal to be about.
-    gated = dialled is not None and any(row.signals for row in schedule.values())
-    team_keys = operation.team_keys() if gated else ()
-    repo_urls = [repo.url for repo in operation.repos]
-    return [
+    return scheduled + [
         ScheduledPass(
             name=key.value,
             interval_seconds=row.interval_seconds,
             timeout_seconds=row.timeout_seconds,
-            run=partial(
-                run_prompt_pass,
+            run=PromptPass(
                 # The record identity's other two thirds, read from the same
                 # two pure functions of the key the report below reads, so
                 # the title the session is given and the title the runner
-                # verifies by are one string (KOD-290).
+                # verifies by are one string.
                 kind=_record_kind_for(key),
                 key=key,
                 prompts=prompts,
                 runner=runner,
-                gate=None
-                if dialled is None
-                else build_gate(
-                    config=config,
-                    tracker=dialled.tracker,
-                    ledger=dialled.ledger,
-                    signals=row.signals,
-                    team_keys=team_keys,
-                    repo_urls=repo_urls,
-                ),
                 workspace_path=str(working_dir),
                 permission_mode=UNATTENDED_PERMISSION_MODE,
                 # No allowlist: the session reaches the tracker through the
-                # vendor server the host attaches, and a list naming the
-                # in-process tools would read as the whole set a pass may use
-                # while saying nothing about the ones it exists to call.
+                # deployment's own server definition (tracker_session_server),
+                # and a list naming the in-process tools would read as the
+                # whole set a pass may use while saying nothing about the ones
+                # it exists to call.
                 allowed_tools=[],
                 skills=skills,
                 session_type=SessionType.SCHEDULED_PASS,
-            ),
+            ).run,
             report=run_report(recorder, _record_kind_for(key), key.value),
+            # The intake runs when the process comes up (owner, 2026-09-24).
+            tick_at_boot=True,
         )
         for key, row in schedule.items()
     ]
 
 
-def fire_report(dispatchers: Mapping[str, FireDispatcher]) -> FireReport:
+def fire_report(dispatchers: Mapping[str, DispatchProducer]) -> FireReport:
     """Every dispatcher on the lane hears every finished fire.
 
     The watcher is one object over N repositories and knows nothing about
     which of them started a given run.  Each dispatcher does — it holds
     the job it enqueued — so the fan-out is total here and the filtering
-    is the dispatcher's own (KOD-174).  A watcher told to route would need
+    is the dispatcher's own.  A watcher told to route would need
     a second copy of the routing the passes already compute.
 
     A dispatcher that RAISES on the news is contained per dispatcher, and
@@ -369,7 +547,7 @@ def fire_report(dispatchers: Mapping[str, FireDispatcher]) -> FireReport:
     the tracker, so one repository's dispatcher meeting a refused
     credential would otherwise abort the fan-out and leave every
     dispatcher after it in the iteration order unaware that its own fire
-    ended (KOD-276).
+    ended.
     """
 
     log: BoundLogger = get_logger(__name__)
@@ -417,7 +595,7 @@ async def build_dispatch_passes(
     declared surface unserved with nothing saying so.  A repository no
     team is bound to is the other arm and it is NAMED rather than
     silent — it gets no pass, because a tick that scans nothing is noise
-    every interval forever (KOD-157).
+    every interval forever.
 
     *delivery* is the FORGE probe, and it reaches only the repositories
     whose origin has a forge; the rest get the probe that can answer for
@@ -425,6 +603,7 @@ async def build_dispatch_passes(
     repository because the origins are.
     """
     log: BoundLogger = get_logger(__name__)
+    cadence = config.required_cadence("dispatch")
     assembler = FireContextAssembler(
         tracker=tracker,
         gate=gate,
@@ -432,10 +611,12 @@ async def build_dispatch_passes(
         max_bytes=config.tracker_asset_max_bytes,
         fetch_timeout_seconds=config.tracker_asset_fetch_timeout_seconds,
     )
-    resolver = BaseResolver(tracker=tracker, git=git, remote=config.git_remote)
+    resolver = BaseResolver(
+        tracker=tracker, git=git, remote=config.git.remote, refs=tracker
+    )
     # ONE cooldown for the whole operation: its dispatchers are one per
     # repository over a single provider account, so the limit one of them
-    # meets is the limit all of them would meet next (KOD-281).
+    # meets is the limit all of them would meet next.
     cooldown = LaneCooldown(
         cooldown_seconds=config.dispatch_rate_limit_cooldown_seconds,
     )
@@ -471,11 +652,16 @@ async def build_dispatch_passes(
     # writes belongs to the ISSUE, and an issue is not a per-repository
     # thing. A watcher per pass would be N watchers over one tracker.
     # Built after the dispatchers because a finished fire is reported back
-    # into them (KOD-174).
+    # into them.
     lifecycle = LifecycleWatcher(
         queue=queue,
         registry=registry,
-        writer=TrackerLifecycleWriter(tracker=tracker, gate=gate),
+        writer=TrackerLifecycleWriter(
+            tracker=tracker,
+            gate=gate,
+            marker_prefixes=operation.marker_prefixes,
+            surface_lease_seconds=config.tracker.surface_lease_seconds,
+        ),
         heartbeat=ClaimHeartbeat(
             tracker=tracker,
             holder=config.dispatch_holder,
@@ -489,8 +675,8 @@ async def build_dispatch_passes(
         passes=tuple(
             ScheduledPass(
                 name=f"{_DISPATCH_NAME}:{repo.url}",
-                interval_seconds=config.dispatch_pass_interval_seconds,
-                timeout_seconds=config.dispatch_pass_timeout_seconds,
+                interval_seconds=cadence.interval_seconds,
+                timeout_seconds=cadence.timeout_seconds,
                 run=GatedDispatchPass(
                     lifecycle=lifecycle,
                     gate=build_gate(
@@ -514,7 +700,7 @@ async def _verify_wired_gates(
     *,
     config: AppConfig,
     operation: OperationConfig | None,
-    tracker: TrackerPort | None,
+    tracker: ScanCapabilityReader | None,
     github_api: DeliveryProbe | None,
 ) -> None:
     """Refuse to boot when the credential cannot answer a signal that is wired.
@@ -529,7 +715,13 @@ async def _verify_wired_gates(
     Exactly the gates about to be wired, on the same predicates the
     builders themselves use: a signal configured for a pass this deployment
     does not schedule is not a capability it needs, and refusing boot over
-    one would hold a deployment hostage to a knob nothing reads.
+    one would hold a deployment hostage to a knob nothing reads. Two things
+    scan through the dialled port: the per-issue dispatch pass, on its
+    configured signals, and the supervisor tick, which needs every scan the
+    alarms it observes declare, each named as ``supervisor/<alarm>``. The
+    two prompt passes scan through nothing here — their gate is a session
+    over the same tracker server the pass itself is described — so no
+    signal is probed on their behalf.
 
     Every refused signal is named at once, with the passes it gates and the
     backend's own diagnosis, because an operator fixing one scope at a time
@@ -537,17 +729,20 @@ async def _verify_wired_gates(
     """
     if tracker is None or operation is None:
         return
-    wired: dict[str, Sequence[PassSignal]] = (
-        {}
-        if absent_roster(operation)
-        else {
-            key.value: row.signals for key, row in prompt_pass_schedule(config).items()
-        }
-    )
-    if github_api is not None and any(
-        operation.teams_scanned_by(repo.url) for repo in operation.repos
+    wired: dict[str, Sequence[PassSignal]] = {}
+    # A pass whose cadence is unset is not scheduled, so its signals are not
+    # a capability this deployment needs: the same order as the wiring, the
+    # predicate first and the cadence after it.
+    if (
+        github_api is not None
+        and any(operation.teams_scanned_by(repo.url) for repo in operation.repos)
+        and config.pass_cadence("dispatch") is not None
     ):
         wired[_DISPATCH_NAME] = config.dispatch_pass_gate_signals
+    if runs_scope_flow(operation) and config.pass_cadence("supervisor") is not None:
+        # The supervisor tick is registered on exactly this predicate, so its
+        # alarms' scans are this deployment's to answer.
+        wired.update(_supervisor_scans())
     passes_by_signal: dict[PassSignal, list[str]] = {}
     for name, signals in wired.items():
         for signal in signals:
@@ -566,6 +761,19 @@ async def _verify_wired_gates(
     )
 
 
+def _supervisor_scans() -> dict[str, Sequence[PassSignal]]:
+    """The scans the supervisor tick's alarms declare, one entry per alarm.
+
+    Named ``supervisor/<alarm>`` so a refusal says which alarm needs the scan.
+    Takes no configuration on purpose: what the tick observes is the alarm
+    table, whole; whether the tick runs is its cadence pair, read by the caller.
+    """
+    return {
+        f"{SUPERVISOR_TICK_NAME}/{alarm.value}": sorted(ALARM_TABLE[alarm].scans)
+        for alarm in sorted(OBSERVED_ALARMS)
+    }
+
+
 def _session_running(kind: RunKind) -> SessionType:
     """Which session runs a kind, and therefore reads its record's log.
 
@@ -575,7 +783,7 @@ def _session_running(kind: RunKind) -> SessionType:
     be added without answering this question for it.
     """
     match kind:
-        case RunKind.FIRE_PREP | RunKind.GROOMING:
+        case RunKind.FIRE_PREP | RunKind.GROOMING | RunKind.AUDIT:
             return SessionType.SCHEDULED_PASS
         case RunKind.FIRE:
             return SessionType.TICKET_FIRE
@@ -593,7 +801,7 @@ def _knowledge_surfaces(operation: OperationConfig) -> list[tuple[str, SessionTy
 
     The reader is not the same for all three.  Documents and the map are a
     scheduled pass's; a record belongs to whichever session runs its KIND,
-    and the fire's row is a fire's (KOD-265).
+    and the fire's row is a fire's.
     """
     surfaces = [
         (f"documents.{key} ({entry.name})", SessionType.SCHEDULED_PASS)
@@ -614,7 +822,7 @@ def _knowledge_surfaces(operation: OperationConfig) -> list[tuple[str, SessionTy
 
 def _verify_knowledge_destinations(
     *,
-    config: AppConfig,
+    knowledge: KnowledgeSettings,
     operation: OperationConfig | None,
 ) -> None:
     """Refuse to boot when a session is sent to a store it cannot open.
@@ -631,7 +839,7 @@ def _verify_knowledge_destinations(
     the scheduled pass, so a granted scheduled pass answered for every
     surface in the operation and a fire declaring a knowledge-side record
     booted with its own capability unchecked — the arm that carries the
-    session's prose contribution to the Fire Log (KOD-265).
+    session's prose contribution to the Fire Log.
 
     Checked HERE, on the same predicate the prompt-pass wiring below uses:
     a deployment that schedules no prompt pass reaches none of these, and
@@ -646,7 +854,7 @@ def _verify_knowledge_destinations(
     """
     if operation is None:
         return
-    granted = set(config.knowledge_session_grants)
+    granted = set(knowledge.session_grants)
     unreachable = [
         (surface, session_type)
         for surface, session_type in _knowledge_surfaces(operation)
@@ -657,7 +865,7 @@ def _verify_knowledge_destinations(
     ungranted = sorted({session_type.value for _, session_type in unreachable})
     raise PassKnowledgeCapabilityError(
         f"the operation declares {DocumentSystem.KNOWLEDGE.value} surfaces read "
-        f"by sessions knowledge_session_grants does not name ({', '.join(ungranted)}), "
+        f"by sessions knowledge.session_grants does not name ({', '.join(ungranted)}), "
         f"so the session that reaches one holds no capability for it",
         destinations=[
             f"{surface} → {session_type.value}" for surface, session_type in unreachable
@@ -672,11 +880,18 @@ async def verify_pass_preflight(
     tracker: TrackerPort | None,
     github_api: DeliveryProbe | None,
     prompts: PromptSetProvider,
+    audit_forge: PRStateReader | None = None,
 ) -> None:
     """Every boot refusal the scheduled passes can raise, before anything runs.
 
-    All three refusals are decided by CONFIGURATION plus one tracker round
+    Every refusal here is decided by CONFIGURATION plus one tracker round
     trip, and none of them needs a queue, an executor or a workflow engine.
+    Among them the marker prefixes: every purpose a pass that will wire can
+    ask for must be declared, and a boot lacking any is refused naming all
+    of them (:func:`wired_marker_purposes`).
+    Before all of them the alarm table is checked total, which needs nothing
+    at all: a signal of the vocabulary with no fold refuses the boot here and
+    is never asked about again.
     They used to fire from inside :func:`build_dispatch_runtime`, which the
     composition root reaches only after it has started the job queue and
     opened the tracker's MCP transport — so a refusal aborted the lifespan
@@ -684,25 +899,60 @@ async def verify_pass_preflight(
     one call the root makes BEFORE it builds anything is what makes a
     refusal cost nothing but the boot it refuses.
 
-    The order is the cost order: the two configuration answers are already
-    in hand, the gate probe is a round trip, and the renders are local.
+    The order is the cost order: the configuration answers are already in
+    hand, the gate probe is a round trip, and the renders are local.
 
-    The render half applies to exactly the passes that will WIRE.  An
-    operation with no roster schedules none of them (see
-    :func:`build_prompt_passes`), and rendering a template it will never
-    send would refuse a boot over a hole nothing reaches.
+    The render half applies to exactly the passes that will WIRE, to the
+    gate question they ask first, and to the heartbeat's scan and the done
+    question each run it starts asks.  An operation with no roster schedules
+    none of the prompt passes (see :func:`build_prompt_passes`), and rendering
+    a template it will never send would refuse a boot over a hole nothing
+    reaches.
     """
-    _verify_knowledge_destinations(config=config, operation=operation)
+    require_alarm_table()
+    # Before the audit check, which refuses its own three prefixes one at a
+    # time: here a missing audit prefix is named beside every other one.
+    _verify_marker_prefixes(
+        config=config, operation=operation, tracker=tracker, github_api=github_api
+    )
+    verify_audit_configuration(
+        config=config, operation=operation, tracker=tracker, forge=audit_forge
+    )
+    _verify_knowledge_destinations(knowledge=config.knowledge, operation=operation)
     await _verify_wired_gates(
         config=config,
         operation=operation,
         tracker=tracker,
         github_api=github_api,
     )
-    if operation is None or absent_roster(operation):
+    if (
+        operation is not None
+        and scope_heartbeat_wires(operation, tracker_present=tracker is not None)
+        and config.pass_cadence("dispatch") is not None
+    ):
+        _assert_renders(key=PromptKey.SCOPE_SCAN, prompts=prompts, bindings={})
+        _assert_renders(
+            key=PromptKey.SCOPE_DONE,
+            prompts=prompts,
+            bindings=scope_variables(ScopeRef(kind=ScopeKind.PROJECT, key="boot")),
+        )
+    if operation is None or not session_passes_wire(operation):
         return
-    for key in prompt_pass_schedule(config):
-        _assert_renders(key=key, prompts=prompts)
+    now = datetime.now(UTC)
+    schedule = prompt_pass_schedule(config)
+    for key in schedule:
+        identity = RunIdentity(
+            kind=_record_kind_for(key), name=key.value, started_at=now
+        )
+        _assert_renders(
+            key=key, prompts=prompts, bindings=pass_render_bindings(identity)
+        )
+        # The gate is asked once per scheduled pass, over that pass's name.
+        _assert_renders(
+            key=PromptKey.PASS_GATE,
+            prompts=prompts,
+            bindings=gate_render_bindings(name=key.value, window_start=now),
+        )
 
 
 async def build_dispatch_runtime(
@@ -716,11 +966,14 @@ async def build_dispatch_runtime(
     gate: OutboundContentGate,
     git: GitService,
     cache: RepoCache,
+    workspace: WorkspaceProvider,
     prompts: PromptSetProvider,
     runner: AgentRunner,
     skills: SkillsSelection,
     recorder: RunRecorder,
     log: BoundLogger,
+    audit_forge: PRStateReader | None = None,
+    audit_ci: CIMonitor | None = None,
 ) -> DispatchRuntime:
     """The scheduler, wired to every pass this deployment can actually run.
 
@@ -737,14 +990,30 @@ async def build_dispatch_runtime(
     own writes, as the one value boot produced.  Taking the two halves
     separately gave this a fourth state nobody named: a ledger absent
     beside a live port skipped every dispatch pass and ran every prompt
-    pass ungated, and the log said the tracker was present (KOD-289).
+    pass ungated, and the log said the tracker was present.
     """
-    # Cadence is scheduler configuration and nothing else. Three
-    # states, none silent: no tracker, or no delivery probe to answer
-    # "is this issue already delivered?", and the passes do not run —
-    # named, never inferred from an empty schedule.
+    # Three states, none silent: no tracker, no operation config, or no
+    # delivery probe to answer "is this issue already delivered?" — and the
+    # passes do not run, named, never inferred from an empty schedule. After the
+    # predicate, the cadence: a pass that would wire and whose interval is
+    # unset is not scheduled, and is named as such.
     built: DispatchPasses | None = None
-    if dialled is not None and operation is not None and github_api is not None:
+    # The ``is not None`` clauses after the predicate repeat what it already
+    # answered, for the type checker's narrowing only.
+    if not dispatch_passes_wire(
+        operation,
+        tracker_present=dialled is not None,
+        delivery_present=github_api is not None,
+    ):
+        await log.ainfo(
+            "scheduled_passes_not_wired",
+            tracker_present=dialled is not None,
+            operation_config_present=operation is not None,
+            delivery_probe_present=github_api is not None,
+        )
+    elif config.pass_cadence("dispatch") is None:
+        await _log_not_configured(log, name=_DISPATCH_NAME, cadence="dispatch")
+    elif dialled is not None and operation is not None and github_api is not None:
         built = await build_dispatch_passes(
             config=config,
             operation=operation,
@@ -756,48 +1025,121 @@ async def build_dispatch_runtime(
             gate=gate,
             git=git,
             cache=cache,
-            integration_workspace_dir=config.integration_workspace_dir,
+            integration_workspace_dir=config.git.integration_workspace_dir,
             recorder=recorder,
         )
-    else:
-        await log.ainfo(
-            "scheduled_passes_not_wired",
-            tracker_present=dialled is not None,
-            operation_config_present=operation is not None,
-            delivery_probe_present=github_api is not None,
-        )
-    # The prompt passes need no tracker port to RUN: the session reaches
-    # the tracker itself. They need one only to be GATED. What they cannot
-    # do without is the operation config their prompts render from.
+    # The prompt passes need no tracker port: the session reaches the
+    # tracker itself, and so does the gate question asked before it. What
+    # they cannot do without is the operation config their prompts render
+    # from.
     scheduled: list[ScheduledPass] = [] if built is None else list(built.passes)
-    if operation is not None:
-        if dialled is None and (
-            config.fire_prep_pass_gate_signals or config.grooming_pass_gate_signals
-        ):
-            # Named, never inferred: a pass that declares signals and has
-            # no port to ask them runs ungated — at full session cost on
-            # a quiet board. That is a fact an operator must be able to
-            # read in the log, not deduce from a bill.
-            await log.ainfo(
-                "prompt_pass_gates_absent_no_tracker",
-                fire_prep_signals=[
-                    signal.value for signal in config.fire_prep_pass_gate_signals
-                ],
-                grooming_signals=[
-                    signal.value for signal in config.grooming_pass_gate_signals
-                ],
+    if config.audit is not None:
+        # Preflight has already required every collaborator before queue start.
+        # Keep an explicit refusal for direct callers of this public factory.
+        verify_audit_configuration(
+            config=config,
+            operation=operation,
+            tracker=None if dialled is None else dialled.tracker,
+            forge=audit_forge,
+        )
+        if operation is None or dialled is None or audit_forge is None:
+            raise ValueError("configured audit lacks its preflight collaborators")
+        audit = build_audit_pass(
+            config=config,
+            operation=operation,
+            tracker=dialled.tracker,
+            forge=audit_forge,
+            ci=audit_ci,
+            git=git,
+            cache=cache,
+            workspace=workspace,
+            runner=runner,
+            prompts=prompts,
+            skills=skills,
+            gate=gate,
+        )
+        # Load refuses [audit] without its interval, so this is always set.
+        cadence = config.required_cadence("audit")
+        scheduled.append(
+            ScheduledPass(
+                name="audit",
+                interval_seconds=cadence.interval_seconds,
+                timeout_seconds=cadence.timeout_seconds,
+                run=audit.run,
+                report=run_report(recorder, RunKind.AUDIT, "audit"),
             )
+        )
+    else:
+        # Called for the one refusal that survives an unconfigured audit: a
+        # record sink declared for the audit kind has no verified write seam,
+        # and a direct caller of this factory must hear that rather than a
+        # schedule quietly missing the pass it declared a sink for.
+        verify_audit_configuration(
+            config=config,
+            operation=operation,
+            tracker=None if dialled is None else dialled.tracker,
+            forge=audit_forge,
+        )
+        await _log_not_configured(log, name="audit", cadence="audit")
+    # The observation tick needs a tracker to read and a declared roster to
+    # read it for; it needs nothing else, so it is gated on exactly those two
+    # and the absent arm names which one was missing rather than leaving an
+    # operator to deduce it from a schedule with no supervisor in it. The
+    # roster question is the one predicate that already answers "does this
+    # deployment work scope by scope", read off the same copy every other arm
+    # here reads: a tick observing rows the heartbeat never submits would be
+    # this factory holding two opinions about one operation.
+    if not scope_passes_wire(operation, tracker_present=dialled is not None):
+        await log.ainfo(
+            "supervisor_pass_not_wired",
+            tracker_present=dialled is not None,
+            scopes_declared=operation is not None and runs_scope_flow(operation),
+        )
+    elif config.pass_cadence("supervisor") is None:
+        await _log_not_configured(log, name=SUPERVISOR_TICK_NAME, cadence="supervisor")
+    elif dialled is not None and operation is not None:
+        scheduled.append(
+            build_supervisor_pass(
+                config=config, operation=operation, tracker=dialled.tracker
+            )
+        )
+    if operation is not None:
         scheduled.extend(
             await build_prompt_passes(
                 config=config,
                 operation=operation,
                 prompts=prompts,
-                dialled=dialled,
                 runner=runner,
                 skills=skills,
                 recorder=recorder,
             ),
         )
+        # The scope heartbeat, on the dispatch cadence beside the per-issue
+        # dispatch passes, ticking at boot like the intake passes, and with no
+        # report: it writes no record, so a tick of it is no run to record.
+        heartbeat = build_scope_heartbeat(
+            config=config,
+            operation=operation,
+            tracker_present=dialled is not None,
+            queue=queue,
+            registry=registry,
+            runner=runner,
+            prompts=prompts,
+            skills=skills,
+        )
+        beat = config.pass_cadence("dispatch")
+        if heartbeat is not None and beat is None:
+            await _log_not_configured(log, name=_HEARTBEAT_NAME, cadence="dispatch")
+        elif heartbeat is not None and beat is not None:
+            scheduled.append(
+                ScheduledPass(
+                    name=_HEARTBEAT_NAME,
+                    interval_seconds=beat.interval_seconds,
+                    timeout_seconds=beat.timeout_seconds,
+                    run=heartbeat.run,
+                    tick_at_boot=True,
+                )
+            )
     else:
         # The other arm of the same event: no operation config at all, so
         # every roster is absent rather than empty. One name for one fact,

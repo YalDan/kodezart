@@ -3,13 +3,16 @@
 import re
 from datetime import date
 from pathlib import Path
+from typing import get_args
 
 import pytest
+from pydantic import BaseModel
 
-from kodezart.adapters.pattern_outbound_gate import PatternOutboundContentGate
-from kodezart.adapters.regex_content_scanner import RegexContentScanner
-from kodezart.adapters.toml_operation_config import load_operation_config
-from kodezart.core.config import AppConfig
+from kodezart.adapters.toml_operation_config import (
+    RETIRED_SCOPE_KEYS,
+    load_operation_config,
+)
+from kodezart.config.app import AppConfig
 from kodezart.core.errors import (
     OperationConfigError,
     PromptNamespaceCollisionError,
@@ -35,18 +38,37 @@ from kodezart.types.domain.operation import (
     CHECKPOINT_DOCUMENT_KEY,
     LifecycleStage,
     OperationConfig,
+    OrganizeScopeBinding,
     PrincipalRole,
     QueueState,
     RunKind,
 )
+from kodezart.types.domain.organize import MandateSpec
+from kodezart.types.domain.organize_owner import StageHaltCause
 from kodezart.types.domain.prompts import PromptKey
-from tests.prompt_census import PROMPT_FUNCTION_COUNT
+from tests.outbound import make_admission
+from tests.prompt_census import PROMPT_FUNCTION_NAMES
 from tests.prompts.sets import PER_RUN
 from tests.prompts.test_prompt_wiring import load_registry
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-EXAMPLE = REPO_ROOT / "docs" / "operation.example.toml"
-CUTOVER = REPO_ROOT / "docs" / "cutover_mapping.md"
+DOCS = REPO_ROOT / "docs"
+EXAMPLE = DOCS / "operation.example.toml"
+CUTOVER = DOCS / "cutover_mapping.md"
+
+#: Every prose page and shipped operation file an operator reads, derived
+#: rather than listed: a page added later is covered the day it lands.
+PROSE_AND_SHIPPED_FILES = [
+    REPO_ROOT / "README.md",
+    *sorted(DOCS.rglob("*.md")),
+    *sorted(DOCS.glob("*.toml")),
+]
+#: The floor the derivation cannot fall through: an empty or collapsed list
+#: would otherwise collect nothing and pass, and a module-level failure reddens
+#: at COLLECTION even when the parametrisation is empty.
+assert {DOCS / "configuration.md", DOCS / "operation.scope.toml"} <= set(
+    PROSE_AND_SHIPPED_FILES
+)
 SET_DIR = REPO_ROOT / "src" / "kodezart" / "prompts" / "sets" / "claude-opus"
 PASS_KEYS = (PromptKey.FIRE_PREP_PASS, PromptKey.GROOMING_PASS)
 
@@ -120,14 +142,17 @@ def markdown_rows(heading: str) -> list[list[str]]:
 # ---------------------------------------------------------------------------
 
 
-def test_all_fourteen_fields_are_present_with_the_stated_types() -> None:
+def test_all_fields_are_present_with_the_stated_types() -> None:
     """Field-by-field census: exact equality, never a subset check.
 
     Grew by ``records`` under KOD-112 R3 fix 6 (the write-side destination
     registry) and by ``private_surface`` under KOD-106 R2 (the operator's
-    prose description of what this operation treats as private).  The
-    census stays total and stays ``==``; a census loosened to a containment
-    check stops being one.
+    prose description of what this operation treats as private).  Shrank by
+    ``audit_scopes`` and ``supervisor_scopes`` under KOD-885: an operation
+    declares each scope once, under ``organize_scopes``, and every pass that
+    works scope by scope is composed from that one table.  The census stays
+    total and stays ``==``; a census loosened to a containment check stops
+    being one.
     """
     fields = OperationConfig.model_fields
     assert set(fields) == {
@@ -137,21 +162,28 @@ def test_all_fourteen_fields_are_present_with_the_stated_types() -> None:
         "agent_identities",
         "teams",
         "queue_states",
+        "scope_labels",
+        "issue_labels",
+        "organize_mandates",
+        "organize_scopes",
         "workflow_states",
+        "run_event_states",
+        "marker_prefixes",
         "repos",
         "documents",
         "records",
         "knowledge",
         "endpoints",
-        "initiatives",
         "private_surface",
     }
     config = example_config()
     assert isinstance(config.operation_name, str)
     assert isinstance(config.workspace, str)
     assert isinstance(config.queue_states, dict)
+    assert isinstance(config.scope_labels, dict)
+    assert config.organize_mandates == ()
+    assert isinstance(config.issue_labels, dict)
     assert set(config.workflow_states) == set(LifecycleStage)
-    assert config.initiatives[0].target_date == date(2026, 12, 31)
     assert config.repos[0].checks
     assert config.records[RunKind.FIRE_PREP.value].append_only is True
 
@@ -323,6 +355,7 @@ def test_no_label_or_status_literal_lives_in_source() -> None:
     src = REPO_ROOT / "src" / "kodezart"
     labels = {
         *example_config().queue_states.values(),
+        *example_config().scope_labels.values(),
         *example_config().workflow_states.values(),
     }
     for path in src.rglob("*.py"):
@@ -447,6 +480,98 @@ def test_no_deployment_knob_lives_in_the_operation_config() -> None:
         assert deployment_knob not in fields
 
 
+def _models_in(annotation: object) -> list[type[BaseModel]]:
+    """Every model an annotation names, through containers, unions and aliases."""
+    if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+        return [annotation]
+    return [model for arg in get_args(annotation) for model in _models_in(arg)]
+
+
+def operation_models() -> list[type[BaseModel]]:
+    """Every model an operator configures, derived from the operation's fields."""
+    found: list[type[BaseModel]] = []
+    pending: list[type[BaseModel]] = [OperationConfig]
+    while pending:
+        model = pending.pop(0)
+        if model in found:
+            continue
+        found.append(model)
+        for field in model.model_fields.values():
+            pending.extend(_models_in(field.annotation))
+    return found
+
+
+#: Word stems a field restricting who may set a label would be named by, and
+#: the phrases that name such a restriction without one.
+RESTRICTION_STEMS = ("approver", "principal", "setter")
+RESTRICTION_PHRASES = ("set_by", "label_role", "gate_role")
+#: The one field that names principals and restricts no label: the roster of
+#: people escalations are addressed to, which says who is asked a question and
+#: nothing about who may put a member on a scope.
+EXEMPT = {("OperationConfig", "principals")}
+
+
+def _restricts(field: str) -> bool:
+    words = [
+        word.lower()
+        for word in re.split(r"[_\W]+|(?<=[a-z0-9])(?=[A-Z])", field)
+        if word
+    ]
+    return any(
+        word.startswith(stem) for word in words for stem in RESTRICTION_STEMS
+    ) or any(phrase in field.lower() for phrase in RESTRICTION_PHRASES)
+
+
+def test_the_operation_models_are_derived_from_the_operation_fields() -> None:
+    """The per-phase row and the scope binding are reached, not listed."""
+    models = operation_models()
+    assert models[0] is OperationConfig
+    assert {MandateSpec, OrganizeScopeBinding} <= set(models), models
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "gate_approver",
+        "allowed_principals",
+        "triage_setter_role",
+        "triage_approver_only",
+        "label_set_by",
+        "gate_role",
+    ],
+)
+def test_the_restriction_match_sees_each_field_shape(field: str) -> None:
+    assert _restricts(field)
+
+
+def test_no_operation_field_restricts_who_may_set_a_scope_label() -> None:
+    """Nothing an operator configures says who may put a gate member on a scope.
+
+    The pinned reading of the gate is that its member is settable by anybody:
+    the predicate asks whether the scope carries the row's configured member
+    and nothing about the hand that wrote it. A field naming a setter would be
+    the first place that reading could be taken back, so its absence is pinned
+    on every model the operation reaches through its fields, and the halt
+    causes the pass can report are pinned to the five it declares — a
+    setter-role refusal is not among them and is absent rather than
+    unreachable.
+    """
+    offenders = [
+        (model.__name__, field)
+        for model in operation_models()
+        for field in model.model_fields
+        if _restricts(field) and (model.__name__, field) not in EXEMPT
+    ]
+    assert offenders == []
+    assert {cause.name for cause in StageHaltCause} == {
+        "ADMISSION_EXHAUSTED",
+        "CONVERGENCE_EXHAUSTED",
+        "ESCALATION_UNRECORDED",
+        "HUMAN_DECISION",
+        "STAGE_INCOMPLETE",
+    }
+
+
 def test_operation_config_references_no_tracker_vendor_type() -> None:
     """D-4: OperationConfig stays tracker-agnostic."""
     source = (
@@ -529,7 +654,7 @@ def test_pass_templates_resolve_through_the_port_and_render(
 
 def test_claude_opus_completeness_passes_at_the_full_census() -> None:
     """KOD-63's completeness rule obliges the default set to supply both."""
-    assert len(PromptKey) == PROMPT_FUNCTION_COUNT
+    assert {key.value for key in PromptKey} == PROMPT_FUNCTION_NAMES
     members = {path.stem for path in SET_DIR.glob("*.md")}
     assert members == {key.value for key in PromptKey}
 
@@ -540,23 +665,19 @@ def test_claude_opus_completeness_passes_at_the_full_census() -> None:
 
 
 @pytest.mark.parametrize("key", PASS_KEYS)
-async def test_ported_templates_pass_the_deny_pattern_engine(key: PromptKey) -> None:
+async def test_ported_templates_contain_no_resolved_org_values(key: PromptKey) -> None:
     """Zero resolved org-shaped values in repository content."""
-    config = AppConfig()
-    gate = PatternOutboundContentGate(
-        scanners=[
-            RegexContentScanner(patterns=config.deny_patterns),
-            RegexContentScanner(patterns=ORG_SHAPED_PATTERNS),
-        ],
-        verdicts=config.deny_pattern_verdicts,
-    )
+    gate = make_admission()
     body = (SET_DIR / f"{key.value}.md").read_text(encoding="utf-8")
+    for patterns in ORG_SHAPED_PATTERNS.values():
+        assert not any(re.search(pattern, body) for pattern in patterns)
     decision = await gate.gate(
         content=body,
         visibility=RepoVisibility.PUBLIC,
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
         content_class=ContentClass.AUTHORED,
+        aggregates=(),
     )
     assert decision.verdict is GateVerdict.CLEAN, decision.categories
 
@@ -631,18 +752,34 @@ def test_placeholder_mapping_is_total_in_both_directions() -> None:
 
     # Direction 2 — read off the MODEL, never off the table's own rows, so
     # the mapping can no longer be checked against what it was derived from.
-    assert set(mapped.values()) == set(OperationConfig.model_fields)
+    native = dict(markdown_rows("## Native OperationConfig consumers"))
+    assert native == {
+        "organize_scopes": (
+            "composition/audit.py::build_audit_pass, "
+            "composition/supervisor.py::build_supervisor_pass"
+        ),
+        "workflow_states.done": "adapters/linear/tracker.py::set_workflow_state",
+    }
+    assert set(mapped).isdisjoint(native)
+    assert set(mapped.values()) | {name.split(".")[0] for name in native} == set(
+        OperationConfig.model_fields
+    )
 
 
 def test_every_operation_config_field_is_reachable_from_a_pass_template() -> None:
     """Direction 2 again, straight from the templates to the model.
 
-    R2 added four fields — principals, agent_identities, repos, initiatives —
+    The principals, agent_identities and repos fields were introduced
     on the reasoning that the passes consume them.  A field no template can
     reach is a field the port did not actually port.
     """
     reachable = {name.split(".")[0] for name in template_placeholders()}
-    unreachable = set(OperationConfig.model_fields) - reachable
+    native = dict(markdown_rows("## Native OperationConfig consumers"))
+    unreachable = (
+        set(OperationConfig.model_fields)
+        - reachable
+        - {name.split(".")[0] for name in native}
+    )
     assert unreachable == set(), f"no pass template reaches {sorted(unreachable)}"
 
 
@@ -665,6 +802,26 @@ def test_example_toml_is_annotated_and_covers_every_field() -> None:
     example_config()
 
 
+@pytest.mark.parametrize(
+    "path",
+    PROSE_AND_SHIPPED_FILES,
+    ids=lambda path: path.relative_to(REPO_ROOT).as_posix(),
+)
+def test_no_document_or_shipped_operation_file_names_a_retired_scope_key(
+    path: Path,
+) -> None:
+    """The pages carry the one scope table and no second spelling of it.
+
+    The loader's refusal is the whole migration instruction, so a page that
+    still names a retired key is offering an operator a file that will not
+    load.  The keys come from the loader's own mapping and the files from the
+    tree, so neither side of this is a list kept by hand.
+    """
+    text = path.read_text(encoding="utf-8")
+    named = [key for key in RETIRED_SCOPE_KEYS if key in text]
+    assert named == [], f"{path.name} names {named}"
+
+
 def test_readme_points_at_the_operation_config_documents() -> None:
     """D-6/AC-8: both artifacts are discoverable from the README."""
     readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
@@ -685,24 +842,26 @@ def _to_toml(raw: dict[str, object]) -> str:
     lines: list[str] = []
     for key, value in raw.items():
         if isinstance(value, str | int | float | bool):
-            lines.append(f"{key} = {_scalar(value)}")
+            lines.append(f"{_scalar(key)} = {_scalar(value)}")
         elif isinstance(value, list) and all(isinstance(v, str) for v in value):
-            lines.append(f"{key} = [{', '.join(_scalar(v) for v in value)}]")
+            lines.append(f"{_scalar(key)} = [{', '.join(_scalar(v) for v in value)}]")
     for key, value in raw.items():
         if isinstance(value, dict):
             for sub_key, sub_value in value.items():
                 if isinstance(sub_value, dict):
-                    lines.append(f"\n[{key}.{sub_key}]")
-                    lines.extend(f"{k} = {_scalar(v)}" for k, v in sub_value.items())
+                    lines.append(f"\n[{_scalar(key)}.{_scalar(sub_key)}]")
+                    lines.extend(
+                        f"{_scalar(k)} = {_scalar(v)}" for k, v in sub_value.items()
+                    )
             scalars = {k: v for k, v in value.items() if not isinstance(v, dict)}
             if scalars:
-                lines.append(f"\n[{key}]")
-                lines.extend(f"{k} = {_scalar(v)}" for k, v in scalars.items())
+                lines.append(f"\n[{_scalar(key)}]")
+                lines.extend(f"{_scalar(k)} = {_scalar(v)}" for k, v in scalars.items())
         elif isinstance(value, list) and value and isinstance(value[0], dict):
             for item in value:
-                lines.append(f"\n[[{key}]]")
+                lines.append(f"\n[[{_scalar(key)}]]")
                 lines.extend(
-                    f"{k} = {_scalar(v)}"
+                    f"{_scalar(k)} = {_scalar(v)}"
                     for k, v in item.items()
                     if not _is_table_array(v)
                 )
@@ -711,8 +870,10 @@ def _to_toml(raw: dict[str, object]) -> str:
                         continue
                     sub_items: list[dict[str, object]] = sub_value
                     for sub_item in sub_items:
-                        lines.append(f"\n[[{key}.{sub_key}]]")
-                        lines.extend(f"{k} = {_scalar(v)}" for k, v in sub_item.items())
+                        lines.append(f"\n[[{_scalar(key)}.{_scalar(sub_key)}]]")
+                        lines.extend(
+                            f"{_scalar(k)} = {_scalar(v)}" for k, v in sub_item.items()
+                        )
     return "\n".join(lines) + "\n"
 
 

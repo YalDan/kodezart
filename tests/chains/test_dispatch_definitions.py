@@ -23,10 +23,13 @@ from kodezart.adapters.in_repo_prompt_registry import (
 from kodezart.chains.ralph_loop import RalphLoop
 from kodezart.chains.ticket_generation import TicketGenerationLoop
 from kodezart.core.errors import NoStructuredOutputError
+from kodezart.core.protocols import AfterPublish, NativeWriteGuard
 from kodezart.types.domain.agent import AgentEvent, ResultEvent
 from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.gating import RepoVisibility
-from kodezart.types.domain.session import SessionType
+from kodezart.types.domain.operation import RepoEntry
+from kodezart.types.domain.run_records import RunIdentity
+from kodezart.types.domain.session import PermissionMode, SessionType
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.subagents import (
     NO_SUBAGENTS,
@@ -42,7 +45,10 @@ from tests.fakes import (
     make_criteria,
     no_delay_floor,
 )
-from tests.prompt_census import configured_investigation_cap
+from tests.prompt_census import (
+    CONFIGURED_WORKFLOWS_PLUGIN_DIR,
+    configured_investigation_cap,
+)
 from tests.prompts.sets import V5_SET
 
 LENS_NAMES = ("doc-verifier", "draft-critic", "explorer")
@@ -63,6 +69,7 @@ def v5_provider(
         template_overrides={},
         bindings={},
         investigation_cap=configured_investigation_cap(),
+        workflows_plugin_dir=CONFIGURED_WORKFLOWS_PLUGIN_DIR,
         ticket_review_mode=mode,
     )
 
@@ -131,15 +138,17 @@ class RecordingRunner:
         repo_path: str | None = None,
         repo_url: str | None = None,
         branch: str | None = None,
-        permission_mode: str,
+        permission_mode: PermissionMode,
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = SessionType.TICKET_FIRE,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
         cache_key: str | None = None,
+        repositories: Sequence[RepoEntry] = (),
     ) -> AsyncGenerator[AgentEvent, None]:
         """Record the dispatch and stream the configured answer, if any."""
         self._record(agents, "stream", session_policy, prompt, skills)
@@ -151,10 +160,11 @@ class RecordingRunner:
         *,
         prompt: str,
         workspace_path: str,
-        permission_mode: str,
+        permission_mode: PermissionMode,
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = SessionType.TICKET_FIRE,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
@@ -174,15 +184,19 @@ class RecordingRunner:
         base_branch: str = "main",
         branch_name: str | None = None,
         ralph_branch: str | None = None,
-        permission_mode: str,
+        permission_mode: PermissionMode,
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = SessionType.TICKET_FIRE,
+        run_identity: RunIdentity | None = None,
         visibility: RepoVisibility = RepoVisibility.UNKNOWN,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         create_branch: bool = True,
         cache_key: str | None = None,
+        native_guard: NativeWriteGuard | None = None,
+        after_publish: AfterPublish | None = None,
+        repositories: Sequence[RepoEntry] = (),
     ) -> AsyncGenerator[AgentEvent, None]:
         """Record the dispatch and stream nothing."""
         self._record(agents, "stream_workflow", session_policy, prompt, skills)
@@ -200,12 +214,12 @@ def test_the_set_under_test_actually_declares_three_lenses() -> None:
 # ---------------------------------------------------------------------------
 
 GENERATIVE_SITES = (
-    ("ralph_workflow.py", "GENERATED_CRITERIA_SCHEMA"),
+    ("fire_specification.py", "GENERATED_CRITERIA_SCHEMA"),
     ("ticket_generation.py", "TICKET_DRAFT_SCHEMA"),
 )
 EVALUATIVE_SITES = (
     ("ralph_loop.py", "ACCEPTANCE_CRITERIA_SCHEMA"),
-    ("ralph_workflow.py", "CRITERIA_VALIDATION_SCHEMA"),
+    ("fire_specification.py", "CRITERIA_VALIDATION_SCHEMA"),
 )
 
 
@@ -232,7 +246,7 @@ def evaluative_guarantee_holds(block: str) -> bool:
 
 def post_merge_review_block() -> str:
     """The post-merge review dispatch, as text — its own site, found by name."""
-    source = chain_source("ralph_workflow.py")
+    source = chain_source("fire_review.py")
     review = source.index('site="post_merge_review"')
     return source[source.rindex("self._service.stream", 0, review) : review]
 
@@ -284,13 +298,23 @@ def test_every_generative_dispatch_hands_over_the_sets_definitions(
 
 def test_no_dispatch_site_builds_its_own_definition_list() -> None:
     """One definition per lens: a site that constructs one is a second copy."""
-    for module in ("ralph_loop.py", "ralph_workflow.py", "ticket_generation.py"):
+    for module in (
+        "ralph_loop.py",
+        "fire_specification.py",
+        "fire_review.py",
+        "ticket_generation.py",
+    ):
         assert "AgentDefinition(" not in chain_source(module)
 
 
 def test_no_dispatch_site_passes_a_raw_dict_for_agents() -> None:
     """KOD-87-AC-8 at the call sites, not only at the port's declaration."""
-    for module in ("ralph_loop.py", "ralph_workflow.py", "ticket_generation.py"):
+    for module in (
+        "ralph_loop.py",
+        "fire_specification.py",
+        "fire_review.py",
+        "ticket_generation.py",
+    ):
         source = chain_source(module)
         for line in source.splitlines():
             stripped = line.strip()
@@ -392,7 +416,7 @@ async def evaluator_dispatches(provider: InRepoPromptRegistry) -> RecordingRunne
         ralph_branch="kodezart/test-12345678-ralph-abcdef01",
         base_spec=trunk_base("main"),
         work_base_ref="main",
-        permission_mode="bypassPermissions",
+        permission_mode=PermissionMode.UNATTENDED,
         allowed_tools=["Bash"],
         acceptance_criteria=criteria,
         cache_key="dispatch-fixture",
@@ -446,5 +470,6 @@ def legacy_provider() -> InRepoPromptRegistry:
         template_overrides={},
         bindings={},
         investigation_cap=configured_investigation_cap(),
+        workflows_plugin_dir=CONFIGURED_WORKFLOWS_PLUGIN_DIR,
         ticket_review_mode=TicketReviewMode.REVIEWED,
     )

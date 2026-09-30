@@ -24,7 +24,7 @@ import pytest
 from pydantic import ValidationError
 
 from kodezart.adapters.toml_operation_config import _flatten
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.types.domain.operation import OperationConfig
 
 #: Shaped like the thing that actually leaked, and distinctive enough that

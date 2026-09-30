@@ -21,12 +21,11 @@ sentence.
 
 ## How the rows were derived
 
-The derivation rule is KOD-60 R1's and it is mechanical rather than tasteful:
-**every imperative clause** of the two routine documents becomes a row. R1
-enumerates the obligations that are structurally load-bearing and says of them
-that *a checklist missing any of them is incomplete on its face*; every one has
-a row here. That correspondence is read against the ruling on the issue and is
-not machine-checked: nothing transcribes R1's floor into a test, and the module
+The recorded derivation rule is mechanical: **every imperative clause** of the
+two routine documents becomes a row. The source ruling enumerates the required
+obligations; a checklist missing any of them is incomplete. Every one has a row
+here. That correspondence is read against the source ruling and is not
+machine-checked: no test transcribes its minimum obligation list, and the module
 that checks this document says so in its own docstring.
 
 Three things follow, and they are the reason this table is longer than the
@@ -69,7 +68,7 @@ whereas an undemonstrated one is an unknown.
 | frontier rule | fire_prep_pass "Frontier rule (every run)" | A project plan names its frontier, and work beyond it is a stub rather than a fire. | not yet demonstrated |
 | fire-body format | fire_prep_pass "The fire-body shape is a tight, self-contained raw task" | A promoted fire body carries the ruled sections and nothing else. | not yet demonstrated |
 | pre-promotion hygiene | fire_prep_pass "run a hygiene scan over the frozen body" | Every frozen fire body is scanned for orchestration vocabulary, tracker shorthand and pre-cooked evaluator material, through the same scanner entry point as the sanitization set, and a body that trips the set is not promoted. | not ported, because a deterministic pattern set standing in for *can the implementer act on this body alone?* is a heuristic standing in for judgment; the mechanism for that question is the judgment scanner registered in the outbound gate, and the clause itself is carried verbatim by the prompt |
-| queue-state transitions | grooming_pass "Queue-state machine — workflow states follow the queue" | A dispatched issue moves In Progress → In Review → Done, and approval is never demoted before the terminal write. | `tests/services/test_tracker_lifecycle.py::TestLifecycleWrites::test_approval_is_never_demoted_before_the_terminal_write` |
+| queue-state transitions | grooming_pass "Queue-state machine — workflow states follow the queue" | A dispatched parent moves In Progress → In Review; a merged run retires its queue entry without writing parent Done. Parent completion is read from the criterion subtree, and approval is never demoted before queue disposition. | `tests/services/test_tracker_lifecycle.py::TestLifecycleWrites::test_approval_is_never_demoted_before_the_terminal_write` |
 | approval boundary | fire_prep_pass "Approval boundary:" | The approved state is set by the APPROVER alone: no pass sets it, and no pass removes it. | `tests/integration/test_self_running_chain.py::test_the_chain_never_sets_the_approved_state_itself` |
 | terminal done label | grooming_pass "plus the terminal" | The terminal queue state exists in the workspace, created by the operation that owns it rather than by hand. | `tests/tracker/test_tracker_boot_wiring.py::test_an_absent_queue_label_is_created_at_boot_not_a_failure` |
 | reply criteria | grooming_pass "An issue needs a reply when its latest comment" | The three reply criteria decide which mentions and comments create a reply obligation, and a pass discharges exactly those. | not yet demonstrated |
@@ -91,7 +90,7 @@ whereas an undemonstrated one is an unknown.
 | one claim per pass | — | A pass claims exactly one issue; throughput comes from successive passes, never from batch sends. | `tests/services/test_fire_dispatcher.py::TestSingleWinner::test_a_pass_never_claims_more_than_one` |
 | cadence ownership | — | Pass scheduling reads exclusively from configuration; the driver holds no interval of its own. | `tests/services/test_pass_scheduler.py::test_the_driver_module_holds_no_numeric_literal` |
 | identity discipline | — | Rendering fails loudly on any unconditional placeholder without a config value, naming every missing name at once. | `tests/prompts/test_operation_config.py::test_an_unconditional_placeholder_without_a_config_value_fails_loudly` |
-| outbound legality | — | No shipped template carries a resolved org-shaped value. | `tests/prompts/test_operation_config.py::test_ported_templates_pass_the_deny_pattern_engine` |
+| outbound legality | — | No shipped template carries a resolved org-shaped value. | `tests/prompts/test_operation_config.py::test_ported_templates_contain_no_resolved_org_values` |
 | routine-text coverage | fire_prep_pass + grooming_pass, whole texts | Parity is claimed against the routine text itself. Since the byte-identity replacement the templates carry the routines' verbatim prose with config placeholders for every operation-specific token; rendering them against the real operation config must reproduce the live texts byte-for-byte — verbatim everywhere except the passages where a routine named a fixed team or repository slot, which are amended to enumerate the declared roster one member per line (`cutover_mapping.md`). The comparison needs the private reference texts, so it runs as recorded evidence at a named sha on the owning issue, not in CI. | not yet demonstrated |
 
 ## Why the undemonstrated rows are undemonstrated

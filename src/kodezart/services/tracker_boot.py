@@ -21,7 +21,8 @@ them is the adapter's business.
 from collections.abc import Callable, Sequence
 
 from kodezart.core.errors import TrackerBootValidationError, TrackerEnsureConflictError
-from kodezart.core.protocols import TrackerPort
+from kodezart.core.protocols import TrackerVocabulary
+from kodezart.domain.derived_writes import derived_writes
 from kodezart.types.domain.operation import (
     FIELD_OWNERSHIP,
     ConfigOwnership,
@@ -79,6 +80,14 @@ def configured_mappings(config: OperationConfig) -> tuple[MappingRef, ...]:
         for name, identifier in sorted(config.queue_states.items())
     )
     refs.extend(
+        MappingRef(kind=MappingKind.SCOPE_LABEL, name=name, identifier=identifier)
+        for name, identifier in sorted(config.scope_labels.items())
+    )
+    refs.extend(
+        MappingRef(kind=MappingKind.ISSUE_LABEL, name=name, identifier=identifier)
+        for name, identifier in sorted(config.issue_labels.items())
+    )
+    refs.extend(
         MappingRef(
             kind=MappingKind.WORKFLOW_STATE,
             name=stage.value,
@@ -125,6 +134,39 @@ def _queue_state_refs(
     )
 
 
+def _issue_label_refs(
+    config: OperationConfig,
+    containers: tuple[str | None, ...],
+) -> tuple[MappingRef, ...]:
+    """Issue labels use the same native namespaces as the queue vocabulary."""
+    return tuple(
+        MappingRef(
+            kind=MappingKind.ISSUE_LABEL,
+            name=name,
+            identifier=identifier,
+            scope=container,
+        )
+        for container in containers
+        for name, identifier in sorted(config.issue_labels.items())
+    )
+
+
+def _scope_label_refs(
+    config: OperationConfig,
+    _containers: tuple[str | None, ...],
+) -> tuple[MappingRef, ...]:
+    """One workspace ref per scope label, shared across container kinds.
+
+    An initiative and a project have no issue-team namespace. The adapter
+    instates the same configured name in each native label namespace;
+    creating team copies would make the issue spelling ambiguous.
+    """
+    return tuple(
+        MappingRef(kind=MappingKind.SCOPE_LABEL, name=name, identifier=identifier)
+        for name, identifier in sorted(config.scope_labels.items())
+    )
+
+
 def _document_refs(
     config: OperationConfig,
     _containers: tuple[str | None, ...],
@@ -164,6 +206,8 @@ OWNED_REF_BUILDERS: dict[
 ] = {
     "documents": _document_refs,
     "queue_states": _queue_state_refs,
+    "scope_labels": _scope_label_refs,
+    "issue_labels": _issue_label_refs,
 }
 
 
@@ -210,7 +254,7 @@ def owned_mappings(config: OperationConfig) -> tuple[MappingRef, ...]:
 
 async def validate_tracker_mappings(
     *,
-    tracker: TrackerPort,
+    tracker: TrackerVocabulary,
     config: OperationConfig,
 ) -> None:
     """Resolve every configured mapping; raise naming EVERY failure at once."""
@@ -254,9 +298,10 @@ def adopt_mappings(
     return config.model_copy(update={"documents": documents})
 
 
+@derived_writes("ensure_mappings")
 async def reconcile_tracker_mappings(
     *,
-    tracker: TrackerPort,
+    tracker: TrackerVocabulary,
     config: OperationConfig,
 ) -> MappingReconciliation:
     """Instate what the operation owns, then resolve everything.
@@ -272,6 +317,9 @@ async def reconcile_tracker_mappings(
     the operation named and boot created carries an id nobody could have
     declared, and a prompt rendered from the pre-boot copy would name a
     placeholder no session can open.
+
+    Derived: instating the operation's own vocabulary happens at boot, where no run and
+    no judged commit exists to verify anything against (KOD-843).
     """
     refs = owned_mappings(config)
     # Keyed by CONTAINER as well as kind and identifier, because a container

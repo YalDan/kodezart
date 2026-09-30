@@ -46,10 +46,16 @@ class PersistResult:
     remote-tip commit's message (``commit_sha = remote_tip``).  For
     ``DIVERGENCE_REPLAY`` tree-differ subcase, the message is the
     divergent HEAD's message, which IS the replay commit's own message
-    (``commit_sha = replay_sha``).
+    (``commit_sha = replay_sha``).  In both ``DIVERGENCE_REPLAY``
+    subcases ``recovery_ref`` names the backup ref the persister pushed
+    before it reset the branch.
+
+    ``recovery_ref`` is the backup ref this persist pushed before it
+    recovered a divergence, or ``None`` when it recovered none.
     """
 
     commit_sha: str
     branch: str
     message: str
     source: PersistSource
+    recovery_ref: str | None = None

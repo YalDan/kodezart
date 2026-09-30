@@ -1,6 +1,6 @@
 [project]
 name = "kodezart"
-version = "0.2.0"
+version = "0.3.0"
 description = "kodezart — music-inspired AI assistant"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -10,6 +10,8 @@ dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",
     "pydantic>=2.10.0",
+    # Defaulted generic verdict types on Python 3.12.
+    "typing-extensions>=4.12.0",
     "pydantic-settings>=2.7.0",
     "pydantic-ai>=0.0.14",
     # Compatible-release operator: >=0.2.151, <0.3.0.  At the v0.2.151 tag the
@@ -22,16 +24,17 @@ dependencies = [
     "claude-agent-sdk~=0.2.151",
     # The MCP client the tracker transport speaks. Already present
     # transitively under claude-agent-sdk; declared directly because
-    # adapters/http_mcp_tool_caller.py imports it.
+    # adapters/mcp/http_tool_caller.py imports it.
     "mcp>=1.26.0",
     # The async stream classes a closed MCP session raises. Already present
     # transitively under mcp; declared directly because
-    # adapters/stdio_mcp_tool_caller.py imports it.
+    # adapters/mcp/stdio_tool_caller.py imports it.
     "anyio>=4.5.0",
     "langchain>=0.3.0",
     "langgraph>=0.2.0",
     "structlog>=24.4.0",
     "httpx>=0.27.0",
+    "rich>=14.3.3",
 ]
 
 [project.optional-dependencies]
@@ -62,7 +65,7 @@ strict = true
 disallow_any_explicit = true
 
 [[tool.mypy.overrides]]
-module = ["kodezart.core.config"]
+module = ["kodezart.config.app"]
 disallow_any_explicit = false
 
 [tool.pydantic-mypy]
@@ -76,20 +79,24 @@ line-length = 88
 src = ["src", "tests"]
 
 [tool.ruff.lint]
-select = ["E","W","F","I","B","C4","UP","N","ANN","S","A","ARG","RUF"]
+select = ["E","W","F","I","B","C4","UP","N","ANN","S","A","ARG","RUF","TID"]
 ignore = [
     "S101",
 ]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py"                       = ["S101", "ARG001", "ARG002", "ANN", "S105", "S108", "S603", "S607"]
-"src/kodezart/core/config.py"        = ["S108"]
+"src/kodezart/config/app.py"          = ["S108"]
+"src/kodezart/config/git.py"          = ["S108"]
 "src/kodezart/types/domain/prompts.py" = ["S105"]
 "src/kodezart/types/domain/session.py" = ["S105"]
 "tests/types/**/*.py"                 = ["A005"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["kodezart"]
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"
 
 [tool.ruff.format]
 quote-style = "double"
@@ -112,7 +119,7 @@ filterwarnings = ["error"]
 #   uv run pytest -m live --collect-only -q
 #   uv run pytest -m postgres --collect-only -q
 #
-#   live      Drives a real Claude CLI and spends account budget, so it
+#   live      Needs real external credentials or drives the Claude CLI, so it
 #             cannot run unattended in CI.  Run by the operator during a
 #             live window; the board carries the last such run.
 #   postgres  Needs a real PostgreSQL server at KODEZART_TEST_POSTGRES_URL.
@@ -123,6 +130,6 @@ filterwarnings = ["error"]
 # `make check` cannot supply what they need — which is why the evidence
 # for them lives on the board and not in this file.
 markers = [
-    "live: requires live Claude CLI (skip by default, run with: pytest -m live)",
+    "live: requires external credentials or Claude CLI (skip by default, run with: pytest -m live)",
     "postgres: requires a PostgreSQL server at KODEZART_TEST_POSTGRES_URL (skip by default, run with: pytest -m postgres)",
 ]

@@ -1,7 +1,7 @@
 """Async-stream draining helper used by soft-failure raise sites."""
 
 from collections import Counter
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 
 from kodezart.core.error_egress import redact_credentials
 from kodezart.core.errors import result_tail
@@ -19,6 +19,7 @@ async def drain(
     stream: AsyncIterator[AgentEvent],
     *,
     site: RaiseSite,
+    observe: Callable[[AgentEvent], None] | None = None,
 ) -> tuple[ResultEvent | None, bool]:
     """Consume *stream*; return ``(last_result_event, rate_limit_rejected)``.
 
@@ -43,6 +44,10 @@ async def drain(
     fields are compared.  A mid-stream ``ErrorEvent`` was previously
     consumed and dropped without a trace; it is logged as it passes.
 
+    An explicitly supplied observer sees each native frame as it arrives.
+    The evaluator uses this seam to forward session-opening occurrences to
+    its real graph stream; no observer is inferred for other callers.
+
     Coroutine — NOT an async generator (no ``yield`` in the body).
     """
     log: BoundLogger = get_logger(__name__)
@@ -50,6 +55,8 @@ async def drain(
     rate_limit_rejected: bool = False
     counts: Counter[str] = Counter()
     async for event in stream:
+        if observe is not None:
+            observe(event)
         counts[event.type] += 1
         if isinstance(event, ResultEvent):
             last_result_event = event

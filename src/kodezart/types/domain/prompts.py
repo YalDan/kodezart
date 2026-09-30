@@ -28,7 +28,13 @@ class PromptKey(StrEnum):
     ACCEPTANCE_CRITERIA = "acceptance_criteria"
     CRITERIA_VALIDATION = "criteria_validation"
     IMPLEMENTATION = "implementation"
+    NATIVE_WRITER_CONTRACT = "native_writer_contract"
+    AMENDMENT_JUDGE = "amendment_judge"
+    AMENDMENT_AUTHOR = "amendment_author"
     EVALUATION = "evaluation"
+    #: The same criteria' own checks, read at the lane's base instead of its
+    #: head, so a pass that predates the branch is not read as the branch's.
+    BASE_CHECK = "base_check"
     ITERATION_FEEDBACK = "iteration_feedback"
     POST_MERGE_REVIEW = "post_merge_review"
     FIX = "fix"
@@ -37,12 +43,47 @@ class PromptKey(StrEnum):
     PR_DESCRIPTION = "pr_description"
     FIRE_PREP_PASS = "fire_prep_pass"
     GROOMING_PASS = "grooming_pass"
+    #: The question a scheduled pass asks before it opens its session: did
+    #: anything move in its window that the pass should act on.  One short
+    #: session with the tracker tools, answered in a structured shape; the
+    #: pass runs on a yes and on any answer it cannot read.
+    PASS_GATE = "pass_gate"
+    #: The cron's question: which approved nodes inside the boundary are
+    #: not finished, and the repository each one's work goes to.
+    SCOPE_SCAN = "scope_scan"
+    #: The run's question about its parent: every issue below it, and
+    #: whether each is done.
+    SCOPE_DONE = "scope_done"
     CONTENT_AUDIT = "content_audit"
+    ORGANIZE_ASSESS = "organize_assess"
+    ORGANIZE_AUTHOR = "organize_author"
+    ORGANIZE_VERIFY = "organize_verify"
+    WRITE_BACK_VERIFY = "write_back_verify"
+    AUDIT_CLAIM = "audit_claim"
+    AUDIT_OVERCLAIM = "audit_overclaim"
+    AUDIT_MANDATE = "audit_mandate"
+    AUDIT_DETECTION_REMOVAL = "audit_detection_removal"
+    ORGANIZE_CRITERIA_AUTHOR = "organize_criteria_author"
+    #: The accept conditions of the organize rows, rendered into the per-call
+    #: ``mandate_rubric`` of whichever wrapper judges them. A rubric opens no
+    #: session of its own: it is the standard a judging role is handed.
+    ORGANIZE_SPEC_RUBRIC = "organize_spec_rubric"
+    #: One organize phase, done by one session with the tracker tools the
+    #: host attaches: the session reads the scope, does the phase's work on
+    #: the board and adds the phase's marker; kodezart reads the board once
+    #: afterwards and reports.
+    ORGANIZE_SESSION = "organize_session"
     #: What lives where.  A prelude composed into a session that is granted
     #: the knowledge server, and into no other — a key rather than set-level
     #: fragment metadata, so it enters this census and the set-completeness
     #: rule covers it like every other role.
     KNOWLEDGE_MAP = "knowledge_map"
+    FIRE_RECORD = "fire_record"
+    #: The pre-loop step that finds a fire's open questions and answers them.
+    FIRE_TIME_RULING = "fire_time_ruling"
+    #: The step that takes the behaviour a passing criterion names out of a
+    #: copy of the graded tree and reports nothing: its product is the tree.
+    MUTATION_SURVIVAL = "mutation_survival"
 
 
 class OrchestrationPrimitive(StrEnum):
@@ -76,6 +117,11 @@ class PromptSetFragments(BaseModel):
     skills_reference_header: str
     house_rules: str | None = None
     suppression_proxy: str | None = None
+    #: The refutation the two changeset graders are composed with: refute the
+    #: engineering standard per changed file, fail what rests on a named
+    #: violation. Nullable like the proxy, so a set declaring none composes
+    #: unchanged.
+    design_review: str | None = None
     ultrathink_instruction: str | None = None
     ultracode_instruction: str | None = None
     #: The shared fan-out spec both orchestration fragments carry, and the
@@ -93,6 +139,14 @@ class PromptSetFragments(BaseModel):
     #: mechanism, because each pass owes the same three and a copy per
     #: member is a copy that can drift.
     pass_mechanisms: str | None = None
+    #: The board's shape, stated once for every role that reads or writes
+    #: placement.  One source, because a standard restated per member is a
+    #: standard that can disagree with itself.
+    board_hierarchy: str | None = None
+    #: The delivery standard every board-facing role and the implementer
+    #: share: what a finishable unit is, and how one is delivered.  One
+    #: source, for the same reason as the hierarchy above.
+    delivery_units: str | None = None
 
 
 class SessionRole(StrEnum):
@@ -109,8 +163,13 @@ class SessionRole(StrEnum):
     EVALUATIVE = "evaluative"
     #: Emits a name, a message, a description, or a prelude.
     UTILITY = "utility"
+    #: Answers one short structured question about the board.
+    QUESTION = "question"
     #: Changes the workspace.
     IMPLEMENTATION = "implementation"
+    #: Grooms or prepares a whole board as one unattended session on a
+    #: schedule, reading and writing the tracker, the store and the forge.
+    SCHEDULED_PASS = "scheduled_pass"
 
 
 class SessionRolePolicy(BaseModel):
@@ -190,11 +249,16 @@ class PromptSetMetadata(BaseModel):
                 raise ValueError(msg)
             seen.update(policy.keys)
 
-        utility = self.session_roles.get(SessionRole.UTILITY)
-        if utility is not None and set(utility.keys) != set(self.utility_keys):
+        depth_free = [
+            policy
+            for role, policy in self.session_roles.items()
+            if role in (SessionRole.UTILITY, SessionRole.QUESTION)
+        ]
+        rostered = {key for policy in depth_free for key in policy.keys}
+        if depth_free and rostered != set(self.utility_keys):
             msg = (
                 f"prompt set {self.name!r} declares a utility roster that "
-                "disagrees with the utility role's keys"
+                "disagrees with the utility and question roles' keys"
             )
             raise ValueError(msg)
         return self

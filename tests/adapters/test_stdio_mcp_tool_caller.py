@@ -29,7 +29,7 @@ import structlog.testing
 from mcp.shared.exceptions import McpError
 from mcp.types import CONNECTION_CLOSED, INVALID_PARAMS, ErrorData
 
-from kodezart.adapters.stdio_mcp_tool_caller import StdioMcpToolCaller, _became_of
+from kodezart.adapters.mcp.stdio_tool_caller import StdioMcpToolCaller, _became_of
 from kodezart.core.errors import (
     McpCallUnansweredError,
     McpSessionClosedError,

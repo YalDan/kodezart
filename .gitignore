@@ -33,14 +33,18 @@ coverage.xml
 
 # Claude Code local session data. The workflows directory is the exception:
 # a named workflow is repo-owned reviewable code that a session dispatches,
-# so it is tracked like any other source file.
+# so it is tracked like any other source file, and so is the manifest that
+# lets every session load that directory as the kodezart plugin.
 .claude/*
 !.claude/workflows/
+!.claude/.claude-plugin/
 
-# Environment
+# Environment. Any stem, because a credentials file for one board is named
+# after that board and a list of stems is a list somebody has to remember.
 .env
 .env.local
 .env.*.local
+*.env
 
 # Operation config. Carries tracker handles and a forge identity, and this
 # board mirrors to a public repository. Root-anchored so the annotated

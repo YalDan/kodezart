@@ -42,13 +42,13 @@ from mcp.server.lowlevel import Server
 from mcp.shared.memory import create_connected_server_and_client_session
 from mcp.types import CallToolResult, ContentBlock, TextContent
 
-from kodezart.adapters import (
-    hosted_mcp_session,
-    http_mcp_tool_caller,
-    stdio_mcp_tool_caller,
+from kodezart.adapters.mcp import (
+    hosted_session,
+    http_tool_caller,
+    stdio_tool_caller,
 )
-from kodezart.adapters.hosted_mcp_session import _INBOX_UNBOUNDED, _Phase
-from kodezart.adapters.http_mcp_tool_caller import (
+from kodezart.adapters.mcp.hosted_session import _INBOX_UNBOUNDED, _Phase
+from kodezart.adapters.mcp.http_tool_caller import (
     HttpMcpToolCaller,
     HttpxClientFactory,
     pooled_http_client,
@@ -130,12 +130,10 @@ def caller_fixture(
     return HttpMcpToolCaller(
         url="https://mcp.invalid/mcp",
         server_name="fixture-server",
-        token=_FIXTURE_TOKEN,
+        headers={"Authorization": "Bearer" + " " + _FIXTURE_TOKEN},
         timeout_seconds=5.0,
         call_timeout_seconds=call_timeout_seconds,
         sse_read_timeout_seconds=_SSE_READ_TIMEOUT_SECONDS,
-        auth_header_name="Authorization",
-        auth_scheme="Bearer",
         error_detail_limit=_ERROR_DETAIL_LIMIT,
         client_factory=client_factory,
     )
@@ -254,20 +252,34 @@ async def test_a_network_failure_mid_call_surfaces_as_the_transport_error() -> N
     assert excinfo.value.tool_name == "get_issue"
 
 
-async def answer_with(caller: HttpMcpToolCaller, status: HTTPStatus) -> None:
+async def answer_with(
+    caller: HttpMcpToolCaller,
+    status: HTTPStatus,
+    *,
+    presenting_credential: bool = True,
+) -> None:
     """Let the server answer one request with *status*.
 
     Driven through the caller's OWN client factory rather than around it,
     so what is exercised is the wiring the live session runs on: the MCP
     client raises its status error inside the task group that drives the
     session, and this hook is the only place the status is still legible.
+
+    By default the answered request is the credential's presentation (the
+    probe, or a handshake), because that is the answer a refusal is read
+    off; ``presenting_credential=False`` answers an ordinary call instead.
     """
-    async with caller._server.http_client(
-        headers={},
-        timeout=httpx.Timeout(5.0),
-    ) as client:
-        for hook in client.event_hooks["response"]:
-            await hook(httpx.Response(status_code=status))
+    server = caller._server
+    server._presenting_credential = presenting_credential
+    try:
+        async with server.http_client(
+            headers={},
+            timeout=httpx.Timeout(5.0),
+        ) as client:
+            for hook in client.event_hooks["response"]:
+                await hook(httpx.Response(status_code=status))
+    finally:
+        server._presenting_credential = False
 
 
 class _Endpoint:
@@ -540,6 +552,97 @@ class TestARefusedCredential:
         async with serving(caller, _StubSession()):
             with pytest.raises(McpTransportError):
                 await caller.call_tool(name="get_issue", arguments={})
+
+    async def test_a_refusal_answered_mid_session_does_not_latch(self) -> None:
+        """A 401 off one CALL is an error status, not the credential's refusal.
+
+        Measured 2026-09-24 (KOD-1236): a long-lived key was answered 401
+        once in about a thousand calls and accepted on the next request,
+        and the latch left every pass of that boot refusing without dialing.
+        Only the credential's presentation — the probe, or a handshake —
+        answers for the credential.
+        """
+        caller = caller_fixture()
+        await answer_with(caller, HTTPStatus.UNAUTHORIZED, presenting_credential=False)
+
+        async with serving(caller, _StubSession()):
+            with pytest.raises(McpTransportError) as excinfo:
+                await caller.call_tool(name="get_issue", arguments={})
+
+        assert not isinstance(excinfo.value, McpCredentialRefusedError)
+
+    async def test_one_mid_session_refusal_is_reopened_and_the_call_goes_again(
+        self,
+    ) -> None:
+        """The whole path: one 401 on a call, one reopen, the call answered."""
+        server = _FakeStreamableServer(
+            on_call=_CallBehaviour.UNWELL_ONCE,
+            unwell_status=HTTPStatus.UNAUTHORIZED,
+        )
+        caller = caller_fixture(client_factory=client_over(server.transport))
+        await caller.open()
+
+        with structlog.testing.capture_logs() as logs:
+            first = await caller.call_tool(name="get_issue", arguments={})
+
+        assert first == {"id": "K-1"}
+        assert server.calls == ["tools/call"] * 2, "the refused call went again"
+        assert [log["event"] for log in logs].count("mcp_session_reopened") == 1
+        await caller.close()
+
+    async def test_a_refusal_that_persists_at_the_reopen_is_the_credential_class(
+        self,
+    ) -> None:
+        """The paired negative: the handshake after the collapse is the judge."""
+        server = _FakeStreamableServer(
+            on_call=_CallBehaviour.UNWELL_ONCE,
+            unwell_status=HTTPStatus.UNAUTHORIZED,
+        )
+        caller = caller_fixture(client_factory=client_over(server.transport))
+        await caller.open()
+        server.initialize_status = HTTPStatus.UNAUTHORIZED
+
+        with pytest.raises(McpCredentialRefusedError):
+            await caller.call_tool(name="get_issue", arguments={})
+        with pytest.raises(McpCredentialRefusedError):
+            await caller.call_tool(name="list_issues", arguments={})
+
+        assert server.requests.count("initialize") == 2, (
+            "nothing dials in the cool-down"
+        )
+        await caller.close()
+
+    async def test_after_the_cool_down_the_credential_is_presented_again(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A refusal is a cool-down, not a latch (KOD-1237).
+
+        Measured 2026-09-24: the hosted server answers 401 invalid_token for a
+        key whose hourly request budget is spent, and the budget refills.
+        With the cool-down elapsed, the next call presents the credential
+        again and is answered once the server accepts it.
+        """
+        cool_down = 0.2
+        monkeypatch.setattr(http_tool_caller, "_REFUSAL_COOLDOWN_SECONDS", cool_down)
+        server = _FakeStreamableServer(
+            on_call=_CallBehaviour.UNWELL_ONCE,
+            unwell_status=HTTPStatus.UNAUTHORIZED,
+        )
+        caller = caller_fixture(client_factory=client_over(server.transport))
+        await caller.open()
+        server.initialize_status = HTTPStatus.UNAUTHORIZED
+        with pytest.raises(McpCredentialRefusedError):
+            await caller.call_tool(name="get_issue", arguments={})
+        server.initialize_status = HTTPStatus.OK
+        await asyncio.sleep(cool_down * 2)
+
+        answer = await caller.call_tool(name="list_issues", arguments={})
+
+        assert answer == {"id": "K-1"}
+        assert server.requests.count("initialize") == 3, (
+            "presented again after the cool-down"
+        )
+        await caller.close()
 
 
 @asynccontextmanager
@@ -1315,7 +1418,7 @@ def test_no_private_vendor_module_is_imported_by_the_transport() -> None:
     now be reached for, and a guard that watched only the file the import
     used to be in would watch the wrong file.
     """
-    transports = (hosted_mcp_session, http_mcp_tool_caller, stdio_mcp_tool_caller)
+    transports = (hosted_session, http_tool_caller, stdio_tool_caller)
     imported: set[str] = set()
     for module in transports:
         tree = ast.parse(Path(module.__file__ or "").read_text(encoding="utf-8"))
@@ -1588,27 +1691,42 @@ class TestWorkersHitByOneDropShareOneReopen:
             hold_reopens=True,
         )
         caller = caller_fixture(client_factory=client_over(server.transport))
-        await caller.open()
-        # The call the drop lands under is told, not re-sent (KOD-305); it
-        # is the NEXT one that pays for the reopen the sibling then meets.
-        with pytest.raises(McpCallUnansweredError):
-            await caller.call_tool(name="get_issue", arguments={})
-        first = asyncio.create_task(caller.call_tool(name="get_issue", arguments={}))
-        async with asyncio.timeout(_HANG_CEILING_SECONDS):
-            while server.requests.count("initialize") < 2:
+        # The host is joined before the reopen. Capture its expected drop
+        # log so rendering a rich SDK traceback is outside this lifecycle
+        # assertion's hang ceiling, and verify the real events below.
+        with structlog.testing.capture_logs() as logs:
+            await caller.open()
+            # The call the drop lands under is told, not re-sent (KOD-305); it
+            # is the NEXT one that pays for the reopen the sibling then meets.
+            with pytest.raises(McpCallUnansweredError):
+                await caller.call_tool(name="get_issue", arguments={})
+            first = asyncio.create_task(
+                caller.call_tool(name="get_issue", arguments={})
+            )
+            async with asyncio.timeout(_HANG_CEILING_SECONDS):
+                while server.requests.count("initialize") < 2:
+                    await asyncio.sleep(0)
+
+            second = asyncio.create_task(
+                caller.call_tool(name="list_issues", arguments={})
+            )
+            for _ in range(_SETTLE_TURNS):
                 await asyncio.sleep(0)
+            assert not second.done(), "the sibling was answered before the session was"
+            server.release_reopen.set()
+            async with asyncio.timeout(_HANG_CEILING_SECONDS):
+                results = [await first, await second]
 
-        second = asyncio.create_task(caller.call_tool(name="list_issues", arguments={}))
-        for _ in range(_SETTLE_TURNS):
-            await asyncio.sleep(0)
-        assert not second.done(), "the sibling was answered before the session was"
-        server.release_reopen.set()
-        async with asyncio.timeout(_HANG_CEILING_SECONDS):
-            results = [await first, await second]
+            assert results == [{"id": "K-1"}, {"id": "K-1"}]
+            assert server.requests.count("initialize") == 2, (
+                "the sibling dialled its own"
+            )
+            await caller.close()
 
-        assert results == [{"id": "K-1"}, {"id": "K-1"}]
-        assert server.requests.count("initialize") == 2, "the sibling dialled its own"
-        await caller.close()
+        events = [log["event"] for log in logs]
+        assert events.count("mcp_session_ended") == 1
+        assert events.count("mcp_session_reopened") == 1
+        assert events.count("mcp_session_closed") == 1
 
     async def test_siblings_of_a_failed_reopen_each_try_their_own(self) -> None:
         """The paired negative: once per CALL, and a failed reopen serves nobody.

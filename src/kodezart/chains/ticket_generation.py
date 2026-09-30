@@ -9,7 +9,7 @@ from langgraph.config import get_stream_writer
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import RetryPolicy
 
-from kodezart.core.constants import EVAL_PERMISSION_MODE, TICKET_TOOLS
+from kodezart.core.constants import EVAL_PERMISSION_MODE
 from kodezart.core.error_egress import build_error_event
 from kodezart.core.errors import TicketReviewModeError, soft_failure
 from kodezart.core.logging import BoundLogger, get_logger
@@ -30,7 +30,8 @@ from kodezart.types.domain.agent import (
     WorkflowTicketReviewEvent,
 )
 from kodezart.types.domain.prompts import PromptKey
-from kodezart.types.domain.session import SessionType
+from kodezart.types.domain.run_records import RunIdentity
+from kodezart.types.domain.session import SessionType, ToolPreset
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.subagents import AgentDefinition
 from kodezart.types.domain.ticket_review import (
@@ -163,6 +164,7 @@ class TicketGenerationLoop:
         repo_path: str | None,
         repo_url: str | None,
         cache_key: str,
+        run_identity: RunIdentity | None = None,
         base_branch: str,
     ) -> AsyncIterator[AgentEvent]:
         """Execute the ticket generation loop.
@@ -217,6 +219,7 @@ class TicketGenerationLoop:
                 repo_path=repo_path,
                 repo_url=repo_url,
                 cache_key=cache_key,
+                run_identity=run_identity,
                 workspace_path=workspace_path,
             )
             configurable: dict[str, object] = ctx.model_dump()
@@ -304,7 +307,7 @@ class TicketGenerationLoop:
                 prompt=body,
                 workspace_path=ctx.workspace_path,
                 permission_mode=EVAL_PERMISSION_MODE,
-                allowed_tools=TICKET_TOOLS,
+                allowed_tools=ToolPreset.AUTHORING,
                 skills=self._prompts.session_skills(
                     PromptKey.TICKET_CREATE
                     if iteration == 1
@@ -312,6 +315,7 @@ class TicketGenerationLoop:
                     self._skills,
                 ),
                 session_type=SessionType.TICKET_FIRE,
+                run_identity=ctx.run_identity,
                 # Generative: the set's lenses are dispatchable from here.
                 agents=self._prompts.definitions(),
                 session_policy=self._prompts.session_policy(
@@ -385,11 +389,12 @@ class TicketGenerationLoop:
                 prompt=body,
                 workspace_path=ctx.workspace_path,
                 permission_mode=EVAL_PERMISSION_MODE,
-                allowed_tools=TICKET_TOOLS,
+                allowed_tools=ToolPreset.AUTHORING,
                 skills=self._prompts.session_skills(
                     PromptKey.TICKET_REVIEW, self._skills
                 ),
                 session_type=SessionType.TICKET_FIRE,
+                run_identity=ctx.run_identity,
                 session_policy=self._prompts.session_policy(
                     PromptKey.TICKET_REVIEW,
                 ),

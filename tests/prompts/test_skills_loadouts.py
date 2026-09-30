@@ -3,17 +3,17 @@
 import pytest
 
 from kodezart.chains.ralph_loop import RalphLoop
-from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.composition.preflight import (
     preflight_prompt_skill_loadouts,
     preflight_skills,
 )
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.errors import NoStructuredOutputError, SkillPreflightError
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.session import PermissionMode
 from kodezart.types.domain.skills import SettingSource, SkillsMode, SkillsSelection
 from tests.fakes import (
     FakeAgentExecutor,
@@ -27,11 +27,12 @@ from tests.fakes import (
     FakeWorkspaceProvider,
     PassThroughGate,
     make_criteria,
-    make_passing_evaluation,
+    make_passing_evaluation_of_fake_criteria,
     make_prompt_provider,
     no_delay_floor,
 )
 from tests.prompts.test_prompt_wiring import RENDER_CASES, load_registry
+from tests.workflow_factory import make_authored_workflow
 
 UTILITY_KEYS = (
     PromptKey.BRANCH_NAME,
@@ -42,6 +43,16 @@ UTILITY_KEYS = (
     PromptKey.GROOMING_PASS,
     PromptKey.CONTENT_AUDIT,
     PromptKey.KNOWLEDGE_MAP,
+    PromptKey.FIRE_RECORD,
+    PromptKey.NATIVE_WRITER_CONTRACT,
+    PromptKey.MUTATION_SURVIVAL,
+    # A rubric is rendered into another role's prompt rather than opened as a
+    # session, so it carries no skills reference of its own.
+    PromptKey.ORGANIZE_SPEC_RUBRIC,
+    # One short board question, answered in a shape: nothing to load.
+    PromptKey.PASS_GATE,
+    PromptKey.SCOPE_SCAN,
+    PromptKey.SCOPE_DONE,
 )
 
 
@@ -63,9 +74,9 @@ class FakeSkillInventory:
 def test_shipped_default_is_suppress_all() -> None:
     """The shipped default registers nothing."""
     config = AppConfig()
-    assert config.skills_mode is SkillsMode.NONE
-    assert config.skills_allowlist == []
-    assert config.skills_selection().mode is SkillsMode.NONE
+    assert config.agent.skills.mode is SkillsMode.NONE
+    assert config.agent.skills.allowlist == ()
+    assert config.agent.skills.mode is SkillsMode.NONE
 
 
 def test_skills_mode_has_no_none_inhabitant() -> None:
@@ -78,7 +89,7 @@ def test_explicit_with_an_empty_allowlist_is_a_typed_config_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """EXPLICIT without names is a configuration error, not an empty session."""
-    monkeypatch.setenv("KODEZART_SKILLS_MODE", "explicit")
+    monkeypatch.setenv("KODEZART_AGENT__SKILLS__MODE", "explicit")
     with pytest.raises(ValueError, match="requires a non-empty"):
         AppConfig.from_env()
 
@@ -89,9 +100,9 @@ def test_non_explicit_with_an_allowlist_is_a_typed_config_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """An allowlist that no mode consumes is a configuration error."""
-    monkeypatch.setenv("KODEZART_SKILLS_MODE", mode)
-    monkeypatch.setenv("KODEZART_SKILLS_ALLOWLIST", '["alpha"]')
-    with pytest.raises(ValueError, match="must be empty"):
+    monkeypatch.setenv("KODEZART_AGENT__SKILLS__MODE", mode)
+    monkeypatch.setenv("KODEZART_AGENT__SKILLS__ALLOWLIST", '["alpha"]')
+    with pytest.raises(ValueError, match="must not carry an allowlist"):
         AppConfig.from_env()
 
 
@@ -105,7 +116,7 @@ def test_selection_model_enforces_the_same_two_invariants() -> None:
 
 def test_setting_sources_default_to_all_three() -> None:
     """AC-1c: the default keeps every source, including local."""
-    assert AppConfig().setting_sources == [
+    assert AppConfig().agent.setting_sources == [
         SettingSource.USER,
         SettingSource.PROJECT,
         SettingSource.LOCAL,
@@ -224,12 +235,15 @@ async def test_configured_skills_reach_the_executor_through_chain_dispatch() -> 
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
     )
-    engine = RalphWorkflowEngine(
+    engine = make_authored_workflow(
+        repositories=(),
+        max_concurrent_watches=4,
+        red_rerun_max_attempts=0,
         gate=PassThroughGate(),
         service=service,
         quality_gate=FakeQualityGate(
             events=[],
-            evaluation=make_passing_evaluation(),
+            evaluation=make_passing_evaluation_of_fake_criteria(),
             last_commit_sha="a" * 40,
         ),
         ticket_generator=FakeTicketGenerator(),
@@ -255,7 +269,8 @@ async def test_configured_skills_reach_the_executor_through_chain_dispatch() -> 
             repo_path="/tmp/fake",
             repo_url=None,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            scope=None,
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key="k",
         )
@@ -293,7 +308,7 @@ async def test_ralph_loop_threads_the_selection_into_stream_workflow() -> None:
                 ralph_branch="kodezart/f-ralph",
                 base_spec=trunk_base("main"),
                 work_base_ref="main",
-                permission_mode="bypassPermissions",
+                permission_mode=PermissionMode.UNATTENDED,
                 allowed_tools=["Bash"],
                 acceptance_criteria=make_criteria("Tests pass"),
                 cache_key="k",

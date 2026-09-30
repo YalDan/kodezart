@@ -9,6 +9,11 @@ Agent SDK.
 
 ## Key Features
 
+- **Self-running from the board**: a cron runs every scope a person approved
+  on the tracker, and the board is the single source of truth for what a run
+  builds and what is done
+- **One pull request per repository that gained commits**, each against that
+  repository's trunk, with the checks watched in every one; nothing is merged
 - **Iterative code generation** with automated acceptance-criteria evaluation
 - **Ticket generation loop** with drafter/reviewer pattern using independent
   Claude sessions
@@ -22,19 +27,63 @@ Agent SDK.
 - **Structured output** via JSON schema for branch names, commit messages,
   tickets, and evaluations
 
+## The self-running workflow
+
+A person applies the approval label to an initiative, project, milestone or
+issue on the tracker. From there, in six lines:
+
+1. The cron sees an approved scope with no run going and launches the
+   workflow on it.
+2. The workflow gets the parent, which holds everything.
+3. Groom and prep it.
+4. The loop implements it and updates the board as it goes.
+5. A review checks the board: is every criterion done? If not, repeat.
+6. Review, open a pull request per repository that gained commits, and watch
+   the checks.
+
+Nothing merges. A run ends at pull requests a person decides about.
+
+```mermaid
+graph LR
+    A[resolve_visibility] --> B[groom]
+    B --> C[prep]
+    C --> D[run_ralph_loop]
+    D --> E[merge_to_feature]
+    E --> F[scope_done]
+    F --> G[review_against_ticket]
+    G --> H[open_pr]
+    H --> I[monitor_ci]
+    F -->|issues still open| R[remediate]
+    G -->|review failed| R
+    R --> D
+    I -->|work-defect red| S[delivery_remediation]
+    S --> D
+```
+
+Each back edge is taken only while `KODEZART_REMEDIATION_MAX_ROUNDS` allows.
+[docs/deploying.md](docs/deploying.md) sets it up,
+[docs/workflows-v02-v03.md](docs/workflows-v02-v03.md) walks both graphs node
+by node, and [docs/running-a-scope.md](docs/running-a-scope.md) covers the
+cron.
+
 ## Architecture Overview
+
+### The v0.2 request-driven pipeline, still served unchanged
 
 ```mermaid
 graph LR
     A[generate_branch] --> B[generate_ticket]
     B --> C[generate_criteria]
     C --> D[run_ralph_loop]
-    D --> E[finalize]
+    D --> E[merge_to_feature]
+    E --> F[review_against_ticket]
 ```
 
-The workflow pipeline generates a feature branch, drafts and reviews an
-implementation ticket, derives testable acceptance criteria, runs an iterative
-execute/evaluate loop (the Ralph loop), and finalizes by merging and pushing.
+A request to `POST /api/v1/agent/workflow` or `/fire` without a scope
+generates a feature branch, drafts and reviews an implementation ticket,
+derives testable acceptance criteria, runs an iterative execute/evaluate loop
+(the Ralph loop), merges the loop branch into the feature branch, reviews it,
+and opens a pull request.
 
 See [docs/architecture.md](docs/architecture.md) for the full architecture
 guide including the Ralph loop, ticket generation loop, and workspace isolation
@@ -144,6 +193,19 @@ written down here to go stale.
   first.
 - [docs/migration-v0.1-to-v0.2.md](docs/migration-v0.1-to-v0.2.md) — the
   upgrade guide for a v0.1.x operator or API client.
+- [docs/migration-v0.2-to-v0.3.md](docs/migration-v0.2-to-v0.3.md) — the
+  upgrade guide for a v0.2.x operator: the settings renames, the names that
+  stay flat and the ones that are gone.
+- [docs/running-a-scope.md](docs/running-a-scope.md) — the six lines of a
+  scope run, the cron's three steps, and which member refuses where.
+- [docs/deploying.md](docs/deploying.md) — deploying the self-running service
+  on a fresh machine, supervising it, and what it costs.
+- [docs/ideal-setup.md](docs/ideal-setup.md) — Linear, Notion and GitHub, and
+  what you lose without each.
+- [docs/workflows-v02-v03.md](docs/workflows-v02-v03.md) — the request-driven
+  workflow and the scope workflow side by side.
+- [docs/extending.md](docs/extending.md) — adapting kodezart port by port:
+  engines, trackers, knowledge bases and forges.
 
 ## Configuration
 
@@ -156,10 +218,15 @@ so no count is written down here to go stale.
 Every entry in `.env.example` carries its own shipped default, so copying the
 file changes no behaviour. Entries that are **commented out** are deliberately
 unset: for an optional field an empty assignment binds the empty string, which
-is a different value from absence — `KODEZART_MODEL=` pins an empty model id
+is a different value from absence — `KODEZART_AGENT__MODEL=` pins an empty model id
 rather than leaving the account default in place, and `KODEZART_OPERATION_CONFIG=`
 is a path of `""` that fails startup. Uncomment a line only when you are
 supplying a real value.
+
+The scheduled-pass cadences are among the commented-out lines because none of
+them has a default: a pass runs only when its interval and timeout are both set,
+and unset means it is not scheduled. Uncomment the pairs for the passes you want
+running; one half of a pair without the other refuses the boot, naming both.
 
 ### Prompt sets
 
@@ -205,7 +272,7 @@ defaults moved together and they roll back together. Setting only the prompt set
 still restores the corpus — the resolution table logs 100% `claude-opus` — but
 the application will not finish starting until the mode goes back too.
 
-`KODEZART_MODEL` is a deliberately separate axis. The set decides which words
+`KODEZART_AGENT__MODEL` is a deliberately separate axis. The set decides which words
 are sent; the model decides which engine receives them. Prompt resolution never
 reads the model knob. When the running engine is not among the set's declared
 `engines`, boot emits an informational `prompt_set_engine_mismatch` note and
@@ -215,7 +282,7 @@ proceeds unchanged.
 
 Skills are **host-provisioned at user scope** — kodezart neither vendors nor
 installs them. It only selects among what the host already provides under
-`KODEZART_CLAUDE_HOME_DIR` (`~/.claude/skills` plus plugin bundles).
+`KODEZART_AGENT__HOME_DIR` (`~/.claude/skills` plus plugin bundles).
 
 An allowlist entry names a skill the way a session addresses it. A bare skill
 is its directory name (`<claude home>/skills/<name>/SKILL.md` → `<name>`); a
@@ -225,13 +292,13 @@ installed and where each bundle lives. The plugin cache is never walked
 directly: cache directories outlive uninstallation, so a name found there
 could pass the boot pre-flight and then be silently filtered at session time.
 
-`KODEZART_SKILLS_MODE` is three-state, with no "unset" inhabitant:
+`KODEZART_AGENT__SKILLS__MODE` is three-state, with no "unset" inhabitant:
 
 | Mode | Effect |
 | --- | --- |
 | `none` | Suppress every skill. **Shipped default.** |
 | `all` | Load every discovered skill. |
-| `explicit` | Load exactly `KODEZART_SKILLS_ALLOWLIST`. |
+| `explicit` | Load exactly `KODEZART_AGENT__SKILLS__ALLOWLIST`. |
 
 The default is suppress-all for two reasons. First, leaving the knob unset
 would hand the SDK its own defaults rather than a decision kodezart made.
@@ -248,7 +315,7 @@ of them at once. The SDK gives no session-time availability signal — unknown
 names are forwarded verbatim and silently filtered — so boot is the only place
 the gap can surface.
 
-`KODEZART_SETTING_SOURCES` is passed explicitly on every session (default:
+`KODEZART_AGENT__SETTING_SOURCES` is passed explicitly on every session (default:
 all three of `user`, `project`, `local`), so turning the skills knob on never
 silently narrows which settings get loaded.
 
@@ -276,422 +343,311 @@ never silently posted:
 
 | Verdict | Meaning |
 | --- | --- |
-| `clean` | No deny-pattern hit. Written as-is. |
+| `clean` | All applicable checks completed without a finding. Written as-is. |
 | `redacted` | Each matched span replaced by `[REDACTED:<category>]`. |
 | `blocked` | The write fails loudly with `OutboundContentBlockedError`. Nothing is posted. |
 
-`KODEZART_DENY_PATTERNS` maps a category to its regex list;
-`KODEZART_DENY_PATTERN_VERDICTS` maps a category to the verdict a hit yields.
-A payload takes the **maximum** severity over all its hits. Identifier-shaped
-writers (a git ref cannot carry a placeholder) block on any hit regardless of
-the category's declared verdict.
+The fixed privacy policy has six rows:
 
-Pattern sets ship **empty except the credential category**, so an unconfigured
-deployment behaves exactly as it did before the gate existed, apart from the
-two new events.
+| Category | Prose consequence |
+| --- | --- |
+| `cross_repo_names` | `redacted` |
+| `tracker_urls` | `redacted` |
+| `email_handles` | `redacted` |
+| `infra_endpoints` | `blocked` |
+| `credentials` | `blocked` |
+| `org_private` | `redacted` |
 
-#### The judgment half
+A payload takes the maximum severity over all findings. Identifier-shaped writers
+block on any finding; a git ref cannot carry a placeholder. Unlocated findings
+also block because no safe redaction span exists.
 
-The gate runs an **ordered list** of scanners and the patterns are only the
-first of them. A credential is arithmetic — `gh[posu]_` either matches or it
-does not — and stays deterministic so a token is caught with no network call.
-Whether a stranger would learn something from a payload that this operation
-did not choose to publish is not arithmetic: the set of private things is
-open-ended, a deny pattern naming an organisation *contains* the string it
-protects, and the same string can be unremarkable on one surface and a
-disclosure on another. `org_private` is therefore **rejected as a
-`KODEZART_DENY_PATTERNS` key** at boot, and answered by an audit session
-instead — a different session from the writer whose output it grades, with no
-shared context, no tools, and a neutral working directory.
+Credential shapes remain deterministic. Reference privacy uses
+`OperationConfig.private_surface.hosts` for entire private hosts and
+`private_surface.workspaces` for exact native workspace slugs by host.
+A public workspace on the same host remains distinct. Hostnames normalize
+case, IDNA and a trailing dot; workspace slugs are decoded and compared
+case-insensitively by the owning adapter. Linear workspace URLs are supported;
+configuring a workspace on a host with no native parser refuses at boot.
+The text boundary decodes Markdown character references and punctuation escapes
+once, classifies explicit URL authorities including scheme-relative links, and
+redacts the complete original span while preserving neighboring text.
+Opaque document URLs carry no inferred workspace; declare an entire private
+host when appropriate, or use the semantic privacy description.
 
-`KODEZART_AGENTIC_CONTENT_SCANNER_ENABLED` has three states and none of them
-is silent:
+The configurable regex gate and its seven settings are removed. The fixed
+composition checks credential shapes locally, classifies native references,
+then invokes the existing authored-text judgment when applicable. See the
+[configuration migration](docs/configuration.md#removed-implementation-settings)
+for retired inputs. Typed generated pre-render and terminal-writer admission
+remain unfinished.
+
+#### Authored judgment
+
+Credentials are detected before a model or network call. Organization privacy
+still needs an independent semantic judgment over its configured description.
+The session has no shared writer context, no tools, and a neutral working
+directory. No organization-specific regex or injected scanner list exists.
+
+Authored tracker aggregates are inspected on every durable PUBLIC/UNKNOWN write,
+including PR text and ticket/criteria artifact text. Worded counts with no issue
+references still qualify. A roster starts at the fixed three-reference policy;
+ordinary test/file/commit counts and a single public reference do not qualify.
+`object_count` and `identifier_roster` refuse the whole write. Their located spans
+and original text identify a repair; unlocated or malformed findings never permit
+publication. Point-in-time comments allow aggregates, subject to privacy rules.
+
+A generated writer declares the tracker counts and rosters it renders as typed
+values beside the payload; the same durability rule decides them from the values
+with no session, and a refused structured value is named on the error by its
+field and value, never by string offsets. Ordinary counts of tests, files and
+commits are not tracker aggregates and are never declared.
+
+`KODEZART_AGENTIC_CONTENT_SCANNER_ENABLED` controls only organization-privacy
+judgment:
 
 | Knob | `OperationConfig.private_surface` | Result |
 | --- | --- | --- |
-| `false` (default) | anything | The deterministic scanners run alone. |
-| `true` | present | The audit scanner is registered **after** the patterns. |
+| `false` (default) | anything | Local checks and mandatory authored aggregate judgment run. |
+| `true` | present | The same fresh audit also judges organization privacy. |
 | `true` | absent or empty | Startup aborts with `ContentScannerBootError`. |
 
-The mechanism ships and the policy is operator configuration. `private_surface`
-is prose describing the **class** of thing this operation treats as private —
-never a list of instances, which would stop at what the operator remembered to
-enumerate and would publish those instances by writing them down. Every way of
+`private_surface.description` remains prose describing the **class** of things
+treated as private; host/workspace facts supplement that judgment. An old
+`private_surface = "..."` string migrates to the description without changing
+its bytes. Unlisted authored prose still reaches the enabled judgment scanner. Every way of
 having no answer (`timeout`, `refusal`, `malformed_verdict`, `rate_limited`,
 `transport_error`, `empty_response`, `spans_unresolvable`, `budget_exhausted`,
 `not_configured`) resolves to `blocked` and is named on the event: "did not
 answer" and "said it is clean" stay two distinct observable states.
 
-Cost routing is deterministic and made once: the audit runs only on authored
-prose bound for a publication or tracker surface, plus the branch name. A
-criterion tick, a sha or a state transition classifies as structured and takes
-the cheap path by classification rather than by exemption.
+Organization-privacy judgment retains its publication/tracker authored routing
+and branch-name rule. Mandatory aggregate judgment also reaches durable authored
+repository artifacts. PRIVATE destinations retain the explicit no-scanner fast
+path. Credential refusal happens locally before any audit session. The scope
+terminal is the one DERIVED writer that renders a tracker roster, and it
+declares it as a typed value; no generated writer of a durable surface renders
+one yet. This increment does not infer native tracker ownership from authored
+criterion IDs.
 
 ### Operation config
 
-`KODEZART_OPERATION_CONFIG` points at a TOML file (parsed with stdlib
-`tomllib` — no new dependency) holding the **org-shaped** runtime
-configuration: principals and their roles, agent identities, teams, queue and
-lifecycle state mappings, repositories and their check commands, a read-side
-document registry, reference knowledge, named infrastructure endpoints, and
-initiatives.
+`KODEZART_OPERATION_CONFIG` points at a TOML file that states kodezart's
+boundary: the teams and repositories it may work in, and the names your board
+uses for its labels and states. The work itself is found on the board. A node
+inside the boundary that carries the approval label (`scope_labels.approved`)
+is one scope run, and nothing is written into the file per scope.
 
-The split is deliberate. Deployment and infrastructure knobs plus every secret
-stay in `AppConfig` (env). Cadence lives exclusively in scheduler
-configuration — prompt templates carry no frequency words. Per-fire parameters
-are request fields. Nothing org-shaped hides in code, prompts, or per-request
-defaults.
+Deployment knobs and every secret stay in the environment. The file's model
+forbids unknown keys, so a token in it fails the load. Only `operation_name`
+and `workspace` are required, and loading collects every structural failure
+into one `OperationConfigError`. At boot, the labels and documents the
+operation owns are created if missing and adopted if present; principals,
+teams, agent identities and workflow states are resolved against the
+workspace, and boot stops naming any it cannot find. A v0.2 file boots as it
+is.
 
-Authority binds to a **role**, never to a name: when principals are declared,
-exactly one carries the approver role, validated at load. Queue states are an
-open mapping — when the mapping is non-empty, the members code addresses by
-name are required present, and any additional member is a pure configuration
-entry addressable from templates with no type or consumer change. Secrets are
-excluded structurally: the model is `extra="forbid"`, so a stray token key
-fails the load.
+- [`docs/operation.minimal.toml`](docs/operation.minimal.toml) — the smallest
+  file that boots.
+- [`docs/operation.example.toml`](docs/operation.example.toml) — every table,
+  annotated. Start a real deployment from this one.
+- [`docs/operation.scope.toml`](docs/operation.scope.toml) — the smallest file
+  the scope tests load. It declares no `[queue_states]` and no principals, so
+  the fire-prep and grooming prompts cannot render over it.
+- [`docs/cutover_mapping.md`](docs/cutover_mapping.md) — which routine
+  behaviour maps to which kodezart component.
 
-Only `operation_name` and `workspace` are required. Every collection defaults
-empty and an empty board boots; a consumer that needs an absent member — a
-role, a queue key, the checkpoint document — refuses at the point of need with
-a typed error naming what is missing and what stops working, never as a boot
-failure. Structural validation applies to what IS present.
-
-Structural validation collects **every** failure into one typed error. It is
-structural only — resolving principals, teams and state mappings against the
-live workspace belongs to the tracker adapter, not to config load.
-
-- [`docs/operation.minimal.toml`](docs/operation.minimal.toml) — the minimal
-  floor: the smallest config that boots, and the file a new operator copies
-  first.
-- [`docs/operation.example.toml`](docs/operation.example.toml) — a fully
-  annotated example covering every field, the complete counterpart the
-  minimal floor grows into.
-- [`docs/cutover_mapping.md`](docs/cutover_mapping.md) — which routine behavior
-  maps to which kodezart component, plus the behavior-parity dimension and
-  placeholder mapping tables.
-
-### Pointing the operation at real, multi-repo work
-
-Set up 2026-09-01 for the first live multi-repository operation (the
-founder's own boards and codebases), and shaped by that setup's rulings:
-
-- **Several `[[repos]]`, teams bound or unbound.** A team with a
-  `repository` fires into it. A team WITHOUT one, beside several declared
-  repositories, is legal and routes **per issue**: the fire-prep pass
-  records each staged issue's target repository on the issue itself as a
-  `<!-- kodezart-repo url="…" -->` marker comment (a principal can also
-  write one by hand), and the deterministic dispatch reads that record —
-  an approved issue without one is refused by name
-  (`no_recorded_repository`), never claimed by whichever tick arrives
-  first. Every repository's dispatch pass scans the unbound boards; the
-  recorded route keeps their claims disjoint. Declare the repository's
-  **canonical** URL — the marker comparison is exact.
-- **Whole board in scope by default.** A declared team means its ENTIRE
-  board is in scope. `scope = ["<project or initiative, name or id>"]`
-  narrows it only when the operator says so; out-of-scope issues are
-  excluded by name and the narrowing renders into the pass prompts.
-- **No check chains copied from CI.** `checks` is consumed by prompt
-  rendering only — nothing deterministic executes it — and EMPTY means
-  the repository's own CI defines its gate, which sessions read and run
-  in-repo. Declare a chain only to pin a gate-vs-cascade classification
-  into the rendered prompts; copying a repo's CI here is a second surface
-  for facts the repository owns.
-- **One record row per run, and it is also the window.** Each run kind
-  (`fire_prep`, `grooming`, `fire`) declares one `[records.<kind>]`
-  destination. The session's own row IS the record — the runner verifies
-  one exists and backfills a bare structural line only when the session
-  skipped it — and the newest row's start time is the next pass's
-  sweep-window boundary. There is no separate checkpoint document.
-- **Per-key engines.** `KODEZART_SESSION_MODELS` (env, JSON) pins named
-  prompt keys' sessions to an engine — e.g. every fire-path and utility
-  key to the workhorse while the two judgment passes ride the account
-  default. Empty pins nothing; an unknown key is refused at boot naming
-  the vocabulary.
+[docs/deploying.md](docs/deploying.md) goes through the file table by table.
 
 ### Setting up the self-running service
 
-Executable start to finish — no step assumes knowledge that is not on this
-page. Linear is the reference adapter and the worked example here; the tracker
-port is vendor-neutral, and another adapter passing the same conformance suite
-gets its own appendix rather than changes to these steps. Work the steps in
-order. Each ends with an **observable result** naming what you should be able
-to see, so nothing depends on judgment this page has not supplied. Field
-semantics, defaults and bounds are not repeated here: every `KODEZART_*`
-variable named below is documented once, under
-[Configuration](#configuration) and in
-[docs/configuration.md](docs/configuration.md).
+The self-running service reads your board on a timer and works every scope a
+person approved. What happens, in six lines:
 
-**Read this before step 1: the service does not use your editor's tracker
-connection.** This is the trap that costs the most time, and it costs it to
-exactly the people who are best set up. If your editor already reads and writes
-the tracker, it is doing so over an **interactive OAuth session belonging to
-that editor's CLI** — a session this process cannot see, cannot borrow and does
-not inherit. kodezart opens its **own** HTTP connection to the tracker's MCP
-endpoint and composes an auth header from a configured value. Being signed in
-anywhere else gives the service nothing: with no credential of its own the
-tracker is not wired, and every later step will look configured while nothing
-reaches the board. Step 1 has no shortcut.
+1. The cron sees a scope you approved with no run going and launches the
+   workflow on it.
+2. The workflow gets the parent issue. That issue holds everything.
+3. Groom and prep it.
+4. Ralph loop: the agent implements it and updates the tracker as it goes.
+5. A review agent checks the tracker: is every criterion done? If not, repeat.
+6. Review, open the pull request, monitor.
 
-**1. Mint the service's own tracker credential.** In the tracker's account
-settings, under the security-and-access area, create a personal API key. The
-key can be narrowed two ways and you want **both**:
+Nothing merges. A run ends at a pull request a person decides about.
 
-1. restrict its permission to **write**, rather than granting it the full
-   access your own user holds;
-2. limit it to the **one team** the operation names under `[teams]`.
+Four pages cover it:
 
-Put the value in `KODEZART_TRACKER_TOKEN` in the service's environment and
-nowhere else: the operation config is `extra="forbid"`, so a token key in that
-file fails the load rather than sitting in a repository.
+- [docs/deploying.md](docs/deploying.md) — a fresh machine to a supervised
+  service: prerequisites, the operation file, the environment, pre-flight
+  checks, the boot log, what to watch, measured costs, and what ends a run.
+- [docs/ideal-setup.md](docs/ideal-setup.md) — Linear, Notion and GitHub, and
+  what you lose without each.
+- [docs/workflows-v02-v03.md](docs/workflows-v02-v03.md) — the per-request
+  workflow and the scope workflow side by side.
+- [docs/extending.md](docs/extending.md) — replacing the engine, the tracker,
+  the knowledge base or the forge.
 
-**It must be a long-lived key, and boot enforces that by shape.** The vendor
-accepts either a personal key or an OAuth access token in the same header, and
-only the first one lives longer than a run: an access token expires and this
-service refreshes nothing, so pasting one buys a process that works until the
-token dies and then answers every tracker call with a refusal — the failure
-measured on 2026-09-01, fifty-one minutes into a boot. The access token is
-opaque and declares nothing a reader can inspect, so boot accepts exactly one
-shape — lin_api_ followed by at least 40 characters, which is what step 1
-mints — and
-refuses everything else at startup with `TrackerCredentialShapeError`, naming
-both the variable it read and the shape it wanted, before the service dials
-anything. A key of the right shape is then **presented once** over plain HTTP
-before the MCP session opens, so a revoked or mistyped key is named as a
-refused credential rather than as a connection that would not come up.
+[docs/running-a-scope.md](docs/running-a-scope.md) covers the cron's three
+steps and the scope refusals. The rest of this section is the checklist a boot
+is held to.
 
-*Observable result:* the variable is set in the process environment, the service
-boots without `TrackerCredentialShapeError`, and `grep -r` for the value across
-the repository finds nothing.
+#### Credentials
 
-**What a personal key costs, stated plainly.** Every write the service performs
-is attributed to **the person who owns the key**. On the board a machine write
-and that person's own act then become indistinguishable — a comment a pass
-posted and a decision the approver took carry the same author, and the approval
-record stops being readable as a record of human acts. The vendor's answer is
-actor authorization, under which actions come from the app itself; that is the
-correct destination for this service. It is not reachable today: those tokens
-**expire after 24 hours**, and this service has no refresh mechanism, no
-callback route and no token storage — so adopting it now buys correct identity
-and a service that stops overnight. Use the scoped personal key, know what it
-costs, and read the open identity question on the tracker: it is the `decision`
-escalation recorded on KOD-123, which that issue's cancellation explicitly did
-not close.
+- **Tracker.** `KODEZART_TRACKER__TOKEN` holds a Linear personal API key. Boot
+  accepts exactly one shape, lin_api_ followed by at least 40 characters, and
+  refuses anything else with `TrackerCredentialShapeError` before it dials. A
+  key of that shape that Linear refuses stops boot with
+  `McpCredentialRefusedError`. The key's account must be one of the
+  operation's `agent_identities`, and every write made with the key is
+  attributed to that account.
+- **Forge.** `KODEZART_GITHUB_TOKEN` holds a GitHub token; its permissions are
+  listed under [Operational notes](#operational-notes). Without it no pull
+  request is opened and the per-issue dispatch passes are not scheduled.
 
-**The forge token is separate.** `KODEZART_GITHUB_TOKEN` is a fine-grained PAT
-and its required permissions are listed under
-[Configuration](#configuration). It is not optional for this loop: the delivery
-probe is built from it, and with no probe the dispatch pass is not scheduled at
-all — a state step 7 names rather than leaves you to infer.
+#### The operation file
 
-**2. Queue labels.** Create one label per queue state. The names are yours —
-code never contains a literal label string and resolves every one of them
-through `[queue_states]`. What must exist is one label per member the code
-addresses by name: `triage`, `proposed`, `approved`, `done`, `decision`. You
-do not have to create them by hand: a label the operation *owns* and that does
-not exist yet is created at boot and adopted unchanged if it is already there.
-A label that exists with a conflicting definition aborts boot rather than being
-altered underneath you.
+Copy `docs/operation.example.toml` to `operation.toml` in the repository root
+and point `KODEZART_OPERATION_CONFIG` at it. `/operation.toml` and
+`/operation.*.toml` are ignored, so a filled-in file with real names stays out
+of this public repository, while the examples under `docs/` stay tracked. An
+unset variable and a variable set to `""` are different states, and the
+second fails startup.
 
-*Observable result:* you have five label names written down, one per member
-above, ready to go into `[queue_states]` in step 5. Creating them in the
-workspace by hand is optional.
+**Principals.** `roles` is a set drawn from `approver`, `principal` and
+`assignee`. When principals are declared, exactly one carries `approver`,
+at most one carries `assignee`, and every one carries `principal`. Each has a
+`tracker_user` (the name Linear shows for the person, which boot resolves), a
+`handle` (the string a mention is recognised by: unique, and never an agent
+identity) and an optional `forge_handle` (the same person's name on the
+forge).
 
-**3. Principals and their ids.** Authority binds to a role, never to a name in
-code or in a template. There are three roles and `roles` is a **set**, because
-one principal routinely holds two:
+**Queue labels.** `[queue_states]` maps `triage`, `proposed`, `approved`,
+`done` and `decision` to label names. The fire-prep and grooming prompts name
+all five, so those passes need them. The per-issue dispatch fires an issue
+carrying the `approved` queue label, which is a different label from the
+scope approval. Boot creates any label that is missing.
 
-- `approver` — holds the approval flip. Nothing else in the system may set the
-  approved state.
-- `principal` — their word creates a reply obligation the queue does not
-  otherwise record. **Every** principal carries this one.
-- `assignee` — prepared fires, triage filings and decision flags are assigned
-  here.
-
-Two counts are validated over the principals you declare, and each names the
-field it failed on: **exactly one** principal carries `approver`, and
-**at most one** carries `assignee`. Zero or two approvers, or two assignees, is a load
-failure, not a warning. An absent `assignee` loads — a pass that assigns
-prepared work refuses to run naming the missing role, at the point of need
-rather than at boot. A principal missing `principal` is rejected, by index. An
-empty `[[principals]]` list also loads: nothing can be dispatched from it, and
-the dispatcher's refusal names the missing `approver` when it tries.
-
-For each principal, collect up to three identifiers, because they are three
-different things:
-
-- `tracker_user` — the id the tracker records as the actor of a state change.
-  Authority is checked against this one.
-- `handle` — the string a person writes when addressing that principal. The
-  mention sweep is text matching, so this is what it matches on. Handles must
-  be non-empty, unique, and must not collide with an agent identity.
-- `forge_handle` — the same person's name on the forge, where review-borne
-  mentions are answered. Optional: omit it for a principal who never appears
-  there. Two surfaces name one person, and recognising them across both needs
-  two identifiers.
-
-`tracker_user` and `handle` are routinely different, and swapping them silently
-breaks either authority checking or the mention sweep.
-
-Escalation is **not** a role. Out-of-band notifications go to an address
-declared under `[endpoints]` in the operation config (step 5), because an
-endpoint is a place and a role is a person.
-
-*Observable result:* one `tracker_user` and one `handle` per principal, exactly
-one of them carrying `approver`, and no `handle` equal to an agent identity.
-
-**4. Documents and records.** Create or designate the checkpoint document the
-passes read their scan window from, and collect its name and its id. A
-document is declared with the system it belongs to, because an opaque id with
-no system is unresolvable by anyone holding only the rendered prompt, and with
-the name boot ensures it under:
+**Run logs.** One `[records.<kind>]` per run kind you record, `fire_prep`,
+`grooming` or `fire`; any other key is refused at load:
 
 ```toml
-[documents.checkpoint]
-system = "tracker"
-name = "<the document name>"
-id = "<the document id>"
+[records.grooming]
+system = "knowledge"
+name = "Grooming Log"
+id = "<the destination id>"
+append_only = true
 ```
 
-Do the same for the run-record destinations under `[records.<kind>]`, one per
-run kind you want recorded — `fire_prep`, `grooming` or `fire`; any other key
-is refused at load. A record declared `append_only` is never rewritten, only
-added to.
+#### What agent sessions are given
 
-*Observable result:* a `[documents.checkpoint]` block and one
-`[records.<kind>]` block per recorded run kind, each naming its `system`.
+Every session starts in strict MCP mode, so neither a cloned repository's own
+MCP configuration nor your user-level Claude configuration reaches it.
+`KODEZART_AGENT__DANGEROUSLY_ALLOW_HOST_MCP=true` switches that guard off for
+every session kind at once. Measured 2026-09-24: with the flag off (the
+shipped default, the guard on), a session gets only what this process
+describes for it: the knowledge server the grant names and, for the board
+sessions (the intake passes, the board questions, and a scope run's groom,
+prep and implementation sessions), the deployment's own tracker server under
+`KODEZART_TRACKER__TOKEN`, and nothing of the host's. With the flag on (the
+guard off), a session also gets what the guard kept out: every server your
+user-level Claude configuration declares, the tracker among them under your
+stored Claude login, so its tracker writes carry that login's user rather
+than this deployment's key; and any server a cloned repository's `.mcp.json`
+declares, which headless Claude Code tried to start, so a repository can run
+a command on the host through a session. The board sessions then reach the
+tracker through the host's own registration instead of the deployment's server.
+Boot logs `host_mcp_allowed_dangerously` as a warning when it is on. Leave it
+off unless you accept exactly that trade.
 
-**5. Write the operation config.** Copy
-[`docs/operation.example.toml`](docs/operation.example.toml) — it is annotated
-field by field and covers every one — to `operation.toml` in the repository
-root, fill in the values from steps 2–4, and point
-`KODEZART_OPERATION_CONFIG` at it.
+Either way, a board session whose opening frame does not report the tracker
+server `connected` fails rather than reading an empty board.
 
-**Your filled-in config is not the example, and it does not belong in version
-control.** It names real people by their tracker and forge identifiers, and
-this repository is public. `/operation.toml` and `/operation.*.toml` are
-ignored for exactly that reason; the pattern is root-anchored, so the
-examples under `docs/` stay tracked. Any other location works too — the
-variable takes a path, not a convention — but a path outside these two
-patterns is yours to keep out of a commit.
+#### Boot and verify
 
-Secrets are a different question and the answer is simpler: they never go in
-this file at all. The model is `extra="forbid"`, so a stray token key fails at
-load rather than shipping.
+Boot collects every failure it can and names it. The startup log says which
+state you are in:
 
-*Observable result:* the path exists, `KODEZART_OPERATION_CONFIG` names it,
-and `git status` does not offer it. An unset variable and a variable set to
-`""` are different states, and the second fails startup.
-
-**6. What you do NOT configure.** Two things look like prerequisites and are
-not, so configuring them "to be safe" is how a first setup breaks itself.
-
-- **The knowledge grant ships empty and needs no credential.** `[knowledge]` in
-  the operation config is a plain map of reference names to locations, owned
-  locally: boot resolves nothing in it, no credential belongs to it, and there
-  is no knowledge-store field on `AppConfig` at all. A deployment that
-  configures nothing there boots clean — the prompt renderer binds the
-  namespace as *absent* and says so, which is a value, not a failure. The one
-  rule that applies if you do use it: a document declared with
-  `system = "knowledge"` must carry an `id`, because nothing in this process
-  can create one there.
-  To turn it on with Notion, use the self-hosted server over stdio — the
-  hosted `mcp.notion.com` endpoint is OAuth-only and refuses a static `ntn_`
-  integration token — and set `KODEZART_KNOWLEDGE_SESSION_GRANTS` to the
-  session kinds that read it. The ready-to-use block is in `.env.example`, and
-  `docs/configuration.md` carries the recipe and the tracker-instead-of-Notion
-  alternative.
-- **`private_surface` is required only if you turn the judgment scanner on.**
-  `KODEZART_AGENTIC_CONTENT_SCANNER_ENABLED` ships disabled, and leaving it
-  disabled needs no prose. Enabling it without a `private_surface` description
-  aborts boot rather than degrading — the intended trade, not a bug to work
-  around.
-
-*Observable result:* neither appears in your config, and step 7 still reaches
-`tracker_mappings_reconciled`.
-
-**7. Boot and verify.** Start the service and read the startup log. Validation
-is fail-loud and collects every failure at once, so one boot tells you
-everything that is wrong rather than the first thing. There are exactly **three
-states** and the log distinguishes them; you never have to guess which one you
-are in.
-
-*State A — fully wired.* `tracker_mappings_reconciled` (carrying the `created`
-and `adopted` lists) followed by `pass_scheduler_started`, which names each
-scheduled pass and its interval. Nothing to do.
-
-*State B — not configured.* The service starts and serves HTTP, the tracker is
-not wired, and the event names **which premise is missing** as a boolean field
-per premise. This is a legal state, not an error, and it is never silent.
-
-*State C — unreconcilable.* Boot aborts with a typed error naming the entries
-it could not resolve. Nothing runs until you fix it.
-
-| What you see | State | What to change |
+| What you see | What it means | What to change |
 | --- | --- | --- |
-| `tracker_mappings_reconciled`, then `pass_scheduler_started` | A | Nothing. Go to step 8. |
-| `tracker_not_configured` with `tracker_token_present: false` | B | Set `KODEZART_TRACKER_TOKEN` (step 1). |
-| `tracker_not_configured` with `operation_config_present: false` | B | Set `KODEZART_OPERATION_CONFIG` (step 5). |
-| `prompt_passes_not_wired` | B | No operation config (`operation_config_present: false`), or one whose roster is empty — `absent` names the collections (teams, repos) every pass template enumerates. Declare at least one team and one repository and the prep and grooming passes register. |
-| `scheduled_passes_not_wired` | B | The event carries one boolean per premise — `tracker_present`, `operation_config_present`, `delivery_probe_present`. Supply whichever reports `false`; when only the probe does, it is `KODEZART_GITHUB_TOKEN` that is missing. |
-| `OperationConfigError` listing several failures | C | Structural validation: a missing required key, a malformed entry, a broken internal cross-reference, or two approvers. Fix **every** listed failure — the list is exhaustive by construction. |
-| `TrackerBootValidationError` naming entries | C | A principal, team or state mapping the operation does *not* own did not resolve in the live workspace. Correct the id, or widen the credential's team restriction from step 1 to cover that team. |
-| `TrackerEnsureConflictError` | C | A value the operation *owns* exists with a conflicting definition, or two declared entries claim one backend value. Reconcile the workspace or the config by hand; boot will not alter either for you. |
-| `TrackerCredentialShapeError` naming a field and a shape | C | `KODEZART_TRACKER_TOKEN` does not hold the long-lived key shape the backend accepts. Mint the personal key from step 1 and set that instead; nothing here refreshes a token that expires. |
-| `McpCredentialRefusedError` before any session log line | C | The key is the right shape and the server would not take it: revoked, mistyped, or minted in another workspace. Mint a fresh one per step 1. |
+| `tracker_mappings_reconciled`, then `pass_scheduler_started` | Fully wired. `pass_scheduler_started` names each scheduled pass and its interval. | Nothing. |
+| `tracker_not_configured` with `tracker_token_present: false` | No tracker key: no cron, no scope runs. | Set `KODEZART_TRACKER__TOKEN`. |
+| `tracker_not_configured` with `operation_config_present: false` | No operation file. | Set `KODEZART_OPERATION_CONFIG`. |
+| `scheduled_passes_not_wired` | The per-issue dispatch passes lack a premise: `tracker_present`, `operation_config_present` or `delivery_probe_present` is false. The last means no `KODEZART_GITHUB_TOKEN`. | Supply what is false, or leave the per-issue dispatch off. |
+| `scheduled_pass_not_configured` naming a pass and two settings | That pass would run here, but its cadence pair is unset. | Set both settings to run it. |
+| `OperationConfigError` | The file is missing, not TOML, or structurally invalid. | Fix every listed failure. |
+| `TrackerBootValidationError` | A principal, team, agent identity, workflow state or tracker-side record did not resolve. | Correct the name, or widen the key's team access. |
+| `TrackerEnsureConflictError` | A label or document the operation owns exists with a conflicting definition. | Reconcile the board or the file by hand. |
+| `TrackerCredentialShapeError` | The key is not the long-lived shape. | Mint a personal API key. |
+| `McpCredentialRefusedError` | Linear refused the key. | Mint a fresh one. |
 
-*Observable result:* one of the three states, identified by name, with no line
-in the startup log left unaccounted for.
+[docs/deploying.md](docs/deploying.md#what-refuses-the-boot) lists every
+refusal.
 
-**8. Smoke test — the one act that is yours.** The loop watches for issues
-carrying the approval label. **Applying that label is the single human act the
-design preserves, and an agent following this guide must not perform it**: a
-machine that could approve its own fire is a machine with no gate. kodezart
-never sets or removes the approved state either — if it could, the one gate in
-the loop would not be a gate.
+#### Smoke test
 
-So: file one small, self-contained issue on a team the config names, and then,
-**signed in as the approver**, apply the approved label by hand. Then watch.
+Applying the approval label is the one human act the design keeps. kodezart
+never sets or removes it, and an agent following this guide must not set it
+either.
 
-The dispatch pass is periodic, so every wait below is bounded by one pass
-interval, which is deployment configuration —
-`KODEZART_DISPATCH_PASS_INTERVAL_SECONDS`, whose shipped default and
-bounds are in [docs/configuration.md](docs/configuration.md). Read the value
-your deployment runs with, and treat "one interval" as the unit throughout.
+**A scope.** File a small project or parent issue on a team the operation
+declares, describe what to build, and, signed in as the approver, apply the
+`scope_labels.approved` label. Within one
+`KODEZART_DISPATCH_PASS_INTERVAL_SECONDS`:
 
-| # | Watch for | Proves | Wait |
-| --- | --- | --- | --- |
-| 1 | `pass_gate_delta` with your issue key in `changed` | the deterministic pre-query saw the issue move; nothing that costs tokens wakes before this | up to one pass interval |
-| 2 | `dispatch_pass_completed` with `outcome: fire_enqueued`, your issue key in `claimed_issue_key` and a `job_id` | the atomic claim was granted and a job was enqueued | the same pass as (1) |
-| 3 | `lifecycle_in_progress` | the run **started** — the service follows the job's own event stream, so this is not the moment it was enqueued | one queue turn; longer if a lane is busy |
-| 4 | `lifecycle_in_review` | the run opened its pull request | the length of the run |
-| 5 | `lifecycle_done` | a **verified merge**. A run that ends without one keeps its review state — that is correct, not a stall | after merge |
-| 6 | `lifecycle_outcome_comment` naming the job id and the outcome | the terminal comment landed on the issue. Posted for **every** terminal route, including the ones that never merged | at run end |
+| # | Watch for | Proves |
+| --- | --- | --- |
+| 1 | `agent_question_asked` with key `scope_scan`, then `scope_heartbeat_scanned` | the cron read the board |
+| 2 | `scope_heartbeat_run_submitted` with a `job_id`, then `job_started` | the run is queued and started |
+| 3 | criterion sub-issues appear under your node | groom and prep ran |
+| 4 | items move Todo, In Progress, In Review, Done on the board | the implementer works and keeps the board current |
+| 5 | `job_finished` with its `outcome`, for example `pr_opened` or `ci_passed` | the run ended |
 
-Steps 3–5 are the write-back walking the issue through the states
-`[workflow_states]` binds those stages to.
+**A single issue through the per-issue dispatch.** Apply the `approved` queue
+label to a small issue. Within one interval:
 
-If the pass never wakes, the issue's queue state or its approver is wrong. If it
-wakes and reports `outcome: empty_eligible_set`, the report carries one
-exclusion per issue naming the clause that excluded it — read the clause rather
-than re-reading the config.
+| # | Watch for | Proves |
+| --- | --- | --- |
+| 1 | `pass_gate_delta` with your issue key in `changed` | the dispatch gate saw it move |
+| 2 | `dispatch_pass_completed` with `outcome: fire_enqueued`, your key in `claimed_issue_key` and a `job_id` | the claim was granted and a run was queued |
 
-**The prep and grooming passes are scheduled here; their sessions reach the
-tracker through the host, not through this process.** Step 8 exercises the
-dispatch pass, which is deterministic and dials the tracker in-process. The
-judgment passes are a different shape: on their interval
-(`KODEZART_FIRE_PREP_PASS_INTERVAL_SECONDS`,
-`KODEZART_GROOMING_PASS_INTERVAL_SECONDS`) the rendered prompt goes to an
-**agent session**, and the session does the work — so the session itself must
-be able to reach the tracker. Both passes register whenever the operation
-config declares at least one team and one repository (an empty roster logs
-`prompt_passes_not_wired` naming what is absent). What this process attaches to
-a session is the knowledge server it was granted
-(`KODEZART_KNOWLEDGE_SESSION_GRANTS`) and nothing else: it registers no tracker
-MCP server on a session. That registration is host configuration, made where a
-session started in `KODEZART_SCHEDULED_PASS_WORKING_DIR` can see it, and
-nothing here performs or verifies it — do not read a machine-local MCP
-registration you happen to have as a property of the deployment. Attaching the
-tracker to sessions from configuration is planned.
+If the pass reports `outcome: empty_eligible_set`,
+`dispatch_empty_eligible_set` names the clause that excluded each issue.
+
+#### How a prompt pass decides to run
+
+The fire-prep and grooming passes open their session over the whole board on
+their first tick after boot. Every later tick first asks a gate question: one
+short session of the same kind, with the same tracker tools, given the window
+since the last tick of that pass that ran, answering in one fixed shape
+(`run`, `moved`, `reason`). `agent_question_asked` (key `pass_gate`) names the
+engine and effort the question runs at; `pass_gate_answered` carries the
+answer. On `run: false` the pass sleeps its interval (`scheduled_pass_skipped`
+names the tick); on `run: true` the session opens; an answer that is missing
+or cannot be read is named in `agent_question_unanswered` and the pass runs.
+Pin the `pass_gate` key to an engine with `KODEZART_AGENT__SESSION_MODELS`;
+unset, it runs on `KODEZART_AGENT__MODEL`. The per-issue dispatch pass keeps
+its deterministic gate over the process's own tracker credential
+(`pass_gate_delta`).
+
+## Known issues
+
+**A spent Linear request budget is answered with silence.** Linear allows an
+API key 2,500 requests an hour and an OAuth app 5,000, as a leaky bucket
+refilled at a constant rate
+([Linear rate limiting](https://linear.app/developers/rate-limiting)).
+Measured on 2026-09-24, when the bucket was empty, `mcp.linear.app` answered
+`401 invalid_token` rather than 429. A refused tracker call on the process's
+own connection waits fifteen minutes and asks again, up to four times
+(`tracker_credential_refused_waiting`, then `tracker_credential_refused`); a
+run that waits stays a live job, so the cron submits nothing beside it. With
+`KODEZART_AGENT__DANGEROUSLY_ALLOW_HOST_MCP=true` the board sessions' calls,
+the bulk of the spend, draw on the host login's own budget, and the key
+serves only the process's own reads.
+
+**Only the board sessions are given the tracker.** kodezart gives its own
+tracker server to the intake passes, the board questions, and a scope run's
+groom, prep and implementation sessions. A `POST /api/v1/agent/query` session
+and every session of a request-driven run get no tracker tools unless the
+host opt-in is on.
 
 ## Development
 
@@ -701,7 +657,16 @@ make check        # lint + type-check + test (same as CI)
 make format       # auto-format with ruff
 ```
 
+CI installs with `uv sync --locked --all-groups`, and the verification targets
+use `uv run --locked` so stale dependency metadata fails without rewriting
+`uv.lock`. CI and Docker pin uv to `0.11.6`. For intentional dependency changes,
+use `uv add` / `uv lock` or `make install`, then review and commit the lock change.
+
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the full developer guide.
+
+Both workflows run inside the authored delivery around the fire graph, which
+opens the pull requests and watches their checks; see
+[docs/workflows-v02-v03.md](docs/workflows-v02-v03.md#around-both-graphs-delivery).
 
 ## For AI Agents
 
@@ -713,7 +678,7 @@ kodezart runs unsupervised. It clones a repo, branches, edits files, commits, pu
 
 It **cannot**:
 
-- Ask the user questions at decision points — once a ticket is in flight, the workflow has no human in the loop.
+- Ask the user questions at decision points — once a ticket is in flight, the request-driven workflow has no human in the loop. (A scope run's groom and prep sessions can escalate a choice on the board with the `decision` label, but not to you.)
 - Reach external services that need credentials it doesn't have (third-party API keys, OAuth tokens, authenticated endpoints).
 - Pass tests that require unconfigured env vars — those typically only succeed in the deployment environment, not in kodezart's runtime.
 
@@ -735,24 +700,27 @@ Then bake the resolved answers into the kodezart ticket prompt before invoking t
 
 `POST /api/v1/agent/workflow` — see [API Endpoints](#api-endpoints) above for the request shape, [`docs/api.md`](docs/api.md) for the full SSE event schema, and [`docs/architecture.md`](docs/architecture.md) for the workflow internals (Ralph loop, ticket generation, quality gates).
 
+On a deployment that runs itself from a tracker, the other way in is the board: a person approves a scope and the cron runs it ([docs/deploying.md](docs/deploying.md)).
+
 Stream the response and watch for `result` / error events; treat the eventual PR URL as the deliverable to hand back to your user.
 
 ### Operational notes
 
-**Verify Claude Code on the host.** kodezart invokes the Claude Code CLI as its agent runtime. Run `claude --version` on the deployment host and confirm the CLI is authenticated *before* kicking off any workflows — otherwise the first agent invocation fails with a confusing error rather than a clear setup message.
+**Verify Claude Code on the host.** kodezart drives Claude Code through the Claude Agent SDK, which bundles a native Claude Code binary on most platforms. Confirm the engine can authenticate on the deployment host *before* kicking off any workflows — otherwise the first agent invocation fails with a confusing error rather than a clear setup message.
 
 **Inspect the prompt templates before deploying.** kodezart ships prompt templates as data sets under `src/kodezart/prompts/sets/<set-name>/` — one `<function-key>.md` per step plus a `set.toml` manifest. Every workflow run sends those templates (with your ticket interpolated) to Claude. Read them at least once so you know what the agent is being instructed to do on your repositories — particularly the drafter / reviewer prompts and the Ralph executor.
 
-**GitHub token for PR monitoring.** Set `KODEZART_GITHUB_TOKEN` to a PAT — classic with `repo` scope, or fine-grained with **Contents: read/write** + **Pull requests: read/write** + **Metadata: read** + **Actions: read** — if you want kodezart to clone private repositories and monitor the PRs it opens (the post-merge fix loop polls PR check runs to detect CI failures and react). Without a token, public-repo workflows still run, but private clones and CI monitoring are skipped.
+**GitHub token for PR monitoring.** Set `KODEZART_GITHUB_TOKEN` to a PAT — classic with `repo` scope, or fine-grained with **Contents: read/write** + **Pull requests: read/write** + **Metadata: read** + **Checks: read** + **Actions: read/write** — if you want kodezart to clone private repositories, monitor the PRs it opens, and request a fresh Actions attempt when classifying a red check set. Actions write access is required for rerun requests; check and workflow observations require read access. Without a token no pull request is opened and no checks are watched: private repositories cannot be cloned, and pushes rely on whatever credentials the host's own git configuration supplies.
 
-**Token budget — this is a heavy pipeline.** Every workflow run spins up multiple Claude sessions: ticket drafter, reviewer, Ralph executor (up to `KODEZART_MAX_ITERATIONS` times), and the post-merge fix loop. The throughput is high but the token cost is significant; running kodezart continuously for a few hours **will burn through any plan's usage limits**. To dial intensity down for sustained runs, lower `KODEZART_MAX_ITERATIONS` and `KODEZART_MAX_REVIEWS`, or author a lighter prompt set under `src/kodezart/prompts/sets/` and point `KODEZART_PROMPT_SET` (or a per-step `KODEZART_PROMPT_SET_OVERRIDES` entry) at it for tickets that don't need the full setup context.
+**Token budget — this is a heavy pipeline.** Every workflow run spins up multiple Claude sessions: the ticket author and its critic, the Ralph executor and evaluator (up to `KODEZART_MAX_ITERATIONS` times), the post-merge review, and each remediation round (`KODEZART_REMEDIATION_MAX_ROUNDS`). The throughput is high but the token cost is significant; running kodezart continuously for a few hours **will burn through any plan's usage limits**. [docs/deploying.md](docs/deploying.md#8-costs-measured-in-the-closed-beta) has measured costs. To dial intensity down for sustained runs, lower `KODEZART_MAX_ITERATIONS` and `KODEZART_REMEDIATION_MAX_ROUNDS` (`KODEZART_MAX_REVIEWS` applies only under `reviewed`), or author a lighter prompt set under `src/kodezart/prompts/sets/` and point `KODEZART_PROMPT_SET` (or a per-step `KODEZART_PROMPT_SET_OVERRIDES` entry) at it for tickets that don't need the full setup context.
 
 **`KODEZART_TICKET_REVIEW_MODE` — how many sessions the ticket costs.** `create_only` (the shipped default) compiles no review arm at all: one creator session drafts the ticket and its draft is checked by the prompt set's draft-critic lens, which is why it requires a set declaring that lens and refuses to start over one that does not. `reviewed` — the legacy pairing, and the mode half of the rollback — runs a separate reviewer session and revises the draft against its verdict, bounded by `KODEZART_MAX_REVIEWS`. Setting `KODEZART_MAX_REVIEWS` under `create_only` is a boot failure naming both settings rather than a silently ignored knob. The terminal `workflow_ticket` event says which mode ran and whether the ticket was `approved`, `unapproved`, or `not_reviewed`.
 
 **Iteration cap and resumption.** The Ralph loop aborts after `KODEZART_MAX_ITERATIONS` (default `5`, max `20`). The cap exists because Claude sessions tend to brick beyond ~5 iterations — context bloat, repeated tool errors, decision drift compound and quality degrades. When the loop hits the cap, kodezart does *not* discard the work:
 
 - The ticket and acceptance criteria are persisted to the workspace.
-- All progress is committed and pushed to the Ralph branch (`kodezart/<slug>-<job>-ralph-<session>`).
+- All progress is committed and pushed to the Ralph branch (`kodezart/<slug>-<id>-ralph-<id>`).
+- Where a best iteration exists, a pull request is opened for it and the run ends `stalled_pr_opened`.
 
 To resume, send a fresh `POST /api/v1/agent/workflow` with:
 
@@ -772,7 +740,7 @@ If you're sending changes to kodezart itself (not just using it):
 - `make check` must pass (ruff + mypy strict + pytest).
 - Hexagonal: ports in `src/kodezart/core/protocols.py`, adapters in `src/kodezart/adapters/`, pure domain in `src/kodezart/domain/` (no I/O).
 - Conventional Commits subjects: `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`.
-- Tests use real fakes (`tests/fakes/`), not mocks. mypy strict; `Any` is forbidden outside `core/config.py`.
+- Tests use real fakes (`tests/fakes.py`), not mocks. mypy strict; `Any` is forbidden outside `config/app.py`.
 - See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full guide.
 
 Security issues go through [private vulnerability reporting](https://github.com/YalDan/kodezart/security/advisories/new), not public issues. See [`SECURITY.md`](SECURITY.md).
@@ -780,3 +748,8 @@ Security issues go through [private vulnerability reporting](https://github.com/
 ## License
 
 [MIT](LICENSE)
+
+Knowledge configuration now uses nested variables such as
+`KODEZART_KNOWLEDGE__SESSION_GRANTS`.
+See [the migration table](docs/configuration.md#knowledge-environment-migration);
+old flat knowledge variables are rejected instead of silently disabling grants.

@@ -22,7 +22,7 @@ from pathlib import Path
 import pytest
 import structlog.testing
 
-from kodezart.core.errors import McpTransportError, PassGateScopeError
+from kodezart.core.errors import PassGateScopeError, TrackerUnavailableError
 from kodezart.services.pass_gate import PassGate
 from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.dispatch import PassSignal
@@ -530,10 +530,8 @@ class RefusingTracker(FakeTrackerPort):
 
     def _refuse(self, container: str | None) -> None:
         if container in self.refused:
-            raise McpTransportError(
+            raise TrackerUnavailableError(
                 "the MCP tool call failed in transport",
-                server_name="fixture",
-                tool_name="scan",
             )
 
 

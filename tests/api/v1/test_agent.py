@@ -4,14 +4,16 @@ import json
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
+import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient, Response
 
-from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.chains.ticket_generation import TicketGenerationLoop
+from kodezart.handlers.agent_handler import AgentHandler
 from kodezart.main import create_app
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.agent import (
+    AgentEvent,
     AssistantTextEvent,
     ErrorEvent,
     ResultEvent,
@@ -20,7 +22,9 @@ from kodezart.types.domain.consolidation import (
     ConsolidationOutcome,
     ConsolidationStatus,
 )
+from kodezart.types.domain.subagents import SessionEffort, SessionPolicy
 from kodezart.types.domain.ticket_review import TicketApproval, TicketReviewMode
+from kodezart.types.requests.agent import QueryRequest
 from tests.chains.test_dispatch_definitions import v5_provider
 from tests.fakes import (
     SUPPRESS_ALL_SKILLS,
@@ -37,10 +41,11 @@ from tests.fakes import (
     FakeWorkspaceProvider,
     PassThroughGate,
     attached_job_queue,
-    make_passing_evaluation,
+    make_passing_evaluation_of_fake_criteria,
     make_prompt_provider,
     no_delay_floor,
 )
+from tests.workflow_factory import make_authored_workflow
 
 
 async def _collect_sse_events(response: Response) -> list[dict[str, object]]:
@@ -220,11 +225,14 @@ async def _workflow_client(
         events=[
             AssistantTextEvent(text="done", model="test-model"),
         ],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
-    engine = RalphWorkflowEngine(
+    engine = make_authored_workflow(
+        repositories=(),
+        max_concurrent_watches=4,
+        red_rerun_max_attempts=0,
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
@@ -495,14 +503,17 @@ async def _workflow_client_with(
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
     )
-    engine = RalphWorkflowEngine(
+    engine = make_authored_workflow(
+        repositories=(),
+        max_concurrent_watches=4,
+        red_rerun_max_attempts=0,
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
         service=service,
         quality_gate=FakeQualityGate(
             events=[],
-            evaluation=make_passing_evaluation(),
+            evaluation=make_passing_evaluation_of_fake_criteria(),
             total_iterations=1,
             last_commit_sha="a" * 40,
         ),
@@ -637,3 +648,45 @@ async def test_the_create_only_ticket_event_reaches_the_wire(
     assert ticket_events[0]["approved"] == TicketApproval.NOT_REVIEWED.value
     assert ticket_events[0]["mode"] == TicketReviewMode.CREATE_ONLY.value
     assert ticket_events[0]["reviewRounds"] == 0
+
+
+class _RecordingRunner:
+    """An AgentRunner double that records what the handler asks of it."""
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    async def stream(self, **kwargs: object) -> AsyncGenerator[AgentEvent, None]:
+        self.calls.append(kwargs)
+        return
+        yield  # pragma: no cover - makes this an async generator
+
+
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    [
+        (
+            {"prompt": "analyze", "repoPath": "/tmp/fake", "effort": "max"},
+            SessionEffort.MAX,
+        ),
+        ({"prompt": "analyze", "repoPath": "/tmp/fake"}, None),
+    ],
+)
+async def test_stream_query_forwards_the_requested_effort(
+    body: dict[str, object], expected: SessionEffort | None
+) -> None:
+    """A query names its effort; the session policy the runner receives carries it.
+
+    A query belongs to no prompt-set role, so nothing else declares an effort
+    for it; absent, the policy declares none and the engine's default stands.
+    """
+    runner = _RecordingRunner()
+    handler = AgentHandler(service=runner, skills=SUPPRESS_ALL_SKILLS)
+
+    async for _ in handler.stream_query(QueryRequest.model_validate(body)):
+        pass
+
+    (call,) = runner.calls
+    policy = call["session_policy"]
+    assert isinstance(policy, SessionPolicy)
+    assert policy.effort is expected

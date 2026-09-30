@@ -4,11 +4,13 @@ Moved verbatim from the composition root, which imports and wires rather
 than defines.
 """
 
+from pathlib import Path
+
 from kodezart.adapters.in_repo_prompt_registry import (
     InRepoPromptRegistry,
     default_sets_root,
 )
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.logging import BoundLogger
 from kodezart.core.prompt_namespaces import bindings_for
 from kodezart.types.domain.operation import OperationConfig
@@ -35,28 +37,31 @@ async def boot_prompts(
         template_overrides=config.prompt_template_overrides,
         bindings=bindings_for(operation),
         investigation_cap=config.investigation_cap,
+        workflows_plugin_dir=Path(config.agent.workflows_plugin_dir).expanduser(),
         ticket_review_mode=config.ticket_review_mode,
-        fallback_model=config.fallback_model,
-        session_models=config.session_models,
+        fallback_model=config.agent.fallback_model,
+        session_models={
+            key.value: model for key, model in config.agent.session_models.items()
+        },
     )
     await log.ainfo(
         "prompt_resolution_table",
         table={key.value: source for key, source in prompts.resolution_table().items()},
     )
     declared_engines = prompts.declared_engines()
-    if config.model not in declared_engines:
+    if config.agent.model not in declared_engines:
         await log.ainfo(
             "prompt_set_engine_mismatch",
             prompt_set=config.prompt_set,
             declared_engines=list(declared_engines),
-            model=config.model,
+            model=config.agent.model,
             # The default engine is what mismatched, so no override did:
             # ``None`` is which of the two settings this note is about.
             session_models=None,
         )
     undeclared_overrides = {
         key: model
-        for key, model in sorted(config.session_models.items())
+        for key, model in sorted(config.agent.session_models.items())
         if model not in declared_engines
     }
     if undeclared_overrides:

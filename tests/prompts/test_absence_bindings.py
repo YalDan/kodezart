@@ -13,6 +13,7 @@ from kodezart.core.prompt_namespaces import operation_bindings
 from kodezart.core.prompt_rendering import render_template
 from kodezart.types.domain.operation import (
     CHECKPOINT_DOCUMENT_KEY,
+    CheckPrerequisite,
     DocumentEntry,
     DocumentSystem,
     OperationConfig,
@@ -25,12 +26,13 @@ COLLECTION_FIELDS = (
     "agent_identities",
     "teams",
     "queue_states",
+    "scope_labels",
+    "issue_labels",
     "workflow_states",
     "repos",
     "documents",
     "knowledge",
     "endpoints",
-    "initiatives",
 )
 
 
@@ -199,3 +201,37 @@ def test_a_gate_step_names_its_gatehood_instead_of_a_missing_ancestor() -> None:
     assert by_name["install"]["depends_on_absent"] is True
     assert by_name["typecheck"]["depends_on"] == "install"
     assert by_name["typecheck"]["depends_on_absent"] is None
+
+
+def test_a_repo_carries_the_runner_environment_pair_per_item() -> None:
+    """Each declared prerequisite is available or unavailable, never a bare flag.
+
+    The pair is per item here, because the state being named is the one
+    prerequisite's, and a repository declaring no fact at all says so with
+    the whole-collection marker.
+    """
+    config = example_config()
+    declared = config.repos[0].model_copy(
+        update={
+            "runner_environment": {
+                CheckPrerequisite.REPOSITORY_HISTORY: False,
+                CheckPrerequisite.NETWORK: True,
+            }
+        }
+    )
+    bindings = operation_bindings(
+        config.model_copy(update={"repos": (declared, *config.repos[1:])})
+    )
+    repos = bindings["repos"]
+    assert isinstance(repos, list)
+    first, second = repos[0], repos[1]
+    assert [
+        (item["name"], item["available"], item["unavailable"])
+        for item in first["runner_environment"]
+    ] == [
+        (CheckPrerequisite.NETWORK.value, True, None),
+        (CheckPrerequisite.REPOSITORY_HISTORY.value, None, True),
+    ]
+    assert first["runner_environment_absent"] is None
+    assert second["runner_environment"] is None
+    assert second["runner_environment_absent"] is True

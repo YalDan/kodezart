@@ -1,7 +1,9 @@
 # The minimal floor: the smallest operation config that boots.
 #
 # This is the file a new operator copies first. Two fields are required and
-# nothing else: every collection defaults empty, and an empty board boots.
+# nothing else: every collection defaults empty, except that a file with no
+# [marker_prefixes] table is given the markers v0.2 wrote for the per-issue
+# path, and an empty board boots.
 # Grow it toward docs/operation.example.toml — the complete annotated
 # example — one section at a time, as the operation acquires the thing each
 # section declares.

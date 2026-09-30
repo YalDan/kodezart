@@ -32,7 +32,7 @@ import structlog
 from kodezart.adapters.in_repo_prompt_registry import InRepoPromptRegistry
 from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.composition.prompts import boot_prompts
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.errors import TicketReviewModeError
 from kodezart.main import create_app, lifespan
 from kodezart.types.domain.prompts import PromptKey

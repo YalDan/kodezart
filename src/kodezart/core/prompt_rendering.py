@@ -189,8 +189,8 @@ def render_template(body: str, bindings: Mapping[str, object]) -> str:
 class PromptTemplate:
     """An unrendered template plus the binding sources its set contributed.
 
-    ``bindings`` carries the set-level fragments and (once KOD-50 registers
-    it) the operation-config namespace.  Per-call typed variables are passed
+    ``bindings`` carries the set-level fragments and any registered
+    operation-config namespace.  Per-call typed variables are passed
     to :meth:`render`.  Rendering itself is delegated to
     :func:`render_template` — this type performs no substitution of its own.
     """

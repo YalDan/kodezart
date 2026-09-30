@@ -7,8 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from kodezart.adapters import subprocess_git_service
-from kodezart.adapters.subprocess_git_service import SubprocessGitService
+from kodezart.adapters.git import service
+from kodezart.adapters.git.service import SubprocessGitService
+from kodezart.domain.errors import GitOperationError
 
 
 @pytest.fixture
@@ -42,6 +43,57 @@ async def test_validate_repo_valid(
     git_service: SubprocessGitService, git_repo: Path
 ) -> None:
     await git_service.validate_repo(str(git_repo))
+
+
+@pytest.mark.parametrize("operation", ["head", "fetch", "remote", "ancestor"])
+async def test_failed_git_commands_have_operational_type(
+    git_service: SubprocessGitService, git_repo: Path, operation: str
+) -> None:
+    """Real failing commands retain diagnostics and a neutral provider type."""
+    with pytest.raises(GitOperationError) as caught:
+        match operation:
+            case "head":
+                await git_service.tree_of(str(git_repo), "absent-ref")
+            case "fetch":
+                await git_service.fetch(str(git_repo))
+            case "remote":
+                await git_service.remote_branch_sha(
+                    str(git_repo), "absent-remote", "main"
+                )
+            case "ancestor":
+                await git_service.is_ancestor(str(git_repo), "absent-ref", "HEAD")
+            case _:
+                pytest.fail("unrecognized test operation")
+    assert str(caught.value).startswith("git ")
+    assert "fatal:" in str(caught.value)
+
+
+async def test_branch_read_does_not_hide_programmer_failure(
+    git_service: SubprocessGitService, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    failure = RuntimeError("provider implementation defect")
+
+    async def fail(*args: object, **kwargs: object) -> str:
+        raise failure
+
+    monkeypatch.setattr(git_service, "_run_output", fail)
+    with pytest.raises(RuntimeError) as caught:
+        await git_service._branch_exists(str(git_repo), "main")
+    assert caught.value is failure
+
+
+async def test_merge_does_not_translate_programmer_failure(
+    git_service: SubprocessGitService, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    failure = RuntimeError("provider implementation defect")
+
+    async def fail(*args: object, **kwargs: object) -> None:
+        raise failure
+
+    monkeypatch.setattr(git_service, "_run", fail)
+    with pytest.raises(RuntimeError) as caught:
+        await git_service.merge_branch(str(git_repo), "main")
+    assert caught.value is failure
 
 
 async def test_validate_repo_not_a_dir(
@@ -265,6 +317,24 @@ async def test_is_ancestor_raises_on_unknown_ref(
         await git_service.is_ancestor(str(git_repo), "no-such-ref", "HEAD")
 
 
+async def test_has_object_answers_for_a_known_and_an_unknown_full_name(
+    git_service: SubprocessGitService, git_repo: Path
+) -> None:
+    """A held commit → exit 0 → True; a well-formed unknown name → exit 1 → False."""
+    head_sha = await git_service.current_sha(str(git_repo))
+    assert await git_service.has_object(str(git_repo), head_sha) is True
+    assert await git_service.has_object(str(git_repo), "0" * 40) is False
+
+
+@pytest.mark.parametrize("name", ["no-such-ref", "0123"])
+async def test_has_object_raises_when_git_cannot_answer(
+    git_service: SubprocessGitService, git_repo: Path, name: str
+) -> None:
+    """A malformed or abbreviated unknown name exits 128: a failure, not absence."""
+    with pytest.raises(GitOperationError):
+        await git_service.has_object(str(git_repo), name)
+
+
 async def test_remote_branch_sha_returns_sha_when_present(
     git_service: SubprocessGitService, git_repo: Path, tmp_path: Path
 ) -> None:
@@ -347,6 +417,39 @@ async def test_diff_summary_returns_changeset_digest(
     assert digest.commit_count >= 1
     assert "feat.txt" in digest.file_paths
     assert "feat: add x" in digest.commit_subjects
+
+
+async def test_diff_summary_reads_the_commit_record_not_the_working_tree(
+    git_service: SubprocessGitService, git_repo: Path
+) -> None:
+    """The digest names committed paths only, whatever the workspace holds.
+
+    A grading is read against the commits between two revisions, so an
+    uncommitted edit in the workspace the digest is taken in must not reach
+    it: otherwise a stray file in any workspace could lapse a grading that
+    nothing committed has touched (KOD-413).  The workspace is left holding
+    each kind of uncommitted change a diff against a work tree or an index
+    would name: a tracked file the commits never touched, edited in place; a
+    new file staged but never committed; an untracked file; and an edit on
+    top of the one committed path.
+    """
+    base = await git_service.current_sha(str(git_repo))
+    await _run_git(["git", "checkout", "-b", "feat-digest"], cwd=git_repo)
+    (git_repo / "committed.txt").write_text("committed")
+    await _run_git(["git", "add", "committed.txt"], cwd=git_repo)
+    await _run_git(
+        ["git", "-c", "commit.gpgsign=false", "commit", "-m", "feat: one path"],
+        cwd=git_repo,
+    )
+    head = await git_service.current_sha(str(git_repo))
+    (git_repo / "README.md").write_text("edited in the workspace only")
+    (git_repo / "staged.txt").write_text("staged, never committed")
+    await _run_git(["git", "add", "staged.txt"], cwd=git_repo)
+    (git_repo / "untracked.txt").write_text("untracked")
+    (git_repo / "committed.txt").write_text("changed in the workspace only")
+    digest = await git_service.diff_summary(str(git_repo), base, head)
+    assert digest.file_paths == ["committed.txt"]
+    assert digest.commit_subjects == ["feat: one path"]
 
 
 async def test_diff_summary_empty_when_refs_equal(
@@ -623,7 +726,7 @@ def _bare_stream_message_sites(source: str) -> list[str]:
 
 def test_no_runner_interpolates_a_bare_stream_into_a_failure_message() -> None:
     """Every runner's failure text comes from the shared helper, not a raw stream."""
-    source = inspect.getsource(subprocess_git_service)
+    source = inspect.getsource(service)
     assert _bare_stream_message_sites(source) == []
 
 

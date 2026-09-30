@@ -7,7 +7,10 @@ alongside the configured servers — attacker-authored tool injection into a
 session that already holds credentials.
 
 The invariant that closes it: **every ``ClaudeAgentOptions`` construction
-in the package sets ``strict_mcp_config=True``**, whether or not that same
+in the package sets ``strict_mcp_config=True``** — or, the one shape
+besides it, to the negation of the operator's ``dangerously_allow_host_mcp``
+opt-in (KOD-1239), whose name is read off the shipped ``AgentSettings``
+rather than typed here — whether or not that same
 construction configures ``mcp_servers``.  The guard answers the working
 directory and not the server map, so a construction naming neither keyword
 is the SDK default — the cloned repository loaded unguarded — and is a
@@ -37,6 +40,7 @@ from typing import Final
 
 import pytest
 
+from kodezart.config.agent import AgentSettings
 from kodezart.types.domain.session import SessionType
 from tests.fakes import (
     DEFAULT_SETTING_SOURCES,
@@ -51,6 +55,11 @@ SRC: Final[Path] = Path(__file__).resolve().parents[2] / "src" / "kodezart"
 OPTIONS_CALLABLE: Final[str] = "ClaudeAgentOptions"
 SERVERS_KEYWORD: Final[str] = "mcp_servers"
 STRICT_KEYWORD: Final[str] = "strict_mcp_config"
+#: The operator's opt-in: the one operand allowed under ``not`` as the
+#: guard's value.  A test below holds it to the shipped settings field, so
+#: a renamed field fails there rather than leaving a guard that accepts a
+#: spelling nothing sets any more.
+HOST_MCP_OPT_IN: Final[str] = "dangerously_allow_host_mcp"
 
 
 def _called_name(func: ast.expr) -> str | None:
@@ -217,6 +226,29 @@ def _is_true(node: ast.expr) -> bool:
     return isinstance(node, ast.Constant) and node.value is True
 
 
+def _is_the_opt_in_negated(node: ast.expr) -> bool:
+    """Whether an expression is ``not <opt-in>``, and nothing else.
+
+    The operand is the opt-in by name, whether it arrives as the mapping's
+    bare parameter or as an attribute of a settings object, and only under
+    ``not``: handed over un-negated, the same name would read the guard
+    as on exactly when the operator switched it off.
+    """
+    if not (isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not)):
+        return False
+    operand = node.operand
+    if isinstance(operand, ast.Name):
+        return operand.id == HOST_MCP_OPT_IN
+    if isinstance(operand, ast.Attribute):
+        return operand.attr == HOST_MCP_OPT_IN
+    return False
+
+
+def _keeps_the_guard(node: ast.expr) -> bool:
+    """Whether a value for the flag is one the invariant accepts."""
+    return _is_true(node) or _is_the_opt_in_negated(node)
+
+
 def _merged_views(
     call: ast.Call,
     functions: Mapping[str, list[ast.FunctionDef]],
@@ -275,7 +307,7 @@ def _view_failure(view: Mapping[str, ast.expr]) -> str | None:
     strict = view.get(STRICT_KEYWORD)
     if strict is None:
         return f"no {STRICT_KEYWORD}"
-    if not _is_true(strict):
+    if not _keeps_the_guard(strict):
         return f"{STRICT_KEYWORD} is not True"
     return None
 
@@ -331,8 +363,8 @@ def test_the_scan_actually_ranges_over_both_executor_sites() -> None:
     origins = server_sites(package_sources())
 
     assert origins == {
-        "kodezart/adapters/claude_client_executor.py",
-        "kodezart/adapters/claude_agent_executor.py",
+        "kodezart/adapters/claude/client_executor.py",
+        "kodezart/adapters/claude/agent_executor.py",
     }
 
 
@@ -476,6 +508,54 @@ def test_the_flag_set_to_something_other_than_true_is_detected() -> None:
     assert strictness_failures(violation) == [
         "fixture.py:2: strict_mcp_config is not True"
     ]
+
+
+def test_the_negated_opt_in_is_the_one_shape_accepted_beside_true() -> None:
+    """KOD-1239: the opt-in, and only the opt-in, may switch the guard off.
+
+    Positive: both spellings the package can use — the mapping's parameter
+    and a settings attribute — pass under ``not``.  Negative: another name
+    under ``not`` is still "not True", and the opt-in without ``not`` is
+    too, because that inverts the switch.
+    """
+    accepted = {
+        "parameter.py": (
+            "def build(dangerously_allow_host_mcp):\n"
+            "    return ClaudeAgentOptions(\n"
+            "        strict_mcp_config=not dangerously_allow_host_mcp,\n"
+            "    )\n"
+        ),
+        "attribute.py": (
+            "def build(settings):\n"
+            "    return ClaudeAgentOptions(\n"
+            "        strict_mcp_config=not settings.dangerously_allow_host_mcp,\n"
+            "    )\n"
+        ),
+    }
+    refused = {
+        "other.py": (
+            "def build(flag):\n"
+            "    return ClaudeAgentOptions(strict_mcp_config=not flag)\n"
+        ),
+        "inverted.py": (
+            "def build(dangerously_allow_host_mcp):\n"
+            "    return ClaudeAgentOptions(\n"
+            "        strict_mcp_config=dangerously_allow_host_mcp,\n"
+            "    )\n"
+        ),
+    }
+
+    assert strictness_failures(accepted) == []
+    assert strictness_failures(refused) == [
+        "other.py:2: strict_mcp_config is not True",
+        "inverted.py:2: strict_mcp_config is not True",
+    ]
+
+
+def test_the_opt_in_the_guard_accepts_is_the_shipped_setting() -> None:
+    """The accepted name is the field's own, and the field ships off."""
+    assert HOST_MCP_OPT_IN in AgentSettings.model_fields
+    assert AgentSettings.model_fields[HOST_MCP_OPT_IN].default is False
 
 
 def test_an_option_source_the_scan_cannot_read_is_a_failure_not_a_skip() -> None:
@@ -647,7 +727,7 @@ def test_the_mapping_names_every_session_kind_and_carries_no_default_arm() -> No
     makes it do so, so the guarantee cannot be lost to a wildcard arm that
     silently answers for a member nobody classified.
     """
-    tree = ast.parse((SRC / "adapters" / "_mcp_mapping.py").read_text("utf-8"))
+    tree = ast.parse((SRC / "adapters" / "mcp" / "mapping.py").read_text("utf-8"))
     statements = [node for node in ast.walk(tree) if isinstance(node, ast.Match)]
 
     assert len(statements) == 1

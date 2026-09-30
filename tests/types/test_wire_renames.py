@@ -11,7 +11,7 @@ run ended after CI passed" — owned by the outcome discriminator's issue,
 whose module states that members are appended and never re-pointed.  It is
 not the CI-status field this issue typed, and repointing another issue's
 landed wire contract to satisfy a grep would be the tail wagging the dog.
-The exclusion is pinned to those exact two lines so it cannot quietly
+The exclusion is pinned to the exact declaration and producer lines so it cannot quietly
 widen into "anything that mentions ci_passed".
 """
 
@@ -32,12 +32,13 @@ RETIRED: dict[str, str] = {
     "WorkflowCompleteEvent.error": r"WorkflowCompleteEvent[^\n]*\.error\b",
 }
 
-#: The terminal-outcome member and its single read — the one exclusion,
-#: quoted so a third occurrence has to be argued for rather than absorbed.
-_OUTCOME_MEMBER: frozenset[str] = frozenset(
+#: The terminal member and the actual authored/native delivery producers.
+#: Both the source address and exact line are pinned; another occurrence fails.
+_OUTCOME_MEMBER: frozenset[tuple[str, str]] = frozenset(
     {
-        'ci_passed = "ci_passed"',
-        "return WorkflowOutcome.ci_passed",
+        ("types/domain/outcome.py", 'ci_passed = "ci_passed"'),
+        ("domain/authored_outcome.py", "return WorkflowOutcome.ci_passed"),
+        ("types/domain/delivery.py", "return WorkflowOutcome.ci_passed"),
     },
 )
 
@@ -57,19 +58,22 @@ def test_no_retired_wire_name_survives_in_src(name: str) -> None:
     hits = [
         f"{path.relative_to(SRC)}: {line.strip()}"
         for path, line in _source_lines()
-        if pattern.search(line) and line.strip() not in _OUTCOME_MEMBER
+        if pattern.search(line)
+        and (path.relative_to(SRC).as_posix(), line.strip()) not in _OUTCOME_MEMBER
     ]
     assert hits == []
 
 
 def test_the_only_excluded_occurrences_are_the_outcome_member() -> None:
-    """Non-vacuity: the exclusion covers exactly two lines, and both exist.
+    """Non-vacuity: every explicitly named outcome occurrence exists exactly once.
 
     Without this the exclusion set could silently stop matching anything —
     or grow — and the test above would keep passing either way.
     """
     excluded = [
-        line.strip() for _, line in _source_lines() if line.strip() in _OUTCOME_MEMBER
+        (path.relative_to(SRC).as_posix(), line.strip())
+        for path, line in _source_lines()
+        if (path.relative_to(SRC).as_posix(), line.strip()) in _OUTCOME_MEMBER
     ]
     assert sorted(excluded) == sorted(_OUTCOME_MEMBER)
 

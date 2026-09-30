@@ -33,7 +33,11 @@ from kodezart.types.domain.prompts import (
     PromptSetMetadata,
 )
 from kodezart.types.domain.skills import SkillsSelection
-from kodezart.types.domain.subagents import AgentDefinition, SessionPolicy
+from kodezart.types.domain.subagents import (
+    AgentDefinition,
+    SessionPolicy,
+    WorkflowAccess,
+)
 from kodezart.types.domain.ticket_review import TicketReviewMode
 
 _METADATA_FILE = "set.toml"
@@ -41,7 +45,10 @@ _MEMBER_SUFFIX = ".md"
 _DEFINITIONS_DIR = "definitions"
 _SKILLS_FRAGMENT = "skills_reference"
 _SUPPRESSION_FRAGMENT = "suppression_proxy"
+_DESIGN_REVIEW_FRAGMENT = "design_review"
 _MECHANISMS_FRAGMENT = "pass_mechanisms"
+_HIERARCHY_FRAGMENT = "board_hierarchy"
+_DELIVERY_FRAGMENT = "delivery_units"
 _ORCHESTRATION_SLOT = "orchestration_block"
 _CRITIQUE_SLOT = "ticket_create_critique"
 _INVESTIGATION_SPEC_FRAGMENT = "investigation_spec"
@@ -76,12 +83,14 @@ class InRepoPromptRegistry:
         fallback_model: str | None = None,
         session_models: Mapping[str, str] | None = None,
         definitions: Sequence[AgentDefinition] = (),
+        workflow_access: WorkflowAccess | None = None,
     ) -> None:
         self._templates: Mapping[PromptKey, PromptTemplate] = templates
         self._default_metadata: PromptSetMetadata = default_metadata
         self._fallback_model: str | None = fallback_model
         self._session_models: dict[str, str] = dict(session_models or {})
         self._definitions: tuple[AgentDefinition, ...] = tuple(definitions)
+        self._workflow_access: WorkflowAccess | None = workflow_access
 
     @classmethod
     def load(
@@ -93,11 +102,16 @@ class InRepoPromptRegistry:
         template_overrides: Mapping[str, str],
         bindings: Mapping[str, object],
         investigation_cap: int,
+        workflows_plugin_dir: Path,
         ticket_review_mode: TicketReviewMode,
         fallback_model: str | None = None,
         session_models: Mapping[str, str] | None = None,
     ) -> Self:
-        """Resolve every function key or raise ``PromptResolutionError``."""
+        """Resolve every function key or raise ``PromptResolutionError``.
+
+        A member asking for the orchestration slot is unresolvable when the
+        plugin directory its block names a workflow from is absent.
+        """
         available = _discover_sets(sets_root)
         failures: list[str] = []
 
@@ -144,7 +158,7 @@ class InRepoPromptRegistry:
                 if slotted
                 else None
             )
-            if slotted and orchestration is None:
+            if slotted and (orchestration is None or not workflows_plugin_dir.is_dir()):
                 if key.value not in failures:
                     failures.append(key.value)
                 continue
@@ -184,6 +198,11 @@ class InRepoPromptRegistry:
             fallback_model=fallback_model,
             session_models=session_models,
             definitions=_load_definitions(available[default_set], default_metadata),
+            workflow_access=WorkflowAccess(
+                plugin_path=str(workflows_plugin_dir),
+                size_guideline=investigation_cap,
+                enabled=True,
+            ),
         )
 
     def template_for(self, key: PromptKey) -> PromptTemplate:
@@ -221,21 +240,20 @@ class InRepoPromptRegistry:
     def session_policy(self, key: PromptKey) -> SessionPolicy:
         """What *key*'s dispatch declares about its session.
 
-        One object per dispatch rather than four parallel parameters: the
+        One object per dispatch rather than five parallel parameters: the
         house rules the set appends, the effort its role runs at, the
-        configured refusal fallback, and the engine the deployment pins
-        THIS key to (KOD-161) all arrive together, and a set that declares
-        no roles and a deployment that pins no key produce exactly the
-        policy every dispatch expressed before this existed.  The engine
-        table is deployment configuration injected here — the registry
-        level — so it serves both sets identically; the set's own
-        ``engines`` stays a declaration, never a resolver.
+        configured refusal fallback, the engine the deployment pins THIS
+        key to, and the workflow access every key carries alike all arrive
+        together.  The engine table is deployment configuration injected
+        here — the registry level — so it serves both sets identically; the
+        set's own ``engines`` stays a declaration, never a resolver.
         """
         return SessionPolicy(
             system_prompt_append=self._default_metadata.fragments.house_rules,
             effort=self._default_metadata.effort_of(key.value),
             model=self._session_models.get(key.value),
             fallback_model=self._fallback_model,
+            workflow_access=self._workflow_access,
         )
 
     def definitions(self) -> Sequence[AgentDefinition]:
@@ -312,15 +330,19 @@ def _composed(metadata: PromptSetMetadata, name: str, body: str) -> str:
     """One member, assembled from *body* plus the set's fragment content.
 
     Which fragments a member receives is a property of the SET: the
-    suppression proxy and the shared pass mechanisms where a member asks
-    for one by name, and the reasoning-depth block appended to every role
-    outside the declared utility roster.  A set that declares none of them
-    composes unchanged.
+    suppression proxy, the design refutation, the shared pass mechanisms and
+    the board hierarchy
+    where a member asks for one by name, and the reasoning-depth block
+    appended to every role outside the declared utility roster.  A set that
+    declares none of them composes unchanged.
     """
     fragments = metadata.fragments
     declared = {
         _SUPPRESSION_FRAGMENT: fragments.suppression_proxy,
+        _DESIGN_REVIEW_FRAGMENT: fragments.design_review,
         _MECHANISMS_FRAGMENT: fragments.pass_mechanisms,
+        _HIERARCHY_FRAGMENT: fragments.board_hierarchy,
+        _DELIVERY_FRAGMENT: fragments.delivery_units,
     }
     substitutions = {name: text for name, text in declared.items() if text is not None}
     appendix = (

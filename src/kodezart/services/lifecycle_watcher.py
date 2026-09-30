@@ -28,9 +28,9 @@ is a run that reached no terminal outcome, and the last thing the tracker
 was told — the in-progress stage — is contradicted by reality with nothing
 saying so.  The end of the stream is the exact signal: the queue closes it
 whether the run finished or raised, so no timeout and no second surface is
-involved (KOD-146).
+involved.
 
-**The claim heartbeat rides here** for the same reason (KOD-147).  A claim
+**The claim heartbeat rides here** for the same reason.  A claim
 has to stay live for exactly as long as the job does, and this watch is the
 one component whose lifetime already IS the job's: it begins when the
 dispatch pass enqueues, it ends when the stream ends, and it ends by both
@@ -38,7 +38,7 @@ paths.  The renewal starts before the first frame rather than after it,
 because a job sitting in the queue longer than the lease loses its issue
 just as surely as a job running longer than one.
 
-**And the claim is handed back here** (KOD-152), because this is where the
+**And the claim is handed back here**, because this is where the
 job's end is known.  The end of the stream is that end by every path the
 process survives — a terminal outcome, a run that reached none, and a
 graceful shutdown, which closes the stream of everything still queued or
@@ -49,7 +49,7 @@ one arm that may not change; the measured incident is the other one, an
 instance stopped and its replacement locked out of the issue for the rest
 of a lease nobody was working under.
 
-**And the run record has a shutdown half** (KOD-178).  Recording at the
+**And the run record has a shutdown half**.  Recording at the
 watch's end means a fire that is still queued or still running when the
 process goes down is recorded nowhere at all: three fires ran on the
 measured boot and the Fire Log held one line.  So the fires this process
@@ -62,13 +62,13 @@ watcher's own memory of which of them ever began.
 
 import asyncio
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
-from typing import Self
 
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import JobQueue, JobRegistry
 from kodezart.services.claim_heartbeat import ClaimHeartbeat
+from kodezart.services.fire_record_facts import observe_fire_facts
 from kodezart.services.run_recorder import RunRecorder, report_record_failure
 from kodezart.services.tracker_lifecycle import TrackerLifecycleWriter
 from kodezart.types.domain.agent import (
@@ -79,7 +79,9 @@ from kodezart.types.domain.agent import (
 )
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.operation import RunKind
+from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.run_records import (
+    FireRecordFacts,
     RunOutcome,
     RunRecord,
     RunRecordResult,
@@ -96,8 +98,8 @@ from kodezart.types.domain.run_records import (
 #: after the put-back, the claim release and everything else the watch
 #: owes the run, so a hop that raised would unwind a watch whose work is
 #: done and lose the record that says the run is over — and the news it
-#: carries is an optimisation over the next tick, never the run's history
-#: (KOD-276).  The containment belongs to the implementation because only
+#: carries is an optimisation over the next tick, never the run's history.
+#: The containment belongs to the implementation because only
 #: the implementation knows what failed: the composed report fans out
 #: over every dispatcher on the lane and names the one that refused.
 type FireReport = Callable[[str, RunOutcome, str | None], Awaitable[None]]
@@ -112,15 +114,14 @@ class _UnrecordedFire:
     the queue marks every job it holds terminal, and the sweep reads after
     that stop.  Whether a run was dequeued is the whole difference between
     ``failed`` and ``never_started``, so it is remembered where it is
-    observed rather than inferred later (KOD-178).
+    observed rather than inferred later.
     """
 
     issue_key: str
     dequeued: bool
 
-    def running(self) -> Self:
-        """The same fire, with its dequeue remembered."""
-        return replace(self, dequeued=True)
+    facts: FireRecordFacts = field(default_factory=FireRecordFacts)
+    terminal_outcome: WorkflowOutcome | None = None
 
 
 def _fire_outcome(*, started: bool, terminal: bool) -> RunOutcome:
@@ -152,15 +153,14 @@ class LifecycleWatcher:
         self._queue: JobQueue = queue
         #: Read only at shutdown, and only about fires this process
         #: started: what the sweep needs from it is when each job was
-        #: submitted, the left edge of the window its row is verified in
-        #: (KOD-178).
+        #: submitted, the left edge of the window its row is verified in.
         self._registry: JobRegistry = registry
         self._writer: TrackerLifecycleWriter = writer
         self._heartbeat: ClaimHeartbeat = heartbeat
         self._recorder: RunRecorder = recorder
         #: Where a finished fire's outcome goes — the dispatchers firing
         #: onto this lane, so a run that died is remembered instead of
-        #: being re-selected whole at the next tick (KOD-174).
+        #: being re-selected whole at the next tick.
         self._report: FireReport = report
         self._following: set[asyncio.Task[None]] = set()
         #: Watches that ended by RAISING, captured off each task the
@@ -169,13 +169,13 @@ class LifecycleWatcher:
         #: exception, and holding it for the drain is what keeps a
         #: watch that finished — and so pruned itself from the
         #: in-flight set — BEFORE the drain from being missed by a
-        #: drain that gathers only what is still in flight (KOD-303).
+        #: drain that gathers only what is still in flight.
         self._raised: list[BaseException] = []
         #: Every fire this process started, by job, until its watch has
         #: recorded it.  A watch records at its END, so a shutdown that
         #: arrives first — or a watch that raises on the way — leaves the
         #: run with no row at all, and the measured boot's Fire Log held
-        #: one row for three fires (KOD-178).
+        #: one row for three fires.
         self._unrecorded: dict[str, _UnrecordedFire] = {}
         self._log: BoundLogger = get_logger(__name__)
 
@@ -229,7 +229,7 @@ class LifecycleWatcher:
         it for the drain is what keeps a watch that finished before the
         drain — and so already pruned itself from the in-flight set —
         from being lost to a drain that gathers only what is still in
-        flight (KOD-303).
+        flight.
         """
         self._following.discard(task)
         if task.cancelled():
@@ -254,16 +254,15 @@ class LifecycleWatcher:
                 error_kind=type(exc).__name__,
             )
 
-    def _remember_dequeue(self, job_id: str) -> None:
-        """Note that this job's run began, for a sweep the stop has blinded.
-
-        Nothing to remember for a watch nobody followed — a direct
-        :meth:`watch` call has no shutdown half to answer to.
-        """
+    def _remember_facts(
+        self, job_id: str, facts: FireRecordFacts, terminal: WorkflowOutcome | None
+    ) -> None:
+        """Remember observations before lifecycle writes can raise."""
         fire = self._unrecorded.get(job_id)
-        if fire is None:
-            return
-        self._unrecorded[job_id] = fire.running()
+        if fire is not None:
+            self._unrecorded[job_id] = replace(
+                fire, dequeued=True, facts=facts, terminal_outcome=terminal
+            )
 
     @property
     def following(self) -> frozenset[asyncio.Task[None]]:
@@ -284,7 +283,7 @@ class LifecycleWatcher:
         exists to let happen.  What each watch raised is read off the
         task as it finished, not off this gather, so a watch that ended
         before the drain is reported here exactly as one still in flight
-        is: the gather only waits the rest out (KOD-303).
+        is: the gather only waits the rest out.
         """
         await asyncio.gather(*self._following, return_exceptions=True)
         await self._report_raised()
@@ -296,13 +295,13 @@ class LifecycleWatcher:
         END, so a job that is still queued or still running when the
         process goes down has no row and never will: the measured boot ran
         three fires — one finished, one killed mid-run, one never started —
-        and the Fire Log held one line (KOD-178).
+        and the Fire Log held one line.
 
         Called AFTER the queue is stopped and AFTER the watches are drained.
         After the stop, when the registry is quiescent: a job that finished
         between a read and the stop would otherwise be swept as failed, and
-        its own true row verified away by the sweep's (KOD-178, ruled
-        2026-09-02).  After the drain, so nothing records beside this: a
+        its own true row verified away by the sweep's.  After the drain, so
+        nothing records beside this: a
         watch ending on the stopped stream verifies the log and then
         writes, exactly as this does, and two of those interleaved over one
         run — each verifying before either has written — are two rows, the
@@ -324,10 +323,9 @@ class LifecycleWatcher:
         nothing else: a process that is killed outright records none of
         this, and the durable registry that would is v0.3's.
         """
-        now = datetime.now(UTC)
         for job_id, fire in list(self._unrecorded.items()):
-            started_at = await self._run_started_at(job_id)
-            if started_at is None:
+            job = await self._registry.get(job_id=job_id)
+            if job is None:
                 # A fire this process started, that nothing recorded, and
                 # that the registry has since evicted: its submission is the
                 # left edge of the window a row is verified in, and without
@@ -340,12 +338,16 @@ class LifecycleWatcher:
                     dequeued=fire.dequeued,
                 )
                 continue
-            outcome = _fire_outcome(started=fire.dequeued, terminal=False)
+            started_at = job.submitted_at
+            outcome = _fire_outcome(
+                started=fire.dequeued, terminal=fire.terminal_outcome is not None
+            )
             placed = await self._record_fire(
                 issue_key=fire.issue_key,
                 outcome=outcome,
-                duration_seconds=(now - started_at).total_seconds(),
                 started_at=started_at,
+                facts=fire.facts,
+                workflow_outcome=fire.terminal_outcome or job.outcome,
             )
             if placed is not RunRecordResult.WRITTEN:
                 continue
@@ -384,19 +386,21 @@ class LifecycleWatcher:
         # process that watches all day would hold every failed watch's
         # exception — and the frames under it — until it stopped.
         await self._report_raised()
-        loop = asyncio.get_running_loop()
-        watch_started = loop.time()
         started = False
         terminal = False
+        terminal_outcome: WorkflowOutcome | None = None
+        facts = FireRecordFacts()
         failure: ErrorEvent | None = None
         async with self._heartbeat.renewing(issue_key=issue_key):
             async for event in self._queue.attach(job_id=job_id):
-                if not started:
-                    started = True
-                    self._remember_dequeue(job_id)
-                    await self._writer.on_dequeue(issue_key=issue_key)
+                facts = observe_fire_facts(facts, event)
                 if isinstance(event, WorkflowCompleteEvent):
                     terminal = True
+                    terminal_outcome = event.outcome
+                self._remember_facts(job_id, facts, terminal_outcome)
+                if not started:
+                    started = True
+                    await self._writer.on_dequeue(issue_key=issue_key)
                 if isinstance(event, ErrorEvent):
                     failure = event
                 await self._apply(
@@ -429,7 +433,7 @@ class LifecycleWatcher:
         outcome = _fire_outcome(started=started, terminal=terminal)
         # The dispatcher hears first: it is in this process, it costs
         # nothing, and what it does with the news is decide whether the
-        # next tick may select this issue again (KOD-174).
+        # next tick may select this issue again.
         #
         # Uncontained here, because the report contains itself: the hop
         # fans out over N dispatchers and only the fan-out knows WHICH of
@@ -438,18 +442,18 @@ class LifecycleWatcher:
         # emitting one event name with two field sets, the outer one dead
         # in every composed system because the inner one never re-raises.
         # The contract is stated on ``FireReport`` and kept by the only
-        # thing that can keep it (KOD-276).
+        # thing that can keep it.
         await self._report(
             issue_key,
             outcome,
             None if failure is None else failure.error_kind,
         )
-        started_at = await self._run_started_at(job_id)
-        if started_at is None:
+        job = await self._registry.get(job_id=job_id)
+        if job is None:
             # The same absence the sweep names, met at the other end: a run
             # whose submission the registry no longer holds has no window,
             # and a row stamped with anything else would be a second run in
-            # the log the moment the sweep wrote its own (KOD-288).
+            # the log the moment the sweep wrote its own.
             await self._log.aerror(
                 "finished_fire_unknown_to_registry",
                 issue_key=issue_key,
@@ -460,33 +464,23 @@ class LifecycleWatcher:
             await self._record_fire(
                 issue_key=issue_key,
                 outcome=outcome,
-                duration_seconds=loop.time() - watch_started,
-                started_at=started_at,
+                started_at=job.submitted_at,
+                facts=facts,
+                workflow_outcome=terminal_outcome or job.outcome,
             )
         # Forgotten on either arm: a watch that reached its end has ruled on
         # its fire, and a sweep meeting the fire again would announce the
         # same absence a second time, as unfinished.
         self._unrecorded.pop(job_id, None)
 
-    async def _run_started_at(self, job_id: str) -> datetime | None:
-        """When the run this job carries BEGAN — its submission, or nothing.
-
-        ONE reading for both producers.  A fire's record identity is its
-        kind, its issue and this instant, so a watch stamping its own start
-        while the shutdown sweep read the submission would title the same
-        run two ways, and the log would hold it twice — which is the defect
-        the exact identity was introduced to end (KOD-288, KOD-178).
-        """
-        record = await self._registry.get(job_id=job_id)
-        return None if record is None else record.submitted_at
-
     async def _record_fire(
         self,
         *,
         issue_key: str,
         outcome: RunOutcome,
-        duration_seconds: float,
         started_at: datetime,
+        facts: FireRecordFacts,
+        workflow_outcome: WorkflowOutcome | None,
     ) -> RunRecordResult | None:
         """The fire's structural run record — the RUNNER's obligation.
 
@@ -494,13 +488,13 @@ class LifecycleWatcher:
         is over.  A recording failure is its own loud event rather than a
         failure of the watch: the lifecycle write-back and the claim
         release already happened, and re-raising here would report a
-        finished run as a broken one (KOD-170).
+        finished run as a broken one.
 
         The event names the whole failure — which kind, which destination,
         whose system, and which class of failure — because the measured
         boot's ``run_record_write_failed`` carried an error string and
         nothing else, and a dead knowledge session read exactly like a
-        page the vendor refused (KOD-177).
+        page the vendor refused.
 
         A recorder that fails with anything else is a defect in the record
         path's own wiring rather than a destination refusing, and it is
@@ -511,15 +505,18 @@ class LifecycleWatcher:
         it PLACED can tell them from the ones it only found, and ``None``
         for a record that never landed at all.
         """
+        recorded_at = datetime.now(UTC)
         try:
             return await self._recorder.record(
                 RunRecord(
                     kind=RunKind.FIRE,
                     name=issue_key,
                     outcome=outcome,
-                    duration_seconds=duration_seconds,
+                    duration_seconds=(recorded_at - started_at).total_seconds(),
                     started_at=started_at,
-                    recorded_at=datetime.now(UTC),
+                    recorded_at=recorded_at,
+                    fire_facts=facts,
+                    workflow_outcome=workflow_outcome,
                 ),
             )
         except Exception as exc:
@@ -548,9 +545,8 @@ class LifecycleWatcher:
             )
             return
         if isinstance(event, WorkflowCompleteEvent):
-            # Order matters: the terminal comment reports the outcome of a
-            # run whose state transitions have already landed, so a reader
-            # who sees the comment never sees a stale state beside it.
+            # The queue disposition precedes its report. A merged branch
+            # does not establish the parent's current criterion closure.
             if event.merged:
                 await self._writer.on_verified_merge(issue_key=issue_key)
             await self._writer.on_terminal_outcome(

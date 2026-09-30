@@ -46,13 +46,13 @@ class FireContext(CamelCaseModel):
     assets: tuple[FireAsset, ...] = ()
 
     def render(self) -> str:
-        """The ticket body followed by a declared inventory of its assets.
+        """The tracker identity, ticket body, and declared asset inventory.
 
         The inventory is present even when empty: a session that cannot tell
         "no assets" from "assets not fetched" cannot notice a fetch that
         silently did nothing.
         """
-        sections = [self.body, _INVENTORY_HEADING]
+        sections = [f"Tracker issue: {self.issue_key}", self.body, _INVENTORY_HEADING]
         if not self.assets:
             sections.append(_NO_ASSETS)
             return "\n\n".join(sections)

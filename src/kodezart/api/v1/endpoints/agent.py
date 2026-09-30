@@ -1,16 +1,16 @@
 """SSE streaming endpoints for agent execution."""
 
 from collections.abc import AsyncGenerator
+from dataclasses import dataclass
+from urllib.parse import quote
 
 from fastapi import APIRouter, Request
 from starlette.responses import JSONResponse, Response, StreamingResponse
 
-from kodezart.core.config import AppConfig
+from kodezart.api.dependencies import QueryHandlerDep, WorkflowHandlerDep
 from kodezart.core.constants import DEFAULT_LANE
 from kodezart.core.logging import BoundLogger, get_logger
-from kodezart.core.protocols import JobQueue
 from kodezart.domain.errors import QueueFullError
-from kodezart.handlers.agent_handler import AgentHandler
 from kodezart.types.domain.job import JobRecord
 from kodezart.types.requests.agent import QueryRequest, WorkflowRequest
 from kodezart.types.responses.common import BaseResponse
@@ -21,11 +21,26 @@ router = APIRouter()
 _log: BoundLogger = get_logger(__name__)
 
 
-def _job_urls(config: AppConfig, job_id: str) -> tuple[str, str]:
-    """Path-relative status and stream URLs for *job_id*."""
-    return (
-        f"{config.api_v1_prefix}/jobs/{job_id}",
-        f"{config.api_v1_prefix}/jobs/{job_id}/stream",
+@dataclass(frozen=True, kw_only=True)
+class JobLinks:
+    """Named reconnect paths owned by the HTTP router."""
+
+    status_url: str
+    stream_url: str
+
+
+def _job_urls(request: Request, job_id: str) -> JobLinks:
+    """Reverse local routes, retaining the ASGI mount/proxy root."""
+    root = request.scope.get("root_path", "").rstrip("/")
+
+    def path(name: str) -> str:
+        # Local lookup also works inside named mounts without guessing namespaces.
+        route = request.app.url_path_for(name, job_id=job_id)
+        return quote(root + str(route), safe="/")
+
+    return JobLinks(
+        status_url=path("get_job_status"),
+        stream_url=path("stream_job"),
     )
 
 
@@ -47,8 +62,15 @@ def _queue_full_response(exc: QueueFullError) -> JSONResponse:
     )
 
 
-@router.post("/query", summary="Stream agent query via SSE")
-async def stream_query(body: QueryRequest, request: Request) -> StreamingResponse:
+@router.post(
+    "/query",
+    response_class=StreamingResponse,
+    responses={200: {"content": {"text/event-stream": {"schema": {"type": "string"}}}}},
+    summary="Stream agent query via SSE",
+)
+async def stream_query(
+    body: QueryRequest, handler: QueryHandlerDep
+) -> StreamingResponse:
     """``POST /api/v1/agent/query``. Streams SSE events.
 
     Unqueued and deliberately so: a one-shot query holds no branch and no
@@ -56,10 +78,6 @@ async def stream_query(body: QueryRequest, request: Request) -> StreamingRespons
     of 1 would be a regression.
     """
     await _log.adebug("stream_query_endpoint")
-    handler = AgentHandler(
-        service=request.app.state.agent_service,
-        skills=request.app.state.skills,
-    )
 
     async def generate() -> AsyncGenerator[str, None]:
         async for event in handler.stream_query(body):
@@ -68,9 +86,18 @@ async def stream_query(body: QueryRequest, request: Request) -> StreamingRespons
     return StreamingResponse(generate(), media_type="text/event-stream")
 
 
-@router.post("/workflow", summary="Run iterative workflow via SSE")
+@router.post(
+    "/workflow",
+    response_class=StreamingResponse,
+    responses={
+        200: {"content": {"text/event-stream": {"schema": {"type": "string"}}}},
+        429: {"model": BaseResponse, "description": "Workflow queue is full"},
+    },
+    summary="Run iterative workflow via SSE",
+)
 async def stream_workflow(
     body: WorkflowRequest,
+    handler: WorkflowHandlerDep,
     request: Request,
 ) -> Response:
     """``POST /api/v1/agent/workflow``. Enqueues, then attaches.
@@ -80,53 +107,48 @@ async def stream_workflow(
     the run.  Every following frame is what the run emits, unchanged.
     """
     await _log.adebug("stream_workflow_endpoint")
-    config: AppConfig = request.app.state.config
-    queue: JobQueue = request.app.state.job_queue
     try:
-        record: JobRecord = await queue.submit(lane=DEFAULT_LANE, request=body)
+        record = await handler.submit_workflow(body, lane=DEFAULT_LANE)
     except QueueFullError as exc:
         return _queue_full_response(exc)
 
-    status_url, stream_url = _job_urls(config, record.job_id)
-    handler = AgentHandler(
-        service=request.app.state.agent_service,
-        skills=request.app.state.skills,
-        queue=queue,
-    )
+    links = _job_urls(request, record.job_id)
 
     async def generate() -> AsyncGenerator[str, None]:
         async for event in handler.stream_workflow(
             record=record,
-            status_url=status_url,
-            stream_url=stream_url,
+            status_url=links.status_url,
+            stream_url=links.stream_url,
         ):
             yield format_sse(event)
 
     return StreamingResponse(generate(), media_type="text/event-stream")
 
 
-@router.post("/fire", status_code=202, summary="Queue a workflow run, no stream")
-async def fire_workflow(body: WorkflowRequest, request: Request) -> Response:
+@router.post(
+    "/fire",
+    status_code=202,
+    response_model=FireAcceptedResponse,
+    responses={429: {"model": BaseResponse, "description": "Workflow queue is full"}},
+    summary="Queue a workflow run, no stream",
+)
+async def fire_workflow(
+    body: WorkflowRequest, handler: WorkflowHandlerDep, request: Request
+) -> FireAcceptedResponse | JSONResponse:
     """``POST /api/v1/agent/fire``. Returns the job handle and nothing else."""
     await _log.adebug("fire_workflow_endpoint")
-    config: AppConfig = request.app.state.config
-    queue: JobQueue = request.app.state.job_queue
     try:
-        record: JobRecord = await queue.submit(lane=DEFAULT_LANE, request=body)
+        record = await handler.submit_workflow(body, lane=DEFAULT_LANE)
     except QueueFullError as exc:
         return _queue_full_response(exc)
 
-    status_url, stream_url = _job_urls(config, record.job_id)
-    accepted = FireAcceptedResponse(
+    links = _job_urls(request, record.job_id)
+    return FireAcceptedResponse(
         job_id=record.job_id,
         lane=record.lane,
         state=record.state,
         queue_position=_accepted_position(record),
         submitted_at=record.submitted_at,
-        status_url=status_url,
-        stream_url=stream_url,
-    )
-    return JSONResponse(
-        status_code=202,
-        content=accepted.model_dump(by_alias=True, mode="json"),
+        status_url=links.status_url,
+        stream_url=links.stream_url,
     )

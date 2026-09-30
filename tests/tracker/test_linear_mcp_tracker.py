@@ -7,6 +7,7 @@ conformance suite covers what every adapter must do; this module covers
 what THIS adapter does to get there.
 """
 
+import asyncio
 import json
 from collections.abc import Mapping
 from datetime import timedelta
@@ -16,21 +17,26 @@ import httpx
 import pytest
 import structlog
 
-from kodezart.adapters.http_mcp_tool_caller import HttpMcpToolCaller
-from kodezart.adapters.linear_mcp_tracker import _CLAIM_MARKER, LinearMcpTracker
+from kodezart.adapters.linear.tracker import _TOOL_SAVE_ISSUE, LinearMcpTracker
+from kodezart.adapters.mcp.http_tool_caller import HttpMcpToolCaller
+from kodezart.core.backoff import RetryPolicy
 from kodezart.core.errors import (
-    McpCallUnansweredError,
-    McpCredentialRefusedError,
-    McpTransportError,
+    TrackerAccessDeniedError,
     TrackerEnsureConflictError,
     TrackerProtocolError,
+    TrackerUnavailableError,
 )
-from kodezart.core.protocols import McpToolResult
+from kodezart.core.protocols import McpToolResult, TrackerPort
 from kodezart.types.domain.branch import BaseSpec, WorkRef, WorkRefRole
 from kodezart.types.domain.dispatch import PassSignal, SelfWriteLedger
 from kodezart.types.domain.operation import LifecycleStage, QueueState
+from kodezart.types.domain.scope import ScopeKind, ScopeRef
+from kodezart.types.domain.surface import (
+    DescriptionWriteAuthority,
+    SurfaceKind,
+    WritableSurface,
+)
 from kodezart.types.domain.tracker import (
-    ClaimStatus,
     EnsureAction,
     IssuePriority,
     IssueQuery,
@@ -41,20 +47,25 @@ from kodezart.types.domain.tracker import (
     is_open,
     priority_rank,
 )
+from kodezart.types.domain.tracker_writes import DescriptionEditResult
 from tests.adapters.test_http_mcp_tool_caller import client_over
 from tests.fakes import FakeLinearMcpServer, FakeMcpComment, FakeMcpIssue
 from tests.tracker.conftest import (
     APPROVER,
+    BYSTANDER,
     CLAIMED_ISSUE,
     DOCUMENT_KEY,
     FIXTURE_NOW,
+    ISSUE_LABELS,
     QUEUE_STATE_LABELS,
+    SCOPE_DIAGNOSIS,
     STATE_TYPES,
     TEAM_IDENTIFIERS,
     WORKFLOW_STATE_NAMES,
     fixture_server,
     linear_over_fake_mcp,
 )
+from tests.tracker.marker_config import MARKER_PREFIXES
 
 RAW_PRIORITY_BY_DOMAIN_MEMBER: dict[int, IssuePriority] = {
     0: IssuePriority.NONE,
@@ -65,42 +76,29 @@ RAW_PRIORITY_BY_DOMAIN_MEMBER: dict[int, IssuePriority] = {
 }
 
 
-#: Renewals a measured fire makes: the ninety-one-minute run of KOD-147
-#: against the configured fifteen-minute lease, renewed on a quarter of
-#: it.  Every one of them used to leave a comment on the issue.
-RENEWALS_OF_A_MEASURED_RUN = 24
-
-
-def claim_markers(server: FakeLinearMcpServer) -> list[FakeMcpComment]:
-    """Every claim marker on the fake workspace's comment log.
-
-    Matched with the adapter's OWN pattern rather than a second spelling
-    of it here: a test that recognised markers by a shape the writer had
-    moved off would count nothing and pass.
-    """
-    return [
-        comment
-        for comment in server.comments
-        if _CLAIM_MARKER.search(comment.body) is not None
-    ]
-
-
-def holder_of(comment: FakeMcpComment) -> str:
-    """The holder a claim marker names."""
-    match = _CLAIM_MARKER.search(comment.body)
-    assert match is not None
-    return match.group("holder")
-
-
-def tracker_over(server: FakeLinearMcpServer, **overrides: object) -> LinearMcpTracker:
+def tracker_over(
+    server: FakeLinearMcpServer,
+    *,
+    max_retries: int = 0,
+    retry_backoff_factor: float = 0.0,
+    **overrides: object,
+) -> LinearMcpTracker:
     """The adapter over *server*, with per-test constructor overrides."""
     kwargs: dict[str, object] = {
         "caller": server,
+        "marker_prefixes": MARKER_PREFIXES,
+        "issue_labels": {
+            "criterion": "acceptance-condition",
+            "criteria_ready": "criteria-prepared",
+        },
+        "scope_labels": {"approved": "execution-consent"},
+        "criteria_stage_label_key": "criteria_ready",
         "queue_state_labels": QUEUE_STATE_LABELS,
         "workflow_state_names": WORKFLOW_STATE_NAMES,
         "team_identifiers": TEAM_IDENTIFIERS,
-        "max_retries": 0,
-        "retry_backoff_factor": 0.0,
+        "retry": RetryPolicy(
+            attempts=max_retries + 1, initial_delay=retry_backoff_factor
+        ),
         "clock": lambda: FIXTURE_NOW,
         "ledger": SelfWriteLedger(),
     }
@@ -292,11 +290,8 @@ class TestShapeRefusal:
     async def test_an_unconfigured_team_raises(self) -> None:
         server = fixture_server()
         with pytest.raises(TrackerProtocolError):
-            await tracker_over(server).create_issue(
-                title="t",
-                body="b",
-                team_key="not-configured",
-                priority=IssuePriority.LOW,
+            await tracker_over(server).scan_issues(
+                query=IssueQuery(team_key="not-configured", page_size=1),
             )
 
 
@@ -392,6 +387,28 @@ class TestCapabilityProbe:
         assert refusals == {}
         assert len(server.tool_calls("list_issues")) == 1
 
+    async def test_every_signal_a_refused_scan_serves_is_refused_with_its_diagnosis(
+        self,
+    ) -> None:
+        """One refused tool is a refusal of each signal it serves, each named.
+
+        The three issue signals share the listing tool, so one refused call
+        answers all three with the same diagnosis.  Each is still its own
+        refusal: a boot abort names every refused signal and the passes each
+        one gates, so a signal folded into another's shared diagnosis would
+        leave its passes unnamed.
+        """
+        server = fixture_server(scope_refusals={"list_issues": SCOPE_DIAGNOSIS})
+
+        refusals = await tracker_over(server).verify_scan_capability(
+            signals=list(PassSignal),
+        )
+
+        assert set(refusals) == set(self.ISSUE_SIGNALS)
+        for signal in self.ISSUE_SIGNALS:
+            assert SCOPE_DIAGNOSIS in refusals[signal], signal
+        assert len(server.tool_calls("list_issues")) == 1
+
     async def test_the_probe_asks_for_the_smallest_page_the_tool_takes(self) -> None:
         """A probe is about reachability; a second row would be read by nobody."""
         server = FakeLinearMcpServer(issues=[], state_types=STATE_TYPES)
@@ -421,7 +438,7 @@ class TestCapabilityProbe:
             transport_failures={"list_issues": 1},
         )
 
-        with pytest.raises(McpTransportError):
+        with pytest.raises(TrackerUnavailableError):
             await tracker_over(server).verify_scan_capability(
                 signals=[PassSignal.issues_changed],
             )
@@ -443,7 +460,7 @@ class TestCapabilityProbe:
             tool_errors={"list_issues": "the request failed with status 403"},
         )
 
-        with pytest.raises(McpTransportError, match="403"):
+        with pytest.raises(TrackerUnavailableError, match="403"):
             await tracker_over(server).verify_scan_capability(
                 signals=[PassSignal.issues_changed],
             )
@@ -464,15 +481,13 @@ class TestTransientRetry:
         assert len(server.tool_calls("get_issue")) == 3
 
     async def test_exhausting_the_budget_raises_the_transient_error(self) -> None:
-        from kodezart.domain.errors import TransientAPIError
-
         server = FakeLinearMcpServer(
             issues=[FakeMcpIssue(id="T-3")],
             state_types=STATE_TYPES,
             transient_failures={"get_issue": 5},
         )
         tracker = tracker_over(server, max_retries=1)
-        with pytest.raises(TransientAPIError):
+        with pytest.raises(TrackerUnavailableError):
             await tracker.read_issue(issue_key="T-3")
         assert len(server.tool_calls("get_issue")) == 2
 
@@ -503,7 +518,7 @@ class TestTransportRetry:
             transport_failures={"get_issue": 5},
         )
         tracker = tracker_over(server, max_retries=1)
-        with pytest.raises(McpTransportError):
+        with pytest.raises(TrackerUnavailableError):
             await tracker.read_issue(issue_key="T-5")
         assert len(server.tool_calls("get_issue")) == 2
 
@@ -516,9 +531,12 @@ class TestARefusedCredentialIsNeverRetried:
     budget of sleeps re-asking a question whose answer does not change.
     """
 
-    async def test_the_refusal_stops_the_loop_on_the_attempt_that_met_it(
-        self,
-    ) -> None:
+    async def test_a_refusal_that_outlasts_the_silences_is_raised(self) -> None:
+        """Refused on every presentation, the call gives up after the silences.
+
+        The back-off is never spent on it: a refusal is answered with one
+        presentation per silence, four silences in all, then raised.
+        """
         server = FakeLinearMcpServer(
             issues=[FakeMcpIssue(id="T-6")],
             state_types=STATE_TYPES,
@@ -527,13 +545,73 @@ class TestARefusedCredentialIsNeverRetried:
         tracker = tracker_over(server, max_retries=3)
 
         served = await tracker.read_issue(issue_key="T-6")
-        with pytest.raises(McpCredentialRefusedError):
+        with (
+            structlog.testing.capture_logs() as logs,
+            pytest.raises(TrackerAccessDeniedError),
+        ):
             await tracker.read_issue(issue_key="T-6")
 
         assert served.issue_key == "T-6"
-        # One call served, one refused: no back-off attempt was spent, where
-        # a retried refusal would have made four more.
+        # One call served, then one presentation per silence and the one
+        # that gives up: four silences, five refusals.
+        assert len(server.tool_calls("get_issue")) == 6
+        assert not [entry for entry in logs if entry["event"] == "tracker_mcp_retry"]
+
+    async def test_a_refusal_is_answered_with_silence_then_served(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Refused once, the call waits the silence and is served after it.
+
+        Measured 2026-09-24: the vendor answers 401 for a key whose hourly
+        budget is spent, and the budget is a leaky bucket that only silence
+        refills. The wait is the production one here, recorded rather than
+        slept.
+        """
+        from kodezart.adapters.linear import tracker as tracker_module
+
+        monkeypatch.setattr(tracker_module, "_REFUSAL_WAIT_SECONDS", 900.0)
+        server = FakeLinearMcpServer(
+            issues=[FakeMcpIssue(id="T-8")],
+            state_types=STATE_TYPES,
+            credential_refused_after={"get_issue": 0},
+        )
+        tracker = tracker_over(server, max_retries=3)
+        waited: list[float] = []
+        original_sleep = asyncio.sleep
+
+        async def silence(seconds: float) -> None:
+            if seconds != 900.0:
+                await original_sleep(seconds)
+                return
+            waited.append(seconds)
+            server.restore_credential("get_issue")
+            await original_sleep(0)
+
+        monkeypatch.setattr(asyncio, "sleep", silence)
+
+        with structlog.testing.capture_logs() as logs:
+            served = await tracker.read_issue(issue_key="T-8")
+
+        assert served.issue_key == "T-8"
+        assert waited == [900.0]
         assert len(server.tool_calls("get_issue")) == 2
+        waiting = [
+            entry
+            for entry in logs
+            if entry["event"] == "tracker_credential_refused_waiting"
+        ]
+        assert [
+            (
+                entry["tool"],
+                entry["server_name"],
+                entry["refusal"],
+                entry["wait_seconds"],
+            )
+            for entry in waiting
+        ] == [("get_issue", "fake-linear", 0, 900.0)]
+        assert not [
+            entry for entry in logs if entry["event"] == "tracker_credential_refused"
+        ]
 
     async def test_the_refusal_names_the_credential_once(self) -> None:
         server = FakeLinearMcpServer(
@@ -545,7 +623,7 @@ class TestARefusedCredentialIsNeverRetried:
 
         with (
             structlog.testing.capture_logs() as logs,
-            pytest.raises(McpCredentialRefusedError),
+            pytest.raises(TrackerAccessDeniedError),
         ):
             await tracker.read_issue(issue_key="T-7")
 
@@ -556,6 +634,12 @@ class TestARefusedCredentialIsNeverRetried:
         assert named[0]["server_name"] == "fake-linear"
         assert named[0]["tool"] == "get_issue"
         assert not [entry for entry in logs if entry["event"] == "tracker_mcp_retry"]
+        silences = [
+            entry["refusal"]
+            for entry in logs
+            if entry["event"] == "tracker_credential_refused_waiting"
+        ]
+        assert silences == [0, 1, 2, 3]
 
     async def test_a_transport_failure_is_still_retried_beside_it(self) -> None:
         """The paired positive: the retried class did not narrow."""
@@ -603,167 +687,6 @@ class TestARefusedCredentialIsNeverRetried:
         retries = [entry for entry in logs if entry["event"] == "tracker_mcp_retry"]
         assert [entry["delay_seconds"] for entry in retries] == [0.25, 0.5]
         assert all(entry["tool"] == "get_issue" for entry in retries)
-
-
-class TestClaimMechanism:
-    """The comment-log claim, including the same-instant tie-break."""
-
-    async def test_same_instant_claims_still_produce_one_winner(self) -> None:
-        """Server timestamps can collide; the comment key breaks the tie."""
-        server = fixture_server()
-        server.comment_instants = [FIXTURE_NOW] * 4
-        tracker = linear_over_fake_mcp(server)
-        first = await tracker.claim_issue(
-            issue_key=CLAIMED_ISSUE,
-            holder="pass-a",
-            lease_seconds=60.0,
-        )
-        second = await tracker.claim_issue(
-            issue_key=CLAIMED_ISSUE,
-            holder="pass-b",
-            lease_seconds=60.0,
-        )
-        assert first.status is ClaimStatus.GRANTED
-        assert second.status is ClaimStatus.LOST
-
-    async def test_an_expired_lease_frees_the_issue(self) -> None:
-        server = fixture_server()
-        early = linear_over_fake_mcp(server)
-        await early.claim_issue(
-            issue_key=CLAIMED_ISSUE,
-            holder="pass-a",
-            lease_seconds=60.0,
-        )
-        later = tracker_over(
-            server,
-            clock=lambda: FIXTURE_NOW + timedelta(seconds=120),
-        )
-        assert await later.active_claim(issue_key=CLAIMED_ISSUE) is None
-        won = await later.claim_issue(
-            issue_key=CLAIMED_ISSUE,
-            holder="pass-b",
-            lease_seconds=60.0,
-        )
-        assert won.status is ClaimStatus.GRANTED
-
-
-class TestClaimMarkerVolume:
-    """What a claim COSTS the issue's comment log, over a whole run.
-
-    The log is a surface a person reads and a board that mirrors publicly,
-    and every marker on it is a machine comment.  The measured shape
-    (KOD-152): a renewal appended, so a long fire wrote dozens of them, and
-    a claimant that lost the race left its marker there for the whole lease
-    — a claim nobody held, outranking every later claimant and surviving
-    the winner's own release.
-
-    Counted on the fake server's log rather than through the port, because
-    the port cannot express "how many comments did this cost" and that is
-    exactly the question.
-    """
-
-    async def test_a_claim_renewed_through_a_long_run_leaves_one_marker(self) -> None:
-        server = fixture_server()
-        tracker = linear_over_fake_mcp(server)
-        await tracker.claim_issue(
-            issue_key=CLAIMED_ISSUE,
-            holder="pass-a",
-            lease_seconds=60.0,
-        )
-
-        for _ in range(RENEWALS_OF_A_MEASURED_RUN):
-            renewed = await tracker.renew_claim(
-                issue_key=CLAIMED_ISSUE,
-                holder="pass-a",
-                lease_seconds=60.0,
-            )
-            assert renewed is not None, "the claim lapsed under a run still going"
-
-        assert len(claim_markers(server)) == 1
-
-    async def test_a_renewal_across_a_competitors_claim_keeps_the_order(self) -> None:
-        """The renewal edits in place, so the holder keeps where it stood.
-
-        The competitor arrives BETWEEN renewals, which is the ordering the
-        edit exists for: an appended renewal would carry a later timestamp
-        than the competitor's marker and could lose the log to it.
-        """
-        server = fixture_server()
-        tracker = linear_over_fake_mcp(server)
-        await tracker.claim_issue(
-            issue_key=CLAIMED_ISSUE,
-            holder="pass-a",
-            lease_seconds=60.0,
-        )
-        (first,) = claim_markers(server)
-        loser = await tracker.claim_issue(
-            issue_key=CLAIMED_ISSUE,
-            holder="pass-b",
-            lease_seconds=60.0,
-        )
-        await tracker.renew_claim(
-            issue_key=CLAIMED_ISSUE,
-            holder="pass-a",
-            lease_seconds=120.0,
-        )
-
-        held = await tracker.active_claim(issue_key=CLAIMED_ISSUE)
-
-        assert loser.status is ClaimStatus.LOST
-        assert held is not None
-        assert held.holder == "pass-a"
-        assert held.expires_at == FIXTURE_NOW + timedelta(seconds=120.0)
-        # The place in the order is the marker's creation instant, and the
-        # renewal did not move it: an appended renewal would carry a later
-        # one than the competitor's arrival.
-        (carried,) = claim_markers(server)
-        assert carried.created_at == first.created_at
-
-    async def test_a_losing_claimant_leaves_no_marker_behind(self) -> None:
-        """The loser deletes its own append; the winner's is untouched."""
-        server = fixture_server()
-        tracker = linear_over_fake_mcp(server)
-        won = await tracker.claim_issue(
-            issue_key=CLAIMED_ISSUE,
-            holder="pass-a",
-            lease_seconds=60.0,
-        )
-        lost = await tracker.claim_issue(
-            issue_key=CLAIMED_ISSUE,
-            holder="pass-b",
-            lease_seconds=60.0,
-        )
-
-        assert lost.status is ClaimStatus.LOST
-        assert [holder_of(marker) for marker in claim_markers(server)] == ["pass-a"]
-        held = await tracker.active_claim(issue_key=CLAIMED_ISSUE)
-        assert held is not None
-        assert held.expires_at == won.expires_at
-
-    async def test_the_loser_leaves_nothing_that_outlives_the_winner(self) -> None:
-        """The measured consequence: the winner's release frees the issue.
-
-        An orphaned marker made the release a half-measure — the issue went
-        on being unclaimable, by a marker nobody was renewing, until the
-        loser's own lease ran out.
-        """
-        server = fixture_server()
-        tracker = linear_over_fake_mcp(server)
-        await tracker.claim_issue(
-            issue_key=CLAIMED_ISSUE,
-            holder="pass-a",
-            lease_seconds=60.0,
-        )
-        await tracker.claim_issue(
-            issue_key=CLAIMED_ISSUE,
-            holder="pass-b",
-            lease_seconds=60.0,
-        )
-
-        await tracker.release_claim(issue_key=CLAIMED_ISSUE, holder="pass-a")
-
-        assert claim_markers(server) == []
-        assert await tracker.active_claim(issue_key=CLAIMED_ISSUE) is None
 
 
 class TestDeterministicPath:
@@ -1213,9 +1136,7 @@ class TestACommentTheVendorAttributesToNobody:
         server = fixture_server()
         tracker = linear_over_fake_mcp(server)
         await tracker.claim_issue(
-            issue_key=CLAIMED_ISSUE,
-            holder="pass-a",
-            lease_seconds=60.0,
+            issue_key=CLAIMED_ISSUE, holder="pass-a", lease_seconds=600
         )
         await tracker.record_work_ref(
             ref=WorkRef(
@@ -1383,12 +1304,10 @@ class TestARetryBudgetIsNotSpentOnASessionThatDied:
         caller = HttpMcpToolCaller(
             url="https://tracker.invalid/mcp",
             server_name="fake-linear",
-            token=self.FIXTURE_TOKEN,
+            headers={"Authorization": "Bearer" + " " + self.FIXTURE_TOKEN},
             timeout_seconds=5.0,
             call_timeout_seconds=5.0,
             sse_read_timeout_seconds=300.0,
-            auth_header_name="Authorization",
-            auth_scheme="Bearer",
             error_detail_limit=500,
             client_factory=client_over(endpoint.transport),
         )
@@ -1409,7 +1328,7 @@ class TestARetryBudgetIsNotSpentOnASessionThatDied:
         try:
             tracker = tracker_over(workspace, caller=caller, max_retries=0)
             with structlog.testing.capture_logs() as logs:
-                with pytest.raises(McpCallUnansweredError):
+                with pytest.raises(TrackerUnavailableError):
                     await tracker.read_issue(issue_key="T-9")
                 issue = await tracker.read_issue(issue_key="T-9")
         finally:
@@ -1455,11 +1374,206 @@ class TestARetryBudgetIsNotSpentOnASessionThatDied:
         try:
             tracker = tracker_over(workspace, caller=caller, max_retries=2)
             with structlog.testing.capture_logs() as logs:
-                with pytest.raises(McpCallUnansweredError):
-                    await tracker.update_issue(issue_key="T-9", title="renamed")
+                with pytest.raises(TrackerUnavailableError):
+                    await tracker.post_comment(issue_key="T-9", body="renamed")
         finally:
             await caller.close()
 
         assert endpoint.dropped, "the death was never met"
-        assert workspace.tool_calls("save_issue") == []
+        assert workspace.tool_calls("save_comment") == []
         assert "tracker_mcp_retry" not in [entry["event"] for entry in logs]
+
+
+#: The claimable issue's own body: the description surface in the fixture
+#: workspace a held write may take, addressed once so every case below
+#: asks about the same body.
+CLAIMED_BODY = WritableSurface(
+    kind=SurfaceKind.ISSUE_DESCRIPTION,
+    ref=ScopeRef(kind=ScopeKind.ISSUE, key=CLAIMED_ISSUE),
+)
+
+#: The same issue's criterion body: the sibling answerable kind, on the
+#: very key CLAIMED_BODY names, so the two records land on one comment
+#: target and only their own addresses tell them apart.
+CLAIMED_CRITERION_BODY = WritableSurface(
+    kind=SurfaceKind.CRITERION_SUB_ISSUE,
+    ref=ScopeRef(kind=ScopeKind.ISSUE, key=CLAIMED_ISSUE),
+)
+
+#: The two holders the record cases write as.
+FIRST_WRITER = "first-writing-job"
+SECOND_WRITER = "second-writing-job"
+RECORD_LEASE_SECONDS = 600.0
+
+
+async def held_body_write(
+    tracker: TrackerPort, *, holder: str, replacement: str
+) -> DescriptionEditResult:
+    """One holder taking the claimable body, writing it, and standing down.
+
+    The grant is released whatever the write did, so what the provenance
+    read answers afterwards cannot have come from a lease still standing.
+    """
+    surfaces = frozenset({CLAIMED_BODY})
+    await tracker.acquire_surfaces(
+        surfaces=surfaces, holder=holder, lease_seconds=RECORD_LEASE_SECONDS
+    )
+    try:
+        current = await tracker.read_issue(issue_key=CLAIMED_ISSUE)
+        return await tracker.edit_description(
+            target=CLAIMED_ISSUE,
+            expected=current.body,
+            replacement=replacement,
+            authorization=DescriptionWriteAuthority(
+                holder=holder, surface=CLAIMED_BODY
+            ),
+        )
+    finally:
+        await tracker.release_surfaces(surfaces=surfaces, holder=holder)
+
+
+class TestTheBodyWriteRecordThisAdapterKeeps:
+    """What a body-write record stands for, which only this adapter decides.
+
+    No vendor fact orders two body writes, so the holders the provenance
+    read answers with are read off records this port writes itself.  What
+    each record stands for is therefore adapter-owned: a body that moved,
+    a save the backend took, and a comment the backend attributes to the
+    account this credential writes as.
+    """
+
+    async def test_a_held_write_that_moves_no_body_records_no_holder(self) -> None:
+        """A replay that replaced nothing leaves its holder unnamed.
+
+        The holder is known and the grant is live at the point the replay
+        is settled — the write is refused nothing, it simply has no body to
+        move — so nothing but the record's own placement keeps that holder
+        out of the answer.
+        """
+        tracker = linear_over_fake_mcp(fixture_server())
+        assert (
+            await held_body_write(
+                tracker,
+                holder=FIRST_WRITER,
+                replacement="a body the first job put there",
+            )
+            is DescriptionEditResult.EDITED
+        )
+        written = await tracker.read_surface_authorship(surface=CLAIMED_BODY)
+        standing = await tracker.read_issue(issue_key=CLAIMED_ISSUE)
+
+        replay = await held_body_write(
+            tracker, holder=SECOND_WRITER, replacement=standing.body
+        )
+
+        assert replay is DescriptionEditResult.UNCHANGED
+        assert (await tracker.read_issue(issue_key=CLAIMED_ISSUE)).body == standing.body
+        answer = await tracker.read_surface_authorship(surface=CLAIMED_BODY)
+        assert answer.holders == written.holders == (FIRST_WRITER,)
+
+    async def test_a_save_the_backend_refuses_records_no_holder(self) -> None:
+        """A write that never landed leaves no holder behind it.
+
+        The read has no second source to contradict a record with, so a
+        record standing for a save the backend refused would be the only
+        account of that body there is.  The first holder's landed write is
+        asserted in the same case, so the empty answer is the refusal's
+        doing and not a read that answers nobody either way.
+        """
+        server = fixture_server()
+        tracker = linear_over_fake_mcp(server)
+        assert (
+            await held_body_write(
+                tracker,
+                holder=FIRST_WRITER,
+                replacement="a body the first job put there",
+            )
+            is DescriptionEditResult.EDITED
+        )
+        standing = await tracker.read_issue(issue_key=CLAIMED_ISSUE)
+
+        server._tool_errors[_TOOL_SAVE_ISSUE] = "temporarily refused"
+        with pytest.raises(TrackerUnavailableError):
+            await held_body_write(
+                tracker,
+                holder=SECOND_WRITER,
+                replacement="a body no save ever took",
+            )
+        del server._tool_errors[_TOOL_SAVE_ISSUE]
+
+        assert (await tracker.read_issue(issue_key=CLAIMED_ISSUE)).body == standing.body
+        answer = await tracker.read_surface_authorship(surface=CLAIMED_BODY)
+        assert answer.holders == (FIRST_WRITER,)
+
+    async def test_a_record_the_backend_attributes_elsewhere_names_no_holder(
+        self,
+    ) -> None:
+        """Author identity authenticates a record; the log alone does not.
+
+        Two runs sharing one tracker account cannot be told apart by the
+        account, which is why the holder travels on the record — but that
+        only holds while a record the backend attributes to somebody else
+        counts for nothing.  Both copies below carry the shape of a real
+        record and differ in nothing but the account the backend names, so
+        the account is the only thing that can be deciding.
+        """
+        imitated = "imitated-writing-job"
+        attested = "attested-writing-job"
+        server = fixture_server()
+        tracker = linear_over_fake_mcp(server)
+        assert (
+            await held_body_write(
+                tracker,
+                holder=FIRST_WRITER,
+                replacement="a body the first job put there",
+            )
+            is DescriptionEditResult.EDITED
+        )
+        (record,) = [
+            comment for comment in server.comments if FIRST_WRITER in comment.body
+        ]
+
+        for offset, (holder, author) in enumerate(
+            ((imitated, BYSTANDER), (attested, APPROVER)), start=1
+        ):
+            server.comments.append(
+                FakeMcpComment(
+                    id=f"copied-record-{offset}",
+                    issue_id=CLAIMED_ISSUE,
+                    author=author,
+                    body=record.body.replace(FIRST_WRITER, holder),
+                    created_at=record.created_at + timedelta(seconds=offset),
+                )
+            )
+
+        answer = await tracker.read_surface_authorship(surface=CLAIMED_BODY)
+        assert answer.holders == (FIRST_WRITER, attested)
+
+    async def test_a_sibling_bodys_record_names_no_holder(self) -> None:
+        """A record answers for the body it moved, not for its neighbour.
+
+        Both answerable body kinds on one issue are commented on that one
+        issue, so the two kinds' records sit on a single target and the
+        record's own address is all that keeps the description's holder
+        out of the criterion body's answer.  The description's holder is
+        asserted on its own body in the same case, so the empty answer is
+        that address's doing and not a read answering nobody either way.
+        """
+        server = fixture_server()
+        tracker = linear_over_fake_mcp(server)
+        assert (
+            await held_body_write(
+                tracker,
+                holder=FIRST_WRITER,
+                replacement="a body the first job put there",
+            )
+            is DescriptionEditResult.EDITED
+        )
+        written = await tracker.read_surface_authorship(surface=CLAIMED_BODY)
+        assert written.holders == (FIRST_WRITER,)
+
+        # The board move that gives this very issue a criterion body.
+        server.issues[CLAIMED_ISSUE].labels.append(ISSUE_LABELS["criterion"])
+
+        sibling = await tracker.read_surface_authorship(surface=CLAIMED_CRITERION_BODY)
+        assert sibling.holders == ()

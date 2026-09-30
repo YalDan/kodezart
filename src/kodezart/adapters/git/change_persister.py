@@ -1,0 +1,369 @@
+"""Git change persister — ensures the canonical ref equals workspace HEAD.
+
+Three persistence paths:
+- Dirty working tree: generate commit message, stage, commit, push.
+- Clean working tree, HEAD ahead of (or equal to) the remote tip:
+  push HEAD's existing commit (no new commit).
+- Clean working tree, HEAD diverged from the remote tip: push the
+  divergent line to a backup ref on origin, reset the worktree to
+  ``<remote>/<branch>``, and either skip the replay (when divergent
+  tree == remote-tip tree) or synthesize one replay commit via
+  ``git commit-tree`` whose parent IS the remote tip and push
+  fast-forward.
+
+Returns ``None`` only when HEAD already equals the remote tip.
+Raises ``RuntimeError`` only when the pre-mutation backup push in the
+divergence-recovery path fails — in that case no state has been
+mutated (no reset, no commit-tree, no follow-up push).
+"""
+
+from collections.abc import Awaitable, Callable
+
+from kodezart.core.errors import soft_failure
+from kodezart.core.logging import BoundLogger, get_logger
+from kodezart.core.outbound_write import gated_write
+from kodezart.core.protocols import (
+    AgentExecutor,
+    GitService,
+    OutboundContentGate,
+    PromptSetProvider,
+)
+from kodezart.core.stream_drain import drain
+from kodezart.domain.amendment import NativeWriteRefusalError
+from kodezart.types.domain.agent import (
+    COMMIT_MESSAGE_SCHEMA,
+    CommitMessageOutput,
+)
+from kodezart.types.domain.branch import BackupBranchName
+from kodezart.types.domain.gating import (
+    ContentClass,
+    OutboundDestination,
+    RepoVisibility,
+    TrackerAggregate,
+    WriterShape,
+)
+from kodezart.types.domain.persist import PersistResult, PersistSource
+from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.session import PermissionMode, SessionType, ToolPreset
+from kodezart.types.domain.skills import SkillsSelection
+
+
+class GitChangePersister:
+    """Ensure the canonical ref equals workspace HEAD.
+
+    Implements the ``ChangePersister`` protocol.
+    """
+
+    def __init__(
+        self,
+        git: GitService,
+        committer_name: str,
+        committer_email: str,
+        *,
+        remote: str,
+        prompts: PromptSetProvider,
+        gate: OutboundContentGate,
+    ) -> None:
+        self._git = git
+        self._committer_name = committer_name
+        self._committer_email = committer_email
+        self._remote = remote
+        self._prompts: PromptSetProvider = prompts
+        self._gate: OutboundContentGate = gate
+        self._log: BoundLogger = get_logger(__name__)
+
+    async def persist(
+        self,
+        *,
+        workspace_path: str,
+        branch: str,
+        executor: AgentExecutor,
+        backup_ref_id_prefix: str,
+        skills: SkillsSelection,
+        visibility: RepoVisibility,
+        before_commit: Callable[[], Awaitable[None]] | None = None,
+        before_publish: Callable[[str], Awaitable[None]] | None = None,
+    ) -> PersistResult | None:
+        """Ensure ``<remote>/<branch>`` equals workspace HEAD.
+
+        Decision tree:
+        - dirty working tree → stage+commit+push, return ``PersistResult``;
+        - clean tree and HEAD == remote tip → ``None`` (no-op);
+        - clean tree and HEAD descends from remote tip (or remote is
+          absent) → push, return ``PersistResult``;
+        - clean tree and HEAD diverged → recover (backup-push the divergent
+          line, reset to the remote tip, skip-or-replay) and return a
+          ``PersistResult`` with ``source = DIVERGENCE_REPLAY``.  Raises
+          ``RuntimeError`` only if the pre-mutation backup push fails;
+          no state is mutated in that case.
+        """
+        if before_commit is not None:
+            await before_commit()
+        if await self._git.has_changes(workspace_path):
+            return await self._persist_dirty(
+                workspace_path=workspace_path,
+                branch=branch,
+                executor=executor,
+                skills=skills,
+                visibility=visibility,
+                before_commit=before_commit,
+                before_publish=before_publish,
+            )
+
+        head_sha = await self._git.current_sha(workspace_path)
+        remote_tip = await self._git.remote_branch_sha(
+            workspace_path,
+            self._remote,
+            branch,
+        )
+        if remote_tip is not None and remote_tip == head_sha:
+            await self._log.ainfo("persist_no_changes", path=workspace_path)
+            return None
+
+        head_descends_from_remote = remote_tip is None or await self._git.is_ancestor(
+            workspace_path,
+            remote_tip,
+            head_sha,
+        )
+        if not head_descends_from_remote:
+            if before_commit is not None:
+                raise NativeWriteRefusalError(
+                    "Guarded native persistence cannot recover a divergent branch"
+                )
+            if remote_tip is None:
+                msg = (
+                    f"Internal invariant violated: divergence branch entered "
+                    f"with no remote tip for {self._remote}/{branch}"
+                )
+                raise RuntimeError(msg)
+            return await self._recover_from_divergence(
+                workspace_path=workspace_path,
+                branch=branch,
+                head_sha=head_sha,
+                remote_tip=remote_tip,
+                backup_ref_id_prefix=backup_ref_id_prefix,
+                visibility=visibility,
+            )
+
+        head_message = await self._git.head_commit_message(workspace_path)
+        if before_commit is not None:
+            await before_commit()
+        if before_publish is not None:
+            await before_publish(head_sha)
+        await self._git.push(workspace_path, branch)
+        await self._log.ainfo(
+            "agent_direct_commit_pushed",
+            commit_sha=head_sha,
+            branch=branch,
+        )
+        return PersistResult(
+            commit_sha=head_sha,
+            branch=branch,
+            message=head_message,
+            source=PersistSource.AGENT_DIRECT_COMMIT,
+        )
+
+    async def _persist_dirty(
+        self,
+        *,
+        workspace_path: str,
+        branch: str,
+        executor: AgentExecutor,
+        skills: SkillsSelection,
+        visibility: RepoVisibility,
+        before_commit: Callable[[], Awaitable[None]] | None,
+        before_publish: Callable[[str], Awaitable[None]] | None,
+    ) -> PersistResult:
+        commit_msg = await self._generate_commit_message(
+            executor,
+            workspace_path,
+            skills,
+        )
+        await self._git.add_all(workspace_path)
+        full_message = commit_msg.title
+        if commit_msg.body:
+            full_message = f"{commit_msg.title}\n\n{commit_msg.body}"
+        # AUTHORED: title and body come from _generate_commit_message, which
+        # is a model call over the working tree.
+        full_message = await self._gated_message(
+            full_message,
+            visibility,
+            OutboundDestination.COMMIT_MESSAGE,
+            ContentClass.AUTHORED,
+            aggregates=(),
+        )
+        if before_commit is not None:
+            await before_commit()
+        sha = await self._git.commit(
+            cwd=workspace_path,
+            message=full_message,
+            author_name=self._committer_name,
+            author_email=self._committer_email,
+        )
+        if before_publish is not None:
+            await before_publish(sha)
+        await self._git.push(workspace_path, branch)
+        await self._log.ainfo("changes_persisted", commit_sha=sha, branch=branch)
+        return PersistResult(
+            commit_sha=sha,
+            branch=branch,
+            message=full_message,
+            source=PersistSource.WORKING_TREE_COMMIT,
+        )
+
+    async def _recover_from_divergence(
+        self,
+        *,
+        workspace_path: str,
+        branch: str,
+        head_sha: str,
+        remote_tip: str,
+        backup_ref_id_prefix: str,
+        visibility: RepoVisibility,
+    ) -> PersistResult:
+        backup_name = str(
+            BackupBranchName(
+                source_branch=branch,
+                workspace_id_prefix=backup_ref_id_prefix,
+            )
+        )
+        # Step 1: backup BEFORE any state mutation. Preserves the divergent
+        # commit (and its tree) on the remote, independent of local GC.
+        try:
+            await self._git.push(workspace_path, backup_name)
+        except Exception as exc:
+            await self._log.aerror(
+                "divergence_backup_push_failed",
+                backup=backup_name,
+                head_sha=head_sha,
+                remote_tip=remote_tip,
+                branch=branch,
+                error=str(exc),
+            )
+            msg = (
+                f"Workspace HEAD ({head_sha}) has diverged from "
+                f"{self._remote}/{branch} ({remote_tip}); backup push to "
+                f"{backup_name} failed — no state mutated"
+            )
+            raise RuntimeError(msg) from exc
+
+        # Capture divergent-HEAD message + tree BEFORE reset (defensive: keeps
+        # recovery correct even if a worktree pruned unreachable objects).
+        # AUTHORED: the divergent HEAD's message is replayed verbatim, and
+        # whoever wrote it wrote prose. Reading it back out of git does not
+        # launder it into a derived value.
+        head_message_divergent = await self._gated_message(
+            await self._git.head_commit_message(workspace_path),
+            visibility,
+            OutboundDestination.COMMIT_MESSAGE_DIVERGENCE_REPLAY,
+            ContentClass.AUTHORED,
+            aggregates=(),
+        )
+        head_tree = await self._git.tree_of(workspace_path, head_sha)
+
+        # Step 2: single reset moves the shared refs/heads/<branch>.
+        await self._git.reset_hard(workspace_path, remote_tip)
+
+        # Step 3: tree-equality guard.
+        remote_tip_tree = await self._git.tree_of(workspace_path, remote_tip)
+        if head_tree == remote_tip_tree:
+            # HEAD is now at remote_tip; head_commit_message reads remote_tip's
+            # message — consistent with PersistResult.commit_sha = remote_tip.
+            remote_tip_message = await self._git.head_commit_message(workspace_path)
+            await self._log.ainfo(
+                "divergence_recovered_tree_equal",
+                backup=backup_name,
+                commit_sha=remote_tip,
+                branch=branch,
+            )
+            return PersistResult(
+                commit_sha=remote_tip,
+                branch=branch,
+                message=remote_tip_message,
+                source=PersistSource.DIVERGENCE_REPLAY,
+                recovery_ref=backup_name,
+            )
+
+        # Step 4: replay as a single commit whose parent IS remote_tip.
+        replay_sha = await self._git.commit_tree(
+            cwd=workspace_path,
+            tree=head_tree,
+            parent=remote_tip,
+            message=head_message_divergent,
+            author_name=self._committer_name,
+            author_email=self._committer_email,
+        )
+        await self._git.reset_hard(workspace_path, replay_sha)
+        await self._git.push(workspace_path, branch)  # fast-forward by construction
+        await self._log.ainfo(
+            "divergence_recovered_replay",
+            backup=backup_name,
+            commit_sha=replay_sha,
+            branch=branch,
+        )
+        return PersistResult(
+            commit_sha=replay_sha,
+            branch=branch,
+            message=head_message_divergent,
+            source=PersistSource.DIVERGENCE_REPLAY,
+            recovery_ref=backup_name,
+        )
+
+    async def _gated_message(
+        self,
+        message: str,
+        visibility: RepoVisibility,
+        destination: OutboundDestination,
+        content_class: ContentClass,
+        *,
+        aggregates: tuple[TrackerAggregate, ...],
+    ) -> str:
+        """Route a commit message through the one gated-write path."""
+        return await gated_write(
+            gate=self._gate,
+            log=self._log,
+            content=message,
+            visibility=visibility,
+            shape=WriterShape.PROSE,
+            destination=destination,
+            content_class=content_class,
+            aggregates=aggregates,
+        )
+
+    async def _generate_commit_message(
+        self,
+        executor: AgentExecutor,
+        cwd: str,
+        skills: SkillsSelection,
+    ) -> CommitMessageOutput:
+        output_format: dict[str, object] = {
+            "type": "json_schema",
+            "schema": COMMIT_MESSAGE_SCHEMA,
+        }
+
+        result_event, rate_limit_rejected = await drain(
+            executor.stream(
+                prompt=self._prompts.template_for(PromptKey.COMMIT_MESSAGE).render({}),
+                cwd=cwd,
+                permission_mode=PermissionMode.PLAN,
+                allowed_tools=ToolPreset.EVALUATION,
+                skills=skills,
+                session_type=SessionType.COMMIT_MESSAGE,
+                session_policy=self._prompts.session_policy(
+                    PromptKey.COMMIT_MESSAGE,
+                ),
+                output_format=output_format,
+            ),
+            site="commit_message",
+        )
+
+        if result_event is None or result_event.structured_output is None:
+            msg = "Agent did not produce structured output for commit message"
+            raise soft_failure(
+                msg,
+                raise_site="commit_message",
+                result_event=result_event,
+                rate_limit_rejected=rate_limit_rejected,
+            )
+
+        return CommitMessageOutput.model_validate(result_event.structured_output)

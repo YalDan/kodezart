@@ -16,6 +16,7 @@ from kodezart.types.domain.branch import (
     WorkRefRole,
     trunk_base,
 )
+from kodezart.types.domain.session import PermissionMode
 from kodezart.types.domain.workflow import ExecutionContext
 
 BLOCKER_A = BaseInput(
@@ -47,7 +48,7 @@ def _context(spec: BaseSpec) -> ExecutionContext:
         repo_path="/tmp/fake",
         cache_key="k",
         base_spec=spec,
-        permission_mode="bypassPermissions",
+        permission_mode=PermissionMode.UNATTENDED,
         allowed_tools=["Bash"],
     )
 
@@ -90,7 +91,7 @@ def test_the_context_holds_no_base_of_its_own() -> None:
                 "repo_path": "/tmp/fake",
                 "cache_key": "k",
                 "base_branch": "main",
-                "permission_mode": "bypassPermissions",
+                "permission_mode": PermissionMode.UNATTENDED,
                 "allowed_tools": [],
             },
         )

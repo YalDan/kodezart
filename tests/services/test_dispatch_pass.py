@@ -29,7 +29,7 @@ from kodezart.composition.passes import (
     delivery_probe_for,
     fire_report,
 )
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.errors import McpCredentialRefusedError
 from kodezart.domain.git_url import extract_owner_repo
 from kodezart.services import dispatch_pass as dispatch_pass_module
@@ -60,7 +60,6 @@ from kodezart.types.domain.operation import (
     CheckStep,
     DocumentEntry,
     DocumentSystem,
-    Initiative,
     LifecycleStage,
     OperationConfig,
     Principal,
@@ -108,6 +107,10 @@ ASSET_MAX_COUNT = 20
 ASSET_MAX_BYTES = 262144
 ASSET_FETCH_TIMEOUT_SECONDS = 30.0
 RENEWAL_FRACTION = 0.25
+#: The dispatch cadence these passes are built on. It has no default: a
+#: dispatch pass is scheduled only when both are set.
+DISPATCH_INTERVAL_SECONDS = 300.0
+DISPATCH_TIMEOUT_SECONDS = 240.0
 SETTLE_TRIES = 500
 SETTLE_DELAY_SECONDS = 0.01
 
@@ -160,6 +163,7 @@ def operation_config(
     return OperationConfig(
         operation_name="fixture",
         workspace="fixture-workspace",
+        marker_prefixes={"run_outcome": "fixture-outcome"},
         principals=[
             Principal(
                 tracker_user=APPROVER,
@@ -206,7 +210,6 @@ def operation_config(
         },
         knowledge={},
         endpoints={},
-        initiatives=[Initiative(id="init-1")],
     )
 
 
@@ -245,6 +248,7 @@ def fire_dispatcher(
             tracker=tracker,
             git=FakeGitService(),
             remote=REMOTE,
+            refs=tracker,
         ),
         cache=FakeRepoCache(),
         trunk=TRUNK,
@@ -260,7 +264,12 @@ def tick(tracker: FakeTrackerPort) -> tuple[GatedDispatchPass, FakeJobQueue]:
             recorder=RunRecorder(records={}, sinks={}),
             queue=queue,
             registry=queue,
-            writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
+            writer=TrackerLifecycleWriter(
+                marker_prefixes={"run_outcome": "fixture-outcome"},
+                surface_lease_seconds=900,
+                tracker=tracker,
+                gate=PassThroughGate(),
+            ),
             heartbeat=ClaimHeartbeat(
                 tracker=tracker,
                 holder=HOLDER,
@@ -358,7 +367,12 @@ async def test_an_enqueue_reporting_nothing_enqueued_raises(absent_field: str) -
         recorder=RunRecorder(records={}, sinks={}),
         queue=queue,
         registry=queue,
-        writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
+        writer=TrackerLifecycleWriter(
+            marker_prefixes={"run_outcome": "fixture-outcome"},
+            surface_lease_seconds=900,
+            tracker=tracker,
+            gate=PassThroughGate(),
+        ),
         heartbeat=ClaimHeartbeat(
             tracker=tracker,
             holder=HOLDER,
@@ -404,6 +418,7 @@ class _FailingDispatcher:
         error: Exception | None = None,
     ) -> None:
         self.calls: int = 0
+        self.entered = asyncio.Event()
         self._block: asyncio.Event | None = block
         self._error: Exception = (
             TimeoutError("the delivery probe could not be reached")
@@ -413,6 +428,7 @@ class _FailingDispatcher:
 
     async def run_pass(self) -> DispatchReport:
         self.calls += 1
+        self.entered.set()
         if self._block is not None:
             await self._block.wait()
         raise self._error
@@ -442,6 +458,8 @@ def failing_tick(
                 queue=queue,
                 registry=queue,
                 writer=TrackerLifecycleWriter(
+                    marker_prefixes={"run_outcome": "fixture-outcome"},
+                    surface_lease_seconds=900,
                     tracker=tracker,
                     gate=PassThroughGate(),
                 ),
@@ -541,14 +559,61 @@ class TestAFailedPassGivesTheWakeUpBack:
         tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
         pass_, guard, dispatcher = failing_tick(tracker, block=asyncio.Event())
 
-        with pytest.raises(TimeoutError):
+        running = asyncio.create_task(pass_.run(TICK_STARTED_AT))
+        try:
             await asyncio.wait_for(
-                pass_.run(TICK_STARTED_AT),
-                timeout=SETTLE_DELAY_SECONDS,
+                dispatcher.entered.wait(),
+                timeout=SETTLE_TRIES * SETTLE_DELAY_SECONDS,
             )
+            with pytest.raises(TimeoutError):
+                await asyncio.wait_for(running, timeout=SETTLE_DELAY_SECONDS)
+        finally:
+            running.cancel()
+            await asyncio.gather(running, return_exceptions=True)
 
         assert dispatcher.calls == 1, "the pass was entered and then abandoned"
         assert guard.mark(PassSignal.approved_changed, container=TEAM_KEYS[0]) is None
+
+    async def test_budget_cancellation_during_gate_logging_gives_the_window_back(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The mark can advance before the dispatcher is entered."""
+        tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
+        block = asyncio.Event()
+        pass_, guard, dispatcher = failing_tick(tracker, block=block)
+        logging = asyncio.Event()
+        original = guard._log.ainfo
+
+        async def delayed(event: str, **fields: object) -> None:
+            await original(event, **fields)
+            if event == "pass_gate_delta":
+                logging.set()
+                await asyncio.Event().wait()
+
+        monkeypatch.setattr(guard._log, "ainfo", delayed)
+        running = asyncio.create_task(pass_.run(TICK_STARTED_AT))
+        try:
+            await asyncio.wait_for(
+                logging.wait(), timeout=SETTLE_TRIES * SETTLE_DELAY_SECONDS
+            )
+            assert (
+                guard.mark(PassSignal.approved_changed, container=TEAM_KEYS[0])
+                is not None
+            )
+            with pytest.raises(TimeoutError):
+                await asyncio.wait_for(running, timeout=SETTLE_DELAY_SECONDS)
+        finally:
+            running.cancel()
+            await asyncio.gather(running, return_exceptions=True)
+
+        assert dispatcher.calls == 0
+        assert guard.mark(PassSignal.approved_changed, container=TEAM_KEYS[0]) is None
+        monkeypatch.setattr(guard._log, "ainfo", original)
+        block.set()
+        with pytest.raises(TimeoutError, match="delivery probe"):
+            await pass_.run(TICK_STARTED_AT)
+        assert dispatcher.calls == 1
+        assert tracker.scans[-1].updated_since is None
 
 
 async def test_a_second_tick_over_an_unchanged_board_costs_one_query() -> None:
@@ -572,7 +637,10 @@ async def test_the_root_builds_one_gated_pass_per_declared_repository() -> None:
     queue = FakeJobQueue()
     built = await build_dispatch_passes(
         recorder=RunRecorder(records={}, sinks={}),
-        config=AppConfig(),
+        config=AppConfig(
+            dispatch_pass_interval_seconds=DISPATCH_INTERVAL_SECONDS,
+            dispatch_pass_timeout_seconds=DISPATCH_TIMEOUT_SECONDS,
+        ),
         operation=operation_config(repos=(PRIMARY_REPO, SECOND_REPO)),
         tracker=tracker,
         ledger=tracker.self_writes,
@@ -622,7 +690,10 @@ async def test_an_issue_only_fires_into_the_repository_its_team_is_bound_to() ->
     queue = FakeJobQueue()
     built = await build_dispatch_passes(
         recorder=RunRecorder(records={}, sinks={}),
-        config=AppConfig(),
+        config=AppConfig(
+            dispatch_pass_interval_seconds=DISPATCH_INTERVAL_SECONDS,
+            dispatch_pass_timeout_seconds=DISPATCH_TIMEOUT_SECONDS,
+        ),
         operation=operation_config(repos=(PRIMARY_REPO, SECOND_REPO)),
         tracker=tracker,
         ledger=tracker.self_writes,
@@ -661,7 +732,10 @@ async def test_a_repository_no_team_is_bound_to_gets_a_named_skip() -> None:
     with structlog.testing.capture_logs() as logs:
         built = await build_dispatch_passes(
             recorder=RunRecorder(records={}, sinks={}),
-            config=AppConfig(),
+            config=AppConfig(
+                dispatch_pass_interval_seconds=DISPATCH_INTERVAL_SECONDS,
+                dispatch_pass_timeout_seconds=DISPATCH_TIMEOUT_SECONDS,
+            ),
             operation=operation_config(
                 repos=(PRIMARY_REPO, SECOND_REPO),
                 teams={
@@ -694,11 +768,11 @@ async def test_a_repository_no_team_is_bound_to_gets_a_named_skip() -> None:
 async def test_the_root_gives_every_pass_the_configured_cadence() -> None:
     """AC-20: ``dispatch_pass_interval_seconds`` has a real consumer."""
     unusual = 41.0
-    config = AppConfig(dispatch_pass_interval_seconds=unusual)
-    assert (
-        config.dispatch_pass_interval_seconds
-        != AppConfig().dispatch_pass_interval_seconds
+    config = AppConfig(
+        dispatch_pass_interval_seconds=unusual,
+        dispatch_pass_timeout_seconds=DISPATCH_TIMEOUT_SECONDS,
     )
+    assert AppConfig.model_fields["dispatch_pass_interval_seconds"].default is None
 
     tracker = FakeTrackerPort()
     queue = FakeJobQueue()
@@ -725,15 +799,14 @@ async def test_the_root_gives_every_pass_the_configured_budget() -> None:
 
     Every dispatch row, not one of them: an unbounded tick anywhere in
     the schedule is a loop that can stall forever, and the value is
-    unlike the default and unlike the cadence beside it, so a row wired
-    to either would fail here.
+    unlike the cadence beside it, so a row wired to it would fail here.
     """
     unusual = 37.0
-    config = AppConfig(dispatch_pass_timeout_seconds=unusual)
-    assert (
-        config.dispatch_pass_timeout_seconds
-        != AppConfig().dispatch_pass_timeout_seconds
+    config = AppConfig(
+        dispatch_pass_interval_seconds=DISPATCH_INTERVAL_SECONDS,
+        dispatch_pass_timeout_seconds=unusual,
     )
+    assert AppConfig.model_fields["dispatch_pass_timeout_seconds"].default is None
     assert config.dispatch_pass_timeout_seconds != (
         config.dispatch_pass_interval_seconds
     )
@@ -766,7 +839,10 @@ async def test_a_pass_the_root_built_dispatches_the_repository_it_names() -> Non
     queue = FakeJobQueue()
     built = await build_dispatch_passes(
         recorder=RunRecorder(records={}, sinks={}),
-        config=AppConfig(),
+        config=AppConfig(
+            dispatch_pass_interval_seconds=DISPATCH_INTERVAL_SECONDS,
+            dispatch_pass_timeout_seconds=DISPATCH_TIMEOUT_SECONDS,
+        ),
         operation=operation_config(repos=(SECOND_REPO,)),
         tracker=tracker,
         ledger=tracker.self_writes,
@@ -814,7 +890,10 @@ async def test_a_pass_the_root_built_follows_the_run_it_enqueued() -> None:
     )
     built = await build_dispatch_passes(
         recorder=RunRecorder(records={}, sinks={}),
-        config=AppConfig(),
+        config=AppConfig(
+            dispatch_pass_interval_seconds=DISPATCH_INTERVAL_SECONDS,
+            dispatch_pass_timeout_seconds=DISPATCH_TIMEOUT_SECONDS,
+        ),
         operation=operation_config(),
         tracker=tracker,
         ledger=tracker.self_writes,
@@ -829,20 +908,19 @@ async def test_a_pass_the_root_built_follows_the_run_it_enqueued() -> None:
 
     await built.passes[0].run(TICK_STARTED_AT)
     # The write-back runs in a background watch, so the test waits for the
-    # terminal chain it asserts on: the DONE transition, then the comment
+    # terminal chain it asserts on: the queue disposition, then the comment
     # that ``LifecycleWatcher`` posts after it.
     await settled(
         lambda: (
-            ("K-1", LifecycleStage.DONE) in tracker.workflow_writes
-            and bool(tracker.comments)
+            ("K-1", QueueState.DONE) in tracker.queue_writes and bool(tracker.comments)
         ),
     )
 
     assert queue.attached == ["job-0001"]
     assert tracker.workflow_writes == [
         ("K-1", LifecycleStage.IN_PROGRESS),
-        ("K-1", LifecycleStage.DONE),
     ]
+    assert ("K-1", LifecycleStage.DONE) not in tracker.workflow_writes
     assert tracker.queue_writes == [("K-1", QueueState.DONE)]
     assert [comment.issue_key for comment in tracker.comments] == ["K-1"]
 
@@ -877,7 +955,11 @@ async def test_a_run_that_died_is_reported_into_the_pass_that_fired_it() -> None
     )
     built = await build_dispatch_passes(
         recorder=RunRecorder(records={}, sinks={}),
-        config=AppConfig(dispatch_pass_gate_signals=[]),
+        config=AppConfig(
+            dispatch_pass_gate_signals=[],
+            dispatch_pass_interval_seconds=DISPATCH_INTERVAL_SECONDS,
+            dispatch_pass_timeout_seconds=DISPATCH_TIMEOUT_SECONDS,
+        ),
         operation=operation_config(),
         tracker=tracker,
         ledger=tracker.self_writes,
@@ -953,7 +1035,11 @@ async def test_a_rate_limit_in_one_repositorys_pass_stops_the_other_repositorys(
     )
     built = await build_dispatch_passes(
         recorder=RunRecorder(records={}, sinks={}),
-        config=AppConfig(dispatch_pass_gate_signals=[]),
+        config=AppConfig(
+            dispatch_pass_gate_signals=[],
+            dispatch_pass_interval_seconds=DISPATCH_INTERVAL_SECONDS,
+            dispatch_pass_timeout_seconds=DISPATCH_TIMEOUT_SECONDS,
+        ),
         operation=operation_config(repos=(PRIMARY_REPO, SECOND_REPO)),
         tracker=tracker,
         ledger=tracker.self_writes,
@@ -1006,7 +1092,11 @@ async def test_a_crashed_run_in_one_repository_leaves_the_other_firing() -> None
     )
     built = await build_dispatch_passes(
         recorder=RunRecorder(records={}, sinks={}),
-        config=AppConfig(dispatch_pass_gate_signals=[]),
+        config=AppConfig(
+            dispatch_pass_gate_signals=[],
+            dispatch_pass_interval_seconds=DISPATCH_INTERVAL_SECONDS,
+            dispatch_pass_timeout_seconds=DISPATCH_TIMEOUT_SECONDS,
+        ),
         operation=operation_config(repos=(PRIMARY_REPO, SECOND_REPO)),
         tracker=tracker,
         ledger=tracker.self_writes,
@@ -1056,7 +1146,10 @@ async def test_the_pass_threads_the_claimed_boards_posture_to_the_watch() -> Non
     gate = PassThroughGate()
     built = await build_dispatch_passes(
         recorder=RunRecorder(records={}, sinks={}),
-        config=AppConfig(),
+        config=AppConfig(
+            dispatch_pass_interval_seconds=DISPATCH_INTERVAL_SECONDS,
+            dispatch_pass_timeout_seconds=DISPATCH_TIMEOUT_SECONDS,
+        ),
         operation=operation_config(
             teams={
                 "engineering": TeamEntry(
@@ -1129,7 +1222,10 @@ async def test_a_pass_over_a_forge_less_origin_completes_its_tick() -> None:
     forge = ForgeOnlyDeliveryProbe()
     built = await build_dispatch_passes(
         recorder=RunRecorder(records={}, sinks={}),
-        config=AppConfig(),
+        config=AppConfig(
+            dispatch_pass_interval_seconds=DISPATCH_INTERVAL_SECONDS,
+            dispatch_pass_timeout_seconds=DISPATCH_TIMEOUT_SECONDS,
+        ),
         operation=operation_config(repos=(FILE_ORIGIN,)),
         tracker=tracker,
         ledger=tracker.self_writes,
@@ -1158,7 +1254,10 @@ async def test_a_pass_over_a_forge_shaped_origin_still_asks_the_forge() -> None:
     forge = ForgeOnlyDeliveryProbe()
     built = await build_dispatch_passes(
         recorder=RunRecorder(records={}, sinks={}),
-        config=AppConfig(),
+        config=AppConfig(
+            dispatch_pass_interval_seconds=DISPATCH_INTERVAL_SECONDS,
+            dispatch_pass_timeout_seconds=DISPATCH_TIMEOUT_SECONDS,
+        ),
         operation=operation_config(repos=(PRIMARY_REPO,)),
         tracker=tracker,
         ledger=tracker.self_writes,

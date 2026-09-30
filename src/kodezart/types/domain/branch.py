@@ -12,8 +12,9 @@ import hashlib
 from collections.abc import Sequence
 from datetime import datetime
 from enum import StrEnum
+from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from kodezart.types.base import CamelCaseModel
 
@@ -54,6 +55,33 @@ class WorkRefRole(StrEnum):
     INTEGRATION = "integration"
 
 
+class BranchRole(StrEnum):
+    """The role recorded for one branch in one fire's association set."""
+
+    DELIVERABLE = "deliverable"
+    LOOP = "loop"
+    RECOVERY = "recovery"
+
+
+class BranchAssociation(CamelCaseModel):
+    """Historical branch identity; remote liveness is a separate observation."""
+
+    model_config = ConfigDict(frozen=True)
+
+    branch: str = Field(min_length=1)
+    role: BranchRole
+    derived_from: Annotated[str, Field(min_length=1)] | None
+    run_id: str = Field(min_length=1)
+
+
+class WorkRefLanding(StrEnum):
+    """An observer's recorded landing fact; never inferred from a branch."""
+
+    LANDED = "landed"
+    NOT_LANDED = "not_landed"
+    UNKNOWN = "unknown"
+
+
 class WorkRef(CamelCaseModel):
     """One ref an issue carries, at the role it plays.
 
@@ -61,6 +89,10 @@ class WorkRef(CamelCaseModel):
     ``None`` means "not pushed", which is a different fact from "pushed at
     an unknown sha" and from any sha value.  A resolution that read it as
     a boolean would treat an unpushed ref as present.
+
+    ``landing`` is the observer's explicit record, independent of that sha.
+    Old records without the field read as UNKNOWN. Recording another
+    landing value is a changed record, not an idempotent replay.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -69,16 +101,23 @@ class WorkRef(CamelCaseModel):
     role: WorkRefRole
     branch: str = Field(min_length=1)
     pushed_head_sha: str | None = None
+    landing: WorkRefLanding = WorkRefLanding.UNKNOWN
     recorded_at: datetime
 
-    def identity(self) -> tuple[str, WorkRefRole, str, str | None]:
+    def identity(self) -> tuple[str, WorkRefRole, str, str | None, WorkRefLanding]:
         """What makes this ref THIS ref, ``recorded_at`` excluded.
 
         The recording instant is assigned by the backend, so two adapters
         storing the same ref may return different ones.  Recording a ref
         that is already recorded is idempotent and is decided here.
         """
-        return (self.issue_id, self.role, self.branch, self.pushed_head_sha)
+        return (
+            self.issue_id,
+            self.role,
+            self.branch,
+            self.pushed_head_sha,
+            self.landing,
+        )
 
 
 class BaseInput(CamelCaseModel):
@@ -114,6 +153,60 @@ class BaseSpec(CamelCaseModel):
 def trunk_base(branch: str) -> BaseSpec:
     """The base a lane with no blockers has: the trunk it was fired against."""
     return BaseSpec(inputs=(), base_branch=branch, base_role=None)
+
+
+#: What an issue key has to look like to stand inside a ref path.
+#:
+#: One or more ``/``-separated segments, each of them alphanumerics joined by
+#: single ``-``, ``_`` or ``.`` characters and not ending in ``.lock``.  That
+#: admits every key shape the tracker mints, including a key whose own
+#: identity is a path.
+#:
+#: It is an allowlist, so what it admits are shapes ``git check-ref-format
+#: --branch`` accepts: whitespace, the glob and revision characters, control
+#: characters, ``..``, ``@{`` and an empty or separator-edged segment are all
+#: outside it.  Git's other component rule — no component ending in ``.lock``
+#: — is the field validator below, because this pattern is applied by an
+#: engine without look-around.
+#:
+#: What neither sees is anything outside the name itself: a ref this one
+#: would nest under or contain (git's own directory/file conflict, which
+#: ``check-ref-format`` does not check either) and a case-insensitive
+#: collision on the filesystem.  Those refuse at the git call, not here.
+LANE_KEY_SEGMENT = r"[A-Za-z0-9]+(?:[-_.][A-Za-z0-9]+)*"
+LANE_KEY_PATTERN = rf"^{LANE_KEY_SEGMENT}(?:/{LANE_KEY_SEGMENT})*$"
+#: The suffix git refuses on any component of a ref.
+LOCK_SUFFIX = ".lock"
+
+
+class LaneBranchName(BaseModel):
+    """``kodezart/{issue_key}-{short_id}``: a native lane's deliverable branch.
+
+    The key is validated here, in the module that owns ref shapes, so a lane
+    whose key could not be a ref refuses while the name is being composed and
+    before any git call is made with it.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    issue_key: str = Field(pattern=LANE_KEY_PATTERN)
+    short_id: str = Field(pattern=r"^[0-9a-f]{8}$")
+
+    @field_validator("issue_key")
+    @classmethod
+    def _no_component_ends_in_lock(cls, value: str) -> str:
+        """Git refuses a ref component ending in ``.lock``, at any depth.
+
+        Its own rule rather than one more branch of the pattern above: the
+        engine that applies a field pattern has no look-around, and a pattern
+        spelling this out without one would say less about what it refuses.
+        """
+        if any(part.endswith(LOCK_SUFFIX) for part in value.split("/")):
+            raise ValueError(f"no component of a ref may end in {LOCK_SUFFIX}")
+        return value
+
+    def __str__(self) -> str:
+        return f"kodezart/{self.issue_key}-{self.short_id}"
 
 
 class IntegrationBranchName(BaseModel):

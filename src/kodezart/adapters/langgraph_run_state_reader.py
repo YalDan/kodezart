@@ -11,7 +11,7 @@ to learn it.
 from collections.abc import Mapping
 
 from langchain_core.runnables import RunnableConfig
-from langgraph.checkpoint.base import BaseCheckpointSaver
+from langgraph.checkpoint.base import BaseCheckpointSaver, CheckpointTuple
 
 from kodezart.domain.thread_id import workflow_thread_id
 from kodezart.types.domain.run import RunState
@@ -81,7 +81,13 @@ class LangGraphRunStateReader:
         snapshot = await self._checkpointer.aget_tuple(config)
         if snapshot is None:
             return None
-        values: Mapping[str, object] = snapshot.checkpoint["channel_values"]
+        values: dict[str, object] = dict(snapshot.checkpoint["channel_values"])
+        child = await self._active_child(config=config, parent=snapshot)
+        if child is not None:
+            # The outer snapshot keeps the last observed delivery facts while
+            # its one active fire commits progress in its own namespace.
+            values.update(child.checkpoint["channel_values"])
+            snapshot = child
         payload: dict[str, object] = {
             channel: values[channel]
             for channel in _RUN_STATE_CHANNELS
@@ -95,3 +101,34 @@ class LangGraphRunStateReader:
             snapshot.checkpoint["versions_seen"],
         )
         return RunState.model_validate(payload)
+
+    async def _active_child(
+        self, *, config: RunnableConfig, parent: CheckpointTuple
+    ) -> CheckpointTuple | None:
+        """Read the immediate child of this exact committed parent snapshot.
+
+        LangGraph records the parent namespace/checkpoint map in metadata.
+        Matching that map excludes earlier remediation invocations and deeper
+        ticket/quality subgraphs. Once the outer graph advances, their parent
+        id no longer matches and its own committed state is authoritative.
+        Checkpoint ids are ordered within a namespace, as in ``aget_tuple``.
+        """
+        latest: CheckpointTuple | None = None
+        namespace: str | None = None
+        parents = {"": parent.checkpoint["id"]}
+        async for candidate in self._checkpointer.alist(
+            config, filter={"parents": parents}
+        ):
+            # A JSON containment filter also matches deeper parent maps;
+            # the read still requires this exact immediate-parent map.
+            if candidate.metadata.get("parents") != parents:
+                continue
+            child_namespace = candidate.config["configurable"].get("checkpoint_ns")
+            if not isinstance(child_namespace, str) or not child_namespace:
+                raise RuntimeError("An immediate child checkpoint has no namespace")
+            if namespace is not None and namespace != child_namespace:
+                raise RuntimeError("Run progress has more than one active child graph")
+            namespace = child_namespace
+            if latest is None or candidate.checkpoint["id"] > latest.checkpoint["id"]:
+                latest = candidate
+        return latest

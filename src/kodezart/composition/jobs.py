@@ -7,25 +7,35 @@ than defines.
 from langgraph.checkpoint.base import BaseCheckpointSaver
 
 from kodezart.adapters.asyncio_job_queue import AsyncioJobQueue
+from kodezart.adapters.job_registry import InMemoryJobRegistry
 from kodezart.adapters.langgraph_run_state_reader import LangGraphRunStateReader
-from kodezart.core.config import AppConfig
+from kodezart.config.job_queue import JobQueueSettings
 from kodezart.core.protocols import JobRegistry, WorkflowEngine
 from kodezart.services.job_service import JobService
 
 
 def build_job_queue(
     *,
-    config: AppConfig,
+    settings: JobQueueSettings,
     workflow_engine: WorkflowEngine,
+    registry: InMemoryJobRegistry | None = None,
 ) -> AsyncioJobQueue:
-    """The in-process queue, with every bound it enforces read from config."""
+    """The in-process queue, with its validated capacity, retention and run limit.
+
+    *registry* is the record store the queue writes into. A deployment builds
+    it BEFORE the engine and passes the same object to both, so a scope run's
+    entry reads liveness from the store this queue is writing; absent, the
+    queue builds its own and nothing outside it reads the records.
+    """
     return AsyncioJobQueue(
         engine=workflow_engine,
-        max_concurrent_runs_per_lane=config.queue_max_concurrent_runs_per_lane,
-        max_depth_per_lane=config.queue_max_depth_per_lane,
-        terminal_retention_seconds=config.queue_terminal_retention_seconds,
-        event_buffer_retention_seconds=(config.queue_event_buffer_retention_seconds),
-        event_buffer_capacity=config.queue_event_buffer_capacity,
+        registry=registry,
+        max_concurrent_runs_per_lane=settings.max_concurrent_runs_per_lane,
+        max_depth_per_lane=settings.max_depth_per_lane,
+        terminal_retention_seconds=settings.terminal_retention_seconds,
+        event_buffer_retention_seconds=settings.event_buffer_retention_seconds,
+        event_buffer_capacity=settings.event_buffer_capacity,
+        run_timeout_seconds=settings.run_timeout_seconds,
     )
 
 

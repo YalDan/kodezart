@@ -1,8 +1,8 @@
 """The accept gate's three-state verdict and the items a flagged run carries.
 
 The boolean this replaced carried two decisions in one value: whether the
-work ships, and whether anything about it needs saying.  A run whose only
-failures are soft signals is both.  ``ship_with_flags`` routes to the same
+work ships, and whether anything about it needs saying.  A run carrying a
+criterion nothing could grade is both.  ``ship_with_flags`` routes to the same
 merge and pull request as ``accepted`` and carries the flagged items into
 the pull-request body, where a human reads them.
 """

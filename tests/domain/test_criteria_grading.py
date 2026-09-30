@@ -9,17 +9,19 @@ from kodezart.domain.criteria import mint_criteria
 from kodezart.domain.criteria_grading import (
     DUPLICATE_RESULT_REASONING,
     MISSING_RESULT_REASONING,
+    UNDEMONSTRATED_REASONS,
     grade_iteration,
 )
 from kodezart.types.domain.accept import AcceptVerdict
 from kodezart.types.domain.agent import AcceptanceCriteriaOutput, CriterionResult
 from kodezart.types.domain.criteria import (
-    CriterionClass,
     CriterionFeasibility,
+    CriterionId,
     CriterionVerdict,
     DraftedCriterion,
     ValidatedCriterion,
 )
+from kodezart.types.domain.criterion_lifecycle import UndemonstratedReason
 from tests.fakes import as_validated
 
 
@@ -33,10 +35,7 @@ def _criteria(count: int) -> list[ValidatedCriterion]:
     return as_validated(
         mint_criteria(
             [
-                DraftedCriterion(
-                    text=f"Criterion number {n}",
-                    criterion_class=CriterionClass.hard_gate,
-                )
+                DraftedCriterion(text=f"Criterion number {n}")
                 for n in range(1, count + 1)
             ]
         )
@@ -99,11 +98,9 @@ def test_echoed_text_mutation_changes_neither_keying_nor_reinjected_text() -> No
             [
                 DraftedCriterion(
                     text='The rendered node carries class="kz-row", spaced exactly.',
-                    criterion_class=CriterionClass.hard_gate,
                 ),
                 DraftedCriterion(
                     text="A path of the form C:\\\\Users\\\\x survives the round trip.",
-                    criterion_class=CriterionClass.hard_gate,
                 ),
             ]
         )
@@ -271,3 +268,82 @@ def test_an_ungraded_criterion_answered_as_passing_is_still_not_counted() -> Non
 
     assert grade.passed_count == 1
     assert grade.verdict is AcceptVerdict.ship_with_flags
+
+
+WITHHELD = UndemonstratedReason.workspace_not_the_graded_sha
+
+
+def _answered(ids, *, passed: bool = True) -> AcceptanceCriteriaOutput:
+    """One result per named id, all answering the same way."""
+    return AcceptanceCriteriaOutput(
+        criteria_results=[
+            CriterionResult(
+                criterion_id=CriterionId(cid),
+                criterion="echo",
+                passed=passed,
+                reasoning="verified",
+            )
+            for cid in ids
+        ],
+    )
+
+
+def test_a_withheld_criterion_grades_failed_with_the_reading_that_failed():
+    """The last word on a verdict, whatever the evaluator answered.
+
+    The criterion was answered, and answered as a pass; the harness read
+    nothing about it, so what the grade carries is the reading that failed
+    rather than the session's own words, and it seats in the failures.
+    """
+    criteria = _criteria(2)
+    output = _answered(("AC-1", "AC-2"))
+
+    grade = grade_iteration(
+        criteria, output, undemonstrated={CriterionId("AC-2"): WITHHELD}
+    )
+
+    withheld = next(r for r in grade.results if r.criterion_id == "AC-2")
+    assert (withheld.passed, withheld.reasoning) == (
+        False,
+        UNDEMONSTRATED_REASONS[WITHHELD],
+    )
+    assert next(r for r in grade.results if r.criterion_id == "AC-1").passed
+    assert grade.passed_count == 1
+    assert [failure.criterion_id for failure in grade.failures] == ["AC-2"]
+    assert grade.verdict is AcceptVerdict.rejected
+
+
+def test_withholding_changes_no_correspondence_fact():
+    """Which ids correspond to what is about the roster, not about the tree.
+
+    A withheld id nobody answered is still named missing, an id answered
+    twice is still named duplicate, and an id nobody dispatched is still
+    unknown: withholding speaks after those arms and changes none of them.
+    """
+    criteria = _criteria(3)
+    output = AcceptanceCriteriaOutput(
+        criteria_results=[
+            *_answered(("AC-2", "AC-2", "AC-9")).criteria_results,
+        ],
+    )
+    reasons = {CriterionId(cid): WITHHELD for cid in ("AC-1", "AC-2")}
+
+    withheld = grade_iteration(criteria, output, undemonstrated=reasons)
+    standing = grade_iteration(criteria, output)
+
+    assert withheld.missing_ids == standing.missing_ids == ["AC-1", "AC-3"]
+    assert withheld.duplicate_ids == standing.duplicate_ids == ["AC-2"]
+    assert withheld.unknown_ids == standing.unknown_ids == ["AC-9"]
+    assert withheld.dispatched_count == standing.dispatched_count == 3
+    missing = next(r for r in withheld.results if r.criterion_id == "AC-1")
+    assert missing.reasoning == UNDEMONSTRATED_REASONS[WITHHELD]
+
+
+def test_withholding_nothing_grades_exactly_as_before():
+    """The keyword's default is the grading every existing caller gets."""
+    criteria = _criteria(2)
+    output = _answered(("AC-1", "AC-2"))
+
+    assert grade_iteration(criteria, output, undemonstrated={}) == grade_iteration(
+        criteria, output
+    )

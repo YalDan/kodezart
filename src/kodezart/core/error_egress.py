@@ -38,13 +38,13 @@ def redact_credentials(s: str) -> str:
     function — and cannot cover one surface while leaving the other blind.
 
     LEAK ORIGIN vs. egress redaction: the upstream LEAK ORIGIN is
-    ``adapters/subprocess_git_service.py`` — specifically ``_run``,
+    ``adapters/git/service.py`` — specifically ``_run``,
     ``_run_output``, and ``_run_with_exit_codes``, each of which embeds
     raw ``stderr.decode().strip()`` into a ``RuntimeError`` message via
     ``f"{cmd_repr} failed: {stderr_text}"``.  On ``git fetch`` /
     ``git push`` / ``git clone`` failure that stderr typically echoes
     the tokenized remote URL (``https://x-access-token:<token>@...``)
-    constructed by ``adapters/github_token_auth.py``.  This helper
+    constructed by ``adapters/github/token_auth.py``.  This helper
     redacts at the egress / convergence point — ``build_error_event``
     below plus the two structured-warning log sites in the Claude SDK
     adapters — rather than at the source.  Redacting at the convergence

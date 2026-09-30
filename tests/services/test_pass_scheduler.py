@@ -336,6 +336,41 @@ async def test_a_pass_runs_only_after_its_interval_has_elapsed() -> None:
     await scheduler.stop()
 
 
+async def test_a_pass_marked_to_tick_at_boot_runs_before_its_first_sleep() -> None:
+    """The intake ticks when the process comes up; a sibling still waits.
+
+    Owner, 2026-09-24: a configured fire-prep or grooming pass is triggered
+    at boot. The mark is on the pass, so the driver decides nothing by name;
+    the pass beside it, unmarked, still sleeps one interval first.
+    """
+    at_boot, later = Recorder(), Recorder()
+    metronome = Metronome(limit=0)
+    scheduler = PassScheduler(
+        passes=[
+            ScheduledPass(
+                name="grooming_pass",
+                interval_seconds=SLOW_INTERVAL,
+                timeout_seconds=GENEROUS_TIMEOUT,
+                run=at_boot.run,
+                tick_at_boot=True,
+            ),
+            ScheduledPass(
+                name="dispatch",
+                interval_seconds=FAST_INTERVAL,
+                timeout_seconds=GENEROUS_TIMEOUT,
+                run=later.run,
+            ),
+        ],
+        sleep=metronome.sleep,
+    )
+    await scheduler.start()
+    await _settle(metronome.parked)
+
+    assert at_boot.calls == 1
+    assert later.calls == 0
+    await scheduler.stop()
+
+
 async def test_a_failing_pass_keeps_its_loop_and_says_what_broke() -> None:
     """A permanently failing pass must not read as a quiet board.
 

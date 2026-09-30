@@ -35,7 +35,7 @@ from kodezart.types.domain.agent import (
     WorkflowCompleteEvent,
     WorkflowPREvent,
 )
-from kodezart.types.domain.branch import WorkRefRole
+from kodezart.types.domain.branch import WorkRefRole, trunk_base
 from kodezart.types.domain.job import JobRecord, JobState
 from kodezart.types.domain.operation import (
     DocumentSystem,
@@ -46,8 +46,9 @@ from kodezart.types.domain.operation import (
 )
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.run_records import RunOutcome, RunRecord, RunRecordFailure
+from kodezart.types.domain.session import PermissionMode
 from kodezart.types.domain.tracker import ClaimStatus
-from kodezart.types.requests.agent import WorkflowRequest
+from kodezart.types.domain.workflow import WorkflowSubmission
 from tests.fakes import (
     FIXTURE_EPOCH,
     BrokenRecordSink,
@@ -162,7 +163,12 @@ def watcher_over(
         recorder=RunRecorder(records={}, sinks={}),
         queue=queue,
         registry=queue,
-        writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
+        writer=TrackerLifecycleWriter(
+            marker_prefixes={"run_outcome": "fixture-outcome"},
+            surface_lease_seconds=900,
+            tracker=tracker,
+            gate=PassThroughGate(),
+        ),
         heartbeat=claim_heartbeat(tracker),
         report=FakeFireReport(),
     )
@@ -179,7 +185,12 @@ def watcher(
             recorder=RunRecorder(records={}, sinks={}),
             queue=queue,
             registry=queue,
-            writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
+            writer=TrackerLifecycleWriter(
+                marker_prefixes={"run_outcome": "fixture-outcome"},
+                surface_lease_seconds=900,
+                tracker=tracker,
+                gate=PassThroughGate(),
+            ),
             heartbeat=claim_heartbeat(tracker),
             report=FakeFireReport(),
         ),
@@ -191,7 +202,7 @@ def watcher(
 class TestTheTransitionsAJobStreamProduces:
     """Each stage of a run reaches the issue, in the run's own order."""
 
-    async def test_a_full_run_walks_in_progress_then_in_review_then_done(
+    async def test_a_full_run_reviews_the_parent_and_retires_the_queue_entry(
         self,
     ) -> None:
         watch, tracker, _ = watcher(
@@ -209,7 +220,6 @@ class TestTheTransitionsAJobStreamProduces:
         assert tracker.workflow_writes == [
             (ISSUE, LifecycleStage.IN_PROGRESS),
             (ISSUE, LifecycleStage.IN_REVIEW),
-            (ISSUE, LifecycleStage.DONE),
         ]
         assert tracker.queue_writes == [(ISSUE, QueueState.DONE)]
 
@@ -225,6 +235,7 @@ class TestTheTransitionsAJobStreamProduces:
         )
 
         assert [comment.body for comment in tracker.comments] == [
+            f"[fixture-outcome:{ISSUE}:job-0001]\n"
             f"job job-0001 reached outcome {WorkflowOutcome.ci_passed.value}",
         ]
 
@@ -249,6 +260,7 @@ class TestTheTransitionsAJobStreamProduces:
         assert tracker.queue_writes == []
         exhausted = WorkflowOutcome.ci_failed_fix_budget_exhausted
         assert [comment.body for comment in tracker.comments] == [
+            f"[fixture-outcome:{ISSUE}:job-0001]\n"
             f"job job-0001 reached outcome {exhausted.value}",
         ]
 
@@ -412,7 +424,11 @@ class TestFollowingInTheBackground:
         assert watch.following, "the task must be referenced, not left to the GC"
         await asyncio.gather(*watch.following)
 
-        assert tracker.workflow_writes[-1] == (ISSUE, LifecycleStage.DONE)
+        assert tracker.workflow_writes == [
+            (ISSUE, LifecycleStage.IN_PROGRESS),
+            (ISSUE, LifecycleStage.IN_REVIEW),
+        ]
+        assert tracker.queue_writes == [(ISSUE, QueueState.DONE)]
         assert not watch.following
 
 
@@ -447,7 +463,16 @@ class TestThePremiseAgainstTheShippedQueue:
         try:
             record = await queue.submit(
                 lane="lane",
-                request=WorkflowRequest(prompt="do the thing", repo_url=REPO_URL),
+                request=WorkflowSubmission(
+                    prompt="do the thing",
+                    repo_path=None,
+                    repo_url=REPO_URL,
+                    base_spec=trunk_base("main"),
+                    implied_base=None,
+                    scope=None,
+                    permission_mode=PermissionMode.UNATTENDED,
+                    allowed_tools=["Read", "Glob", "Grep", "Bash", "Edit", "Write"],
+                ),
             )
             stream = queue.attach(job_id=record.job_id)
             first = asyncio.ensure_future(anext(stream))
@@ -484,6 +509,8 @@ class TestThePremiseAgainstTheShippedQueue:
                 queue=queue,
                 registry=queue,
                 writer=TrackerLifecycleWriter(
+                    marker_prefixes={"run_outcome": "fixture-outcome"},
+                    surface_lease_seconds=900,
                     tracker=tracker,
                     gate=PassThroughGate(),
                 ),
@@ -492,7 +519,16 @@ class TestThePremiseAgainstTheShippedQueue:
             )
             record = await queue.submit(
                 lane="lane",
-                request=WorkflowRequest(prompt="do the thing", repo_url=REPO_URL),
+                request=WorkflowSubmission(
+                    prompt="do the thing",
+                    repo_path=None,
+                    repo_url=REPO_URL,
+                    base_spec=trunk_base("main"),
+                    implied_base=None,
+                    scope=None,
+                    permission_mode=PermissionMode.UNATTENDED,
+                    allowed_tools=["Read", "Glob", "Grep", "Bash", "Edit", "Write"],
+                ),
             )
 
             await asyncio.wait_for(
@@ -506,8 +542,8 @@ class TestThePremiseAgainstTheShippedQueue:
 
             assert tracker.workflow_writes == [
                 (ISSUE, LifecycleStage.IN_PROGRESS),
-                (ISSUE, LifecycleStage.DONE),
             ]
+            assert tracker.queue_writes == [(ISSUE, QueueState.DONE)]
         finally:
             await queue.stop()
 
@@ -549,13 +585,27 @@ class TestGracefulShutdownHandsTheClaimBack:
             recorder=RunRecorder(records={}, sinks={}),
             queue=queue,
             registry=queue,
-            writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
+            writer=TrackerLifecycleWriter(
+                marker_prefixes={"run_outcome": "fixture-outcome"},
+                surface_lease_seconds=900,
+                tracker=tracker,
+                gate=PassThroughGate(),
+            ),
             heartbeat=claim_heartbeat(tracker),
             report=FakeFireReport(),
         )
         record = await queue.submit(
             lane="lane",
-            request=WorkflowRequest(prompt="do the thing", repo_url=REPO_URL),
+            request=WorkflowSubmission(
+                prompt="do the thing",
+                repo_path=None,
+                repo_url=REPO_URL,
+                base_spec=trunk_base("main"),
+                implied_base=None,
+                scope=None,
+                permission_mode=PermissionMode.UNATTENDED,
+                allowed_tools=["Read", "Glob", "Grep", "Bash", "Edit", "Write"],
+            ),
         )
         watch.follow(
             issue_key=ISSUE,
@@ -593,8 +643,94 @@ class TestGracefulShutdownHandsTheClaimBack:
         await asyncio.wait_for(watch.drain(), timeout=5.0)
 
         assert not watch.following
-        assert tracker.workflow_writes[-1] == (ISSUE, LifecycleStage.DONE)
+        assert tracker.workflow_writes == [
+            (ISSUE, LifecycleStage.IN_PROGRESS),
+            (ISSUE, LifecycleStage.IN_REVIEW),
+        ]
         assert tracker.queue_writes == [(ISSUE, QueueState.DONE)]
+
+
+class TestARunLimitHandsTheClaimBack:
+    """A job the queue's run limit ends frees its issue (KOD-1251).
+
+    Over the shipped queue, because the limit is that adapter's own: it ends
+    the stream of the job it cancelled, and the end of a stream is what a
+    watch reads as its job's end. Before the limit, a run stuck on a stream
+    that never ended kept the heartbeat renewing its claim for as long as the
+    process lived.
+    """
+
+    async def test_a_timed_out_job_leaves_its_issue_claimable(self) -> None:
+        queue = AsyncioJobQueue(
+            # Never released: only the limit can end this run.
+            engine=_OneEventEngine(released=asyncio.Event()),
+            max_concurrent_runs_per_lane=1,
+            max_depth_per_lane=4,
+            terminal_retention_seconds=60.0,
+            event_buffer_retention_seconds=60.0,
+            event_buffer_capacity=64,
+            run_timeout_seconds=0.2,
+        )
+        await queue.start()
+        try:
+            tracker = FakeTrackerPort(issues=[make_tracker_issue(ISSUE)])
+            await tracker.claim_issue(
+                issue_key=ISSUE,
+                holder=HOLDER,
+                lease_seconds=LEASE_SECONDS,
+            )
+            watch = LifecycleWatcher(
+                recorder=RunRecorder(records={}, sinks={}),
+                queue=queue,
+                registry=queue,
+                writer=TrackerLifecycleWriter(
+                    marker_prefixes={"run_outcome": "fixture-outcome"},
+                    surface_lease_seconds=900,
+                    tracker=tracker,
+                    gate=PassThroughGate(),
+                ),
+                heartbeat=claim_heartbeat(tracker),
+                report=FakeFireReport(),
+            )
+            record = await queue.submit(
+                lane="lane",
+                request=WorkflowSubmission(
+                    prompt="do the thing",
+                    repo_path=None,
+                    repo_url=REPO_URL,
+                    base_spec=trunk_base("main"),
+                    implied_base=None,
+                    scope=None,
+                    permission_mode=PermissionMode.UNATTENDED,
+                    allowed_tools=["Read", "Glob", "Grep", "Bash", "Edit", "Write"],
+                ),
+            )
+
+            await asyncio.wait_for(
+                watch.watch(
+                    issue_key=ISSUE,
+                    job_id=record.job_id,
+                    pre_claim_state=PRE_CLAIM_STATE,
+                ),
+                timeout=5.0,
+            )
+
+            ended = await queue.get(job_id=record.job_id)
+            assert ended is not None
+            assert ended.outcome is WorkflowOutcome.job_timed_out
+            assert await tracker.active_claim(issue_key=ISSUE) is None
+            again = await tracker.claim_issue(
+                issue_key=ISSUE,
+                holder="pass-b",
+                lease_seconds=LEASE_SECONDS,
+            )
+            assert again.status is ClaimStatus.GRANTED
+            # The failure arm put the issue back and named what ended the run.
+            assert tracker.restored_states == [(ISSUE, PRE_CLAIM_STATE)]
+            (comment,) = tracker.comments
+            assert "TimeoutError" in comment.body
+        finally:
+            await queue.stop()
 
 
 class TestTheWatcherIsUnknownJobSafe:
@@ -616,7 +752,12 @@ class TestTheWatcherIsUnknownJobSafe:
             recorder=RunRecorder(records={}, sinks={}),
             queue=queue,
             registry=queue,
-            writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
+            writer=TrackerLifecycleWriter(
+                marker_prefixes={"run_outcome": "fixture-outcome"},
+                surface_lease_seconds=900,
+                tracker=tracker,
+                gate=PassThroughGate(),
+            ),
             heartbeat=claim_heartbeat(tracker),
             report=FakeFireReport(),
         )
@@ -732,9 +873,9 @@ class TestTheFailureArm:
         assert tracker.workflow_writes == [
             (ISSUE, LifecycleStage.IN_PROGRESS),
             (ISSUE, LifecycleStage.IN_REVIEW),
-            (ISSUE, LifecycleStage.DONE),
         ]
         assert [comment.body for comment in tracker.comments] == [
+            f"[fixture-outcome:{ISSUE}:job-0001]\n"
             f"job job-0001 reached outcome {WorkflowOutcome.ci_passed.value}",
         ]
 
@@ -760,6 +901,7 @@ class TestTheFailureArm:
 
         assert tracker.restored_states == []
         assert [comment.body for comment in tracker.comments] == [
+            f"[fixture-outcome:{ISSUE}:job-0001]\n"
             f"job job-0001 reached outcome {WorkflowOutcome.loop_not_accepted.value}",
         ]
 
@@ -799,7 +941,12 @@ def watcher_recording(
             recorder=recorder,
             queue=FakeJobQueue(events=events),
             registry=registry_holding(),
-            writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
+            writer=TrackerLifecycleWriter(
+                marker_prefixes={"run_outcome": "fixture-outcome"},
+                surface_lease_seconds=900,
+                tracker=tracker,
+                gate=PassThroughGate(),
+            ),
             heartbeat=claim_heartbeat(tracker),
             report=FakeFireReport(),
         ),
@@ -877,7 +1024,12 @@ def watcher_over_sink(
         ),
         queue=FakeJobQueue(events=events),
         registry=registry_holding(),
-        writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
+        writer=TrackerLifecycleWriter(
+            marker_prefixes={"run_outcome": "fixture-outcome"},
+            surface_lease_seconds=900,
+            tracker=tracker,
+            gate=PassThroughGate(),
+        ),
         heartbeat=claim_heartbeat(tracker),
         report=FakeFireReport(),
     )
@@ -1002,7 +1154,12 @@ def watcher_reporting(
             recorder=RunRecorder(records={}, sinks={}),
             queue=FakeJobQueue(events=events),
             registry=registry_holding(),
-            writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
+            writer=TrackerLifecycleWriter(
+                marker_prefixes={"run_outcome": "fixture-outcome"},
+                surface_lease_seconds=900,
+                tracker=tracker,
+                gate=PassThroughGate(),
+            ),
             heartbeat=claim_heartbeat(tracker),
             report=report,
         ),
@@ -1142,7 +1299,12 @@ def recording_watcher(
             ),
             queue=queue,
             registry=queue,
-            writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
+            writer=TrackerLifecycleWriter(
+                marker_prefixes={"run_outcome": "fixture-outcome"},
+                surface_lease_seconds=900,
+                tracker=tracker,
+                gate=PassThroughGate(),
+            ),
             heartbeat=claim_heartbeat(tracker),
             report=FakeFireReport(),
         ),
@@ -1296,7 +1458,12 @@ class TestTheShutdownRecordSweep:
             ),
             queue=queue,
             registry=FakeJobQueue(),
-            writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
+            writer=TrackerLifecycleWriter(
+                marker_prefixes={"run_outcome": "fixture-outcome"},
+                surface_lease_seconds=900,
+                tracker=tracker,
+                gate=PassThroughGate(),
+            ),
             heartbeat=claim_heartbeat(tracker),
             report=FakeFireReport(),
         )
@@ -1337,7 +1504,12 @@ class TestTheShutdownRecordSweep:
             ),
             queue=queue,
             registry=FakeJobQueue(),
-            writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
+            writer=TrackerLifecycleWriter(
+                marker_prefixes={"run_outcome": "fixture-outcome"},
+                surface_lease_seconds=900,
+                tracker=tracker,
+                gate=PassThroughGate(),
+            ),
             heartbeat=claim_heartbeat(tracker),
             report=FakeFireReport(),
         )

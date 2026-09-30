@@ -9,6 +9,7 @@ what that base should be.
 
 from collections.abc import Sequence
 
+from kodezart.domain.base_staleness import is_base_stale
 from kodezart.domain.errors import StaleBaseError
 from kodezart.types.domain.branch import BaseInput, BaseSpec
 
@@ -34,14 +35,16 @@ def scope_base(recorded: BaseSpec, implied: BaseSpec | None) -> str:
     """The ref the scope check compares against. Raises when it has moved.
 
     *implied* is the base the lane's blockers imply RIGHT NOW, or ``None``
-    when there is no association to recompute from.  Comparison is
-    equality over two frozen values.
+    when there is no association to recompute from.  Whether the two are
+    the same base is not asked here: it is
+    :func:`kodezart.domain.base_staleness.is_base_stale` that answers it,
+    so this surface and every other reader of that answer are reading one
+    comparison and cannot come to disagree about what a moved base is.
     """
-    if implied is not None and implied != recorded:
+    if implied is not None and is_base_stale(recorded, implied):
         msg = (
-            "The lane's recorded base is not the base its blockers imply; "
-            "every criterion graded on the recorded base is lapsed and no "
-            "scope verdict may be computed against it"
+            "The lane's recorded base is not the base its blockers imply, "
+            "so no scope verdict may be computed against it"
         )
         raise StaleBaseError(
             msg,

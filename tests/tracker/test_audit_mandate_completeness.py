@@ -1,0 +1,402 @@
+"""Every refutation the sweep produces carries a mandate verdict (KOD-516).
+
+The range is the verdict-bearing fields of the sweep's observation: every
+field whose type holds a model declaring a verdict, as a field or as a
+property reading one nested in it, found at any depth of that type (inside
+an optional, a tuple or a root model).  Each such arm is
+either completed by its mandate-completed report or stands beside the
+reason its hunt could not run; the observation refuses to be built any
+other way, and that refusal is the sweep's own completeness assertion.
+Which arms bear a verdict is read off the observation's own field types, so
+an arm added later is under the rule the moment it exists rather than when
+somebody remembers to list it.
+"""
+
+import inspect
+from collections.abc import Iterator
+from dataclasses import replace
+from typing import get_args, get_type_hints
+
+import pytest
+from pydantic import BaseModel, RootModel
+
+from kodezart.chains.audit_sweep import MANDATED_ARMS, AuditReadObservation
+from kodezart.domain.errors import AgentSDKError
+from kodezart.domain.run_event_stream import LaneRunEvent
+from kodezart.types.domain.agent import AUDIT_MANDATE_SCHEMA
+from kodezart.types.domain.audit import AuditClaimReport, AuditVerdict
+from kodezart.types.domain.audit_evidence import restamp_defect_class
+from kodezart.types.domain.audit_overclaim import OverclaimKind
+from kodezart.types.domain.run_event import RunEventKind
+from kodezart.types.domain.tracker import WorkflowStateKind
+from tests.tracker.test_audit_forge import forge
+from tests.tracker.test_audit_forge_sweep import selected_operation, verifier
+from tests.tracker.test_audit_overclaim_sweep import payload as overclaim_payload
+from tests.tracker.test_audit_sweep import BODY, CHILD, HEAD, LANE, PRIOR, ROOT, state
+from tests.tracker.test_audit_sweep import server as server
+from tests.tracker.test_audit_sweep import setup as setup
+from tests.tracker.test_audit_terminal_mandate import terminal_ready
+from tests.tracker.test_detector_removal_sweep import RevisionSource
+from tests.tracker.test_detector_removal_sweep import payload as removal_payload
+from tests.tracker.test_detector_removal_sweep import ready as removal_ready
+
+#: A commit the lane's stream records a grading at and no Evidence row names.
+ELSEWHERE = "c" * 40
+
+
+async def refuted_restamp(tracker, server, mode, seed_issue):
+    """Seed a grading the criterion's row does not name, current or lapsed.
+
+    ``current`` leaves the row at the head under review, so the claim arm
+    runs as well; ``lapse`` puts the row behind the head on a Done
+    criterion, so the observation leaves through the lapse return.
+    """
+    graded = HEAD if mode == "current" else PRIOR
+    recorded = PRIOR if mode == "current" else ELSEWHERE
+    seed_issue(issue_key=CHILD, body=BODY.replace(HEAD, graded))
+    await state(
+        tracker,
+        server,
+        CHILD,
+        "In Review" if mode == "current" else "Done",
+        WorkflowStateKind.STARTED if mode == "current" else WorkflowStateKind.COMPLETED,
+    )
+    await tracker.post_run_event(
+        issue_key=ROOT,
+        event=LaneRunEvent(
+            kind=RunEventKind.CRITERION_REFUTED,
+            lane_key=LANE,
+            subject_key=CHILD,
+            graded_sha=recorded,
+        ),
+    )
+
+
+@pytest.mark.parametrize("mode", ["current", "lapse"])
+async def test_a_refuted_restamp_carries_a_mandate_verdict(
+    setup, tracker, server, tracker_writes, mode, seed_issue
+):
+    """A restamp the stream does not trace is hunted at the current head.
+
+    The lapse case is the one the trace is most about and the one that
+    leaves before the claim arm, so the report is built ahead of that
+    return; the hunt writes nothing.
+    """
+    build, executor, *_ = setup
+    await refuted_restamp(tracker, server, mode, seed_issue)
+    before = tracker_writes()
+    observation = (await build().run()).observations[0]
+
+    trace = observation.restamp
+    assert trace.verdict is AuditVerdict.REFUTED
+    assert observation.restamp_report.trace == trace
+    assert observation.restamp_report.mandate.verdict is AuditVerdict.REFUTED
+    covered = observation.restamp_report.mandate.covered
+    assert {item.surface.ref.key for item in covered} == {CHILD, ROOT}
+    assert observation.evidence.is_lapse is (mode == "lapse")
+    assert (observation.claim is None) is (mode == "lapse")
+    (call,) = [
+        call
+        for call in executor.calls
+        if call["output_format"]["schema"] == AUDIT_MANDATE_SCHEMA
+    ]
+    assert restamp_defect_class(trace) in call["prompt"]
+    assert trace.reason in call["prompt"]
+    assert f"<head_sha>{HEAD}</head_sha>" in call["prompt"]
+    assert tracker_writes() == before
+
+
+async def test_a_restamp_report_must_answer_the_trace_beside_it(
+    setup, tracker, server, tracker_writes, seed_issue
+):
+    """A report completes the trace it was hunted for and no other.
+
+    The observation's refuted trace is swapped for another refuted trace
+    while its report stays, so the mandate verdict beside it answers a
+    refutation the observation no longer carries: refused.  The sweep that
+    produced the observation wrote nothing.
+    """
+    build, *_ = setup
+    await refuted_restamp(tracker, server, "current", seed_issue)
+    before = tracker_writes()
+    observation = (await build().run()).observations[0]
+    assert tracker_writes() == before
+    other = observation.restamp.model_copy(
+        update={"reason": f"{observation.restamp.reason} (another trace)"}
+    )
+    assert other.verdict is AuditVerdict.REFUTED
+    assert other != observation.restamp
+
+    with pytest.raises(ValueError, match="restamp report differs from the native"):
+        replace(observation, restamp=other)
+
+
+@pytest.mark.parametrize("mode", ["current", "lapse"])
+async def test_a_failed_restamp_mandate_keeps_the_raw_trace_and_its_reason(
+    setup, tracker, server, tracker_writes, mode, seed_issue
+):
+    """A restamp hunt that fails keeps the raw trace beside the reason.
+
+    No report is built, so the refutation stands as the raw REFUTED trace
+    with the reason its hunt could not run, which is what the runtime then
+    refuses the subject on, lapse included; nothing is written.
+    """
+    build, executor, *_ = setup
+    await refuted_restamp(tracker, server, mode, seed_issue)
+
+    async def during(kwargs):
+        if kwargs["output_format"]["schema"] == AUDIT_MANDATE_SCHEMA:
+            raise AgentSDKError(
+                "restamp mandate session unavailable", error_kind="fixture"
+            )
+
+    executor.during = during
+    before = tracker_writes()
+    observation = (await build().run()).observations[0]
+
+    assert observation.restamp.verdict is AuditVerdict.REFUTED
+    assert observation.restamp_report is None
+    assert observation.unavailable_reason.startswith("AgentSDKError: ")
+    assert "restamp mandate session unavailable" in observation.unavailable_reason
+    assert observation.evidence.is_lapse is (mode == "lapse")
+    assert tracker_writes() == before
+
+
+@pytest.mark.parametrize("restamp", [False, True], ids=["claim", "beside-a-restamp"])
+async def test_a_failed_claim_mandate_keeps_the_evidence_and_its_reason(
+    setup, tracker, server, tracker_writes, restamp, seed_issue
+):
+    """A claim hunt that fails keeps what the arm observed beside the reason.
+
+    The criterion is under review and its claim refuted, so the claim is
+    hunted; that hunt fails.  The observation keeps the evidence the claim
+    stands on, the restamp trace and, where the restamp's own hunt ran
+    first and completed, its report, beside the reason, and no claim
+    report.  Nothing is written.
+    """
+    build, executor, *_ = setup
+    if restamp:
+        await refuted_restamp(tracker, server, "current", seed_issue)
+    else:
+        await state(tracker, server, CHILD, "In Review", WorkflowStateKind.STARTED)
+    executor.verdict = "refuted"
+    hunts = []
+
+    async def during(kwargs):
+        if kwargs["output_format"]["schema"] == AUDIT_MANDATE_SCHEMA:
+            hunts.append(kwargs["prompt"])
+            if len(hunts) == (2 if restamp else 1):
+                raise AgentSDKError(
+                    "claim mandate session unavailable", error_kind="fixture"
+                )
+
+    executor.during = during
+    before = tracker_writes()
+    observation = (await build().run()).observations[0]
+
+    assert len(hunts) == (2 if restamp else 1)
+    assert observation.claim is None
+    assert observation.evidence is not None
+    assert observation.evidence.verdict is AuditVerdict.REFUTED
+    assert observation.evidence.current_claim.judgment.verdict is AuditVerdict.REFUTED
+    assert observation.unavailable_reason.startswith("AgentSDKError: ")
+    assert "claim mandate session unavailable" in observation.unavailable_reason
+    if restamp:
+        assert observation.restamp.verdict is AuditVerdict.REFUTED
+        assert observation.restamp_report.trace == observation.restamp
+        assert observation.restamp_report.mandate.verdict is AuditVerdict.REFUTED
+    else:
+        assert observation.restamp_report is None
+    assert tracker_writes() == before
+
+
+async def refuted_arm(arm, setup, tracker, server, tracker_writes, seed_issue):
+    """A real sweep observation whose *arm* is REFUTED and complete.
+
+    The sweep that produces it writes nothing: the mandating surfaces it
+    hunts over are read, never edited.
+    """
+    build, executor, _, _, _, pr_states, _, operation = setup
+    if arm == "terminal":
+        await terminal_ready(tracker, server, pr_states)
+        before = tracker_writes()
+        observation = (await build().run()).observations[1]
+    elif arm == "forge":
+        await state(tracker, server, CHILD, "Done", WorkflowStateKind.COMPLETED)
+        selected = selected_operation(operation)
+        async with forge("fake", "work") as (ci, _):
+            before = tracker_writes()
+            observation = (
+                await build(
+                    selected_op=selected,
+                    selected_forge=verifier(tracker, selected, ci),
+                ).run()
+            ).observations[0]
+    elif arm == "restamp":
+        await refuted_restamp(tracker, server, "current", seed_issue)
+        before = tracker_writes()
+        observation = (await build().run()).observations[0]
+    elif arm == "overclaim_reading":
+        await state(tracker, server, CHILD, "Done", WorkflowStateKind.COMPLETED)
+        executor.overclaim_output = overclaim_payload(
+            OverclaimKind.SELF_RULE, verdict="refuted"
+        )
+        before = tracker_writes()
+        observation = (await build(include_overclaims=True).run()).observations[0]
+    elif arm == "removal_reading":
+        await removal_ready(tracker, server, seed_issue)
+        executor.removal_output = removal_payload("refuted")
+        before = tracker_writes()
+        observation = (
+            await build(include_removals=True, selected_source=RevisionSource()).run()
+        ).observations[0]
+    else:
+        executor.verdict = "refuted"
+        await state(tracker, server, CHILD, "In Review", WorkflowStateKind.STARTED)
+        before = tracker_writes()
+        observation = (await build().run()).observations[0]
+    assert tracker_writes() == before
+    return observation
+
+
+#: The completeness rule's rows, stated here independently of the table
+#: under test: each verdict-bearing arm, the field its mandate verdict
+#: completes it in, and the field naming why its hunt could not run.
+ARMS = (
+    ("terminal", "terminal_report", "unavailable_reason"),
+    ("forge", "forge_report", "forge_unavailable_reason"),
+    ("restamp", "restamp_report", "unavailable_reason"),
+    ("evidence", "claim", "unavailable_reason"),
+    ("overclaim_reading", "overclaims", "overclaim_unavailable_reason"),
+    ("removal_reading", "detector_removal", "removal_unavailable_reason"),
+)
+
+
+@pytest.mark.parametrize(
+    ("arm", "completed", "reason"), ARMS, ids=[row[0] for row in ARMS]
+)
+async def test_a_refutation_without_its_mandate_fails_the_completeness_assertion(
+    setup, tracker, server, tracker_writes, arm, completed, reason, seed_issue
+):
+    """Drop the mandate verdict from a refutation the sweep produced: refused.
+
+    The control keeps the same raw refutation beside the reason its hunt
+    could not run, which is the shape a genuinely failed hunt takes, and is
+    built; so the refusal is about the missing verdict and nothing else.
+    The rows are this test's own, so a row the table loses or alters fails
+    here rather than taking its case away with it.
+    """
+    assert set(MANDATED_ARMS) == set(ARMS)
+    observation = await refuted_arm(
+        arm, setup, tracker, server, tracker_writes, seed_issue
+    )
+    assert getattr(observation, arm).verdict is AuditVerdict.REFUTED
+    assert getattr(observation, completed) is not None
+
+    with pytest.raises(
+        ValueError, match=f"without its mandate verdict: {arm} requires"
+    ):
+        replace(observation, **{completed: None})
+    control = replace(
+        observation, **{completed: None, reason: "the mandate hunt could not run"}
+    )
+    assert getattr(control, arm) == getattr(observation, arm)
+
+
+@pytest.mark.parametrize("arm", ["forge", "evidence"])
+async def test_a_forge_or_evidence_refutation_is_completed_by_a_refuting_report(
+    setup, tracker, server, tracker_writes, arm, seed_issue
+):
+    """The report beside a refutation must be that refutation's own report.
+
+    A REFUTED forge reading beside a report that holds, with no mandate
+    verdict, is a refutation with nothing completing it; a claim report
+    about another claim than the one the evidence stands on completes
+    nothing the observation carries.  Both are refused at construction.
+    """
+    observation = await refuted_arm(
+        arm, setup, tracker, server, tracker_writes, seed_issue
+    )
+    if arm == "forge":
+        claim = observation.forge_report.claim
+        holding = AuditClaimReport.model_validate(
+            {
+                "claim": claim.model_copy(
+                    update={
+                        "judgment": claim.judgment.model_copy(
+                            update={"verdict": AuditVerdict.HOLDS}
+                        )
+                    }
+                ),
+                "mandate": None,
+            }
+        )
+        assert holding.mandate is None
+        with pytest.raises(
+            ValueError, match="forge report differs from the native forge reading"
+        ):
+            replace(observation, forge_report=holding)
+    else:
+        report = observation.claim
+        assert report.claim == observation.evidence.current_claim
+        other = report.model_copy(
+            update={
+                "root": report.root.model_copy(
+                    update={
+                        "claim": report.claim.model_copy(
+                            update={"check": f"{report.claim.check} (another)"}
+                        )
+                    }
+                )
+            }
+        )
+        with pytest.raises(
+            ValueError, match="claim report differs from the evidence's current claim"
+        ):
+            replace(observation, claim=other)
+
+
+def verdict_models(hint: object) -> Iterator[type[BaseModel]]:
+    """Every model declaring a verdict that *hint* holds, at any depth.
+
+    A container or union is read through its arguments, and a root model
+    through its root, so ``tuple[X, ...] | None`` holds ``X`` as surely as
+    ``X`` does.  A model declares a verdict as a field, or as a property
+    reading the verdict of what it nests.
+    """
+    for member in get_args(hint):
+        yield from verdict_models(member)
+    if isinstance(hint, type) and issubclass(hint, BaseModel):
+        if issubclass(hint, RootModel):
+            yield from verdict_models(hint.model_fields["root"].annotation)
+        elif "verdict" in hint.model_fields or isinstance(
+            inspect.getattr_static(hint, "verdict", None), property
+        ):
+            yield hint
+
+
+def verdict_bearing_fields() -> frozenset[str]:
+    """The observation's fields whose type holds a model declaring a verdict."""
+    return frozenset(
+        name
+        for name, hint in get_type_hints(AuditReadObservation).items()
+        if any(verdict_models(hint))
+    )
+
+
+def test_every_verdict_bearing_arm_is_under_the_completeness_assertion():
+    """The rule's table ranges over exactly the arms that carry a verdict.
+
+    Read off the field types rather than listed: a verdict-bearing arm added
+    to the observation without a row would carry refutations the rule never
+    sees, which is how the restamp trace once escaped it.
+    """
+    assert verdict_bearing_fields() == {
+        "terminal",
+        "forge",
+        "restamp",
+        "evidence",
+        "overclaim_reading",
+        "removal_reading",
+    }
+    assert verdict_bearing_fields() == {row[0] for row in MANDATED_ARMS}

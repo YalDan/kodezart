@@ -15,8 +15,9 @@ from pydantic import ValidationError
 
 from kodezart.adapters.asyncio_job_queue import AsyncioJobQueue
 from kodezart.adapters.langgraph_run_state_reader import LangGraphRunStateReader
-from kodezart.chains.ralph_workflow import RalphWorkflowEngine
-from kodezart.core.config import AppConfig
+from kodezart.chains.authored_delivery import AuthoredDeliveryCoordinator
+from kodezart.config.app import AppConfig
+from kodezart.config.job_queue import JobQueueSettings
 from kodezart.core.constants import DEFAULT_LANE
 from kodezart.core.protocols import JobQueue, JobRegistry
 from kodezart.domain.errors import QueueFullError
@@ -32,6 +33,7 @@ from kodezart.types.domain import job as job_types
 from kodezart.types.domain.agent import (
     AgentEvent,
     AssistantTextEvent,
+    ErrorEvent,
     WorkflowCompleteEvent,
 )
 from kodezart.types.domain.branch import (
@@ -40,10 +42,16 @@ from kodezart.types.domain.branch import (
     WorkRefRole,
     trunk_base,
 )
+from kodezart.types.domain.criteria import ExecutionCriterion
+from kodezart.types.domain.fire_spec import TrackerSpec
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.job import JobState
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.run import RunState
+from kodezart.types.domain.run_records import RunIdentity
+from kodezart.types.domain.scope import ScopeRef
+from kodezart.types.domain.session import PermissionMode
+from kodezart.types.domain.workflow import WorkflowSubmission
 from kodezart.types.requests.agent import WorkflowRequest
 from tests.fakes import (
     SUPPRESS_ALL_SKILLS,
@@ -62,6 +70,7 @@ from tests.fakes import (
     make_prompt_provider,
     no_delay_floor,
 )
+from tests.workflow_factory import make_authored_workflow
 
 _BODY: dict[str, object] = {"prompt": "fix", "repoPath": "/tmp/fake"}
 
@@ -100,10 +109,13 @@ class GatedWorkflowEngine:
         repo_path: str | None,
         repo_url: str | None,
         base_spec: BaseSpec,
+        scope: ScopeRef | None,
+        issue_key: str | None = None,
         implied_base: BaseSpec | None = None,
-        permission_mode: str,
+        permission_mode: PermissionMode,
         allowed_tools: list[str],
         cache_key: str,
+        run_identity: RunIdentity | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
         self.started.append(prompt)
         self.cache_keys.append(cache_key)
@@ -127,10 +139,13 @@ class ChattyWorkflowEngine:
         repo_path: str | None,
         repo_url: str | None,
         base_spec: BaseSpec,
+        scope: ScopeRef | None,
+        issue_key: str | None = None,
         implied_base: BaseSpec | None = None,
-        permission_mode: str,
+        permission_mode: PermissionMode,
         allowed_tools: list[str],
         cache_key: str,
+        run_identity: RunIdentity | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
         self.cache_keys.append(cache_key)
         for event in self._events:
@@ -210,6 +225,7 @@ def _make_queue(
     terminal_retention_seconds: float = 86400.0,
     event_buffer_retention_seconds: float = 900.0,
     event_buffer_capacity: int = 512,
+    run_timeout_seconds: float | None = None,
 ) -> AsyncioJobQueue:
     return AsyncioJobQueue(
         engine=engine,
@@ -218,6 +234,7 @@ def _make_queue(
         terminal_retention_seconds=terminal_retention_seconds,
         event_buffer_retention_seconds=event_buffer_retention_seconds,
         event_buffer_capacity=event_buffer_capacity,
+        run_timeout_seconds=run_timeout_seconds,
     )
 
 
@@ -226,8 +243,17 @@ def _worker_tasks(queue: AsyncioJobQueue) -> list[asyncio.Task[None]]:
     return [worker for lane in queue._lanes.values() for worker in lane.workers]
 
 
-def _request(prompt: str) -> WorkflowRequest:
-    return WorkflowRequest(prompt=prompt, repo_path="/tmp/fake")
+def _request(prompt: str) -> WorkflowSubmission:
+    return WorkflowSubmission(
+        prompt=prompt,
+        repo_path="/tmp/fake",
+        repo_url=None,
+        base_spec=trunk_base("main"),
+        implied_base=None,
+        scope=None,
+        permission_mode=PermissionMode.UNATTENDED,
+        allowed_tools=["Read", "Glob", "Grep", "Bash", "Edit", "Write"],
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -235,14 +261,19 @@ def _request(prompt: str) -> WorkflowRequest:
 # ---------------------------------------------------------------------------
 
 
-def _real_engine(checkpointer: InMemorySaver | None = None) -> RalphWorkflowEngine:
+def _real_engine(
+    checkpointer: InMemorySaver | None = None,
+) -> AuthoredDeliveryCoordinator:
     service = AgentService(
         git_base_url="https://github.com",
         executor=FakeAgentExecutor(events=[]),
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
     )
-    return RalphWorkflowEngine(
+    return make_authored_workflow(
+        repositories=(),
+        max_concurrent_watches=4,
+        red_rerun_max_attempts=0,
         service=service,
         quality_gate=FakeQualityGate(
             events=[AssistantTextEvent(text="done", model="m")],
@@ -304,12 +335,18 @@ class GatedQualityGate:
         ralph_branch: str,
         base_spec: BaseSpec,
         work_base_ref: str,
+        resumed_head_sha: str | None = None,
+        base_stale: bool = False,
         implied_base: BaseSpec | None = None,
-        permission_mode: str,
+        permission_mode: PermissionMode,
         allowed_tools: list[str],
-        acceptance_criteria: list[str],
+        acceptance_criteria: list[ExecutionCriterion],
+        tracker_spec: TrackerSpec | None = None,
         cache_key: str,
+        run_identity: RunIdentity | None = None,
+        surface_holder: str | None = None,
         repo_visibility: RepoVisibility = RepoVisibility.UNKNOWN,
+        scope: ScopeRef | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
         self.calls += 1
         if self.calls == self._gate_on_call:
@@ -323,10 +360,15 @@ class GatedQualityGate:
             ralph_branch=ralph_branch,
             base_spec=base_spec,
             work_base_ref=work_base_ref,
+            resumed_head_sha=resumed_head_sha,
+            base_stale=base_stale,
             permission_mode=permission_mode,
             allowed_tools=allowed_tools,
             acceptance_criteria=acceptance_criteria,
+            tracker_spec=tracker_spec,
             cache_key=cache_key,
+            run_identity=run_identity,
+            surface_holder=surface_holder,
             repo_visibility=repo_visibility,
         ):
             yield event
@@ -335,7 +377,7 @@ class GatedQualityGate:
 def _mid_run_engine(
     checkpointer: InMemorySaver,
     quality_gate: GatedQualityGate,
-) -> RalphWorkflowEngine:
+) -> AuthoredDeliveryCoordinator:
     """Engine whose first post-merge review fails, forcing one fix round.
 
     The scripted executor answers the review schema: failing first, then
@@ -395,7 +437,10 @@ def _mid_run_engine(
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
     )
-    return RalphWorkflowEngine(
+    return make_authored_workflow(
+        repositories=(),
+        max_concurrent_watches=4,
+        red_rerun_max_attempts=0,
         service=service,
         quality_gate=quality_gate,
         ticket_generator=FakeTicketGenerator(),
@@ -749,8 +794,16 @@ class RaisingWorkflowEngine:
     classifying itself.
     """
 
-    def __init__(self, *, events: list[AgentEvent] | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        events: list[AgentEvent] | None = None,
+        error: Exception | None = None,
+    ) -> None:
         self._events: list[AgentEvent] = events if events is not None else []
+        self._error: Exception = (
+            RuntimeError("adapter retries exhausted") if error is None else error
+        )
 
     async def run(
         self,
@@ -759,15 +812,17 @@ class RaisingWorkflowEngine:
         repo_path: str | None,
         repo_url: str | None,
         base_spec: BaseSpec,
+        scope: ScopeRef | None,
+        issue_key: str | None = None,
         implied_base: BaseSpec | None = None,
-        permission_mode: str,
+        permission_mode: PermissionMode,
         allowed_tools: list[str],
         cache_key: str,
+        run_identity: RunIdentity | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
         for event in self._events:
             yield event
-        msg = "adapter retries exhausted"
-        raise RuntimeError(msg)
+        raise self._error
 
 
 async def test_a_run_whose_engine_raises_terminates_naming_the_hard_failure() -> None:
@@ -956,6 +1011,124 @@ async def test_status_of_a_hard_failure_is_terminal_and_names_the_cause() -> Non
         assert payload["outcome"] == WorkflowOutcome.engine_error.value
 
 
+# ---------------------------------------------------------------------------
+# KOD-1251: a queued job may be given a time limit
+# ---------------------------------------------------------------------------
+
+#: Waited out for real by the tests below. A held run never finishes on its
+#: own, so the only thing that can end it inside the settle bound is the limit.
+RUN_LIMIT = 0.2
+
+
+async def test_a_job_past_the_run_limit_is_cancelled_and_ends_timed_out() -> None:
+    """The limit ends a run that would otherwise hold its lane forever.
+
+    The job ends under its own outcome, says so in the log, and publishes an
+    error frame, so the stream closes on a named cause rather than on silence.
+    """
+    engine = GatedWorkflowEngine()
+    queue = _make_queue(engine, run_timeout_seconds=RUN_LIMIT)
+    await queue.start()
+    try:
+        with structlog.testing.capture_logs() as logs:
+            record = await queue.submit(lane=DEFAULT_LANE, request=_request("stuck"))
+            await _wait_terminal(queue, record.job_id)
+
+        final = await queue.get(job_id=record.job_id)
+        assert final is not None
+        assert (final.state, final.outcome) == (
+            JobState.TERMINAL,
+            WorkflowOutcome.job_timed_out,
+        )
+        assert engine.started == ["stuck"]
+        assert engine.finished == []
+
+        published = await _drain(queue, record.job_id)
+        assert len(published) == 1
+        assert isinstance(published[0], ErrorEvent)
+        assert published[0].error_kind == "TimeoutError"
+        assert str(RUN_LIMIT) in published[0].error
+
+        timed_out = [entry for entry in logs if entry["event"] == "job_timed_out"]
+        assert len(timed_out) == 1
+        assert timed_out[0]["log_level"] == "error"
+        assert timed_out[0]["job_id"] == record.job_id
+        assert timed_out[0]["run_timeout_seconds"] == RUN_LIMIT
+        assert [entry for entry in logs if entry["event"] == "job_failed"] == []
+    finally:
+        await queue.stop()
+
+
+async def test_the_lane_runs_the_next_job_once_the_limit_ends_the_stuck_one() -> None:
+    """One worker, one stuck job: the job behind it still runs, untouched.
+
+    The next job finishes inside the limit, so it keeps the outcome it
+    reported; the limit ends only the run that went past it.
+    """
+    engine = GatedWorkflowEngine(events=[_complete_event(WorkflowOutcome.ci_passed)])
+    engine.release("next")
+    queue = _make_queue(engine, run_timeout_seconds=RUN_LIMIT)
+    await queue.start()
+    try:
+        stuck = await queue.submit(lane=DEFAULT_LANE, request=_request("stuck"))
+        waiting = await queue.submit(lane=DEFAULT_LANE, request=_request("next"))
+        await _wait_terminal(queue, waiting.job_id)
+
+        assert engine.started == ["stuck", "next"]
+        assert engine.finished == ["next"]
+        stuck_record = await queue.get(job_id=stuck.job_id)
+        next_record = await queue.get(job_id=waiting.job_id)
+        assert stuck_record is not None
+        assert next_record is not None
+        assert stuck_record.outcome is WorkflowOutcome.job_timed_out
+        assert next_record.outcome is WorkflowOutcome.ci_passed
+    finally:
+        await queue.stop()
+
+
+async def test_with_no_limit_a_long_job_is_left_running() -> None:
+    """Unset is the queue as it was: no deadline, however long the run holds."""
+    engine = GatedWorkflowEngine(events=[_complete_event(WorkflowOutcome.ci_passed)])
+    queue = _make_queue(engine)
+    await queue.start()
+    try:
+        record = await queue.submit(lane=DEFAULT_LANE, request=_request("long"))
+        await _until(lambda: engine.started == ["long"])
+        await asyncio.sleep(RUN_LIMIT * 3)
+
+        held = await queue.get(job_id=record.job_id)
+        assert held is not None
+        assert (held.state, held.outcome) == (JobState.RUNNING, None)
+
+        engine.release("long")
+        await _wait_terminal(queue, record.job_id)
+        final = await queue.get(job_id=record.job_id)
+        assert final is not None
+        assert final.outcome is WorkflowOutcome.ci_passed
+    finally:
+        await queue.stop()
+
+
+async def test_a_timeout_the_engine_raises_itself_stays_an_engine_error() -> None:
+    """Only the queue's own deadline makes a job time out.
+
+    A ``TimeoutError`` raised inside the run, well before the limit, is the
+    run failing, and it keeps the outcome every other raise gets.
+    """
+    engine = RaisingWorkflowEngine(error=TimeoutError("tracker read timed out"))
+    queue = _make_queue(engine, run_timeout_seconds=SETTLE_TIMEOUT * 10)
+    await queue.start()
+    try:
+        record = await queue.submit(lane=DEFAULT_LANE, request=_request("fix"))
+        await _wait_terminal(queue, record.job_id)
+
+        final = await queue.get(job_id=record.job_id)
+        assert final is not None
+        assert final.outcome is WorkflowOutcome.engine_error
+    finally:
+        await queue.stop()
+
+
 async def test_job_id_is_the_langgraph_thread_id(checkpointed_app: _JobApp) -> None:
     """The job's id addresses its own checkpoint."""
     fired = await checkpointed_app.client.post("/api/v1/agent/fire", json=_BODY)
@@ -1073,18 +1246,18 @@ async def test_zero_buffer_retention_drops_the_buffer_at_terminal() -> None:
 def test_retention_defaults_are_the_ruled_windows() -> None:
     """24h for the record, 15 minutes for the buffer, from AppConfig."""
     config = AppConfig()
-    assert config.queue_terminal_retention_seconds == 86400.0
-    assert config.queue_event_buffer_retention_seconds == 900.0
-    assert config.queue_event_buffer_capacity == 512
-    assert config.queue_max_depth_per_lane == 64
-    assert config.queue_max_concurrent_runs_per_lane == 1
+    assert config.queue.terminal_retention_seconds == 86400.0
+    assert config.queue.event_buffer_retention_seconds == 900.0
+    assert config.queue.event_buffer_capacity == 512
+    assert config.queue.max_depth_per_lane == 64
+    assert config.queue.max_concurrent_runs_per_lane == 1
 
 
 def test_each_retention_field_says_which_object_it_governs() -> None:
     """The separation is the point, so it is legible at the config surface."""
-    fields = AppConfig.model_fields
-    record_description = fields["queue_terminal_retention_seconds"].description
-    buffer_description = fields["queue_event_buffer_retention_seconds"].description
+    fields = JobQueueSettings.model_fields
+    record_description = fields["terminal_retention_seconds"].description
+    buffer_description = fields["event_buffer_retention_seconds"].description
     assert record_description is not None
     assert buffer_description is not None
     assert "JOB RECORD" in record_description
@@ -1095,33 +1268,37 @@ def test_a_buffer_outliving_its_record_is_rejected_at_boot() -> None:
     """Incoherent config fails loud rather than being clamped."""
     with pytest.raises(ValidationError, match="cannot outlive"):
         AppConfig(
-            queue_terminal_retention_seconds=120.0,
-            queue_event_buffer_retention_seconds=121.0,
+            queue={
+                "terminal_retention_seconds": 120.0,
+                "event_buffer_retention_seconds": 121.0,
+            },
         )
 
 
 def test_equal_retention_windows_are_accepted() -> None:
     """The bound is <=, not <: a buffer may live exactly as long."""
     config = AppConfig(
-        queue_terminal_retention_seconds=120.0,
-        queue_event_buffer_retention_seconds=120.0,
+        queue={
+            "terminal_retention_seconds": 120.0,
+            "event_buffer_retention_seconds": 120.0,
+        },
     )
-    assert config.queue_event_buffer_retention_seconds == 120.0
+    assert config.queue.event_buffer_retention_seconds == 120.0
 
 
 @pytest.mark.parametrize(
     ("field", "value"),
     [
-        ("queue_terminal_retention_seconds", 59.0),
-        ("queue_terminal_retention_seconds", 604801.0),
-        ("queue_event_buffer_retention_seconds", -1.0),
-        ("queue_event_buffer_retention_seconds", 86401.0),
+        ("terminal_retention_seconds", 59.0),
+        ("terminal_retention_seconds", 604801.0),
+        ("event_buffer_retention_seconds", -1.0),
+        ("event_buffer_retention_seconds", 86401.0),
     ],
 )
 def test_retention_bounds_are_enforced(field: str, value: float) -> None:
     """Both windows carry the ruled bounds."""
     with pytest.raises(ValidationError):
-        AppConfig(**{field: value})
+        AppConfig(queue={field: value})
 
 
 async def test_stop_marks_in_flight_jobs_terminal_and_leaves_no_worker() -> None:
@@ -1282,7 +1459,7 @@ async def test_status_of_a_running_job_reports_checkpointed_progress(
 async def test_status_reports_progress_while_the_graph_is_paused_mid_run() -> None:
     """A checkpoint read mid-graph names an intermediate node, not the last.
 
-    The engine is a real ``RalphWorkflowEngine``; its quality gate blocks
+    The engine is a real ``AuthoredDeliveryCoordinator``; its quality gate blocks
     on the remediation round's loop, so the graph is genuinely suspended
     part-way through that round while the status endpoint answers.
     """
@@ -1601,10 +1778,13 @@ class BaseRecordingEngine:
         repo_path: str | None,
         repo_url: str | None,
         base_spec: BaseSpec,
+        scope: ScopeRef | None,
+        issue_key: str | None = None,
         implied_base: BaseSpec | None = None,
-        permission_mode: str,
+        permission_mode: PermissionMode,
         allowed_tools: list[str],
         cache_key: str,
+        run_identity: RunIdentity | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
         self.base_specs.append(base_spec)
         self.implied.append(implied_base)

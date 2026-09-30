@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from kodezart.adapters.in_repo_prompt_registry import default_sets_root
-from kodezart.core.config import AppConfig
+from kodezart.config.app import AppConfig
 from kodezart.core.errors import PromptResolutionError
 from kodezart.main import create_app, lifespan
 from kodezart.types.domain.prompts import PromptKey

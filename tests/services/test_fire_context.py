@@ -18,9 +18,8 @@ from pathlib import Path
 
 import pytest
 
-from kodezart.adapters.pattern_outbound_gate import PatternOutboundContentGate
-from kodezart.adapters.regex_content_scanner import RegexContentScanner
-from kodezart.core.config import AppConfig
+from kodezart.adapters.outbound_admission import OutboundAdmission
+from kodezart.config.app import AppConfig
 from kodezart.core.protocols import OutboundContentGate
 from kodezart.domain.errors import AssetFetchError
 from kodezart.services.fire_context import FireContextAssembler
@@ -31,10 +30,12 @@ from kodezart.types.domain.gating import (
     OutboundDestination,
     RepoVisibility,
     ScanFailureKind,
+    TrackerAggregate,
     WriterShape,
 )
 from kodezart.types.domain.tracker import TrackerAsset
 from tests.fakes import FakeTrackerPort, make_tracker_issue
+from tests.outbound import make_admission
 
 ISSUE = "K-1"
 BODY = "the ticket body"
@@ -68,13 +69,9 @@ def tracker_serving(documents: dict[str, str]) -> FakeTrackerPort:
     )
 
 
-def shipped_gate() -> PatternOutboundContentGate:
+def shipped_gate() -> OutboundAdmission:
     """The gate as a deployment gets it: shipped patterns, shipped verdicts."""
-    config = AppConfig()
-    return PatternOutboundContentGate(
-        scanners=[RegexContentScanner(patterns=config.deny_patterns)],
-        verdicts=config.deny_pattern_verdicts,
-    )
+    return make_admission()
 
 
 def assembler(
@@ -119,7 +116,7 @@ async def test_the_session_can_read_each_fetched_asset() -> None:
         documents={SPEC_KEY: SPEC_CONTENT, NOTES_KEY: NOTES_CONTENT},
     )
     rendered = (await assembler(tracker).assemble(issue_key=ISSUE, body=BODY)).render()
-    assert BODY in rendered
+    assert rendered.startswith(f"Tracker issue: {ISSUE}\n\n{BODY}\n\n")
     for key, title, content in (
         (SPEC_KEY, SPEC_TITLE, SPEC_CONTENT),
         (NOTES_KEY, NOTES_TITLE, NOTES_CONTENT),
@@ -132,7 +129,10 @@ async def test_a_ticket_with_no_assets_says_so_rather_than_saying_nothing() -> N
     """ "No assets" and "assets not fetched" must not look alike."""
     tracker = FakeTrackerPort(issues=[make_tracker_issue(ISSUE, body=BODY)])
     rendered = (await assembler(tracker).assemble(issue_key=ISSUE, body=BODY)).render()
-    assert "references no assets" in rendered
+    assert rendered == (
+        f"Tracker issue: {ISSUE}\n\n{BODY}\n\n"
+        "## Fetched assets\n\nThis ticket references no assets."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -272,6 +272,7 @@ class ScriptedGate:
         shape: WriterShape,
         destination: OutboundDestination,
         content_class: ContentClass,
+        aggregates: tuple[TrackerAggregate, ...],
     ) -> GateDecision:
         self.seen.append(content)
         self.postures.append((visibility, shape, destination, content_class))
@@ -294,6 +295,7 @@ async def test_the_shipped_gate_is_what_refuses_the_private_fixture() -> None:
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
         content_class=ContentClass.AUTHORED,
+        aggregates=(),
     )
     assert decision.verdict is GateVerdict.BLOCKED
 

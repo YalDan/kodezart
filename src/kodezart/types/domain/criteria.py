@@ -1,8 +1,8 @@
 """Typed shapes for the acceptance-criteria lifecycle.
 
-A criterion carries a stable identity (``AC-n``, minted at generation
-time), the hard-gate/soft-signal ``criterion_class`` the generator
-assigns, and — after the sweep — a three-state verdict with its evidence.
+A criterion carries a stable identity: authored ``AC-n`` minted at generation
+time, or the exact native tracker key. Authored criteria additionally carry
+a three-state sweep verdict with its evidence.
 
 ``infeasible`` and ``unverifiable`` differ in WHERE THE FAULT LIES: an
 ``infeasible`` criterion is at fault in its own text and is routed to an
@@ -33,22 +33,12 @@ CRITERION_ID_PATTERN = rf"^{CRITERION_ID_PREFIX}[1-9][0-9]*$"
 #:
 #: A ``NewType``: a constrained alias stays ``str`` to the type checker, so
 #: a union discriminating one minted identity from another collapses and
-#: admits any loose string.  Only the minting function constructs one.
+#: admits any loose string. Authored minting and native key capture construct it.
 CriterionId = NewType("CriterionId", str)
 
-#: A criterion identity carried INSIDE a list, format-checked per element.
-#:
-#: ``list[CriterionId]`` constrained nothing — the ``NewType`` validates as
-#: ``str`` and a field ``min_length`` constrains the LIST, not its members —
-#: so ``criterionIds: ["banana"]`` round-tripped intact.
-CriterionIdItem = Annotated[CriterionId, Field(pattern=CRITERION_ID_PATTERN)]
-
-
-class CriterionClass(StrEnum):
-    """Whether a criterion is a behavior contract or a shape signal."""
-
-    hard_gate = "hard_gate"
-    soft_signal = "soft_signal"
+#: Shared identity constraints apply per element, preserving exact tracker
+#: keys while refusing blank identities. AC-n is an authored minting rule.
+CriterionIdItem = Annotated[CriterionId, Field(min_length=1, pattern=r"\S")]
 
 
 class CriterionVerdict(StrEnum):
@@ -98,13 +88,13 @@ class CriterionFlag(StrEnum):
     implementation, including the empty one; what it lacks is
     DISCRIMINATING POWER, and that is what a flag records.
 
-    The consequence the harness draws from a flag is the forced
-    ``soft_signal`` downgrade: a flagged criterion leaves the hard-gate
-    partition.  The template's instruction that a demonstration which ran
-    and passed cannot also ground a repair demand is checked, not merely
-    requested: the sweep's derivation raises on a ``vacuous_at_base``
-    observation paired with any repair, so a criterion the base satisfies
-    consumes no regeneration round and reaches no halt.
+    A persisted flag has no reader in ``src``: like the rest of the
+    evidence on :class:`CriterionFeasibility` it is carried FOR A HUMAN.
+    In flight it does one thing — the template's instruction that a
+    demonstration which ran and passed cannot also ground a repair demand
+    is checked, not merely requested: the sweep's derivation raises on a
+    ``vacuous_at_base`` observation paired with any repair, so a criterion
+    the base satisfies consumes no regeneration round and reaches no halt.
     """
 
     vacuous_at_base = "vacuous_at_base"
@@ -152,7 +142,7 @@ class ForbiddenCriterionClass(StrEnum):
     refuter returns ``infeasible`` for them and the class is recorded here.
 
     ``literal_count`` is the exception: the count can be hit, so it is not
-    a feasibility fault.  It is FLAGGED and forced to ``soft_signal``.
+    a feasibility fault.  It is FLAGGED instead.
     """
 
     pull_request_body = "pull_request_body"
@@ -227,13 +217,12 @@ class CostClaim(CamelCaseModel):
 
 
 class GeneratedCriterion(CamelCaseModel):
-    """One criterion with a stable identity and a class."""
+    """One criterion with a stable identity."""
 
     model_config = ConfigDict(frozen=True, populate_by_name=True)
 
-    id: CriterionId = Field(pattern=CRITERION_ID_PATTERN)
+    id: CriterionId = Field(min_length=1, pattern=r"\S")
     text: str = Field(min_length=1)
-    criterion_class: CriterionClass
 
 
 class DraftedCriterion(CamelCaseModel):
@@ -248,23 +237,10 @@ class DraftedCriterion(CamelCaseModel):
             "text, the repository and a changeset can decide it."
         ),
     )
-    criterion_class: CriterionClass = Field(
-        description="Whether failing this criterion blocks the run or only flags it.",
-    )
 
 
-class CriterionFinding(CamelCaseModel):
-    """One refuter finding about one criterion — the validator's raw output.
-
-    The refuter states the ``verdict`` and the evidence behind it: the
-    smallest repair that would settle the criterion, and what it
-    established.  Evidence is carried so a human can audit "supply a
-    Postgres instance", and so the sweep can ground the statement:
-    ``classify_finding`` derives its own verdict from the evidence alone,
-    and a stated verdict the evidence does not derive is refused.
-    """
-
-    model_config = ConfigDict(frozen=True, populate_by_name=True)
+class _AuthoredFindingIdentity(CamelCaseModel):
+    """The authored identity field precedes its evidence on the existing wire."""
 
     criterion_id: CriterionId = Field(
         pattern=CRITERION_ID_PATTERN,
@@ -273,6 +249,13 @@ class CriterionFinding(CamelCaseModel):
             "per dispatched id and invent none."
         ),
     )
+
+
+class FindingEvidence(CamelCaseModel):
+    """The shared stated verdict and its evidence, independent of identity."""
+
+    model_config = ConfigDict(frozen=True, populate_by_name=True)
+
     verdict: CriterionVerdict = Field(
         description=(
             "Feasible, infeasible, or unverifiable — never folded into each other."
@@ -369,14 +352,32 @@ class CriterionFinding(CamelCaseModel):
         return self
 
 
+class CriterionFinding(FindingEvidence, _AuthoredFindingIdentity):
+    """One refuter finding about one criterion — the validator's raw output.
+
+    The refuter states the ``verdict`` and the evidence behind it: the
+    smallest repair that would settle the criterion, and what it
+    established.  Evidence is carried so a human can audit "supply a
+    Postgres instance", and so the sweep can ground the statement:
+    ``classify_finding`` derives its own verdict from the evidence alone,
+    and a stated verdict the evidence does not derive is refused.
+    """
+
+
 class Contradiction(CamelCaseModel):
     """A subset of criterion ids whose conjunction admits no implementation."""
 
     model_config = ConfigDict(frozen=True, populate_by_name=True)
 
-    criterion_ids: list[CriterionIdItem] = Field(
-        min_length=2,
-        description="The minimal subset of criterion ids that cannot all hold at once.",
+    # This validator only consumes minted authored criteria. Shared execution
+    # identity lists retain the native-key constraints on CriterionIdItem.
+    criterion_ids: list[Annotated[CriterionId, Field(pattern=CRITERION_ID_PATTERN)]] = (
+        Field(
+            min_length=2,
+            description=(
+                "The minimal subset of criterion ids that cannot all hold at once."
+            ),
+        )
     )
     explanation: str = Field(
         min_length=1,
@@ -404,10 +405,10 @@ class CriteriaValidationOutput(CamelCaseModel):
 class CriterionFeasibility(CamelCaseModel):
     """One criterion's verdict as the run records it, with its evidence.
 
-    ``undeclared_switch_arms``, ``forbidden_class`` and ``cost_measurement``
-    have no reader in ``src`` and are not meant to have one: they are
-    carried FOR A HUMAN, and both surfaces that carry them were measured
-    rather than assumed.
+    ``undeclared_switch_arms``, ``forbidden_class``, ``cost_measurement``
+    and ``flags`` have no reader in ``src`` and are not meant to have one:
+    they are carried FOR A HUMAN, and both surfaces that carry them were
+    measured rather than assumed.
 
     This model is serialized whole into the ``workflow_criteria_validation``
     SSE frame — the handler's own ``model_dump(by_alias=True,
@@ -462,22 +463,41 @@ class CriteriaValidation(CamelCaseModel):
 
 
 class ValidatedCriterion(CamelCaseModel):
-    """One persisted criterion: identity, text, class, verdict."""
+    """One persisted criterion: identity, text, verdict."""
 
     model_config = ConfigDict(frozen=True, populate_by_name=True)
 
-    id: CriterionId = Field(pattern=CRITERION_ID_PATTERN)
+    id: CriterionId = Field(min_length=1, pattern=r"\S")
     text: str = Field(min_length=1)
-    criterion_class: CriterionClass
     feasibility: CriterionFeasibility
+
+
+class TrackerCriterion(CamelCaseModel):
+    """A live tracker obligation, without an invented authored sweep verdict."""
+
+    model_config = ConfigDict(frozen=True, populate_by_name=True, extra="forbid")
+
+    id: CriterionId = Field(min_length=1, pattern=r"\S")
+    text: str = Field(min_length=1)
+
+
+ExecutionCriterion = ValidatedCriterion | TrackerCriterion
+
+
+class TrackerCriterionSet(CamelCaseModel):
+    """The current Checks read at the native fire's execution barrier."""
+
+    model_config = ConfigDict(frozen=True, populate_by_name=True, extra="forbid")
+
+    criteria: list[TrackerCriterion] = Field(min_length=1)
 
 
 class CriteriaArtifact(CamelCaseModel):
     """The ``.kodezart/criteria.json`` document.
 
     Replaces the bare ``TypeAdapter[list[str]]`` the persister used to
-    dump, so a consumer reads identity, class and verdict rather than
-    guessing from position in a list.
+    dump, so a consumer reads identity and verdict rather than guessing
+    from position in a list.
     """
 
     model_config = ConfigDict(populate_by_name=True)
@@ -497,7 +517,7 @@ class CriterionFailure(CamelCaseModel):
 
     model_config = ConfigDict(frozen=True, populate_by_name=True)
 
-    criterion_id: CriterionId = Field(pattern=CRITERION_ID_PATTERN)
+    criterion_id: CriterionId = Field(min_length=1, pattern=r"\S")
     text: str = Field(min_length=1)
     reasoning: str = Field(min_length=1)
 

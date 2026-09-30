@@ -8,7 +8,9 @@ noticing:
   "did not answer" is never collapsed into "said it is clean".
 * **R** — routing asserted by CALL COUNT, because the affordability of the
   whole design is a claim about how often the model runs.
-* **D** — within one run a payload gets one answer and pays for one call.
+* **D** — within one run a payload gets one answer and pays for one call.  A
+  scan that did not answer gave none, so its payload is scanned again, and
+  the gate keeps a bounded number of answers, dropping the oldest first.
 * **S** — one conformance suite both adapters pass, which is what keeps the
   widened port from quietly becoming a judgment-only port.
 
@@ -17,6 +19,7 @@ under test here is the MECHANISM around a verdict; the model is not, and a
 test that needed the model to be right would be measuring the wrong thing.
 """
 
+import ast
 import asyncio
 import inspect
 from collections.abc import AsyncIterator, Sequence
@@ -25,29 +28,44 @@ from pathlib import Path
 import pytest
 
 from kodezart.adapters.agent_content_scanner import AgentContentScanner
-from kodezart.adapters.git_change_persister import GitChangePersister
-from kodezart.adapters.pattern_outbound_gate import PatternOutboundContentGate
-from kodezart.adapters.regex_content_scanner import RegexContentScanner
+from kodezart.adapters.git.change_persister import GitChangePersister
+from kodezart.adapters.outbound_admission import _MEMO_BOUND, OutboundAdmission
 from kodezart.adapters.toml_operation_config import load_operation_config
-from kodezart.chains.ralph_workflow import RalphWorkflowEngine
-from kodezart.composition.gating import outbound_scanners
-from kodezart.core.config import AppConfig
+from kodezart.composition.gating import build_outbound_gate
+from kodezart.config.app import AppConfig
+from kodezart.core.backoff import RetryPolicy
 from kodezart.core.errors import ContentScannerBootError
+from kodezart.core.logging import get_logger
 from kodezart.core.outbound_write import gated_write
-from kodezart.core.protocols import ContentScanner, OutboundContentGate
-from kodezart.types.domain.agent import AgentEvent, RateLimitWarningEvent, ResultEvent
+from kodezart.core.protocols import ContentJudgment, OutboundContentGate
+from kodezart.services.amendment_writeback import _ExactEvidenceGate
+from kodezart.types.domain.agent import (
+    AgentEvent,
+    ContentAuditFinding,
+    RateLimitWarningEvent,
+    ResultEvent,
+)
 from kodezart.types.domain.gating import (
-    UNCONDITIONAL_ROUTING,
     ContentClass,
+    DurabilityCategory,
     GateVerdict,
+    ObjectCount,
     OutboundDestination,
     RedactionCategory,
     RepoVisibility,
     ScanFailureKind,
+    ScanHit,
+    ScanResult,
+    TrackerAggregate,
     WriterShape,
 )
 from kodezart.types.domain.operation import OperationConfig
-from kodezart.types.domain.session import SessionType
+from kodezart.types.domain.run_records import RunIdentity
+from kodezart.types.domain.session import (
+    PermissionMode,
+    SessionFailureKind,
+    SessionType,
+)
 from kodezart.types.domain.skills import SkillsMode, SkillsSelection
 from kodezart.types.domain.subagents import (
     NO_SUBAGENTS,
@@ -55,7 +73,8 @@ from kodezart.types.domain.subagents import (
     AgentDefinition,
     SessionPolicy,
 )
-from tests.fakes import FAKE_SESSION_TYPE, FakeContentScanner
+from tests.fakes import FAKE_SESSION_TYPE, FakeContentJudgment
+from tests.outbound import make_admission
 from tests.prompts.test_prompt_wiring import load_registry
 
 # A SYNTHETIC organisation. A fixture built from the real description would
@@ -77,16 +96,29 @@ def audit_result(
     *,
     is_error: bool = False,
     subtype: str = "success",
+    stop_reason: str | None = None,
+    failure_kind: SessionFailureKind | None = None,
 ) -> ResultEvent:
     """A terminal event carrying a structured audit verdict, or an error."""
     return ResultEvent(
         subtype=subtype,
+        stop_reason=stop_reason,
+        failure_kind=failure_kind,
         duration_ms=1,
         duration_api_ms=1,
         is_error=is_error,
         num_turns=1,
         session_id="audit",
-        structured_output=None if findings is None else {"findings": findings},
+        structured_output=(
+            None
+            if findings is None
+            else {
+                "findings": [
+                    {"category": RedactionCategory.ORG_PRIVATE.value, **finding}
+                    for finding in findings
+                ]
+            }
+        ),
     )
 
 
@@ -108,10 +140,11 @@ class ScriptedAuditExecutor:
         *,
         prompt: str,
         cwd: str,
-        permission_mode: str,
+        permission_mode: PermissionMode,
         allowed_tools: list[str],
         skills: SkillsSelection,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
@@ -139,6 +172,7 @@ def scanner_for(
     *,
     private_surface: str | None = FIXTURE_PRIVATE_SURFACE,
     retry_max_attempts: int = 1,
+    retry: RetryPolicy | None = None,
     timeout_seconds: float = 30.0,
 ) -> AgentContentScanner:
     """A judgment scanner over the REAL registry and template."""
@@ -150,18 +184,13 @@ def scanner_for(
         prompts=load_registry(bindings=bindings),
         neutral_cwd="/tmp/kodezart-content-audit-test",
         skills=NO_SKILLS,
-        retry_max_attempts=retry_max_attempts,
-        retry_initial_interval=0.01,
+        retry=retry or RetryPolicy(attempts=retry_max_attempts, initial_delay=0.01),
         timeout_seconds=timeout_seconds,
     )
 
 
-def gate_over(scanners: list[ContentScanner]) -> PatternOutboundContentGate:
-    """A gate over *scanners* with the shipped category verdicts."""
-    return PatternOutboundContentGate(
-        scanners=scanners,
-        verdicts=AppConfig().deny_pattern_verdicts,
-    )
+def gate_over(judgment: ContentJudgment | None = None) -> OutboundAdmission:
+    return make_admission(judgment)
 
 
 # ---------------------------------------------------------------------------
@@ -187,7 +216,7 @@ async def test_a_session_that_never_answers_is_timeout() -> None:
 async def test_a_refused_session_is_refusal() -> None:
     """F/REFUSAL."""
     executor = ScriptedAuditExecutor(
-        [audit_result(None, is_error=True, subtype="refusal")],
+        [audit_result(None, failure_kind=SessionFailureKind.REFUSAL)],
     )
     result = await scanner_for(executor).scan(
         content=PROSE,
@@ -262,7 +291,11 @@ async def test_a_span_outside_the_payload_is_spans_unresolvable() -> None:
 async def test_an_exhausted_budget_is_budget_exhausted() -> None:
     """F/BUDGET_EXHAUSTED."""
     executor = ScriptedAuditExecutor(
-        [audit_result(None, is_error=True, subtype="budget_exceeded")],
+        [
+            audit_result(
+                None, is_error=True, failure_kind=SessionFailureKind.BUDGET_EXHAUSTED
+            )
+        ],
     )
     result = await scanner_for(executor).scan(
         content=PROSE,
@@ -285,13 +318,14 @@ async def test_every_failure_kind_blocks_and_names_itself(
     kind: ScanFailureKind,
 ) -> None:
     """No member yields CLEAN, none yields REDACTED, none is skipped."""
-    gate = gate_over([FakeContentScanner(failure=kind)])
+    gate = gate_over(FakeContentJudgment(failure=kind))
     decision = await gate.gate(
         content=PROSE,
         visibility=RepoVisibility.PUBLIC,
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
         content_class=ContentClass.AUTHORED,
+        aggregates=(),
     )
     assert decision.verdict is GateVerdict.BLOCKED
     assert decision.failure is kind
@@ -301,20 +335,22 @@ async def test_every_failure_kind_blocks_and_names_itself(
 async def test_did_not_answer_and_said_clean_are_different_states() -> None:
     """The three-state discipline, asserted as an inequality of observables."""
     silent = await gate_over(
-        [FakeContentScanner(failure=ScanFailureKind.TIMEOUT)],
+        FakeContentJudgment(failure=ScanFailureKind.TIMEOUT),
     ).gate(
         content=PROSE,
         visibility=RepoVisibility.PUBLIC,
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
         content_class=ContentClass.AUTHORED,
+        aggregates=(),
     )
-    clean = await gate_over([FakeContentScanner(hits=[])]).gate(
+    clean = await gate_over(FakeContentJudgment(hits=[])).gate(
         content=PROSE,
         visibility=RepoVisibility.PUBLIC,
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
         content_class=ContentClass.AUTHORED,
+        aggregates=(),
     )
     assert silent.verdict is not clean.verdict
     assert silent.failure is not None
@@ -327,61 +363,70 @@ async def test_did_not_answer_and_said_clean_are_different_states() -> None:
 
 
 async def gate_once(
-    scanner: FakeContentScanner,
+    scanner: FakeContentJudgment,
     *,
     content: str,
     destination: OutboundDestination,
     content_class: ContentClass,
+    aggregates: tuple[TrackerAggregate, ...],
     visibility: RepoVisibility = RepoVisibility.PUBLIC,
     shape: WriterShape = WriterShape.PROSE,
 ) -> None:
     """Gate one payload through a judgment-routed double.
 
     ``content_class`` has no default here either: a helper that supplied one
-    would hide the very declaration these routing tests measure.
+    would hide the very declaration these routing tests measure.  Neither
+    does ``aggregates``, for the same reason.
     """
-    await gate_over([scanner]).gate(
+    await gate_over(scanner).gate(
         content=content,
         visibility=visibility,
         shape=shape,
         destination=destination,
         content_class=content_class,
+        aggregates=aggregates,
     )
 
 
 async def test_a_derived_evaluator_cadence_payload_costs_nothing() -> None:
     """R: zero calls — by declared provenance, never by exemption."""
-    scanner = FakeContentScanner(hits=[])
+    scanner = FakeContentJudgment(hits=[])
     await gate_once(
         scanner,
         content='{"criterion": "AC-1", "passed": true, "sha": "a1b2c3d"}',
         destination=OutboundDestination.PR_COMMENT,
         content_class=ContentClass.DERIVED,
+        aggregates=(),
     )
     assert scanner.calls == []
 
 
 async def test_an_authored_pull_request_body_costs_exactly_one() -> None:
     """R: one call."""
-    scanner = FakeContentScanner(hits=[])
+    scanner = FakeContentJudgment(hits=[])
     await gate_once(
         scanner,
         content=PROSE,
         destination=OutboundDestination.PR_BODY,
         content_class=ContentClass.AUTHORED,
+        aggregates=(),
     )
     assert len(scanner.calls) == 1
 
 
-async def test_a_branch_name_is_audited_despite_being_an_identifier() -> None:
+@pytest.mark.parametrize("content_class", list(ContentClass))
+async def test_a_branch_name_is_audited_despite_being_an_identifier(
+    content_class,
+) -> None:
     """R: one call per run — the routing rule is frequency x prose origin."""
-    scanner = FakeContentScanner(hits=[])
+    scanner = FakeContentJudgment(hits=[])
     await gate_once(
         scanner,
         content="kodezart/quarry-works-pricing-pilot",
         destination=OutboundDestination.BRANCH_NAME,
         shape=WriterShape.IDENTIFIER,
-        content_class=ContentClass.AUTHORED,
+        content_class=content_class,
+        aggregates=(),
     )
     assert len(scanner.calls) == 1
 
@@ -391,48 +436,40 @@ async def test_a_private_target_costs_nothing_at_every_destination(
     destination: OutboundDestination,
 ) -> None:
     """R: zero calls — the gate returns before any scanner runs."""
-    scanner = FakeContentScanner(hits=[])
+    scanner = FakeContentJudgment(hits=[])
     await gate_once(
         scanner,
         content=PROSE,
         destination=destination,
         visibility=RepoVisibility.PRIVATE,
         content_class=ContentClass.AUTHORED,
+        aggregates=(),
     )
     assert scanner.calls == []
 
 
 async def test_the_repository_surface_is_out_of_scope_for_the_judgment_path() -> None:
     """R: a commit message is carried in history, not published at write time."""
-    scanner = FakeContentScanner(hits=[])
+    scanner = FakeContentJudgment(hits=[])
     await gate_once(
         scanner,
         content=PROSE,
         destination=OutboundDestination.COMMIT_MESSAGE,
         content_class=ContentClass.AUTHORED,
+        aggregates=(),
     )
     assert scanner.calls == []
 
 
 async def test_a_deterministic_block_short_circuits_the_model_call() -> None:
-    """R: a credential is caught with no network call, ordering preserved."""
-    judgment = FakeContentScanner(hits=[])
-    gate = gate_over(
-        [
-            RegexContentScanner(
-                patterns={
-                    RedactionCategory.CREDENTIALS: [r"\bgh[posu]_[A-Za-z0-9]{36,}"]
-                },
-            ),
-            judgment,
-        ],
-    )
-    decision = await gate.gate(
-        content="deploy with ghp_" + "a" * 36 + " and tell nobody",
+    judgment = FakeContentJudgment(hits=[])
+    decision = await make_admission(judgment).gate(
+        content="deploy with ghp_" + "a" * 36,
         visibility=RepoVisibility.PUBLIC,
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
         content_class=ContentClass.AUTHORED,
+        aggregates=(),
     )
     assert decision.verdict is GateVerdict.BLOCKED
     assert judgment.calls == []
@@ -445,18 +482,15 @@ async def test_a_deterministic_block_short_circuits_the_model_call() -> None:
 
 async def test_the_same_payload_triple_is_answered_once_per_run() -> None:
     """D: one invocation, one verdict, no second cost."""
-    scanner = FakeContentScanner(hits=[])
-    gate = PatternOutboundContentGate(
-        scanners=[scanner],
-        verdicts=AppConfig().deny_pattern_verdicts,
-        fragment_digest="digest-a",
-    )
+    scanner = FakeContentJudgment(hits=[])
+    gate = make_admission(scanner, fragment_digest="digest-a")
     first = await gate.gate(
         content=PROSE,
         visibility=RepoVisibility.PUBLIC,
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
         content_class=ContentClass.AUTHORED,
+        aggregates=(),
     )
     second = await gate.gate(
         content=PROSE,
@@ -464,6 +498,7 @@ async def test_the_same_payload_triple_is_answered_once_per_run() -> None:
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
         content_class=ContentClass.AUTHORED,
+        aggregates=(),
     )
     assert len(scanner.calls) == 1
     assert first == second
@@ -471,27 +506,24 @@ async def test_the_same_payload_triple_is_answered_once_per_run() -> None:
 
 async def test_a_changed_fragment_digest_invalidates_the_answer() -> None:
     """D: the memo is keyed on the fragment, so a changed one re-invokes."""
-    scanner = FakeContentScanner(hits=[])
+    scanner = FakeContentJudgment(hits=[])
     for digest in ("digest-a", "digest-b"):
-        gate = PatternOutboundContentGate(
-            scanners=[scanner],
-            verdicts=AppConfig().deny_pattern_verdicts,
-            fragment_digest=digest,
-        )
+        gate = make_admission(scanner, fragment_digest=digest)
         await gate.gate(
             content=PROSE,
             visibility=RepoVisibility.PUBLIC,
             shape=WriterShape.PROSE,
             destination=OutboundDestination.PR_BODY,
             content_class=ContentClass.AUTHORED,
+            aggregates=(),
         )
     assert len(scanner.calls) == 2
 
 
 async def test_a_changed_destination_is_a_different_question() -> None:
     """D: the memo key carries the destination, never the payload alone."""
-    scanner = FakeContentScanner(hits=[])
-    gate = gate_over([scanner])
+    scanner = FakeContentJudgment(hits=[])
+    gate = gate_over(scanner)
     for destination in (
         OutboundDestination.PR_BODY,
         OutboundDestination.TRACKER_COMMENT,
@@ -502,30 +534,153 @@ async def test_a_changed_destination_is_a_different_question() -> None:
             shape=WriterShape.PROSE,
             destination=destination,
             content_class=ContentClass.AUTHORED,
+            aggregates=(),
         )
     assert len(scanner.calls) == 2
 
 
 async def test_a_changed_content_class_is_a_different_question() -> None:
-    """D: the memo key carries the declared class, never the bytes alone.
-
-    Two writes identical in payload and destination but declared with
-    different provenance are routed differently, so a shared memo entry
-    would hand one of them the other's verdict.  The scanner here declares
-    UNCONDITIONAL routing so that both calls reach it and the only thing
-    being measured is the memo key.
-    """
-    scanner = FakeContentScanner(hits=[], routing=UNCONDITIONAL_ROUTING)
-    gate = gate_over([scanner])
-    for content_class in (ContentClass.AUTHORED, ContentClass.DERIVED):
+    judgment = FakeContentJudgment(failure=ScanFailureKind.REFUSAL)
+    gate = make_admission(judgment)
+    results = [
         await gate.gate(
             content=PROSE,
             visibility=RepoVisibility.PUBLIC,
             shape=WriterShape.PROSE,
             destination=OutboundDestination.PR_BODY,
-            content_class=content_class,
+            content_class=kind,
+            aggregates=(),
         )
-    assert len(scanner.calls) == 2
+        for kind in (ContentClass.DERIVED, ContentClass.AUTHORED)
+    ]
+    assert [result.verdict for result in results] == [
+        GateVerdict.CLEAN,
+        GateVerdict.BLOCKED,
+    ]
+    assert judgment.calls == [PROSE]
+
+
+async def test_a_declared_aggregate_is_a_different_question() -> None:
+    """D: a verdict over no declared values never answers a call declaring some.
+
+    The two calls agree on every byte, the destination, the class and the
+    shape, so the memo would return the first answer for the second were the
+    declaration not part of the question.  The second is refused by the
+    deterministic rule, which is why the judgment is still asked only once.
+    """
+    judgment = FakeContentJudgment(hits=[])
+    gate = make_admission(judgment)
+    undeclared = await gate.gate(
+        content=PROSE,
+        visibility=RepoVisibility.PUBLIC,
+        shape=WriterShape.PROSE,
+        destination=OutboundDestination.PR_BODY,
+        content_class=ContentClass.AUTHORED,
+        aggregates=(),
+    )
+    declared = await gate.gate(
+        content=PROSE,
+        visibility=RepoVisibility.PUBLIC,
+        shape=WriterShape.PROSE,
+        destination=OutboundDestination.PR_BODY,
+        content_class=ContentClass.AUTHORED,
+        aggregates=(ObjectCount(field="criteria", value=4),),
+    )
+    assert undeclared.verdict is GateVerdict.CLEAN
+    assert declared.verdict is GateVerdict.BLOCKED
+    assert len(judgment.calls) == 1
+
+
+class FailingOnceJudgment:
+    """A judgment with no answer the first time it is asked; after that, clean."""
+
+    def __init__(self, failure: ScanFailureKind) -> None:
+        self._failure = failure
+        self.calls: list[str] = []
+
+    async def scan(
+        self, *, content: str, destination: OutboundDestination
+    ) -> ScanResult:
+        self.calls.append(content)
+        if len(self.calls) == 1:
+            return ScanResult(failure=self._failure)
+        return ScanResult()
+
+
+@pytest.mark.parametrize("kind", list(ScanFailureKind))
+async def test_a_scan_that_did_not_answer_is_scanned_again(
+    kind: ScanFailureKind,
+) -> None:
+    """D: "did not answer" is never kept as the text's answer (KOD-1250).
+
+    Were it kept, one timeout or rate limit would block the same text until
+    the process restarts.  The answer the second scan gives is kept as
+    usual, so the third call costs nothing.
+    """
+    judgment = FailingOnceJudgment(kind)
+    gate = make_admission(judgment)
+    decisions = [
+        await gate.gate(
+            content=PROSE,
+            visibility=RepoVisibility.PUBLIC,
+            shape=WriterShape.PROSE,
+            destination=OutboundDestination.PR_BODY,
+            content_class=ContentClass.AUTHORED,
+            aggregates=(),
+        )
+        for _ in range(3)
+    ]
+    assert [(decision.verdict, decision.failure) for decision in decisions] == [
+        (GateVerdict.BLOCKED, kind),
+        (GateVerdict.CLEAN, None),
+        (GateVerdict.CLEAN, None),
+    ]
+    assert judgment.calls == [PROSE, PROSE]
+
+
+async def test_a_blocking_answer_is_kept_like_any_other_answer() -> None:
+    """D: only a scan with no answer is scanned again; a block is an answer."""
+    judgment = FakeContentJudgment(
+        hits=[ScanHit(category=RedactionCategory.INFRA_ENDPOINTS, start=0, end=3)]
+    )
+    gate = make_admission(judgment)
+    decisions = [
+        await gate.gate(
+            content=PROSE,
+            visibility=RepoVisibility.PUBLIC,
+            shape=WriterShape.PROSE,
+            destination=OutboundDestination.PR_BODY,
+            content_class=ContentClass.AUTHORED,
+            aggregates=(),
+        )
+        for _ in range(2)
+    ]
+    assert decisions[0].verdict is GateVerdict.BLOCKED
+    assert decisions[0].failure is None
+    assert decisions[1] == decisions[0]
+    assert judgment.calls == [PROSE]
+
+
+async def test_past_its_bound_the_memo_drops_its_oldest_answer() -> None:
+    """D: the memo is bounded, and the answer it has held longest goes first.
+
+    One payload more than the bound drops the first payload's answer: the
+    second payload is still answered without a scan, the first is scanned
+    again.
+    """
+    judgment = FakeContentJudgment(hits=[])
+    gate = make_admission(judgment)
+    payloads = [f"payload {number}" for number in range(_MEMO_BOUND + 1)]
+    for content in [*payloads, payloads[1], payloads[0]]:
+        await gate.gate(
+            content=content,
+            visibility=RepoVisibility.PUBLIC,
+            shape=WriterShape.PROSE,
+            destination=OutboundDestination.PR_BODY,
+            content_class=ContentClass.AUTHORED,
+            aggregates=(),
+        )
+    assert judgment.calls == [*payloads, payloads[0]]
 
 
 # ---------------------------------------------------------------------------
@@ -556,24 +711,26 @@ async def test_a_credential_shaped_payload_declared_authored_is_audited() -> Non
     rule treated as safe.  Under a declared class the writer's provenance
     decides, and the scanner sees it.
     """
-    scanner = FakeContentScanner(hits=[])
+    scanner = FakeContentJudgment(hits=[])
     await gate_once(
         scanner,
         content=CREDENTIAL_SHAPED,
         destination=OutboundDestination.PR_BODY,
         content_class=ContentClass.AUTHORED,
+        aggregates=(),
     )
     assert scanner.calls == [CREDENTIAL_SHAPED]
 
 
 async def test_a_machine_derived_note_declared_derived_is_not_audited() -> None:
     """P: the other direction — a sentence that costs nothing."""
-    scanner = FakeContentScanner(hits=[])
+    scanner = FakeContentJudgment(hits=[])
     await gate_once(
         scanner,
         content=DERIVED_NOTE,
         destination=OutboundDestination.TRACKER_COMMENT,
         content_class=ContentClass.DERIVED,
+        aggregates=(),
     )
     assert scanner.calls == []
 
@@ -582,7 +739,8 @@ def test_the_declared_class_can_never_be_omitted() -> None:
     """P: required and keyword-only on the port and on every wrapper.
 
     A default would be a silent cheap path — the caller that forgot to think
-    about provenance would get the unaudited answer and no diagnostic.  This
+    about provenance would get the unaudited answer and no diagnostic.
+    The phase writers now call ``gated_write`` directly. This
     asserts the static property that matters, at each of the five surfaces a
     caller can reach the gate through: the parameter exists, it is annotated
     ``ContentClass``, and it carries NO DEFAULT.  Calling convention is not
@@ -593,10 +751,10 @@ def test_the_declared_class_can_never_be_omitted() -> None:
     """
     surfaces = (
         OutboundContentGate.gate,
-        PatternOutboundContentGate.gate,
+        OutboundAdmission.gate,
         gated_write,
-        RalphWorkflowEngine._gated,
         GitChangePersister._gated_message,
+        _ExactEvidenceGate.gate,
     )
     for surface in surfaces:
         parameter = inspect.signature(surface).parameters["content_class"]
@@ -604,12 +762,115 @@ def test_the_declared_class_can_never_be_omitted() -> None:
         assert parameter.annotation in (ContentClass, "ContentClass"), surface
 
     with pytest.raises(TypeError, match="content_class"):
-        gate_over([]).gate(  # type: ignore[call-arg]
+        gate_over().gate(  # type: ignore[call-arg]
             content=PROSE,
             visibility=RepoVisibility.PUBLIC,
             shape=WriterShape.PROSE,
             destination=OutboundDestination.PR_BODY,
+            aggregates=(),
         )
+
+
+def _declared_parameters(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> dict[str, bool]:
+    """Every parameter of *node* by name, mapped to whether it has a default."""
+    args = node.args
+    positional = [*args.posonlyargs, *args.args]
+    defaulted = (
+        {arg.arg for arg in positional[len(positional) - len(args.defaults) :]}
+        if args.defaults
+        else set()
+    )
+    declared = {arg.arg: arg.arg in defaulted for arg in positional}
+    for arg, default in zip(args.kwonlyargs, args.kw_defaults, strict=True):
+        declared[arg.arg] = default is not None
+    return declared
+
+
+def test_every_surface_that_declares_provenance_declares_its_aggregates() -> None:
+    """P: the two declarations travel together, over the whole source tree.
+
+    Derived rather than listed: every function that takes a payload's
+    provenance also takes the tracker values behind it, and neither may have
+    a default, so a writer cannot be given a cheap path for one of the two
+    questions while stating the other.  The same holds at every call: a site
+    that names one keyword names both.
+
+    Blind spot, stated rather than closed: a call that passes the class
+    POSITIONALLY carries no ``content_class`` keyword and so is outside the
+    call scan.  ``GitChangePersister._gated_message``'s two callers are such
+    calls, and they are covered by the definition scan instead — the wrapper
+    they reach cannot forward what its own signature does not require.
+    """
+    source_root = Path(__file__).resolve().parents[2] / "src" / "kodezart"
+    definitions: dict[str, dict[str, bool]] = {}
+    calls: set[str] = set()
+    for path in sorted(source_root.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        where = path.relative_to(source_root).as_posix()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+                declared = _declared_parameters(node)
+                if "content_class" in declared:
+                    definitions[f"{where}::{node.name}"] = declared
+            elif isinstance(node, ast.Call):
+                named = {keyword.arg for keyword in node.keywords}
+                if "content_class" in named:
+                    assert "aggregates" in named, f"{where}:{node.lineno}"
+                    calls.add(f"{where}:{node.lineno}")
+
+    for surface, declared in definitions.items():
+        assert "aggregates" in declared, surface
+        assert declared["content_class"] is False, surface
+        assert declared["aggregates"] is False, surface
+
+    assert "core/protocols.py::gate" in definitions
+    assert "adapters/outbound_admission.py::gate" in definitions
+    assert "adapters/outbound_admission.py::_decide" in definitions
+    assert "core/outbound_write.py::gated_write" in definitions
+    assert "core/outbound_write.py::gated_exact" in definitions
+    assert "adapters/git/change_persister.py::_gated_message" in definitions
+    assert len(calls) >= 28, len(calls)
+
+    with pytest.raises(TypeError, match="aggregates"):
+        gate_over().gate(
+            content=PROSE,
+            visibility=RepoVisibility.PUBLIC,
+            shape=WriterShape.PROSE,
+            destination=OutboundDestination.PR_BODY,
+            content_class=ContentClass.DERIVED,
+        )
+
+
+async def test_the_judgment_wire_carries_no_structured_locator() -> None:
+    """P: only the deterministic rule can name a declared value.
+
+    The structured locator is the writer's declaration reaching the refusal.
+    A session has no declaration to make, so the wire model has no such field
+    and forbids extras: an answer that tried to supply one is refused rather
+    than trusted.
+    """
+    assert "source" not in ContentAuditFinding.model_fields
+
+    executor = ScriptedAuditExecutor(
+        [
+            audit_result(
+                [
+                    {
+                        "category": DurabilityCategory.OBJECT_COUNT.value,
+                        "rationale": "a count",
+                        "source": {"kind": "count", "field": "lanes", "value": 3},
+                    }
+                ]
+            )
+        ],
+    )
+    result = await scanner_for(executor).scan(
+        content=PROSE,
+        destination=OutboundDestination.PR_BODY,
+    )
+    assert result.failure is ScanFailureKind.MALFORMED_VERDICT
 
 
 def test_no_module_reconstructs_the_class_from_the_payload_bytes() -> None:
@@ -629,27 +890,16 @@ def test_no_module_reconstructs_the_class_from_the_payload_bytes() -> None:
 # ---------------------------------------------------------------------------
 
 
-def conformance_adapters() -> list[ContentScanner]:
-    """Every registered ``ContentScanner`` implementation, both of them.
-
-    The judgment adapter is driven by a scripted session reporting a real
-    span; what conforms or fails to conform here is the port contract, not
-    the verdict.
-    """
+def conformance_adapters() -> list[ContentJudgment]:
     executor = ScriptedAuditExecutor(
-        [audit_result([{"start": 4, "end": 16, "rationale": "workspace segment"}])],
+        [audit_result([{"start": 4, "end": 16, "rationale": "workspace segment"}])]
     )
-    return [
-        RegexContentScanner(
-            patterns={RedactionCategory.TRACKER_URLS: [r"quarry-works"]},
-        ),
-        scanner_for(executor),
-    ]
+    return [scanner_for(executor), FakeContentJudgment()]
 
 
 @pytest.mark.parametrize("scanner", conformance_adapters())
 async def test_every_returned_span_lies_inside_the_payload(
-    scanner: ContentScanner,
+    scanner: ContentJudgment,
 ) -> None:
     """S: a span that cannot be excised is not a hit."""
     result = await scanner.scan(
@@ -664,7 +914,7 @@ async def test_every_returned_span_lies_inside_the_payload(
 
 
 @pytest.mark.parametrize("scanner", conformance_adapters())
-async def test_no_scanner_raises_across_the_port(scanner: ContentScanner) -> None:
+async def test_no_scanner_raises_across_the_port(scanner: ContentJudgment) -> None:
     """S: a failure is a typed value, never an exception at the seam."""
     for destination in OutboundDestination:
         result = await scanner.scan(content="", destination=destination)
@@ -673,29 +923,19 @@ async def test_no_scanner_raises_across_the_port(scanner: ContentScanner) -> Non
 
 @pytest.mark.parametrize("scanner", conformance_adapters())
 async def test_a_private_visibility_call_invokes_no_scanner_at_all(
-    scanner: ContentScanner,
+    scanner: ContentJudgment,
 ) -> None:
     """S: the gate returns CLEAN before the ordered list is entered."""
-    decision = await gate_over([scanner]).gate(
+    decision = await gate_over(scanner).gate(
         content=PROSE,
         visibility=RepoVisibility.PRIVATE,
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
         content_class=ContentClass.AUTHORED,
+        aggregates=(),
     )
     assert decision.verdict is GateVerdict.CLEAN
     assert decision.content == PROSE
-
-
-def test_the_deterministic_adapter_declares_unconditional_routing() -> None:
-    """S: the port widening did not become a judgment-only port."""
-    scanner = RegexContentScanner(patterns={})
-    for destination in OutboundDestination:
-        for content_class in ContentClass:
-            assert scanner.routing.applies(
-                destination=destination,
-                content_class=content_class,
-            )
 
 
 # ---------------------------------------------------------------------------
@@ -707,50 +947,48 @@ def operation_with(private_surface: str | None) -> OperationConfig:
     """The shipped example operation config, with its private surface set."""
     root = Path(__file__).resolve().parents[2]
     config = load_operation_config(root / "docs" / "operation.example.toml")
-    return config.model_copy(update={"private_surface": private_surface})
+    return OperationConfig.model_validate(
+        {**config.model_dump(), "private_surface": private_surface}
+    )
 
 
-def boot_scanners(
-    *,
-    enabled: bool,
-    private_surface: str | None,
-) -> tuple[list[ContentScanner], str]:
-    """Resolve the ordered scanner list exactly as the lifespan does."""
-    return outbound_scanners(
+async def boot_admission(*, enabled: bool, private_surface: str | None):
+    executor = ScriptedAuditExecutor([audit_result([])])
+    gate = await build_outbound_gate(
         config=AppConfig(agentic_content_scanner_enabled=enabled),
         operation=operation_with(private_surface),
-        executor=ScriptedAuditExecutor([]),
-        prompts=load_registry(),
+        executor=executor,
+        prompts=load_registry(bindings={"private_surface": private_surface}),
         skills=NO_SKILLS,
+        log=get_logger(__name__),
     )
+    return gate, executor
 
 
-def test_disabled_registers_the_deterministic_scanner_alone() -> None:
-    """State 1: the mechanism ships, the policy is operator configuration."""
-    scanners, digest = boot_scanners(
-        enabled=False,
-        private_surface=FIXTURE_PRIVATE_SURFACE,
+@pytest.mark.parametrize("enabled", [False, True])
+async def test_privacy_opt_out_keeps_mandatory_authored_aggregate_judgment(
+    enabled,
+) -> None:
+    gate, executor = await boot_admission(
+        enabled=enabled, private_surface=FIXTURE_PRIVATE_SURFACE
     )
-    assert [type(scanner).__name__ for scanner in scanners] == ["RegexContentScanner"]
-    assert digest == ""
-
-
-def test_enabled_with_a_description_registers_the_judgment_scanner_second() -> None:
-    """State 2: deterministic FIRST, and that ordering is load-bearing."""
-    scanners, digest = boot_scanners(
-        enabled=True,
-        private_surface=FIXTURE_PRIVATE_SURFACE,
+    result = await gate.gate(
+        content=PROSE,
+        visibility=RepoVisibility.PUBLIC,
+        shape=WriterShape.PROSE,
+        destination=OutboundDestination.PR_BODY,
+        content_class=ContentClass.AUTHORED,
+        aggregates=(),
     )
-    assert [type(scanner).__name__ for scanner in scanners] == [
-        "RegexContentScanner",
-        "AgentContentScanner",
-    ]
-    assert digest
+    assert result.verdict is GateVerdict.CLEAN
+    assert len(executor.calls) == 1
 
 
 @pytest.mark.parametrize("private_surface", [None, "", "   \n "])
-def test_enabled_without_a_description_aborts_boot(private_surface: str | None) -> None:
+async def test_enabled_without_a_description_aborts_boot(
+    private_surface: str | None,
+) -> None:
     """State 3: NOT_CONFIGURED never degrades into a quietly missing scanner."""
     with pytest.raises(ContentScannerBootError) as excinfo:
-        boot_scanners(enabled=True, private_surface=private_surface)
+        await boot_admission(enabled=True, private_surface=private_surface)
     assert excinfo.value.missing == "OperationConfig.private_surface"

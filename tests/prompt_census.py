@@ -1,18 +1,53 @@
-"""How many prompt functions the system has, written once.
+"""The explicit prompt-role census, independent of the enum under test."""
 
-Two suites assert that the default set supplies every key, and each held
-its own copy of the number.  Two copies of one census are two numbers
-that can disagree, and the merge of two lanes that each added a key is
-where they do.
-
-Adding a key is an edit here as well as to :class:`PromptKey`, which is
-what keeps the completeness assertions a census rather than a
-restatement of the enum they are checking.
-"""
-
+from pathlib import Path
 from typing import Final
 
-PROMPT_FUNCTION_COUNT: Final[int] = 18
+from kodezart.config.agent import AgentSettings
+
+PROMPT_FUNCTION_NAMES: Final[frozenset[str]] = frozenset(
+    {
+        "branch_name",
+        "ticket_create",
+        "ticket_review",
+        "ticket_revision",
+        "acceptance_criteria",
+        "criteria_validation",
+        "implementation",
+        "native_writer_contract",
+        "amendment_judge",
+        "amendment_author",
+        "evaluation",
+        "base_check",
+        "iteration_feedback",
+        "post_merge_review",
+        "fix",
+        "remediation_ticket",
+        "commit_message",
+        "pr_description",
+        "fire_prep_pass",
+        "grooming_pass",
+        "pass_gate",
+        "scope_scan",
+        "scope_done",
+        "content_audit",
+        "knowledge_map",
+        "fire_record",
+        "organize_assess",
+        "organize_author",
+        "organize_verify",
+        "write_back_verify",
+        "audit_claim",
+        "audit_overclaim",
+        "audit_mandate",
+        "audit_detection_removal",
+        "organize_criteria_author",
+        "organize_spec_rubric",
+        "organize_session",
+        "fire_time_ruling",
+        "mutation_survival",
+    }
+)
 
 
 def configured_investigation_cap() -> int:
@@ -23,6 +58,13 @@ def configured_investigation_cap() -> int:
     environment what the application ships, and the answer changes with
     whoever exported a variable last.
     """
-    from kodezart.core.config import AppConfig
+    from kodezart.config.app import AppConfig
 
     return int(AppConfig.model_fields["investigation_cap"].default)
+
+
+#: The shipped workflows plugin, read off the field declaration for the same
+#: reason the cap above is.
+CONFIGURED_WORKFLOWS_PLUGIN_DIR: Final[Path] = Path(
+    AgentSettings.model_fields["workflows_plugin_dir"].default
+)

@@ -15,8 +15,8 @@ from typing import Final
 
 import pytest
 
-from kodezart.adapters.linear_record_sink import LinearRecordSink
-from kodezart.adapters.notion_record_sink import NotionRecordSink
+from kodezart.adapters.linear.record_sink import LinearRecordSink
+from kodezart.adapters.notion.record_sink import NotionRecordSink
 from kodezart.core.errors import (
     McpCallUnansweredError,
     McpSessionClosedError,
@@ -54,6 +54,23 @@ def _record(
         duration_seconds=12.34,
         started_at=started_at,
         recorded_at=RECORDED_AT,
+    )
+
+
+def test_a_pass_row_is_titled_by_its_start_time_and_a_fire_row_names_its_issue() -> (
+    None
+):
+    """A pass's log holds one kind of run, so its row is its start time alone
+    (owner, 2026-09-24); the fire log holds every fire, so a fire's row names
+    the issue it fired. The runner and the rendered clause read the same
+    method, so neither can spell a run the other way."""
+    assert _record().title() == "2026-09-01T11:58:00Z"
+    assert (
+        _record(RunKind.GROOMING, name="grooming_pass").title()
+        == "2026-09-01T11:58:00Z"
+    )
+    assert (
+        _record(RunKind.FIRE, name="K-1").title() == "fire — K-1 @ 2026-09-01T11:58:00Z"
     )
 
 
@@ -386,12 +403,16 @@ class TestLinearRecordSink:
         first.
         """
         caller = CapturingCaller(
-            {"get_document": {"content": f"{_record(name='K-2').line()}"}},
+            {
+                "get_document": {
+                    "content": f"{_record(RunKind.FIRE, name='K-2').line()}"
+                }
+            },
         )
 
         present = await self._sink(caller).holds_record(
             destination=_destination(DocumentSystem.TRACKER),
-            record=_record(name="K-1"),
+            record=_record(RunKind.FIRE, name="K-1"),
         )
 
         assert not present
@@ -402,12 +423,12 @@ class TestLinearRecordSink:
         """The substring defect (KOD-288): ``KOD-170``'s row contains
         ``KOD-17``, and answered for it."""
         caller = CapturingCaller(
-            {"get_document": {"content": _record(name="KOD-170").line()}},
+            {"get_document": {"content": _record(RunKind.FIRE, name="KOD-170").line()}},
         )
 
         present = await self._sink(caller).holds_record(
             destination=_destination(DocumentSystem.TRACKER),
-            record=_record(name="KOD-17"),
+            record=_record(RunKind.FIRE, name="KOD-17"),
         )
 
         assert not present
@@ -508,7 +529,7 @@ class TestLinearRecordSink:
         ``True`` would silently skip one; the sink guesses neither."""
         caller = CapturingCaller({"get_document": {"id": "destination-1"}})
 
-        with pytest.raises(McpTransportError) as caught:
+        with pytest.raises(RunRecordWriteError) as caught:
             await self._sink(caller).holds_record(
                 destination=_destination(DocumentSystem.TRACKER),
                 record=_record(),
@@ -591,7 +612,7 @@ class TestNotionRecordSink:
             {"API-retrieve-a-data-source": {"properties": {"Date": {"type": "date"}}}},
         )
 
-        with pytest.raises(McpTransportError) as caught:
+        with pytest.raises(RunRecordWriteError) as caught:
             await self._sink(caller).write_record(
                 destination=_destination(DocumentSystem.KNOWLEDGE),
                 record=_record(),
@@ -645,12 +666,7 @@ class TestNotionRecordSink:
                             },
                             {
                                 "property": "Run",
-                                "title": {
-                                    "starts_with": (
-                                        "fire_prep — fire_prep_pass @ "
-                                        "2026-09-01T11:58:00Z"
-                                    ),
-                                },
+                                "title": {"starts_with": _record().title()},
                             },
                         ],
                     },
@@ -675,7 +691,7 @@ class TestNotionRecordSink:
 
         await self._sink(caller).holds_record(
             destination=_destination(DocumentSystem.KNOWLEDGE),
-            record=_record(RunKind.FIRE, name="K-1", started_at=LATER),
+            record=_record(RunKind.GROOMING, name="K-1", started_at=LATER),
         )
 
         (_, arguments) = caller.calls[1]
@@ -688,7 +704,11 @@ class TestNotionRecordSink:
             },
             {
                 "property": "Run",
-                "title": {"starts_with": "fire — K-1 @ 2026-09-01T12:58:00Z"},
+                "title": {
+                    "starts_with": _record(
+                        RunKind.GROOMING, name="K-1", started_at=LATER
+                    ).title()
+                },
             },
         ]
 
@@ -720,7 +740,7 @@ class TestNotionRecordSink:
             },
         )
 
-        with pytest.raises(McpTransportError) as caught:
+        with pytest.raises(RunRecordWriteError) as caught:
             await self._sink(caller).holds_record(
                 destination=_destination(DocumentSystem.KNOWLEDGE),
                 record=_record(),
