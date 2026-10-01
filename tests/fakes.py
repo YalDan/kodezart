@@ -1337,17 +1337,10 @@ class FakeBranchMerger:
         *,
         repo_path: str | None,
         repo_url: str | None,
-        base_branch: str,
         prefix: str,
         cache_key: str | None = None,
     ) -> None:
-        self.calls.append(
-            {
-                "method": "cleanup_backup_branches",
-                "prefix": prefix,
-                "base_branch": base_branch,
-            }
-        )
+        self.calls.append({"method": "cleanup_backup_branches", "prefix": prefix})
 
 
 class FakeAgentRunner:

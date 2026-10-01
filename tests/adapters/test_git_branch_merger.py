@@ -144,7 +144,6 @@ async def test_cleanup_backup_branches_discovers_and_deletes() -> None:
     await merger.cleanup_backup_branches(
         repo_path="/tmp/repo",
         repo_url=None,
-        base_branch="main",
         prefix="kodezart/feat",
     )
 
@@ -192,7 +191,6 @@ async def test_cleanup_backup_branches_filters_with_is_backup() -> None:
     await merger.cleanup_backup_branches(
         repo_path="/tmp/repo",
         repo_url=None,
-        base_branch="main",
         prefix="feat/x",
     )
 
@@ -232,7 +230,6 @@ async def test_cleanup_backup_branches_logs_and_swallows_a_failure(failing) -> N
         answer = await merger.cleanup_backup_branches(
             repo_path="/tmp/repo",
             repo_url=None,
-            base_branch="main",
             prefix="feat/x",
         )
 
@@ -258,7 +255,6 @@ async def test_cleanup_backup_branches_empty_list_still_releases() -> None:
     await merger.cleanup_backup_branches(
         repo_path="/tmp/repo",
         repo_url=None,
-        base_branch="main",
         prefix="kodezart/no-match",
     )
 

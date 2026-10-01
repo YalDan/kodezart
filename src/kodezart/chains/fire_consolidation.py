@@ -409,15 +409,14 @@ class FireConsolidation:
                 "backup_cleanup_starting",
                 prefix=terminal.feature_branch,
             )
-            origins: list[tuple[str | None, str | None, str]] = [
-                (None, repository.url, repository.trunk)
+            origins: list[tuple[str | None, str | None]] = [
+                (None, repository.url)
                 for repository in scope_repositories(ctx.scope, self._repositories)
-            ] or [(ctx.repo_path, ctx.repo_url, ctx.base_branch)]
-            for repo_path, repo_url, base_branch in origins:
+            ] or [(ctx.repo_path, ctx.repo_url)]
+            for repo_path, repo_url in origins:
                 await self._merger.cleanup_backup_branches(
                     repo_path=repo_path,
                     repo_url=repo_url,
-                    base_branch=base_branch,
                     prefix=terminal.feature_branch,
                     cache_key=ctx.cache_key,
                 )
