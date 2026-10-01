@@ -438,13 +438,12 @@ DELIVERY_CARRIERS = frozenset(
 
 #: When a pull request leaves draft (owner ruling of 2026-09-29), whole.
 DRAFT_RULE = (
-    "The session delivering the unit keeps each pull request a draft whenever"
-    " its unit is work in progress — any criterion open, any review comment"
-    " unanswered, its checks red or its base conflicting at the pushed head —"
-    " returning it to draft if it was marked ready; when every criterion is"
-    " done, every review comment addressed, its checks green and its base not"
-    " conflicting at the pushed head, it marks the pull request ready for review"
-    " and stops there; a person merges it, never a session."
+    "Each pull request of the unit stays a draft while its unit is work in"
+    " progress — any criterion open, any review comment unanswered, its checks"
+    " red or its base conflicting at the pushed head; the engine marks it ready"
+    " for review once every criterion is done, every review comment addressed,"
+    " its checks green and its base not conflicting at the pushed head, and the"
+    " session never marks one ready itself; a person merges it, never a session."
 )
 
 #: Who merges, which the standard states once.
