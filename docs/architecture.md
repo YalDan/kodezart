@@ -92,6 +92,7 @@ does not exist.
 | PRCreator         | GitHubAPIClient          | Opens pull requests as drafts, marks a finished one ready, comments |
 | PRStateReader | GitHubAPIClient | Reads exact native PR identity, head repository/branch/SHA, base repository/branch and open/closed/merged lifecycle; refuses foreign or unavailable head/base repositories; no mutation authority |
 | ForgeQuery | GitHubAPIClient | Reads the open pull request on a head ref for check-before-create, and composes a branch's web page from the origin's own host; no mutation authority |
+| PullRequestTextReader | GitHubAPIClient | Reads the title, body and base branch of the open pull request on a head, for the language pass; selected per repository at the composition root, so an origin with no forge is never asked; no mutation authority |
 | CIMonitor         | GitHubAPIClient          | Returns a coherent completed, absent or incomplete check observation; re-observes Actions attempts at one commit |
 | DeliveryProbe     | GitHubAPIClient          | Answers whether an issue already has an open delivery |
 | DeliveryProbe     | NoForgeDeliveryProbe     | The same answer for an origin with no forge behind it. A peer, selected per repository at the composition root — not a degraded mode |

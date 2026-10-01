@@ -16,6 +16,7 @@ from kodezart.chains.authored_delivery import AuthoredDeliveryCoordinator
 from kodezart.chains.ralph_loop import RalphLoop
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.chains.ticket_generation import TicketGenerationLoop
+from kodezart.composition.forge import pull_request_text_reader_for_origin
 from kodezart.config.app import AppConfig
 from kodezart.core.protocols import AgentExecutor
 from kodezart.core.retry import DelayFloor
@@ -48,7 +49,9 @@ from kodezart.types.domain.criteria import (
     ValidatedCriterion,
 )
 from kodezart.types.domain.gating import RepoVisibility
+from kodezart.types.domain.operation import RepoEntry
 from kodezart.types.domain.persist import PersistResult, PersistSource
+from kodezart.types.domain.pr_state import PullRequestText
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
@@ -2479,45 +2482,27 @@ async def test_no_findings_bind_nothing_for_the_grader() -> None:
     assert "language_pass_unanswered" not in graded[0]
 
 
-async def test_a_scope_run_reads_the_branches_the_session_pushed() -> None:
-    """On a scope run the question reads every branch that moved during the
-    session; the trunk itself and an unmoved branch are not read. A branch
-    whose open pull request targets another unit's branch is read against
-    that branch, so a stacked unit's patch carries none of its parent's, and
-    its pull request's prose is read with it.
-    """
-    from kodezart.types.domain.operation import RepoEntry
-    from kodezart.types.domain.pr_state import PullRequestText
+class _OpenRequests:
+    """The forge's open-pull-request read, recording every repository asked."""
 
-    class _OpenRequests:
-        def __init__(self) -> None:
-            self.asked: list[tuple[str, str]] = []
+    def __init__(self) -> None:
+        self.asked: list[tuple[str, str]] = []
 
-        async def open_pr_text(
-            self, *, repo_url: str, head: str
-        ) -> PullRequestText | None:
-            self.asked.append((repo_url, head))
-            if head != "DUC-7-new-unit":
-                return None
-            return PullRequestText(
-                title="Rehearse transfers",
-                body="Adds a rehearsal step.",
-                base_branch="DUC-1-old-unit",
-            )
+    async def open_pr_text(self, *, repo_url: str, head: str) -> PullRequestText | None:
+        self.asked.append((repo_url, head))
+        if head != "DUC-7-new-unit":
+            return None
+        return PullRequestText(
+            title="Rehearse transfers",
+            body="Adds a rehearsal step.",
+            base_branch="DUC-1-old-unit",
+        )
 
-    app = RepoEntry(url="https://github.com/o/app", trunk="main")
-    before = {"main": "a" * 40, "DUC-1-old-unit": "b" * 40}
-    after = {
-        "main": "a" * 40,
-        "DUC-1-old-unit": "b" * 40,
-        "DUC-7-new-unit": "c" * 40,
-    }
-    git = FakeGitService(
-        branch_heads=[before, after],
-        patches={("DUC-1-old-unit", "c" * 40): "+ def rehearse():\n"},
-        commit_messages={("DUC-1-old-unit", "c" * 40): "feat: rehearse\n"},
-    )
-    requests = _OpenRequests()
+
+async def _scope_language_run(
+    *, repository: RepoEntry, git: FakeGitService, requests: _OpenRequests
+) -> RecordingPromptProvider:
+    """One scope iteration over *repository*, its reader chosen by origin."""
     executor = FakeAgentExecutor(
         events=_one_passing_evaluation()._events,
         language_findings=[_REHEARSE_FINDING],
@@ -2540,7 +2525,7 @@ async def test_a_scope_run_reads_the_branches_the_session_pushed() -> None:
         plateau_window=2,
         git=git,
         cache=cache,
-        repositories=[app],
+        repositories=[repository],
         retry_max_attempts=3,
         retry_initial_interval=1.0,
         fan_in_max_attempts=2,
@@ -2551,11 +2536,37 @@ async def test_a_scope_run_reads_the_branches_the_session_pushed() -> None:
             skills=SUPPRESS_ALL_SKILLS,
             git=git,
             cache=cache,
-            pull_requests=requests,
+            pull_requests_for=lambda repo_url: pull_request_text_reader_for_origin(
+                client=requests, repo_url=repo_url
+            ),
         ),
     )
     scope = ScopeRef(kind=ScopeKind.PROJECT, key="project-one")
     _ = [e async for e in loop.run(**_run_kwargs(), scope=scope)]
+    return prompts
+
+
+async def test_a_scope_run_reads_the_branches_the_session_pushed() -> None:
+    """On a scope run the question reads every branch that moved during the
+    session; the trunk itself and an unmoved branch are not read. A branch
+    whose open pull request targets another unit's branch is read against
+    that branch, so a stacked unit's patch carries none of its parent's, and
+    its pull request's prose is read with it.
+    """
+    app = RepoEntry(url="https://github.com/o/app", trunk="main")
+    before = {"main": "a" * 40, "DUC-1-old-unit": "b" * 40}
+    after = {
+        "main": "a" * 40,
+        "DUC-1-old-unit": "b" * 40,
+        "DUC-7-new-unit": "c" * 40,
+    }
+    git = FakeGitService(
+        branch_heads=[before, after],
+        patches={("DUC-1-old-unit", "c" * 40): "+ def rehearse():\n"},
+        commit_messages={("DUC-1-old-unit", "c" * 40): "feat: rehearse\n"},
+    )
+    requests = _OpenRequests()
+    prompts = await _scope_language_run(repository=app, git=git, requests=requests)
 
     asked = prompts.variables_for(PromptKey.LANGUAGE_PASS)
     assert len(asked) == 1
@@ -2573,6 +2584,38 @@ async def test_a_scope_run_reads_the_branches_the_session_pushed() -> None:
     assert patched == [("DUC-1-old-unit", "c" * 40)]
     assert requests.asked == [("https://github.com/o/app", "DUC-7-new-unit")]
 
+    graded = prompts.variables_for(PromptKey.EVALUATION)
+    findings = graded[0]["language_findings"]
+    assert isinstance(findings, list) and findings[0]["phrase"] == "rehearse"
+
+
+async def test_a_scope_run_over_a_forge_less_origin_never_asks_for_a_pull_request() -> (
+    None
+):
+    """A bare local origin has no pull request to read. The question still
+    reads the branch, against its trunk and with no pull-request text, and
+    the forge reader the deployment holds is never asked about the URL,
+    whose owner and repository it could not parse.
+    """
+    app = RepoEntry(url="file:///tmp/smoke-origin.git", trunk="main")
+    git = FakeGitService(
+        branch_heads=[
+            {"main": "a" * 40},
+            {"main": "a" * 40, "DUC-7-new-unit": "c" * 40},
+        ],
+        patches={("main", "c" * 40): "+ def rehearse():\n"},
+        commit_messages={("main", "c" * 40): "feat: rehearse\n"},
+    )
+    requests = _OpenRequests()
+    prompts = await _scope_language_run(repository=app, git=git, requests=requests)
+
+    assert requests.asked == []
+    asked = prompts.variables_for(PromptKey.LANGUAGE_PASS)
+    assert len(asked) == 1
+    changes = asked[0]["changes"]
+    assert isinstance(changes, list)
+    assert [(c["branch"], c["base"]) for c in changes] == [("DUC-7-new-unit", "main")]
+    assert "pull_request_text" not in changes[0]
     graded = prompts.variables_for(PromptKey.EVALUATION)
     findings = graded[0]["language_findings"]
     assert isinstance(findings, list) and findings[0]["phrase"] == "rehearse"

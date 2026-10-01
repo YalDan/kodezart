@@ -48,18 +48,20 @@ that question runs on the default model.
   `adapters/linear/scope_reader.py`, `adapters/linear/tracker.py`).
 - Before each grade, a low-effort question session reads the words the
   iteration wrote: on a scope run every branch that moved while the session
-  ran, otherwise the loop's own branch, each as its patch, commit messages
-  and open pull request's text over the base that request targets, or the
-  trunk (`language_pass`, `services/language_pass.py`, `LANGUAGE_PASS_SCHEMA`;
+  ran, otherwise the loop's own branch, each as its patch, commit messages and
+  open pull request's text over the base that request targets, or the trunk
+  (`language_pass`, `services/language_pass.py`, `LANGUAGE_PASS_SCHEMA`;
   `GitService.branch_heads`, `diff_patch` and `commit_messages`;
-  `PullRequestTextReader.open_pr_text`). Each place a thing is not called by
-  its standard software-engineering term is a finding; the grader fails the
-  criterion the change was made for when a finding stands on its own
-  reading, and the next iteration's feedback carries the findings
+  `PullRequestTextReader.open_pr_text`, chosen per repository by origin in
+  `composition/forge.py`, so an origin with no forge is never asked). Each
+  place a thing is not called by its standard software-engineering term is a
+  finding; the grader fails the criterion the change was made for when a
+  finding stands on its own reading, and the next iteration's feedback carries
+  the findings
   (`prompts/sets/anthropic_v5/{language_pass,evaluation,iteration_feedback}.md`).
-  The principle is one fragment (`set.toml`, `plain_terms`) composed into
-  the question, the implementer and the three board-writing passes, and the
-  boot preflight renders the question (`composition/passes.py`).
+  The principle is one fragment (`set.toml`, `plain_terms`) composed into the
+  question, the implementer and the three board-writing passes, and the boot
+  preflight renders the question (`composition/passes.py`).
 - Fixtures go and scaffolding stays: one fragment (`set.toml`,
   `scaffolding_rule`) says a fixture, and code whose only purpose is to read
   one, goes when the real source arrives, while code a planned feature will

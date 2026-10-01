@@ -32,6 +32,7 @@ from kodezart.composition.engine import (
 from kodezart.composition.forge import (
     build_forge_client,
     pr_state_reader_for_origin,
+    pull_request_text_reader_for_origin,
 )
 from kodezart.composition.jobs import build_job_queue
 from kodezart.config.app import AppConfig
@@ -43,6 +44,7 @@ from kodezart.core.protocols import (
     ForgeQuery,
     PRCreator,
     PRStateReader,
+    PullRequestTextReader,
     RepoVisibilityResolver,
     WorkflowEngine,
 )
@@ -117,6 +119,7 @@ COVERED_BY_ORIGIN: dict[type, str] = {
     DeliveryProbe: "delivery",
     PRStateReader: "pr_state",
     ForgeQuery: "forge_query",
+    PullRequestTextReader: "pull_request_text",
 }
 
 
@@ -575,3 +578,58 @@ async def test_native_pr_state_reader_is_selected_before_any_forge_read():
         ]
     finally:
         await client.close()
+
+
+async def test_open_pull_request_reads_are_selected_before_any_forge_read() -> None:
+    """The language pass's reader: none without a client, none for a bare
+    local origin, the client for a forge origin, and nothing asked to choose.
+    """
+    from tests.adapters.test_github_api import _make_client
+
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(200, json=[])
+
+    client = _make_client(handler)
+    try:
+        assert (
+            pull_request_text_reader_for_origin(client=None, repo_url=FORGE_ORIGIN)
+            is None
+        )
+        assert (
+            pull_request_text_reader_for_origin(client=client, repo_url=FILE_ORIGIN)
+            is None
+        )
+        assert (
+            pull_request_text_reader_for_origin(client=client, repo_url=FORGE_ORIGIN)
+            is client
+        )
+        assert requests == []
+    finally:
+        await client.close()
+
+
+def test_the_language_pass_reader_is_chosen_per_origin_in_the_engine() -> None:
+    """Read from the syntax tree: the one language pass the engine builds
+    serves both arms, so its reader is chosen per repository through the
+    selection, never handed the forge client whole.
+    """
+    tree = ast.parse((COMPOSITION / "engine.py").read_text(encoding="utf-8"))
+    calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "LanguagePass"
+    ]
+
+    assert len(calls) == 1
+    keywords = {keyword.arg: keyword.value for keyword in calls[0].keywords}
+    assert "pull_requests" not in keywords
+    chooser = keywords["pull_requests_for"]
+    assert isinstance(chooser, ast.Lambda)
+    assert isinstance(chooser.body, ast.Call)
+    assert isinstance(chooser.body.func, ast.Name)
+    assert chooser.body.func.id == "pull_request_text_reader_for_origin"

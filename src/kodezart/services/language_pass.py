@@ -11,7 +11,7 @@ is handed. The principle lives in that prompt; this module holds the
 arithmetic around it and no opinion about words.
 """
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import NamedTuple
 
 from kodezart.core.logging import BoundLogger, get_logger
@@ -57,7 +57,9 @@ class LanguagePass:
 
     Holds no run state: the repositories, the heads before the session and
     the workspace arrive per call, so one object serves every loop the
-    composition builds. Without a ``pull_requests`` reader a branch is read
+    composition builds. ``pull_requests_for`` gives the open-pull-request
+    reader for one repository url, chosen by origin at the composition
+    root; where it gives none, or none is supplied, a branch is read
     against its trunk and with no pull-request text.
     """
 
@@ -69,14 +71,14 @@ class LanguagePass:
         skills: SkillsSelection,
         git: GitService,
         cache: RepoCache,
-        pull_requests: PullRequestTextReader | None = None,
+        pull_requests_for: Callable[[str], PullRequestTextReader | None] | None = None,
     ) -> None:
         self._runner = runner
         self._prompts = prompts
         self._skills = skills
         self._git = git
         self._cache = cache
-        self._pull_requests = pull_requests
+        self._pull_requests_for = pull_requests_for
 
     async def snapshot(
         self, *, repositories: Sequence[RepoEntry], cache_key: str | None
@@ -172,9 +174,14 @@ class LanguagePass:
         look_up_pull_request: bool = True,
     ) -> BranchChange | None:
         """One branch over its base, or ``None`` when it added nothing."""
+        reader = (
+            self._pull_requests_for(repository)
+            if look_up_pull_request and self._pull_requests_for is not None
+            else None
+        )
         opened = (
-            await self._pull_requests.open_pr_text(repo_url=repository, head=branch)
-            if look_up_pull_request and self._pull_requests is not None
+            await reader.open_pr_text(repo_url=repository, head=branch)
+            if reader is not None
             else None
         )
         base = trunk if opened is None else opened.base_branch

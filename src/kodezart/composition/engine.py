@@ -24,6 +24,7 @@ from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.chains.remediation import RemediationChain
 from kodezart.chains.scope_stages import ScopeStages
 from kodezart.chains.ticket_generation import TicketGenerationLoop
+from kodezart.composition.forge import pull_request_text_reader_for_origin
 from kodezart.config.app import AppConfig
 from kodezart.config.write_back import WriteBackSettings
 from kodezart.core.errors import RateLimitedSoftFailureError
@@ -328,7 +329,9 @@ def build_workflow_engine(
         skills=skills,
         git=git,
         cache=cache,
-        pull_requests=github_api,
+        pull_requests_for=lambda repo_url: pull_request_text_reader_for_origin(
+            client=github_api, repo_url=repo_url
+        ),
     )
 
     def loop(saver: BaseCheckpointSaver[str] | None) -> RalphLoop:
