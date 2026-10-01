@@ -109,7 +109,7 @@ RaiseSite = Literal[
     "mutation_evaluator",
     "pass_gate",
     "scope_scan",
-    "scope_done",
+    "language_pass",
 ]
 
 # ---------------------------------------------------------------------------
@@ -828,37 +828,44 @@ class ScopeItem(CamelCaseModel):
     title: str = Field(min_length=1, description="The issue's title.")
 
 
-class ScopeOpenCount(CamelCaseModel):
-    """The scope-done answer: how much below the parent is open, not the list.
+class LanguageFinding(CamelCaseModel):
+    """One place where a session wrote a non-standard term, and the term."""
 
-    A count and a few keys, never the membership: at a thousand members the
-    whole list no longer fits a structured answer (KOD-1288).
-    """
-
-    open_count: int = Field(
-        ge=0,
+    location: str = Field(
+        min_length=1,
         description=(
-            "How many issues below the parent are open: their workflow state "
-            "is neither a completed nor a canceled one. When the query's "
-            "first page is full, the number on that page."
+            "Where it is: repository and branch, then file and line for code, "
+            "or 'commit message' or 'pull-request text'."
         ),
     )
-    total_count: int | None = Field(
-        ge=0,
+    phrase: str = Field(
+        min_length=1, description="The word or phrase as written, verbatim."
+    )
+    standard_term: str = Field(
+        min_length=1,
         description=(
-            "How many issues are below the parent in all, when the tracker "
-            "reports it; null when only reading every page would tell."
+            "The term an experienced engineer would use for the same thing in "
+            "an RFC or a well-known library."
         ),
     )
-    sample: list[ScopeItem] = Field(
-        description=(
-            "Up to ten of the open issues, the first the query returned; "
-            "empty when none is open."
-        ),
+    why: str = Field(
+        min_length=1,
+        description="One sentence on why the written term is not the standard one.",
+    )
+
+
+class LanguagePassOutput(CamelCaseModel):
+    """The language pass's answer: findings over the branches an iteration pushed."""
+
+    findings: list[LanguageFinding] = Field(
+        description="Every non-standard term found, once each; empty when none.",
     )
     reason: str = Field(
         min_length=1,
-        description="One sentence on the state of the work below the parent.",
+        description=(
+            "One sentence on what was read, naming any branch or file that "
+            "could not be read."
+        ),
     )
 
 
@@ -1426,7 +1433,8 @@ CONTENT_AUDIT_SCHEMA: dict[str, object] = ContentAuditOutput.model_json_schema()
 PASS_GATE_SCHEMA: dict[str, object] = PassGateOutput.model_json_schema()
 # Schemas for the two scope questions: the cron's scan and the run's check
 SCOPE_SCAN_SCHEMA: dict[str, object] = ScopeScanOutput.model_json_schema()
-SCOPE_DONE_SCHEMA: dict[str, object] = ScopeOpenCount.model_json_schema()
+# Schema for the loop's language pass over an iteration's pushed branches
+LANGUAGE_PASS_SCHEMA: dict[str, object] = LanguagePassOutput.model_json_schema()
 # Schema for the draft-critic lens's verdict on a drafted artifact
 DRAFT_CRITIQUE_SCHEMA: dict[str, object] = DraftCritiqueOutput.model_json_schema()
 
@@ -1463,7 +1471,7 @@ WIRE_SCHEMAS: dict[str, dict[str, object]] = {
     "CONTENT_AUDIT_SCHEMA": CONTENT_AUDIT_SCHEMA,
     "PASS_GATE_SCHEMA": PASS_GATE_SCHEMA,
     "SCOPE_SCAN_SCHEMA": SCOPE_SCAN_SCHEMA,
-    "SCOPE_DONE_SCHEMA": SCOPE_DONE_SCHEMA,
+    "LANGUAGE_PASS_SCHEMA": LANGUAGE_PASS_SCHEMA,
     "DRAFT_CRITIQUE_SCHEMA": DRAFT_CRITIQUE_SCHEMA,
     "WRITE_BACK_SCHEMA": WRITE_BACK_SCHEMA,
     "RULING_SCHEMA": RULING_SCHEMA,

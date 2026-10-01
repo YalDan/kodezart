@@ -134,7 +134,7 @@ example:
 | `KODEZART_TRACKER__TOKEN` | the Linear personal API key | The process's tracker credential. |
 | `KODEZART_GITHUB_TOKEN` | the fine-grained token | The forge credential. |
 | `KODEZART_AGENT__MODEL` | `claude-opus-5-5` | The engine every session runs on unless a key is pinned. |
-| `KODEZART_AGENT__SESSION_MODELS` | `{"pass_gate":"claude-sonnet-5-5","scope_scan":"claude-sonnet-5-5","scope_done":"claude-sonnet-5-5","pr_description":"claude-sonnet-5-5","branch_name":"claude-sonnet-5-5","commit_message":"claude-sonnet-5-5","fire_record":"claude-sonnet-5-5","native_writer_contract":"claude-sonnet-5-5","mutation_survival":"claude-sonnet-5-5","supervisor_pass":"claude-sonnet-5-5"}` | Pins every cheap session (the board questions, the pull-request description and the utility keys) to Sonnet, which the prompt set runs at low effort: these answers are short and structured, so Opus buys nothing there; and runs the supervisor pass on Sonnet at low effort, since it reads and reports. |
+| `KODEZART_AGENT__SESSION_MODELS` | `{"pass_gate":"claude-sonnet-5-5","scope_scan":"claude-sonnet-5-5","language_pass":"claude-sonnet-5-5","pr_description":"claude-sonnet-5-5","branch_name":"claude-sonnet-5-5","commit_message":"claude-sonnet-5-5","fire_record":"claude-sonnet-5-5","native_writer_contract":"claude-sonnet-5-5","mutation_survival":"claude-sonnet-5-5","supervisor_pass":"claude-sonnet-5-5"}` | Pins every cheap session (the board questions, the pull-request description and the utility keys) to Sonnet, which the prompt set runs at low effort: these answers are short and structured, so Opus buys nothing there; and runs the supervisor pass on Sonnet at low effort, since it reads and reports. |
 | `KODEZART_DISPATCH_PASS_INTERVAL_SECONDS` | `300` | The cron's cadence. It also paces the per-issue dispatch passes. |
 | `KODEZART_DISPATCH_PASS_TIMEOUT_SECONDS` | `240` | The longest one cron tick may take. |
 | `KODEZART_FIRE_PREP_PASS_INTERVAL_SECONDS` | `1800` | Fire prep every 30 minutes. |
@@ -173,7 +173,7 @@ export KODEZART_OPERATION_CONFIG=/path/to/operation.toml
 export KODEZART_TRACKER__TOKEN=<the Linear personal API key>
 export KODEZART_GITHUB_TOKEN=<the GitHub token>
 export KODEZART_AGENT__MODEL=claude-opus-5-5
-export KODEZART_AGENT__SESSION_MODELS='{"pass_gate":"claude-sonnet-5-5","scope_scan":"claude-sonnet-5-5","scope_done":"claude-sonnet-5-5","pr_description":"claude-sonnet-5-5","branch_name":"claude-sonnet-5-5","commit_message":"claude-sonnet-5-5","fire_record":"claude-sonnet-5-5","native_writer_contract":"claude-sonnet-5-5","mutation_survival":"claude-sonnet-5-5","supervisor_pass":"claude-sonnet-5-5"}'
+export KODEZART_AGENT__SESSION_MODELS='{"pass_gate":"claude-sonnet-5-5","scope_scan":"claude-sonnet-5-5","language_pass":"claude-sonnet-5-5","pr_description":"claude-sonnet-5-5","branch_name":"claude-sonnet-5-5","commit_message":"claude-sonnet-5-5","fire_record":"claude-sonnet-5-5","native_writer_contract":"claude-sonnet-5-5","mutation_survival":"claude-sonnet-5-5","supervisor_pass":"claude-sonnet-5-5"}'
 export KODEZART_DISPATCH_PASS_INTERVAL_SECONDS=300
 export KODEZART_DISPATCH_PASS_TIMEOUT_SECONDS=240
 export KODEZART_FIRE_PREP_PASS_INTERVAL_SECONDS=1800
@@ -353,7 +353,7 @@ Watch these events. Anything logged at `"level": "error"` needs a look.
 | `scope_heartbeat_*` | What the cron saw and submitted on each tick. |
 | `agent_question_asked`, `agent_question_answered`, `agent_question_unanswered` | Each board question: the scan, the intake gate and the "is it done" question. An unanswered one names why. |
 | `job_submitted`, `job_started`, `job_finished`, `job_failed`, `job_timed_out` | Each run. `job_finished` carries the `outcome`, for example `pr_opened`, `ci_passed`, `ci_failed_unclassified`, `criteria_infeasible` or `engine_error`. |
-| `stream_drained` | One per drained session: `site` names the step (`scope_scan`, `scope_done`, `ralph_evaluator`, `post_merge_review`, `pr_description`, `pass_gate`), with `events` counted by type, `duration_ms`, `total_cost_usd`, `num_turns`, `has_structured_output` and `rate_limit_rejected`. |
+| `stream_drained` | One per drained session: `site` names the step (`scope_scan`, `language_pass`, `ralph_evaluator`, `post_merge_review`, `pr_description`, `pass_gate`), with `events` counted by type, `duration_ms`, `total_cost_usd`, `num_turns`, `has_structured_output` and `rate_limit_rejected`. |
 | `agent_direct_commit_pushed` | A session made its own commit and kodezart pushed it. |
 | `ci_runs_observed`, `ci_no_checks_concluded`, `ci_workflows_probed` | The check watch on each pull request. The pull request itself is on the job's event stream (`workflow_pr`) and in the `job_finished` outcome. |
 | `mcp_session_opened`, `mcp_session_reopened`, `mcp_session_ended`, `mcp_session_closed` | The process's own Linear and Notion connections. `mcp_session_ended` is an error. |

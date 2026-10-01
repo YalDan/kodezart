@@ -54,7 +54,7 @@ UTILITY_KEYS = (
     # One short board question, answered in a shape: nothing to load.
     PromptKey.PASS_GATE,
     PromptKey.SCOPE_SCAN,
-    PromptKey.SCOPE_DONE,
+    PromptKey.LANGUAGE_PASS,
 )
 
 

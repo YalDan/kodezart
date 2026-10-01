@@ -238,8 +238,11 @@ async def test_fresh_parent_resumes_original_native_phase(
             # edits a copy of that tree — its product is the tree it edited, so
             # it asks for no structured answer at all — and the same criteria
             # are then read at the lane's base, which is its own session.
+            # The loop's language question reads the iteration's words before
+            # the grade (KOD-1307), so it precedes the evaluation.
             assert titles == [
                 "CommitMessageOutput",
+                "LanguagePassOutput",
                 "AcceptanceCriteriaOutput",
                 None,
                 "BaseCheckOutput",
@@ -641,6 +644,7 @@ async def test_saved_persist_receipt_resumes_without_writer_commit_or_push(
         final = await fresh.native_graph.aget_state(config)
         assert final.values["total_iterations"] == 1
         assert [schema_title(call) for call in second.calls] == [
+            "LanguagePassOutput",
             "AcceptanceCriteriaOutput",
             None,
             "BaseCheckOutput",

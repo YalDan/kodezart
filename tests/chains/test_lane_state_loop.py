@@ -1726,6 +1726,10 @@ async def test_no_base_tree_survives_the_iteration_that_opened_it():
         # The standing gradings the lapse reading carries between iterations:
         # cross-offs and their shas, naming no workspace and no path.
         "standing",
+        # The language pass (KOD-1307): branch heads per repository before
+        # the session, and the findings; shas, names and text, no tree.
+        "heads_before",
+        "language_findings",
     }
 
 

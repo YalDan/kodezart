@@ -42,21 +42,19 @@ def open_work_count(members: Iterable[TrackerIssue], *, root: str | None = None)
 
     *root* is the key of the issue an issue scope is addressed by, as the
     family spells it (:func:`family_root`). The family holds the root
-    beside the issues below it, but the work a run
-    does and the question that ends a run judge only the issues below the
-    parent, so the root is not counted while anything else is in the
-    family. A root with nothing below it is the whole scope, and then it
-    is the work.
+    beside the issues below it, but the work a run does and the question
+    that ends a run judge only the issues below the parent, so the root is
+    not counted while any work sits below it. A root with nothing below it
+    but tracker records, or nothing at all, is the whole scope, and then it
+    is the work: a record is absent from this question wherever it stands
+    (KOD-1302, N5).
     """
-    rows = list(members)
+    rows = [
+        issue for issue in members if TRACKER_RECORD_LABEL not in issue.issue_labels
+    ]
     if root is not None and any(issue.issue_key != root for issue in rows):
         rows = [issue for issue in rows if issue.issue_key != root]
-    return sum(
-        1
-        for issue in rows
-        if open_state_kind(issue.state_kind)
-        and TRACKER_RECORD_LABEL not in issue.issue_labels
-    )
+    return sum(1 for issue in rows if open_state_kind(issue.state_kind))
 
 
 def prior_live_job(*, live: Sequence[JobRecord], job_id: str) -> JobRecord | None:

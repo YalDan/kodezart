@@ -2,7 +2,7 @@
 
 Every session this deployment opens reaches the provider through one
 ``AgentExecutor``: the implementer, the evaluator, the board questions
-(``pass_gate``, ``scope_scan``, ``scope_done``), the prompt passes, the
+(``pass_gate``, ``scope_scan``), the prompt passes, the
 scope stages and the commit-message session all run through the one
 ``AgentService`` built at the composition root, and that service holds one
 executor.  Wrapping that executor is therefore the one place a rate limit

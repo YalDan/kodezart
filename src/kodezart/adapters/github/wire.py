@@ -89,6 +89,14 @@ class MarkReadyResponse(BaseModel):
     data: MarkReadyData
 
 
+class PullRequestSummaryBase(BaseModel):
+    """The branch an open pull request targets, as the listing reports it."""
+
+    model_config = ConfigDict(frozen=True)
+
+    ref: str
+
+
 class PullRequestSummary(BaseModel):
     """One entry of the open pull request listing."""
 
@@ -98,6 +106,7 @@ class PullRequestSummary(BaseModel):
     title: str
     body: str | None = None
     html_url: str
+    base: PullRequestSummaryBase | None = None
 
 
 class RepositoryResponse(BaseModel):

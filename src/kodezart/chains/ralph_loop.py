@@ -65,6 +65,11 @@ from kodezart.services.audit_sessions import judge_in_workspace
 from kodezart.services.evaluator_rulings import EvaluatorRulingWriter
 from kodezart.services.gained_commits import scope_repositories
 from kodezart.services.git_observations import read_workspace_head
+from kodezart.services.language_pass import (
+    BranchChange,
+    LanguagePass,
+    finding_variables,
+)
 from kodezart.services.mutation_survival import MutationSurvivalReader
 from kodezart.services.native_amendments import NativeAmendments
 from kodezart.services.owned_workspace import owned_workspace
@@ -75,6 +80,7 @@ from kodezart.types.domain.agent import (
     AcceptanceCriteriaOutput,
     AgentEvent,
     BaseCheckOutput,
+    LanguageFinding,
     NativeAmendmentEvent,
     NodeSessionStartedEvent,
     ResultEvent,
@@ -167,9 +173,11 @@ class RalphLoop:
         node_sessions: NodeSessionRecorder | None = None,
         repositories: Sequence[RepoEntry] = (),
         evaluator_rulings: EvaluatorRulingWriter | None = None,
+        language: LanguagePass | None = None,
     ) -> None:
         self._service = service
         self._evaluator_rulings = evaluator_rulings
+        self._language = language
         self._node_sessions = node_sessions
         self._repositories = tuple(repositories)
         self._criteria_reader = criteria_reader
@@ -413,8 +421,22 @@ class RalphLoop:
                 {
                     "prior_prompt": prompt,
                     "pending_failures": state["pending_failures"],
+                    **finding_variables(state.get("language_findings", [])),
                 },
             )
+
+        # What the declared repositories' branches stood at before this
+        # session: the evaluate node reads which of them the session pushed.
+        # A scope run declares repositories; any other run works one clone
+        # and its own branch, which the evaluate node reads directly.
+        repositories = scope_repositories(ctx.scope, self._repositories)
+        heads_before = (
+            {}
+            if self._language is None or ctx.scope is None
+            else await self._language.snapshot(
+                repositories=repositories, cache_key=ctx.cache_key
+            )
+        )
 
         if native_criteria is not None:
             prompt += "\n\n" + tracker_checks_section(native_criteria)
@@ -461,7 +483,7 @@ class RalphLoop:
             cache_key=ctx.cache_key,
             native_guard=native_guard,
             after_publish=after_publish,
-            repositories=scope_repositories(ctx.scope, self._repositories),
+            repositories=repositories,
         ):
             if isinstance(event, NativeAmendmentEvent):
                 reports = [*reports, event.report]
@@ -479,6 +501,7 @@ class RalphLoop:
         update: dict[str, object] = {
             "iteration": iteration,
             "iteration_commit_sha": commit_sha,
+            "heads_before": heads_before,
         }
         if native_guard is not None:
             update.update(amendment_reports=reports, amendment_blocked=blocked)
@@ -603,6 +626,39 @@ class RalphLoop:
 
         return record
 
+    async def _language_findings(
+        self,
+        *,
+        ctx: RalphLoopContext,
+        state: RalphLoopState,
+        cwd: str,
+        repositories: Sequence[RepoEntry],
+        evaluation_ref: str,
+        changeset_is_empty: bool,
+    ) -> list[LanguageFinding] | None:
+        """The language pass's findings for this iteration, or none to read."""
+        if self._language is None:
+            return []
+        changes: list[BranchChange]
+        if ctx.scope is not None:
+            changes = await self._language.moved(
+                repositories=repositories,
+                before=state.get("heads_before", {}),
+                cache_key=ctx.cache_key,
+            )
+        elif changeset_is_empty:
+            changes = []
+        else:
+            own = await self._language.own(
+                cwd=cwd,
+                repository=ctx.repo_url or ctx.repo_path or "",
+                branch=ctx.ralph_branch,
+                base=ctx.base_branch,
+                head=evaluation_ref,
+            )
+            changes = [] if own is None else [own]
+        return await self._language.findings(workspace_path=cwd, changes=changes)
+
     async def _evaluate_node(
         self,
         state: RalphLoopState,
@@ -638,6 +694,20 @@ class RalphLoop:
                 head_ref=evaluation_ref,
             )
         )
+
+        # The words the session wrote, read by the cheap language question
+        # before the grader opens: on a scope run the branches that moved
+        # since the session started, on any other run this loop's own branch.
+        # A loop composed without the language pass reads none.
+        findings = await self._language_findings(
+            ctx=ctx,
+            state=state,
+            cwd=cwd,
+            repositories=repositories,
+            evaluation_ref=evaluation_ref,
+            changeset_is_empty=changeset is None or changeset.is_empty,
+        )
+        language = finding_variables(findings)
 
         # The graph can retry this node after it already opened a session.
         # Give that execution a fresh invocation component; iteration and
@@ -740,6 +810,7 @@ class RalphLoop:
                     **execution_criteria_variables(for_session),
                     **({} if changeset is None else changeset_variables(changeset)),
                     **({} if ctx.scope is None else scope_variables(ctx.scope)),
+                    **language,
                 },
             )
             nonlocal evaluation_attempt
@@ -1120,6 +1191,7 @@ class RalphLoop:
             "verdict": verdict,
             "pending_failures": pending_failures,
             "iteration_records": records,
+            "language_findings": findings,
             # The loop's own memory of what it has graded, kept as graph state
             # rather than on the receipt: the receipt is what the post-loop
             # roster check compares, and this is not part of that comparison.

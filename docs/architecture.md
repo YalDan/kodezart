@@ -92,6 +92,7 @@ does not exist.
 | PRCreator         | GitHubAPIClient          | Opens pull requests as drafts, marks a finished one ready, comments |
 | PRStateReader | GitHubAPIClient | Reads exact native PR identity, head repository/branch/SHA, base repository/branch and open/closed/merged lifecycle; refuses foreign or unavailable head/base repositories; no mutation authority |
 | ForgeQuery | GitHubAPIClient | Reads the open pull request on a head ref for check-before-create, and composes a branch's web page from the origin's own host; no mutation authority |
+| PullRequestTextReader | GitHubAPIClient | Reads the title, body and base branch of the open pull request on a head, for the language pass; selected per repository at the composition root, so an origin with no forge is never asked; no mutation authority |
 | CIMonitor         | GitHubAPIClient          | Returns a coherent completed, absent or incomplete check observation; re-observes Actions attempts at one commit |
 | DeliveryProbe     | GitHubAPIClient          | Answers whether an issue already has an open delivery |
 | DeliveryProbe     | NoForgeDeliveryProbe     | The same answer for an origin with no forge behind it. A peer, selected per repository at the composition root — not a degraded mode |
@@ -985,6 +986,15 @@ satisfy a lint rule, and logic that belongs to an operation sitting in a
 schema or a clever construct. It is composed into the same two graders and
 into the implementer's scope block, where the scope session applies it before
 an item is Done and passes it word for word to every verifier it briefs.
+
+The `scaffolding_rule` fragment (KOD-1308) states once what a run may delete:
+a fixture, and code whose only purpose is to read one, goes when the real
+source arrives; code a planned feature will use is unwired, never deleted,
+and the feature is named on the board. It is composed into the two intake
+passes, the run's own groom and prep session and the supervisor pass bare,
+and into the implementer's and both graders' scope blocks, so the criterion
+writer, the builder and the grader read the same sentence and every
+whole-file deletion in a scope run is judged as a fixture or scaffolding.
 
 The default maximum is 5 iterations (configurable via
 `KODEZART_MAX_ITERATIONS`).

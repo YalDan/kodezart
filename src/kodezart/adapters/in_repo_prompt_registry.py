@@ -50,7 +50,9 @@ _NEIGHBOUR_REVIEW_FRAGMENT = "neighbour_review"
 _MECHANISMS_FRAGMENT = "pass_mechanisms"
 _HIERARCHY_FRAGMENT = "board_hierarchy"
 _DELIVERY_FRAGMENT = "delivery_units"
+_SCAFFOLDING_FRAGMENT = "scaffolding_rule"
 _DRAFT_REVIEW_FRAGMENT = "draft_review"
+_PLAIN_TERMS_FRAGMENT = "plain_terms"
 _ORCHESTRATION_SLOT = "orchestration_block"
 _CRITIQUE_SLOT = "ticket_create_critique"
 _INVESTIGATION_SPEC_FRAGMENT = "investigation_spec"
@@ -346,7 +348,9 @@ def _composed(metadata: PromptSetMetadata, name: str, body: str) -> str:
         _MECHANISMS_FRAGMENT: fragments.pass_mechanisms,
         _HIERARCHY_FRAGMENT: fragments.board_hierarchy,
         _DELIVERY_FRAGMENT: fragments.delivery_units,
+        _SCAFFOLDING_FRAGMENT: fragments.scaffolding_rule,
         _DRAFT_REVIEW_FRAGMENT: fragments.draft_review,
+        _PLAIN_TERMS_FRAGMENT: fragments.plain_terms,
     }
     substitutions = {name: text for name, text in declared.items() if text is not None}
     appendix = (

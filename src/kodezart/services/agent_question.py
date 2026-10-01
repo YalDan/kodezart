@@ -23,8 +23,8 @@ from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import AgentRunner, PromptSetProvider
 from kodezart.core.stream_drain import drain
 from kodezart.types.domain.agent import (
+    LANGUAGE_PASS_SCHEMA,
     PASS_GATE_SCHEMA,
-    SCOPE_DONE_SCHEMA,
     SCOPE_SCAN_SCHEMA,
     RaiseSite,
 )
@@ -39,14 +39,14 @@ _log: BoundLogger = get_logger(__name__)
 _SITES: Mapping[PromptKey, RaiseSite] = {
     PromptKey.PASS_GATE: "pass_gate",
     PromptKey.SCOPE_SCAN: "scope_scan",
-    PromptKey.SCOPE_DONE: "scope_done",
+    PromptKey.LANGUAGE_PASS: "language_pass",
 }
 #: The wire schema each question's answer is demanded in, by the precomputed
 #: constant every dispatch site names.
 _OUTPUT_FORMATS: Mapping[PromptKey, dict[str, object]] = {
     PromptKey.PASS_GATE: {"type": "json_schema", "schema": PASS_GATE_SCHEMA},
     PromptKey.SCOPE_SCAN: {"type": "json_schema", "schema": SCOPE_SCAN_SCHEMA},
-    PromptKey.SCOPE_DONE: {"type": "json_schema", "schema": SCOPE_DONE_SCHEMA},
+    PromptKey.LANGUAGE_PASS: {"type": "json_schema", "schema": LANGUAGE_PASS_SCHEMA},
 }
 
 

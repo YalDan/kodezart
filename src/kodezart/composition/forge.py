@@ -10,6 +10,7 @@ from kodezart.core.backoff import RetryPolicy
 from kodezart.core.protocols import (
     ForgeQuery,
     PRStateReader,
+    PullRequestTextReader,
 )
 from kodezart.domain.git_url import is_forge_less_origin
 
@@ -59,5 +60,18 @@ def forge_query_for_origin(
     A bare local origin has no pull requests to look for and no pages to
     link to, and handing it this client would put the same refusal at the
     end of a run that KOD-148 measured — after the work, not before it.
+    """
+    return None if is_forge_less_origin(repo_url) else client
+
+
+def pull_request_text_reader_for_origin(
+    *, client: PullRequestTextReader | None, repo_url: str
+) -> PullRequestTextReader | None:
+    """Select open-pull-request reads only for an origin with a forge.
+
+    The language pass reads every branch a scope iteration moved, across
+    the run's repositories, and one pass serves both engine arms, so it
+    asks this once per repository. A bare local origin has no pull request
+    to read, and the client would raise on its URL after the session's work.
     """
     return None if is_forge_less_origin(repo_url) else client

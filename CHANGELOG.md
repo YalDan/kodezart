@@ -12,6 +12,9 @@ concerns.
 Changes that let a scope run finish, stacked on 0.3.1: they are unreleased
 because the 0.3.1 section above is dated and closed, and they become 0.3.2
 when released. No new environment name; the operation file is unchanged.
+A deployment's `KODEZART_AGENT__SESSION_MODELS` drops `scope_done`, which
+boot now refuses, and routes `language_pass` to a small model; unrouted,
+that question runs on the default model.
 
 ### Added
 
@@ -43,6 +46,31 @@ when released. No new environment name; the operation file is unchanged.
 - A paged read of the issues below a scope, criteria included, one listing
   page at a time (`core/protocols.py`, `ScopeMemberPager`;
   `adapters/linear/scope_reader.py`, `adapters/linear/tracker.py`).
+- Before each grade, a low-effort question session reads the words the
+  iteration wrote: on a scope run every branch that moved while the session
+  ran, otherwise the loop's own branch, each as its patch, commit messages and
+  open pull request's text over the base that request targets, or the trunk
+  (`language_pass`, `services/language_pass.py`, `LANGUAGE_PASS_SCHEMA`;
+  `GitService.branch_heads`, `diff_patch` and `commit_messages`;
+  `PullRequestTextReader.open_pr_text`, chosen per repository by origin in
+  `composition/forge.py`, so an origin with no forge is never asked). Each
+  place a thing is not called by its standard software-engineering term is a
+  finding; the grader fails the criterion the change was made for when a
+  finding stands on its own reading, and the next iteration's feedback carries
+  the findings
+  (`prompts/sets/anthropic_v5/{language_pass,evaluation,iteration_feedback}.md`).
+  The principle is one fragment (`set.toml`, `plain_terms`) composed into the
+  question, the implementer and the three board-writing passes, and the boot
+  preflight renders the question (`composition/passes.py`).
+- Fixtures go and scaffolding stays: one fragment (`set.toml`,
+  `scaffolding_rule`) says a fixture, and code whose only purpose is to read
+  one, goes when the real source arrives, while code a planned feature will
+  use is unwired, never deleted, and the feature is named on the board. It
+  is composed into the fire-prep, grooming and supervisor passes, the
+  organize session, the implementer and both graders, which judge every
+  whole-file deletion as a fixture or scaffolding
+  (`prompts/sets/anthropic_v5/{fire_prep_pass,grooming_pass,supervisor_pass,organize_session,implementation,evaluation,post_merge_review}.md`,
+  `adapters/in_repo_prompt_registry.py`).
 
 ### Changed
 
@@ -58,8 +86,11 @@ when released. No new environment name; the operation file is unchanged.
   the paged read, with no prompt session: records labelled as trackers are
   left out, the count and the first keys are reported, and prep reads each
   Check whole (`chains/scope_stages.py`, `domain/issue_tree.py`,
-  `open_work`). The `scope_done` question role stays declared for the boot
-  render and the deployment's session-model map.
+  `open_work`). The `scope_done` question role is gone: its prompt key and
+  both sets' prompt files, `ScopeOpenCount` and `SCOPE_DONE_SCHEMA`
+  (`types/domain/agent.py`), its question mapping
+  (`services/agent_question.py`) and its boot render
+  (`composition/passes.py`); the graph node keeps its name.
 - The scope heartbeat submits a run only for a scope that carries the
   approval label on the board and has open work below it, counted through
   the one state rule; an issue scope's root is found in its family, not in
@@ -79,6 +110,12 @@ when released. No new environment name; the operation file is unchanged.
   (`services/pass_scheduler.py`, `services/tick_budget.py`).
 - The suppression baseline records the three test declarations that had
   vanished (`tests/negative_shape_baseline.json`).
+- A tracker record below an issue no longer counts as work below the root,
+  so an open issue whose only sub-issue is a record is submitted like the
+  same issue alone (`domain/scope_submission.py`). The fire-prep and
+  grooming passes take a unit's base from its blocking edges, and grooming
+  may delete the composition branches it pushed
+  (`prompts/sets/anthropic_v5/{fire_prep_pass,grooming_pass}.md`).
 
 ## [0.3.1] - 2026-09-30
 

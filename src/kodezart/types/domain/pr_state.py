@@ -25,3 +25,12 @@ class PRState(CamelCaseModel):
     base_repo_url: str = Field(min_length=1)
     base_branch: str = Field(min_length=1)
     lifecycle: PRLifecycle
+
+
+class PullRequestText(CamelCaseModel):
+    """What an open pull request says, and the branch it targets."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    title: str
+    body: str
+    base_branch: str = Field(min_length=1)

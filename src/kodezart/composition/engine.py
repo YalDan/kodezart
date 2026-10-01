@@ -24,6 +24,7 @@ from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.chains.remediation import RemediationChain
 from kodezart.chains.scope_stages import ScopeStages
 from kodezart.chains.ticket_generation import TicketGenerationLoop
+from kodezart.composition.forge import pull_request_text_reader_for_origin
 from kodezart.config.app import AppConfig
 from kodezart.config.write_back import WriteBackSettings
 from kodezart.core.errors import RateLimitedSoftFailureError
@@ -51,6 +52,7 @@ from kodezart.services.evaluator_rulings import EvaluatorRulingWriter
 from kodezart.services.fire_time_rulings import FireTimeRulings
 from kodezart.services.lane_lapse_escalation import LaneLapseEscalations
 from kodezart.services.lane_state_writer import TrackerLaneStateWriter
+from kodezart.services.language_pass import LanguagePass
 from kodezart.services.mutation_survival import MutationSurvivalReader
 from kodezart.services.native_amendments import NativeAmendments
 from kodezart.services.scope_entry import ScopeEntry
@@ -319,6 +321,18 @@ def build_workflow_engine(
         prompts=prompts,
         skills=skills,
     )
+    # The cheap language question every loop asks before its grader; like the
+    # mutation reader it holds no run state, so one object serves them all.
+    language = LanguagePass(
+        runner=agent_service,
+        prompts=prompts,
+        skills=skills,
+        git=git,
+        cache=cache,
+        pull_requests_for=lambda repo_url: pull_request_text_reader_for_origin(
+            client=github_api, repo_url=repo_url
+        ),
+    )
 
     def loop(saver: BaseCheckpointSaver[str] | None) -> RalphLoop:
         """The quality gate every fire engine runs, with the saver it persists to."""
@@ -363,6 +377,7 @@ def build_workflow_engine(
             fan_in_max_attempts=config.fan_in_max_attempts,
             repositories=repositories,
             evaluator_rulings=evaluator_rulings,
+            language=language,
         )
 
     authored_loop = loop(checkpointer)
