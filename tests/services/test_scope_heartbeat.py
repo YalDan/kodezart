@@ -387,6 +387,48 @@ async def test_a_lone_issue_scope_is_its_own_work(
     assert outcome is expected
 
 
+async def test_an_issue_whose_only_sub_issue_is_a_tracker_record_is_submitted() -> None:
+    """A record below the root is absent from the question, as everywhere else.
+
+    KOD-1302, N5.
+
+    The scan and the run's own done question treat a tracker record as not
+    there; the heartbeat must agree, or an issue alone is submitted while
+    the same issue with a record under it is refused.
+    """
+    queue = FakeJobQueue()
+    record = make_tracker_issue(
+        "R-1", parent_key="P-1", issue_labels=frozenset({"tracker"})
+    )
+    board = _issue_board(make_tracker_issue("P-1"), record)
+
+    outcome = await _heartbeat(board, queue, _scan(ISSUE)).run(FIXTURE_EPOCH)
+
+    assert outcome is PassRun.RAN
+    assert [request.scope for _lane, request in queue.submissions] == [ISSUE]
+
+
+async def test_a_scope_that_is_not_approved_has_its_family_left_unread() -> None:
+    """Approval is read first; a refused scope costs no family read (KOD-1302, M13)."""
+    queue = FakeJobQueue()
+    below = make_tracker_issue(
+        "C-1",
+        parent_key="P-1",
+        state_name="Done",
+        state_kind=WorkflowStateKind.COMPLETED,
+    )
+    board = _issue_board(make_tracker_issue("P-1"), below, approved=False)
+
+    with structlog.testing.capture_logs() as logs:
+        outcome = await _heartbeat(board, queue, _scan(ISSUE)).run(FIXTURE_EPOCH)
+
+    assert outcome is PassRun.SKIPPED
+    assert _rejections(logs) == [("P-1", "not_approved")]
+    # The approval resolver reads the addressed issue's own labels; the
+    # issues below it are the family, and a refused scope never reads them.
+    assert "C-1" not in board.issue_reads
+
+
 def _uuid_board(*, open_below: bool) -> ScopeMcpServer:
     """The shared scope workspace, FIX-1 approved with FIX-2 and FIX-3 below it.
 

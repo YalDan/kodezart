@@ -14,7 +14,7 @@ engines = ["claude-opus-5-5", "claude-fable-5-1", "claude-sonnet-5-5"]
 # key at authoring time — the knowledge map is here because it is a
 # prelude, and a prelude carrying its own depth block would put a second
 # one inside the prompt it joins.
-utility_keys = ["branch_name", "commit_message", "pr_description", "knowledge_map", "fire_record", "native_writer_contract", "mutation_survival", "organize_spec_rubric", "pass_gate", "scope_scan", "scope_done", "supervisor_pass"]
+utility_keys = ["branch_name", "commit_message", "pr_description", "knowledge_map", "fire_record", "native_writer_contract", "mutation_survival", "organize_spec_rubric", "pass_gate", "scope_scan", "supervisor_pass"]
 
 # Which fan-out primitive this set's roles are told to use, set from a
 # measured verdict and never model-judged. The workflow primitive needs the
@@ -438,4 +438,4 @@ keys = ["branch_name", "commit_message", "knowledge_map", "fire_record", "native
 [session_roles.question]
 effort = "low"
 skills = []
-keys = ["pass_gate", "scope_scan", "scope_done", "pr_description"]
+keys = ["pass_gate", "scope_scan", "pr_description"]

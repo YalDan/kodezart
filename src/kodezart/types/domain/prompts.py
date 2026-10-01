@@ -56,7 +56,6 @@ class PromptKey(StrEnum):
     SCOPE_SCAN = "scope_scan"
     #: The run's question about its parent: every issue below it, and
     #: whether each is done.
-    SCOPE_DONE = "scope_done"
     CONTENT_AUDIT = "content_audit"
     ORGANIZE_ASSESS = "organize_assess"
     ORGANIZE_AUTHOR = "organize_author"

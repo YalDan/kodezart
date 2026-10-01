@@ -106,7 +106,6 @@ ARTIFACT_TAGS: dict[str, tuple[str, ...]] = {
     "pass_gate": (),
     # The scope questions render the boundary and the parent as plain lines.
     "scope_scan": (),
-    "scope_done": (),
     "fix": ("ticket", "review_feedback", "ci_summary"),
     "fix__no_optional_sections": ("ticket",),
     "grooming_pass": (),
@@ -320,6 +319,10 @@ FIRE_PREP_GRAPH_TEXTS = (
     "Wrap it in the issue as scope, ticket type, the consulted section",
     "blocked by that request's unit",
     "each with the units it is blocked by;",
+    # KOD-1309: the base is the graph's everywhere the pass grounds a fire.
+    "Ground it at the base the delivery rule gives the unit, treating each"
+    " triage item as a hypothesis",
+    "are not live at the base the delivery rule gives the unit;",
 )
 
 #: The recency base rule and the wrapper base fields, gone.
@@ -329,6 +332,7 @@ FIRE_PREP_RETIRED_TEXTS = (
     "find the head of the latest one",
     "with the base pinned to that request's branch",
     "each with its resolved base branch",
+    "the resolved base",
 )
 
 #: KOD-1285: one tick's work is bounded, so it ends inside its budget.
@@ -419,6 +423,12 @@ GROOMING_GRAPH_TEXTS = (
     "Compose in your clone and push nothing you composed; delete the composition"
     " branches earlier passes of this kind pushed.",
     "Never end a process by pattern: end only a process id this pass started.",
+    # KOD-1309: readiness and the deletion rule agree with the graph and
+    # with the composition branches this pass deletes.
+    "the branches of the units it is blocked by present on the forge, since the"
+    " delivery rule gives its base from those edges",
+    "never delete a ref another session or a person created (the composition"
+    " branches this kind of pass pushed are its own to delete)",
     "One status update per initiative whose health changed or under which"
     " something moved in the window, and none for the others, whose trace is"
     " this pass's record row; it opens with the land queue — the requests that"
@@ -442,6 +452,8 @@ GROOMING_RETIRED_TEXTS = (
     "still posts the initiative updates",
     "in the initiative status update, never as a comment",
     "pkill",
+    "a base branch resolvable on the forge",
+    "never delete a ref you did not create",
 )
 
 

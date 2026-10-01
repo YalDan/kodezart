@@ -302,3 +302,28 @@ def test_unknown_agent_field_refuses_without_echoing_value():
         AppConfig(_env_file=None, agent={"modle": "private-model-value"})
     assert "modle" in str(caught.value)
     assert "private-model-value" not in str(caught.value)
+
+
+@pytest.mark.parametrize("source", ["init", "env"])
+def test_a_session_model_for_a_role_the_set_does_not_declare_is_refused_by_name(
+    source, tmp_path, monkeypatch
+) -> None:
+    """A retired role's model line names the role in the refusal (KOD-1309).
+
+    ``scope_done`` left the set when the scope-done gate became a tracker
+    count; a deployment still routing it must learn which line to remove,
+    and the check must not pass a model for a role nothing will run.
+    """
+    values = {"session_models": {"scope_done": "claude-sonnet-5-5"}}
+    with pytest.raises(ValidationError) as caught:
+        if source == "init":
+            AppConfig(_env_file=None, agent=values)
+        else:
+            monkeypatch.setenv(
+                "KODEZART_AGENT__SESSION_MODELS", json.dumps(values["session_models"])
+            )
+            AppConfig(_env_file=None)
+    message = str(caught.value)
+    assert "scope_done" in message
+    assert "session_models" in message
+    assert "scope_scan" in message, "the refusal lists the roles the set declares"
