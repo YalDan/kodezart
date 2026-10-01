@@ -1003,6 +1003,7 @@ PLAIN_TERMS_CARRIERS = frozenset(
     {
         PromptKey.LANGUAGE_PASS.value,
         PromptKey.IMPLEMENTATION.value,
+        PromptKey.EVALUATION.value,
         PromptKey.FIRE_PREP_PASS.value,
         PromptKey.GROOMING_PASS.value,
         PromptKey.SUPERVISOR_PASS.value,
@@ -1035,8 +1036,8 @@ GRADER_WORDING_RULE = (
 )
 GRADER_UNANSWERED_RULE = (
     "The reading of this iteration's words went unanswered, so judge the wording"
-    " of each changed file yourself against the plain-terms rule in your house"
-    " rules, and say in your reasoning that you did."
+    " of each changed file yourself against the rule below, and say in your"
+    " reasoning that you did."
 )
 FEEDBACK_WORDING_RULE = (
     "where a thing is not called by its standard name, rename it to the term"
@@ -1044,7 +1045,7 @@ FEEDBACK_WORDING_RULE = (
 )
 GROOMING_WORDING_RULE = (
     "An open item whose title, body or criteria name a thing by other than its"
-    " standard engineering term (the plain-terms rule above) is rewritten to the"
+    " standard engineering term (the plain-terms rule below) is rewritten to the"
     " standard term with a fields-only edit plus a comment naming the old and the"
     " new wording; a fenced frozen body and a principal's own words are left as"
     " they are, with the comment alone."
@@ -1077,7 +1078,9 @@ def test_the_plain_terms_principle_resolves_into_exactly_its_carriers() -> None:
     assert consumers == PLAIN_TERMS_CARRIERS
 
 
-@pytest.mark.parametrize("key", sorted(PLAIN_TERMS_CARRIERS - {"implementation"}))
+@pytest.mark.parametrize(
+    "key", sorted(PLAIN_TERMS_CARRIERS - {"implementation", "evaluation"})
+)
 def test_each_board_carrier_renders_the_principle_once(key: str) -> None:
     from tests.fakes import pass_render_variables
 
@@ -1131,9 +1134,12 @@ def test_the_grader_renders_the_wording_block_only_with_findings() -> None:
         {**base, "skills_reference": "", "language_pass_unanswered": True}
     )
     assert prose(unanswered).count(GRADER_UNANSWERED_RULE) == 1
+    assert prose(unanswered).count(PLAIN_TERMS_OPENING) == 1
     assert "<language_findings>" not in unanswered
+    assert PLAIN_TERMS_OPENING not in prose(with_findings)
 
     neither = template.render({**base, "skills_reference": ""})
+    assert PLAIN_TERMS_OPENING not in prose(neither)
     assert GRADER_WORDING_RULE not in prose(neither)
     assert GRADER_UNANSWERED_RULE not in prose(neither)
     assert "<language_findings>" not in neither
@@ -1172,6 +1178,9 @@ def test_grooming_rewrites_wording_with_a_fields_only_edit() -> None:
     assert member_files_carrying(GROOMING_WORDING_RULE) == [
         "anthropic_v5/grooming_pass.md"
     ]
+    # The rule says the principle is below it; the render must agree.
+    text = prose(rendered)
+    assert text.index(GROOMING_WORDING_RULE) < text.index(PLAIN_TERMS_OPENING)
 
 
 def test_the_language_question_is_a_cheap_question_with_no_depth_block() -> None:

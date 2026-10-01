@@ -27,7 +27,9 @@ the full set.
 {{@index1}}. {{this.location}} — "{{this.phrase}}" — standard term: {{this.standard_term}} — {{this.why}}{{/each}}
 </language_findings>
 
-{{/if}}{{#if language_pass_unanswered}}The reading of this iteration's words went unanswered, so judge the wording of each changed file yourself against the plain-terms rule in your house rules, and say in your reasoning that you did.
+{{/if}}{{#if language_pass_unanswered}}The reading of this iteration's words went unanswered, so judge the wording of each changed file yourself against the rule below, and say in your reasoning that you did.
+
+{{plain_terms}}
 
 {{/if}}
 <acceptance_criteria>{{#each criteria}}
