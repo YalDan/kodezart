@@ -106,6 +106,8 @@ ARTIFACT_TAGS: dict[str, tuple[str, ...]] = {
     "pass_gate": (),
     # The scope questions render the boundary and the parent as plain lines.
     "scope_scan": (),
+    # The language question renders one tagged block per pushed branch.
+    "language_pass": ("branch", "patch", "commit_messages", "pull_request_text"),
     "fix": ("ticket", "review_feedback", "ci_summary"),
     "fix__no_optional_sections": ("ticket",),
     "grooming_pass": (),

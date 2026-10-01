@@ -109,6 +109,7 @@ RaiseSite = Literal[
     "mutation_evaluator",
     "pass_gate",
     "scope_scan",
+    "language_pass",
 ]
 
 # ---------------------------------------------------------------------------
@@ -827,6 +828,47 @@ class ScopeItem(CamelCaseModel):
     title: str = Field(min_length=1, description="The issue's title.")
 
 
+class LanguageFinding(CamelCaseModel):
+    """One place where a session wrote a non-standard term, and the term."""
+
+    location: str = Field(
+        min_length=1,
+        description=(
+            "Where it is: repository and branch, then file and line for code, "
+            "or 'commit message' or 'pull-request text'."
+        ),
+    )
+    phrase: str = Field(
+        min_length=1, description="The word or phrase as written, verbatim."
+    )
+    standard_term: str = Field(
+        min_length=1,
+        description=(
+            "The term an experienced engineer would use for the same thing in "
+            "an RFC or a well-known library."
+        ),
+    )
+    why: str = Field(
+        min_length=1,
+        description="One sentence on why the written term is not the standard one.",
+    )
+
+
+class LanguagePassOutput(CamelCaseModel):
+    """The language pass's answer: findings over the branches an iteration pushed."""
+
+    findings: list[LanguageFinding] = Field(
+        description="Every non-standard term found, once each; empty when none.",
+    )
+    reason: str = Field(
+        min_length=1,
+        description=(
+            "One sentence on what was read, naming any branch or file that "
+            "could not be read."
+        ),
+    )
+
+
 class ContentAuditFinding(CamelCaseModel):
     """One finding from the judgment scanner's audit session.
 
@@ -1391,6 +1433,8 @@ CONTENT_AUDIT_SCHEMA: dict[str, object] = ContentAuditOutput.model_json_schema()
 PASS_GATE_SCHEMA: dict[str, object] = PassGateOutput.model_json_schema()
 # Schemas for the two scope questions: the cron's scan and the run's check
 SCOPE_SCAN_SCHEMA: dict[str, object] = ScopeScanOutput.model_json_schema()
+# Schema for the loop's language pass over an iteration's pushed branches
+LANGUAGE_PASS_SCHEMA: dict[str, object] = LanguagePassOutput.model_json_schema()
 # Schema for the draft-critic lens's verdict on a drafted artifact
 DRAFT_CRITIQUE_SCHEMA: dict[str, object] = DraftCritiqueOutput.model_json_schema()
 
@@ -1427,6 +1471,7 @@ WIRE_SCHEMAS: dict[str, dict[str, object]] = {
     "CONTENT_AUDIT_SCHEMA": CONTENT_AUDIT_SCHEMA,
     "PASS_GATE_SCHEMA": PASS_GATE_SCHEMA,
     "SCOPE_SCAN_SCHEMA": SCOPE_SCAN_SCHEMA,
+    "LANGUAGE_PASS_SCHEMA": LANGUAGE_PASS_SCHEMA,
     "DRAFT_CRITIQUE_SCHEMA": DRAFT_CRITIQUE_SCHEMA,
     "WRITE_BACK_SCHEMA": WRITE_BACK_SCHEMA,
     "RULING_SCHEMA": RULING_SCHEMA,

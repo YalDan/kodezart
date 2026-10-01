@@ -30,6 +30,7 @@ PROMPT_FUNCTION_NAMES: Final[frozenset[str]] = frozenset(
         "supervisor_pass",
         "pass_gate",
         "scope_scan",
+        "language_pass",
         "content_audit",
         "knowledge_map",
         "fire_record",

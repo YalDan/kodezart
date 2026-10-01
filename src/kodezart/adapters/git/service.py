@@ -701,6 +701,66 @@ class SubprocessGitService:
             commit_count=len(commit_subjects),
         )
 
+    async def branch_heads(self, cwd: str) -> dict[str, str]:
+        """Every branch at *cwd* with its tip SHA, from ``for-each-ref``."""
+        output = await self._run_output(
+            [
+                "git",
+                "for-each-ref",
+                "--format=%(objectname)\t%(refname:short)",
+                "refs/heads",
+            ],
+            cwd=cwd,
+        )
+        heads: dict[str, str] = {}
+        for line in output.split("\n"):
+            parts = line.split("\t")
+            if len(parts) == 2 and parts[0] and parts[1]:
+                heads[parts[1]] = parts[0]
+        return heads
+
+    async def diff_patch(
+        self,
+        cwd: str,
+        base_ref: str,
+        head_ref: str,
+        max_bytes: int,
+    ) -> str:
+        """The patch from the split point to *head_ref*, cut at *max_bytes*."""
+        if base_ref == head_ref:
+            return ""
+        split = await self.merge_base(cwd, base_ref, head_ref) or base_ref
+        patch = await self._run_output(
+            ["git", "diff", f"{split}..{head_ref}"],
+            cwd=cwd,
+        )
+        encoded = patch.encode()
+        if len(encoded) <= max_bytes:
+            return patch
+        cut = encoded[:max_bytes].decode(errors="ignore")
+        return f"{cut}\n[patch cut at {max_bytes} bytes of {len(encoded)}]"
+
+    async def commit_messages(
+        self,
+        cwd: str,
+        base_ref: str,
+        head_ref: str,
+        max_bytes: int,
+    ) -> str:
+        """The messages *head_ref* gained since the split, cut at *max_bytes*."""
+        if base_ref == head_ref:
+            return ""
+        split = await self.merge_base(cwd, base_ref, head_ref) or base_ref
+        messages = await self._run_output(
+            ["git", "log", "--format=%B", f"{split}..{head_ref}"],
+            cwd=cwd,
+        )
+        encoded = messages.encode()
+        if len(encoded) <= max_bytes:
+            return messages
+        cut = encoded[:max_bytes].decode(errors="ignore")
+        return f"{cut}\n[messages cut at {max_bytes} bytes of {len(encoded)}]"
+
     async def reset_hard(self, cwd: str, ref: str) -> None:
         """Hard-reset working tree + index + HEAD to *ref*."""
         await self._run(["git", "reset", "--hard", ref], cwd=cwd)

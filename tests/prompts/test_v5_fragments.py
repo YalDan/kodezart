@@ -51,6 +51,7 @@ UTILITY_KEYS = frozenset(
         PromptKey.ORGANIZE_SPEC_RUBRIC.value,
         PromptKey.PASS_GATE.value,
         PromptKey.SCOPE_SCAN.value,
+        PromptKey.LANGUAGE_PASS.value,
         PromptKey.SUPERVISOR_PASS.value,
     },
 )
@@ -1100,3 +1101,212 @@ def test_the_ultracode_token_is_declared_and_used_by_no_member() -> None:
     assert [
         key for key, body in v5_bodies().items() if "ultracode" in body.lower()
     ] == []
+
+
+# ---------------------------------------------------------------------------
+# plain_terms — the wording principle (KOD-1307), a judgment and never a list
+# ---------------------------------------------------------------------------
+
+#: The members the principle is composed into: the question that reads an
+#: iteration's words, the implementer whose scope block writes them, and the
+#: three passes that write the board.
+PLAIN_TERMS_CARRIERS = frozenset(
+    {
+        PromptKey.LANGUAGE_PASS.value,
+        PromptKey.IMPLEMENTATION.value,
+        PromptKey.EVALUATION.value,
+        PromptKey.FIRE_PREP_PASS.value,
+        PromptKey.GROOMING_PASS.value,
+        PromptKey.SUPERVISOR_PASS.value,
+    },
+)
+
+#: The principle's opening, whole, as the one source states it.
+PLAIN_TERMS_OPENING = (
+    "Plain engineering terms. Everything written into a repository or onto the"
+    " board — identifiers, strings, comments, docs, commit messages,"
+    " pull-request text, issue titles, bodies and criteria — uses the standard"
+    " software-engineering term for the thing, the one an experienced engineer"
+    " would use for it in an RFC or a well-known library: no physical metaphors,"
+    " no invented terms, no register that reads as a language model's."
+)
+
+#: The owner's own example, and the two boundaries the principle draws.
+PLAIN_TERMS_EXAMPLE = "A transaction simulation is a simulation, not a rehearsal"
+PLAIN_TERMS_DOMAIN_WORDS = "a domain's own word"
+PLAIN_TERMS_INTERNAL_NAMES = (
+    "Kodezart's own names for its work (fire, lane, groom, trunk, union) are the"
+    " board's language and never enter a product repository."
+)
+
+#: The grader's wording block and the implementer's feedback block, whole.
+GRADER_WORDING_RULE = (
+    "For each that stands on your own reading of the code, fail the criterion"
+    " the change was made for, naming the phrase and the standard term; one that"
+    " does not stand is named in your reasoning and not counted."
+)
+GRADER_UNANSWERED_RULE = (
+    "The reading of this iteration's words went unanswered, so judge the wording"
+    " of each changed file yourself against the rule below, and say in your"
+    " reasoning that you did."
+)
+FEEDBACK_WORDING_RULE = (
+    "where a thing is not called by its standard name, rename it to the term"
+    " below as part of the fix, in every place the name appears."
+)
+GROOMING_WORDING_RULE = (
+    "An open item whose title, body or criteria name a thing by other than its"
+    " standard engineering term (the plain-terms rule below) is rewritten to the"
+    " standard term with a fields-only edit plus a comment naming the old and the"
+    " new wording; a fenced frozen body and a principal's own words are left as"
+    " they are, with the comment alone."
+)
+
+
+def test_the_plain_terms_principle_is_declared_once_and_reads_whole() -> None:
+    """One fragment of the manifest, carried by no member file."""
+    principle = prose(fragment("plain_terms"))
+    assert principle.startswith(PLAIN_TERMS_OPENING)
+    assert PLAIN_TERMS_EXAMPLE in principle
+    assert PLAIN_TERMS_DOMAIN_WORDS in principle
+    assert principle.endswith(PLAIN_TERMS_INTERNAL_NAMES)
+    manifest = prose(SET_TOML.read_text(encoding="utf-8"))
+    assert manifest.count(PLAIN_TERMS_OPENING) == 1
+    assert member_files_carrying(PLAIN_TERMS_OPENING) == []
+
+
+def test_the_plain_terms_principle_names_no_word_list() -> None:
+    """A judgment, not a lookup: the fragment lists no banned words or pairs."""
+    principle = fragment("plain_terms")
+    assert "→" not in principle
+    assert "->" not in principle
+    assert principle.count(":") <= 2
+
+
+def test_the_plain_terms_principle_resolves_into_exactly_its_carriers() -> None:
+    principle = fragment("plain_terms")
+    consumers = {key for key, body in v5_bodies().items() if principle in body}
+    assert consumers == PLAIN_TERMS_CARRIERS
+
+
+@pytest.mark.parametrize(
+    "key", sorted(PLAIN_TERMS_CARRIERS - {"implementation", "evaluation"})
+)
+def test_each_board_carrier_renders_the_principle_once(key: str) -> None:
+    from tests.fakes import pass_render_variables
+
+    variables: dict[str, object]
+    if key == PromptKey.LANGUAGE_PASS.value:
+        _, variables = ALL_CASES["language_pass"]
+    else:
+        variables = pass_render_variables(PromptKey(key))
+    rendered = (
+        v5_registry()
+        .template_for(PromptKey(key))
+        .render({"skills_reference": "", **variables})
+    )
+    assert prose(rendered).count(PLAIN_TERMS_OPENING) == 1
+
+
+@pytest.mark.parametrize("kind", list(ScopeKind))
+def test_a_scope_implementer_renders_the_principle_once(kind: ScopeKind) -> None:
+    rendered = prose(render_in_scope(PromptKey.IMPLEMENTATION, "implementation", kind))
+    assert rendered.count(PLAIN_TERMS_OPENING) == 1
+    assert rendered.count(PLAIN_TERMS_INTERNAL_NAMES) == 1
+
+
+def test_a_per_issue_implementer_carries_no_principle_text() -> None:
+    """The principle sits in the scope block; a per-issue fire's bytes are recorded."""
+    rendered = prose(render_in_scope(PromptKey.IMPLEMENTATION, "implementation", None))
+    assert PLAIN_TERMS_OPENING not in rendered
+
+
+def test_the_grader_renders_the_wording_block_only_with_findings() -> None:
+    """Findings bound: the block and its rule render once, inside its tag.
+    Unanswered bound: the fallback sentence alone. Neither bound: nothing."""
+    _, base = ALL_CASES["evaluation"]
+    template = v5_registry().template_for(PromptKey.EVALUATION)
+    finding = {
+        "location": "repo#branch src/transport.ts:12",
+        "phrase": "rehearse",
+        "standard_term": "simulate",
+        "why": "it wraps simulateTransaction",
+    }
+    with_findings = template.render(
+        {**base, "skills_reference": "", "language_findings": [finding]}
+    )
+    assert prose(with_findings).count(GRADER_WORDING_RULE) == 1
+    assert with_findings.count("<language_findings>") == 1
+    assert with_findings.count("</language_findings>") == 1
+    assert "standard term: simulate" in with_findings
+    assert GRADER_UNANSWERED_RULE not in prose(with_findings)
+
+    unanswered = template.render(
+        {**base, "skills_reference": "", "language_pass_unanswered": True}
+    )
+    assert prose(unanswered).count(GRADER_UNANSWERED_RULE) == 1
+    assert prose(unanswered).count(PLAIN_TERMS_OPENING) == 1
+    assert "<language_findings>" not in unanswered
+    assert PLAIN_TERMS_OPENING not in prose(with_findings)
+
+    neither = template.render({**base, "skills_reference": ""})
+    assert PLAIN_TERMS_OPENING not in prose(neither)
+    assert GRADER_WORDING_RULE not in prose(neither)
+    assert GRADER_UNANSWERED_RULE not in prose(neither)
+    assert "<language_findings>" not in neither
+
+
+def test_the_feedback_prompt_carries_the_findings_to_the_next_iteration() -> None:
+    _, base = ALL_CASES["iteration_feedback"]
+    template = v5_registry().template_for(PromptKey.ITERATION_FEEDBACK)
+    finding = {
+        "location": "repo#branch src/transport.ts:12",
+        "phrase": "rehearse",
+        "standard_term": "simulate",
+        "why": "it wraps simulateTransaction",
+    }
+    with_findings = template.render(
+        {**base, "skills_reference": "", "language_findings": [finding]}
+    )
+    assert prose(with_findings).count(FEEDBACK_WORDING_RULE) == 1
+    assert "standard term: simulate" in with_findings
+    without = template.render({**base, "skills_reference": ""})
+    assert FEEDBACK_WORDING_RULE not in prose(without)
+    assert "<language_findings>" not in without
+
+
+def test_grooming_rewrites_wording_with_a_fields_only_edit() -> None:
+    from tests.fakes import pass_render_variables
+
+    rendered = (
+        v5_registry()
+        .template_for(PromptKey.GROOMING_PASS)
+        .render(
+            {"skills_reference": "", **pass_render_variables(PromptKey.GROOMING_PASS)}
+        )
+    )
+    assert prose(rendered).count(GROOMING_WORDING_RULE) == 1
+    assert member_files_carrying(GROOMING_WORDING_RULE) == [
+        "anthropic_v5/grooming_pass.md"
+    ]
+    # The rule says the principle is below it; the render must agree.
+    text = prose(rendered)
+    assert text.index(GROOMING_WORDING_RULE) < text.index(PLAIN_TERMS_OPENING)
+
+
+def test_the_language_question_is_a_cheap_question_with_no_depth_block() -> None:
+    """On the question roster at the floor, on utility_keys, and rendering the
+    branches it is handed inside their tag."""
+    meta = metadata()
+    roles = meta["session_roles"]
+    assert isinstance(roles, dict)
+    question = roles["question"]
+    assert isinstance(question, dict)
+    assert PromptKey.LANGUAGE_PASS.value in question["keys"]
+    assert question["effort"] == "low"
+    assert PromptKey.LANGUAGE_PASS.value in meta["utility_keys"]
+    rendered = render_v5_case("language_pass")
+    assert rendered.count("<branch>") == 1
+    assert rendered.count("</branch>") == 1
+    assert "+def rehearse_transfer():" in rendered
+    assert "Ultrathink" not in rendered

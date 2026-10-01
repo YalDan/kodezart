@@ -100,6 +100,11 @@ PER_CALL_VARIABLE_NAMES: frozenset[str] = frozenset(
         "scope_milestone",
         "phase_ticket",
         "phase_criteria",
+        # The language pass: the branches an iteration pushed with their
+        # patches; and what it found, as the grader and the implementer read it.
+        "changes",
+        "language_findings",
+        "language_pass_unanswered",
     }
 )
 

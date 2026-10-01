@@ -11,8 +11,9 @@ import httpx
 import pytest
 
 from kodezart.composition.forge import forge_query_for_origin
-from kodezart.core.protocols import ForgeQuery
+from kodezart.core.protocols import ForgeQuery, PullRequestTextReader
 from kodezart.domain.errors import ForgeAPIError
+from kodezart.types.domain.pr_state import PullRequestText
 from tests.adapters.test_github_api import _make_client
 from tests.fakes import FakeForgeQuery
 
@@ -247,3 +248,66 @@ class TestSelectionByOrigin:
             await client.close()
 
         assert requests == []
+
+
+class TestTheOpenPullRequestText:
+    """KOD-1307: the language pass reads an open request's prose and its base."""
+
+    async def test_the_title_body_and_base_of_the_open_request_are_returned(
+        self,
+    ) -> None:
+        handler, calls = _listing({**OPEN_PR, "base": {"ref": "DUC-1-parent"}})
+        client = _make_client(handler)
+        assert isinstance(client, PullRequestTextReader)
+
+        try:
+            found = await client.open_pr_text(repo_url=REPO, head=HEAD)
+        finally:
+            await client.close()
+
+        assert found == PullRequestText(
+            title="feat: a delivery", body="delivers FIX-1", base_branch="DUC-1-parent"
+        )
+        assert calls == [
+            (
+                "GET",
+                "/repos/example/project/pulls",
+                "state=open&head=example%3Akodezart%2Ftopic&per_page=100",
+            ),
+        ]
+
+    async def test_nothing_open_answers_nothing(self) -> None:
+        handler, _ = _listing()
+        client = _make_client(handler)
+        try:
+            assert await client.open_pr_text(repo_url=REPO, head=HEAD) is None
+        finally:
+            await client.close()
+
+    async def test_an_empty_body_reads_as_empty_text(self) -> None:
+        handler, _ = _listing({**OPEN_PR, "body": None, "base": {"ref": "main"}})
+        client = _make_client(handler)
+        try:
+            found = await client.open_pr_text(repo_url=REPO, head=HEAD)
+        finally:
+            await client.close()
+        assert found is not None and found.body == ""
+
+    async def test_a_request_the_listing_gives_no_base_is_refused(self) -> None:
+        handler, _ = _listing(OPEN_PR)
+        client = _make_client(handler)
+        try:
+            with pytest.raises(ForgeAPIError):
+                await client.open_pr_text(repo_url=REPO, head=HEAD)
+        finally:
+            await client.close()
+
+    async def test_two_open_requests_on_one_head_are_refused(self) -> None:
+        second = {**OPEN_PR, "number": 43, "base": {"ref": "main"}}
+        handler, _ = _listing({**OPEN_PR, "base": {"ref": "main"}}, second)
+        client = _make_client(handler)
+        try:
+            with pytest.raises(ForgeAPIError):
+                await client.open_pr_text(repo_url=REPO, head=HEAD)
+        finally:
+            await client.close()

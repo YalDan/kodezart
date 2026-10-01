@@ -1923,12 +1923,44 @@ async def test_the_boot_render_preflight_renders_the_supervisor_pass_and_its_gat
         prompts=prompts,
     )
 
-    rendered = {key for key in asked if key is not PromptKey.PASS_GATE}
+    rendered = {
+        key
+        for key in asked
+        if key not in {PromptKey.PASS_GATE, PromptKey.LANGUAGE_PASS}
+    }
     expected = {PromptKey.FIRE_PREP_PASS, PromptKey.GROOMING_PASS}
+    assert PromptKey.LANGUAGE_PASS in asked
     if scheduled:
         expected.add(PromptKey.SUPERVISOR_PASS)
     assert rendered == expected
     assert asked.count(PromptKey.PASS_GATE) == len(expected)
+
+
+@pytest.mark.parametrize("prompt_set", [DEFAULT_SET, V5_SET])
+async def test_boot_preflight_renders_the_language_question_without_operation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, prompt_set: str
+) -> None:
+    """KOD-1307: every loop asks the language question, so boot proves its
+    template renders even when no operation schedules a pass."""
+    prompts = load_registry(default_set=prompt_set, bindings={})
+    asked: list[PromptKey] = []
+    template_for = prompts.template_for
+
+    def remembered(key: PromptKey) -> PromptTemplate:
+        asked.append(key)
+        return template_for(key)
+
+    monkeypatch.setattr(prompts, "template_for", remembered)
+
+    await verify_pass_preflight(
+        config=_config(tmp_path, **SUPERVISOR_UNSET),
+        operation=None,
+        tracker=None,
+        github_api=None,
+        prompts=prompts,
+    )
+
+    assert asked == [PromptKey.LANGUAGE_PASS]
 
 
 @pytest.mark.parametrize("prompt_set", [DEFAULT_SET, V5_SET])

@@ -45,6 +45,7 @@ from kodezart.services.claim_heartbeat import ClaimHeartbeat
 from kodezart.services.dispatch_pass import GatedDispatchPass
 from kodezart.services.fire_context import FireContextAssembler
 from kodezart.services.fire_dispatcher import FireDispatcher, LaneCooldown
+from kodezart.services.language_pass import change_variables
 from kodezart.services.lifecycle_watcher import FireReport, LifecycleWatcher
 from kodezart.services.pass_gate import PassGate
 from kodezart.services.pass_scheduler import PassScheduler, ScheduledPass
@@ -907,6 +908,11 @@ async def verify_pass_preflight(
         and config.pass_cadence("dispatch") is not None
     ):
         _assert_renders(key=PromptKey.SCOPE_SCAN, prompts=prompts, bindings={})
+    # Every loop asks the language question before its grader, whatever the
+    # operation schedules, so its template is proved here unconditionally.
+    _assert_renders(
+        key=PromptKey.LANGUAGE_PASS, prompts=prompts, bindings=change_variables([])
+    )
     if operation is None or not session_passes_wire(operation):
         return
     now = datetime.now(UTC)

@@ -7,7 +7,7 @@ from pydantic import ConfigDict, Field
 
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.accept import AcceptVerdict, FlaggedItem
-from kodezart.types.domain.agent import TicketDraftOutput
+from kodezart.types.domain.agent import LanguageFinding, TicketDraftOutput
 from kodezart.types.domain.amendment import AmendmentReport
 from kodezart.types.domain.branch import BaseSpec
 from kodezart.types.domain.ci import CIStatus
@@ -247,6 +247,15 @@ class RalphLoopState(TypedDict):
     #: scope arm runs with no checkpointer, so a killed run re-enters from
     #: the board with nothing standing.
     standing: NotRequired[tuple[CriterionCrossOff, ...]]
+    #: Every declared repository's branch heads as the clone cache held them
+    #: before this iteration's session ran, by repository url. The evaluate
+    #: node reads them to tell which branches the session pushed; a scope run
+    #: writes them each iteration, any other run never does.
+    heads_before: NotRequired[dict[str, dict[str, str]]]
+    #: What the language pass found over the branches this iteration pushed,
+    #: handed to the grader and, on the next iteration, to the implementer.
+    #: ``None`` records that the question was asked and went unanswered.
+    language_findings: NotRequired[list[LanguageFinding] | None]
 
 
 class WorkflowState(TypedDict):

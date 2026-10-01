@@ -14,6 +14,7 @@ from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.core.prompt_namespaces import operation_bindings
 from kodezart.domain.prompt_variables import execution_criteria_variables
 from kodezart.domain.rulings import EMPTY_REGISTRY, pinned_registry
+from kodezart.services.language_pass import BranchChange, change_variables
 from kodezart.services.prompt_pass import gate_render_bindings
 from kodezart.types.domain.agent import Ruling
 from kodezart.types.domain.amendment import AmendmentClaim, AmendmentJudgment
@@ -178,6 +179,23 @@ EXTENDED_CASES: dict[str, tuple[PromptKey, dict[str, object]]] = {
     ),
     #: The cron's scan binds nothing per call: the boundary is the operation's.
     "scope_scan": (PromptKey.SCOPE_SCAN, {}),
+    #: The loop's language question binds the branches an iteration pushed.
+    "language_pass": (
+        PromptKey.LANGUAGE_PASS,
+        change_variables(
+            [
+                BranchChange(
+                    "https://example.invalid/acme/golden.git",
+                    "DUC-1-golden-unit",
+                    "main",
+                    "f" * 40,
+                    "--- a/src/x.py\n+++ b/src/x.py\n+def rehearse_transfer():\n",
+                    "feat: rehearse a transfer before sending it\n",
+                    "Rehearse transfers\n\nAdds a rehearsal step.",
+                )
+            ]
+        ),
+    ),
     "remediation_ticket": (
         PromptKey.REMEDIATION_TICKET,
         {

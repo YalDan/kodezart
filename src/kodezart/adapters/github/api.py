@@ -60,7 +60,7 @@ from kodezart.types.domain.check_observation import (
     ObservedChecks,
 )
 from kodezart.types.domain.gating import RepoVisibility
-from kodezart.types.domain.pr_state import PRLifecycle, PRState
+from kodezart.types.domain.pr_state import PRLifecycle, PRState, PullRequestText
 from kodezart.utils.http import parse_ratelimit_reset, parse_retry_after
 
 #: Every root httpx derives an exception from.  ``HTTPError`` covers the
@@ -474,6 +474,29 @@ class GitHubAPIClient:
         is asked once, of the party that knows, instead of being
         reconstructed by paging every open pull request and matching here.
         """
+        found = await self._open_pr_on_head(repo_url=repo_url, head=head)
+        return None if found is None else (found.html_url, found.number)
+
+    async def open_pr_text(self, *, repo_url: str, head: str) -> PullRequestText | None:
+        """The same head listing, read for the request's prose and its base."""
+        found = await self._open_pr_on_head(repo_url=repo_url, head=head)
+        if found is None:
+            return None
+        if found.base is None:
+            owner, repo = extract_owner_repo(repo_url)
+            raise ForgeAPIError(
+                "the forge's listing names no base for an open pull request",
+                status_code=None,
+                detail=f"GET /repos/{owner}/{repo}/pulls?head={owner}:{head}",
+            )
+        return PullRequestText(
+            title=found.title, body=found.body or "", base_branch=found.base.ref
+        )
+
+    async def _open_pr_on_head(
+        self, *, repo_url: str, head: str
+    ) -> PullRequestSummary | None:
+        """The one open pull request on *head*, none, or a refusal for several."""
         owner, repo = extract_owner_repo(repo_url)
         listing = await self._parsed_with_retry(
             "GET",
@@ -493,7 +516,7 @@ class GitHubAPIClient:
                 status_code=None,
                 detail=f"GET /repos/{owner}/{repo}/pulls?head={owner}:{head}",
             )
-        return (listing[0].html_url, listing[0].number)
+        return listing[0]
 
     def branch_web_url(self, *, repo_url: str, branch: str) -> str:
         """Compose the branch page from this repository's own host and path.

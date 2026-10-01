@@ -54,8 +54,13 @@ class PromptKey(StrEnum):
     #: The cron's question: which approved nodes inside the boundary are
     #: not finished, and the repository each one's work goes to.
     SCOPE_SCAN = "scope_scan"
-    #: The run's question about its parent: every issue below it, and
-    #: whether each is done.
+    #: The loop's question about the words a session wrote: do the
+    #: identifiers, comments, docs, commit and pull-request text of the
+    #: branches an iteration pushed use the standard software-engineering
+    #: term for each thing. A short session on the cheap engine, answered as
+    #: findings the grader is handed; the principle is in the prompt and
+    #: nowhere is there a list of words.
+    LANGUAGE_PASS = "language_pass"
     CONTENT_AUDIT = "content_audit"
     ORGANIZE_ASSESS = "organize_assess"
     ORGANIZE_AUTHOR = "organize_author"
@@ -129,6 +134,11 @@ class PromptSetFragments(BaseModel):
     #: and the implementer's scope block, so the verifiers a scope session
     #: briefs carry the same text the graders do.
     neighbour_review: str | None = None
+    #: The wording principle (KOD-1307): the standard engineering term for
+    #: each thing, stated once as a judgment and never as a list.  One source
+    #: composed into the language question, the implementer's scope block and
+    #: the three board-writing passes.
+    plain_terms: str | None = None
     ultrathink_instruction: str | None = None
     ultracode_instruction: str | None = None
     #: The shared fan-out spec both orchestration fragments carry, and the
