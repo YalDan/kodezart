@@ -152,7 +152,10 @@ EMPTY_CHANGESET_CLAUSE = (
 #: four sentences, 596 once a departure from the siblings became a finding
 #: and the owner's schema-logic sentence joined it. The lens is pinned whole
 #: in tests/prompts/test_v5_fragments.py, so this bound need not hold it.
-EVALUATION_WORD_BOUND = 600
+#: Raised again to 800 when the scaffolding rule joined both graders
+#: (KOD-1308): 771 words with its six sentences, pinned whole in the same
+#: file.
+EVALUATION_WORD_BOUND = 800
 
 
 def test_the_tag_expectation_covers_every_case() -> None:

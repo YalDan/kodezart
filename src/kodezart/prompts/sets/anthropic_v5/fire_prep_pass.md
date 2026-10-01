@@ -39,6 +39,7 @@ Any issue you create or convert — a grounding outcome, a principal's instructi
 
 {{board_hierarchy}}
 {{delivery_units}}
+{{scaffolding_rule}}
 
 ## How you judge
 

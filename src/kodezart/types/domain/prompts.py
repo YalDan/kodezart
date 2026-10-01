@@ -155,6 +155,10 @@ class PromptSetFragments(BaseModel):
     #: share: what a finishable unit is, and how one is delivered.  One
     #: source, for the same reason as the hierarchy above.
     delivery_units: str | None = None
+    #: Fixtures go, scaffolding stays: one source for the criterion writer,
+    #: the builder and the grader, so a whole-file deletion is judged by the
+    #: same sentence everywhere (owner ruling of 2026-09-30).
+    scaffolding_rule: str | None = None
     #: The same standard as the two changeset graders apply it to a pull
     #: request.  One source composed into both, like the refutation above.
     draft_review: str | None = None

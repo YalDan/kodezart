@@ -986,6 +986,15 @@ schema or a clever construct. It is composed into the same two graders and
 into the implementer's scope block, where the scope session applies it before
 an item is Done and passes it word for word to every verifier it briefs.
 
+The `scaffolding_rule` fragment (KOD-1308) states once what a run may delete:
+a fixture, and code whose only purpose is to read one, goes when the real
+source arrives; code a planned feature will use is unwired, never deleted,
+and the feature is named on the board. It is composed into the two intake
+passes, the run's own groom and prep session and the supervisor pass bare,
+and into the implementer's and both graders' scope blocks, so the criterion
+writer, the builder and the grader read the same sentence and every
+whole-file deletion in a scope run is judged as a fixture or scaffolding.
+
 The default maximum is 5 iterations (configurable via
 `KODEZART_MAX_ITERATIONS`).
 
