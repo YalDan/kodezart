@@ -40,7 +40,6 @@ from kodezart.core.protocols import (
     WorkspaceProvider,
 )
 from kodezart.domain.git_url import is_forge_less_origin
-from kodezart.domain.prompt_variables import scope_variables
 from kodezart.services.base_resolver import BaseResolver
 from kodezart.services.claim_heartbeat import ClaimHeartbeat
 from kodezart.services.dispatch_pass import GatedDispatchPass
@@ -66,7 +65,6 @@ from kodezart.types.domain.operation import (
 )
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run_records import RunIdentity, RunOutcome
-from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
 
@@ -909,11 +907,6 @@ async def verify_pass_preflight(
         and config.pass_cadence("dispatch") is not None
     ):
         _assert_renders(key=PromptKey.SCOPE_SCAN, prompts=prompts, bindings={})
-        _assert_renders(
-            key=PromptKey.SCOPE_DONE,
-            prompts=prompts,
-            bindings=scope_variables(ScopeRef(kind=ScopeKind.PROJECT, key="boot")),
-        )
     if operation is None or not session_passes_wire(operation):
         return
     now = datetime.now(UTC)

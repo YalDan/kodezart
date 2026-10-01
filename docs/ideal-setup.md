@@ -47,7 +47,7 @@ says what replacing each one takes.
   its code is written, and to Done only after it has tried to prove it wrong
   against its Check and failed (`implementation.md`). A node counts as finished
   when every issue below it is in a completed or canceled state
-  (`scope_scan.md`, `scope_done.md`).
+  (`scope_scan.md`).
 - **Decision escalations.** A groom or prep session escalates a choice only a
   person can make by adding the `decision` label to the member and writing the
   question on it (`organize_session.md`).

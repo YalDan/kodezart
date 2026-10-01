@@ -125,7 +125,6 @@ def test_every_role_runs_at_the_top_of_the_ladder() -> None:
     assert set(metadata.session_roles[SessionRole.QUESTION].keys) == {
         PromptKey.PASS_GATE.value,
         PromptKey.SCOPE_SCAN.value,
-        PromptKey.SCOPE_DONE.value,
         PromptKey.PR_DESCRIPTION.value,
     }
 
