@@ -2664,6 +2664,9 @@ async def test_workflow_success_cleans_backup_branches() -> None:
     cleanup_prefix = cleanup_calls[0]["prefix"]
     assert isinstance(cleanup_prefix, str)
     assert cleanup_prefix.startswith("kodezart/")
+    # The cleanup's transient worktree is cut from the run's trunk, never
+    # from the cache's HEAD, which a remote may leave orphaned (KOD-1309).
+    assert cleanup_calls[0]["base_branch"] == "main"
 
 
 async def test_workflow_rejected_skips_backup_cleanup() -> None:

@@ -510,10 +510,15 @@ class BranchMerger(Protocol):
         *,
         repo_path: str | None,
         repo_url: str | None,
+        base_branch: str,
         prefix: str,
         cache_key: str | None = None,
     ) -> None:
-        """Batch-delete backup branches matching *prefix*. Must not raise."""
+        """Batch-delete backup branches matching *prefix*. Must not raise.
+
+        *base_branch* is the repository's trunk, the ref the transient
+        worktree this needs is cut from: a cache's HEAD may be orphaned.
+        """
         ...
 
 

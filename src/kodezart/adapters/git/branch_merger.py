@@ -153,6 +153,7 @@ class GitBranchMerger:
         *,
         repo_path: str | None,
         repo_url: str | None,
+        base_branch: str,
         prefix: str,
         cache_key: str | None = None,
     ) -> None:
@@ -161,7 +162,7 @@ class GitBranchMerger:
             workspace_path = await self._workspace.acquire(
                 repo_path=repo_path,
                 repo_url=repo_url,
-                ref="HEAD",
+                ref=base_branch,
                 cache_key=cache_key,
             )
             try:
