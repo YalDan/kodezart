@@ -113,6 +113,7 @@ from tests.fakes import (
     FakeTrackerPort,
     FakeWorkspaceProvider,
     PassThroughGate,
+    is_language_pass_schema,
     make_criteria,
     make_prompt_provider,
     make_tracker_issue,
@@ -1598,7 +1599,11 @@ class NativeExecutor(FakeAgentExecutor):
         output_format = kwargs.get("output_format")
         properties = (output_format or {}).get("schema", {}).get("properties", {})
         self.schema_calls.append(properties)
-        if "criteriaResults" in properties:
+        if is_language_pass_schema(output_format):
+            # The loop's language question over the iteration's words: no
+            # findings, so the grader is shown none.
+            output = {"findings": [], "reason": "scripted"}
+        elif "criteriaResults" in properties:
             self.evaluation_prompts.append(kwargs["prompt"])
             self.evaluation_workspaces.append(kwargs.get("cwd"))
             if self.evaluate_in is not None:

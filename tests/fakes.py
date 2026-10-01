@@ -573,10 +573,20 @@ class FakeGitService:
         push_error: Exception | None = None,
         merge_conflicts: dict[str, tuple[str, ...]] | None = None,
         missing_objects: set[str] | None = None,
+        branch_heads: list[dict[str, str]] | None = None,
+        patches: dict[tuple[str, str], str] | None = None,
     ) -> None:
         self.calls: list[tuple[str, ...]] = []
         #: Object names the repository does not hold; every other name is held.
         self.missing_objects: set[str] = set(missing_objects or ())
+        #: What ``branch_heads`` answers, one snapshot per call in order; the
+        #: last answer repeats once the list is spent. Empty by default.
+        self._branch_heads: list[dict[str, str]] = [
+            dict(each) for each in (branch_heads or [])
+        ]
+        #: The patch ``diff_patch`` answers per ``(base_ref, head_ref)``;
+        #: a pair not scripted answers a one-line stand-in patch.
+        self._patches: dict[tuple[str, str], str] = dict(patches or {})
         self._merge_conflicts: dict[str, tuple[str, ...]] = dict(merge_conflicts or {})
         #: The commit each detached tree was checked out at, by its path.
         #:
@@ -816,6 +826,28 @@ class FakeGitService:
             commit_count=1,
         )
 
+    async def branch_heads(self, cwd: str) -> dict[str, str]:
+        self.calls.append(("branch_heads", cwd))
+        if not self._branch_heads:
+            return {}
+        if len(self._branch_heads) > 1:
+            return self._branch_heads.pop(0)
+        return dict(self._branch_heads[0])
+
+    async def diff_patch(
+        self,
+        cwd: str,
+        base_ref: str,
+        head_ref: str,
+        max_bytes: int,
+    ) -> str:
+        self.calls.append(("diff_patch", cwd, base_ref, head_ref, str(max_bytes)))
+        if (base_ref, head_ref) in self._patches:
+            return self._patches[(base_ref, head_ref)][:max_bytes]
+        if base_ref == head_ref:
+            return ""
+        return "+ scripted change\n"
+
     async def reset_hard(self, cwd: str, ref: str) -> None:
         self.calls.append(("reset_hard", cwd, ref))
 
@@ -841,10 +873,18 @@ class FakeAgentExecutor:
         self,
         events: list[AgentEvent],
         branch_slug: str = "test-branch",
+        *,
+        language_findings: list[dict[str, str]] | None = None,
+        language_pass_answered: bool = True,
     ) -> None:
         self._events = events
         self._branch_slug = branch_slug
         self.calls: list[dict[str, object]] = []
+        #: What the language question is answered with: findings (none by
+        #: default), or no structured answer at all when the question is
+        #: scripted to go unanswered.
+        self._language_findings: list[dict[str, str]] = list(language_findings or [])
+        self._language_pass_answered: bool = language_pass_answered
 
     def _is_branch_name_schema(self, output_format: dict[str, object] | None) -> bool:
         if output_format is None:
@@ -956,6 +996,10 @@ class FakeAgentExecutor:
                 "run_identity": run_identity,
             }
         )
+        if is_language_pass_schema(output_format):
+            if self._language_pass_answered:
+                yield language_pass_answer(self._language_findings)
+            return
         if self._is_branch_name_schema(output_format):
             yield ResultEvent(
                 subtype="result",
@@ -1649,6 +1693,9 @@ class ScriptedFakeExecutor:
                         ),
                     )
                     return
+                if is_language_pass_schema(output_format):
+                    yield language_pass_answer()
+                    return
                 if "criteriaResults" in props:
                     result = self._eval_results.pop(0)
                     yield ResultEvent(
@@ -1698,6 +1745,40 @@ def make_minted_criteria(*texts: str) -> list[GeneratedCriterion]:
         mint_criteria(
             [DraftedCriterion(text=text) for text in (texts or ("Tests pass",))]
         )
+    )
+
+
+def is_language_pass_schema(output_format: dict[str, object] | None) -> bool:
+    """Whether a session is the loop's language question, read off its wire shape.
+
+    The question's answer is findings plus a reason; the criteria validator
+    also answers findings, with contradictions beside them, so the two are
+    told apart by what else the shape carries.
+    """
+    if output_format is None:
+        return False
+    schema = output_format.get("schema")
+    if not isinstance(schema, dict):
+        return False
+    props = schema.get("properties", {})
+    return (
+        isinstance(props, dict)
+        and "findings" in props
+        and "reason" in props
+        and "contradictions" not in props
+    )
+
+
+def language_pass_answer(findings: list[dict[str, str]] | None = None) -> ResultEvent:
+    """A scripted answer to the language question: *findings*, or none."""
+    return ResultEvent(
+        subtype="result",
+        duration_ms=1,
+        duration_api_ms=1,
+        is_error=False,
+        num_turns=1,
+        session_id="scripted",
+        structured_output={"findings": list(findings or []), "reason": "scripted"},
     )
 
 

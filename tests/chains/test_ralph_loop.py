@@ -75,6 +75,8 @@ from tests.fakes import (
     RecordingPromptProvider,
     as_validated,
     floor_under_a_rate_limit,
+    is_language_pass_schema,
+    language_pass_answer,
     make_criteria,
     make_minted_criteria,
     make_prompt_provider,
@@ -273,6 +275,9 @@ async def test_loop_second_iteration_succeeds() -> None:
         ) -> AsyncGenerator[AgentEvent, None]:
             self.calls.append({"prompt": prompt, "output_format": output_format})
             if output_format is not None:
+                if is_language_pass_schema(output_format):
+                    yield language_pass_answer()
+                    return
                 schema = output_format.get("schema")
                 if isinstance(schema, dict):
                     props = schema.get("properties", {})
@@ -588,6 +593,9 @@ async def test_loop_re_evaluates_all_criteria_every_iteration(
         ) -> AsyncGenerator[AgentEvent, None]:
             self.calls.append({"prompt": prompt, "output_format": output_format})
             if output_format is not None:
+                if is_language_pass_schema(output_format):
+                    yield language_pass_answer()
+                    return
                 schema = output_format.get("schema")
                 if isinstance(schema, dict):
                     props = schema.get("properties", {})
@@ -738,6 +746,9 @@ async def test_evaluate_node_emits_workflowiteration_with_per_iter_commit_sha(
             output_format: dict[str, object] | None = None,
         ) -> AsyncGenerator[AgentEvent, None]:
             if output_format is not None:
+                if is_language_pass_schema(output_format):
+                    yield language_pass_answer()
+                    return
                 schema = output_format.get("schema")
                 if isinstance(schema, dict):
                     props = schema.get("properties", {})
@@ -1141,11 +1152,14 @@ class _ScriptedLoopExecutor:
         self,
         criteria: list[ValidatedCriterion],
         pass_masks: list[list[bool]],
+        *,
+        language_findings: list[dict[str, str]] | None = None,
     ) -> None:
         self._criteria = criteria
         self._pass_masks = list(pass_masks)
         self._eval_count = 0
         self._exec_count = 0
+        self._language_findings = list(language_findings or [])
 
     def commit_sha_for(self, iteration: int) -> str:
         return f"{iteration:x}" * 40
@@ -1166,6 +1180,9 @@ class _ScriptedLoopExecutor:
         output_format: dict[str, object] | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
         if output_format is not None:
+            if is_language_pass_schema(output_format):
+                yield language_pass_answer(self._language_findings)
+                return
             schema = output_format.get("schema")
             if isinstance(schema, dict):
                 props = schema.get("properties", {})
@@ -1749,6 +1766,9 @@ class _NonPermutationExecutor:
         output_format: dict[str, object] | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
         if output_format is not None:
+            if is_language_pass_schema(output_format):
+                yield language_pass_answer()
+                return
             schema = output_format.get("schema")
             if isinstance(schema, dict):
                 props = schema.get("properties", {})
@@ -2012,11 +2032,13 @@ async def test_each_dispatch_of_one_run_carries_the_same_engineering_standard() 
         dispatch.method: dispatch.policy.system_prompt_append
         for dispatch in runner.dispatches
     }
-    assert set(appends) == {"stream_workflow", "stream"}
+    # The writer, the language question it is read by, and the grader.
+    assert set(appends) == {"stream_workflow", "stream_in_workspace", "stream"}
 
     standard = appends["stream_workflow"]
     assert standard is not None
     assert appends["stream"] == standard
+    assert appends["stream_in_workspace"] == standard
     assert "hexagonal" in standard
     for reading in ENGINEERING_READINGS:
         assert reading in prose(standard)
@@ -2151,15 +2173,18 @@ async def test_the_native_evaluation_arm_carries_the_same_engineering_standard()
         ):
             pass
 
+    # The language question over the iteration's words, then the grade.
     assert [dispatch.method for dispatch in runner.dispatches] == [
         "stream_in_workspace",
+        "stream_in_workspace",
     ]
-    native = runner.dispatches[0].policy.system_prompt_append
-    assert native == standard
-    assert native is not None
-    assert "hexagonal" in native
-    for reading in ENGINEERING_READINGS:
-        assert reading in prose(native)
+    for dispatch in runner.dispatches:
+        native = dispatch.policy.system_prompt_append
+        assert native == standard
+        assert native is not None
+        assert "hexagonal" in native
+        for reading in ENGINEERING_READINGS:
+            assert reading in prose(native)
 
 
 async def test_a_legacy_run_carries_no_effort_at_any_dispatch() -> None:
@@ -2324,3 +2349,142 @@ async def test_a_rate_limited_evaluation_waits_the_floor_before_its_next_attempt
     assert second_attempt - first_attempt >= RATE_LIMIT_FLOOR_SECONDS
     iterations = [e for e in events if isinstance(e, WorkflowIterationEvent)]
     assert len(iterations) == 1, "the retried attempt finished the iteration"
+
+
+# --- The language pass (KOD-1307) -------------------------------------------
+
+_REHEARSE_FINDING = {
+    "location": "repo#branch src/transport.ts:12",
+    "phrase": "rehearse",
+    "standardTerm": "simulate",
+    "why": "The call wraps simulateTransaction; the standard term is simulate.",
+}
+
+
+async def test_a_language_finding_reaches_the_grader_and_the_next_implementer() -> None:
+    """KOD-1307: the cheap question's findings are bound into the evaluation
+    prompt and, after a failed grade, into the next iteration's feedback.
+
+    A per-issue run: the loop branch's own patch is what the question reads.
+    """
+    executor = _ScriptedLoopExecutor(
+        make_criteria("Tests pass"),
+        [[False], [True]],
+        language_findings=[_REHEARSE_FINDING],
+    )
+    prompts = RecordingPromptProvider(make_prompt_provider())
+    loop = _make_loop(executor=executor, prompts=prompts, max_iterations=2)
+    _ = [e async for e in loop.run(**_run_kwargs())]
+
+    asked = prompts.variables_for(PromptKey.LANGUAGE_PASS)
+    assert len(asked) == 2
+    changes = asked[0]["changes"]
+    assert isinstance(changes, list) and len(changes) == 1
+    assert changes[0]["branch"] == "kodezart/test-12345678-ralph-abcdef01"
+    assert changes[0]["trunk"] == "main"
+    assert changes[0]["patch"]
+
+    graded = prompts.variables_for(PromptKey.EVALUATION)
+    assert len(graded) == 2
+    findings = graded[0]["language_findings"]
+    assert isinstance(findings, list) and len(findings) == 1
+    assert findings[0]["phrase"] == "rehearse"
+    assert findings[0]["standard_term"] == "simulate"
+    assert "language_pass_unanswered" not in graded[0]
+
+    feedback = prompts.variables_for(PromptKey.ITERATION_FEEDBACK)
+    assert len(feedback) == 1
+    carried = feedback[0]["language_findings"]
+    assert isinstance(carried, list) and carried[0]["standard_term"] == "simulate"
+
+
+async def test_an_unanswered_language_question_is_said_to_the_grader() -> None:
+    """The grader is told the reading did not happen, never shown an empty list."""
+    executor = FakeAgentExecutor(
+        events=_one_passing_evaluation()._events,
+        language_pass_answered=False,
+    )
+    prompts = RecordingPromptProvider(make_prompt_provider())
+    loop = _make_loop(executor=executor, prompts=prompts)
+    _ = [e async for e in loop.run(**_run_kwargs())]
+
+    graded = prompts.variables_for(PromptKey.EVALUATION)
+    assert graded[0].get("language_pass_unanswered") is True
+    assert "language_findings" not in graded[0]
+
+
+async def test_no_findings_bind_nothing_for_the_grader() -> None:
+    """An empty answer leaves both wording names unbound: no block renders."""
+    executor = _one_passing_evaluation()
+    prompts = RecordingPromptProvider(make_prompt_provider())
+    loop = _make_loop(executor=executor, prompts=prompts)
+    _ = [e async for e in loop.run(**_run_kwargs())]
+
+    graded = prompts.variables_for(PromptKey.EVALUATION)
+    assert "language_findings" not in graded[0]
+    assert "language_pass_unanswered" not in graded[0]
+
+
+async def test_a_scope_run_reads_the_branches_the_session_pushed() -> None:
+    """On a scope run the question reads every branch that moved during the
+    session, diffed against its repository's trunk; the trunk itself and an
+    unmoved branch are not read.
+    """
+    from kodezart.types.domain.operation import RepoEntry
+
+    app = RepoEntry(url="https://github.com/o/app", trunk="main")
+    before = {"main": "a" * 40, "DUC-1-old-unit": "b" * 40}
+    after = {
+        "main": "a" * 40,
+        "DUC-1-old-unit": "b" * 40,
+        "DUC-7-new-unit": "c" * 40,
+    }
+    git = FakeGitService(
+        branch_heads=[before, after],
+        patches={("main", "DUC-7-new-unit"): "+ def rehearse():\n"},
+    )
+    executor = FakeAgentExecutor(
+        events=_one_passing_evaluation()._events,
+        language_findings=[_REHEARSE_FINDING],
+    )
+    prompts = RecordingPromptProvider(make_prompt_provider())
+    cache = FakeRepoCache()
+    service = AgentService(
+        git_base_url="https://github.com",
+        executor=executor,
+        workspace=FakeWorkspaceProvider(),
+        persister=None,
+        git=git,
+        cache=cache,
+    )
+    loop = RalphLoop(
+        skills=SUPPRESS_ALL_SKILLS,
+        prompts=prompts,
+        service=service,
+        max_iterations=1,
+        plateau_window=2,
+        git=git,
+        cache=cache,
+        repositories=[app],
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
+    )
+    scope = ScopeRef(kind=ScopeKind.PROJECT, key="project-one")
+    _ = [e async for e in loop.run(**_run_kwargs(), scope=scope)]
+
+    asked = prompts.variables_for(PromptKey.LANGUAGE_PASS)
+    assert len(asked) == 1
+    changes = asked[0]["changes"]
+    assert isinstance(changes, list)
+    assert [(c["branch"], c["trunk"], c["head_sha"]) for c in changes] == [
+        ("DUC-7-new-unit", "main", "c" * 40)
+    ]
+    assert changes[0]["patch"] == "+ def rehearse():\n"
+    patched = [c[3] for c in git.calls if c[0] == "diff_patch"]
+    assert patched == ["DUC-7-new-unit"]
+
+    graded = prompts.variables_for(PromptKey.EVALUATION)
+    findings = graded[0]["language_findings"]
+    assert isinstance(findings, list) and findings[0]["phrase"] == "rehearse"

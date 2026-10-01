@@ -55,6 +55,7 @@ UTILITY_KEYS = (
     PromptKey.PASS_GATE,
     PromptKey.SCOPE_SCAN,
     PromptKey.SCOPE_DONE,
+    PromptKey.LANGUAGE_PASS,
 )
 
 

@@ -17,6 +17,7 @@ from kodezart.domain.prompt_variables import (
     scope_variables,
 )
 from kodezart.domain.rulings import EMPTY_REGISTRY, pinned_registry
+from kodezart.services.language_pass import BranchChange, change_variables
 from kodezart.services.prompt_pass import gate_render_bindings
 from kodezart.types.domain.agent import Ruling
 from kodezart.types.domain.amendment import AmendmentClaim, AmendmentJudgment
@@ -185,6 +186,21 @@ EXTENDED_CASES: dict[str, tuple[PromptKey, dict[str, object]]] = {
     "scope_done": (
         PromptKey.SCOPE_DONE,
         scope_variables(ScopeRef(kind=ScopeKind.PROJECT, key="golden-project")),
+    ),
+    #: The loop's language question binds the branches an iteration pushed.
+    "language_pass": (
+        PromptKey.LANGUAGE_PASS,
+        change_variables(
+            [
+                BranchChange(
+                    "https://example.invalid/acme/golden.git",
+                    "DUC-1-golden-unit",
+                    "main",
+                    "f" * 40,
+                    "--- a/src/x.py\n+++ b/src/x.py\n+def rehearse_transfer():\n",
+                )
+            ]
+        ),
     ),
     "remediation_ticket": (
         PromptKey.REMEDIATION_TICKET,

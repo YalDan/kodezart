@@ -328,6 +328,32 @@ class GitService(Protocol):
         """
         ...
 
+    async def branch_heads(self, cwd: str) -> dict[str, str]:
+        """Every branch of the repository at *cwd* with its tip SHA.
+
+        Maps to ``git for-each-ref refs/heads``. On a bare clone whose heads
+        the cache fast-forwards after each fetch, this is what the remote
+        holds as of that fetch, which is how a loop tells which branches a
+        session pushed during an iteration.
+        """
+        ...
+
+    async def diff_patch(
+        self,
+        cwd: str,
+        base_ref: str,
+        head_ref: str,
+        max_bytes: int,
+    ) -> str:
+        """The patch *head_ref* added since it split from *base_ref*, bounded.
+
+        Maps to ``git diff <split>..<head_ref>`` where the split is the merge
+        base (or *base_ref* itself with no common ancestor). The text is cut
+        at *max_bytes* and ends with a line saying so when it was, so a reader
+        knows it saw a prefix. Empty when the refs are equal.
+        """
+        ...
+
     async def reset_hard(self, cwd: str, ref: str) -> None:
         """Hard-reset working tree + index + HEAD to *ref*.
 

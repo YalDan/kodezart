@@ -14,7 +14,7 @@ engines = ["claude-opus-5-5", "claude-fable-5-1", "claude-sonnet-5-5"]
 # key at authoring time — the knowledge map is here because it is a
 # prelude, and a prelude carrying its own depth block would put a second
 # one inside the prompt it joins.
-utility_keys = ["branch_name", "commit_message", "pr_description", "knowledge_map", "fire_record", "native_writer_contract", "mutation_survival", "organize_spec_rubric", "pass_gate", "scope_scan", "scope_done", "supervisor_pass"]
+utility_keys = ["branch_name", "commit_message", "pr_description", "knowledge_map", "fire_record", "native_writer_contract", "mutation_survival", "organize_spec_rubric", "pass_gate", "scope_scan", "scope_done", "language_pass", "supervisor_pass"]
 
 # Which fan-out primitive this set's roles are told to use, set from a
 # measured verdict and never model-judged. The workflow primitive needs the
@@ -202,6 +202,15 @@ A pull request is merged only into the trunk, by merge commit, once the pull req
 # after the loop and the review, so there is none yet to judge.
 draft_review = """\
 Judge each pull request of the unit at its pushed head as well, and raise as a concern in your own name any one marked ready for review while its unit is unfinished, still a draft once its unit is finished, or merged by a session.\
+"""
+
+# The wording principle (KOD-1307), one source composed into the question
+# that reads an iteration's words, the implementer that writes them and the
+# three passes that write the board. It states a judgment and no list: what
+# counts as the standard term is the session's call each time, which is
+# why the question runs as its own cheap session rather than as a rule.
+plain_terms = """\
+Plain engineering terms. Everything written into a repository or onto the board — identifiers, strings, comments, docs, commit messages, pull-request text, issue titles, bodies and criteria — uses the standard software-engineering term for the thing, the one an experienced engineer would use for it in an RFC or a well-known library: no physical metaphors, no invented terms, no register that reads as a language model's. A transaction simulation is a simulation, not a rehearsal; a domain's own word (a protocol's flag, a venue's name for a thing) stays its own. Kodezart's own names for its work (fire, lane, groom, trunk, union) are the board's language and never enter a product repository.\
 """
 
 # Appended as the final block of every member outside the utility roster,
@@ -423,4 +432,4 @@ keys = ["branch_name", "commit_message", "knowledge_map", "fire_record", "native
 [session_roles.question]
 effort = "low"
 skills = []
-keys = ["pass_gate", "scope_scan", "scope_done", "pr_description"]
+keys = ["pass_gate", "scope_scan", "scope_done", "language_pass", "pr_description"]

@@ -63,6 +63,7 @@ The one kind of issue this pass files goes on one of the declared teams — the 
 
 {{board_hierarchy}}
 {{delivery_units}}
+{{plain_terms}}
 
 ## Report and record
 

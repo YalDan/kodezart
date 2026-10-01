@@ -65,6 +65,14 @@ from kodezart.services.audit_sessions import judge_in_workspace
 from kodezart.services.evaluator_rulings import EvaluatorRulingWriter
 from kodezart.services.gained_commits import scope_repositories
 from kodezart.services.git_observations import read_workspace_head
+from kodezart.services.language_pass import (
+    PATCH_BYTES_PER_BRANCH,
+    BranchChange,
+    finding_variables,
+    language_findings,
+    moved_branches,
+    snapshot_heads,
+)
 from kodezart.services.mutation_survival import MutationSurvivalReader
 from kodezart.services.native_amendments import NativeAmendments
 from kodezart.services.owned_workspace import owned_workspace
@@ -413,8 +421,21 @@ class RalphLoop:
                 {
                     "prior_prompt": prompt,
                     "pending_failures": state["pending_failures"],
+                    **finding_variables(state.get("language_findings", [])),
                 },
             )
+
+        # What the declared repositories' branches stood at before this
+        # session: the evaluate node reads which of them the session pushed.
+        # A scope run declares repositories; any other run works one clone
+        # and its own branch, which the evaluate node reads directly.
+        repositories = scope_repositories(ctx.scope, self._repositories)
+        heads_before = await snapshot_heads(
+            git=self._git,
+            cache=self._cache,
+            repositories=repositories,
+            cache_key=ctx.cache_key,
+        )
 
         if native_criteria is not None:
             prompt += "\n\n" + tracker_checks_section(native_criteria)
@@ -461,7 +482,7 @@ class RalphLoop:
             cache_key=ctx.cache_key,
             native_guard=native_guard,
             after_publish=after_publish,
-            repositories=scope_repositories(ctx.scope, self._repositories),
+            repositories=repositories,
         ):
             if isinstance(event, NativeAmendmentEvent):
                 reports = [*reports, event.report]
@@ -479,6 +500,7 @@ class RalphLoop:
         update: dict[str, object] = {
             "iteration": iteration,
             "iteration_commit_sha": commit_sha,
+            "heads_before": heads_before,
         }
         if native_guard is not None:
             update.update(amendment_reports=reports, amendment_blocked=blocked)
@@ -639,6 +661,41 @@ class RalphLoop:
             )
         )
 
+        # The words the session wrote, read by the cheap language question
+        # before the grader opens: on a scope run the branches that moved
+        # since the session started, on any other run this loop's own branch.
+        changes: list[BranchChange]
+        if ctx.scope is not None:
+            changes = await moved_branches(
+                git=self._git,
+                cache=self._cache,
+                repositories=repositories,
+                before=state.get("heads_before", {}),
+                cache_key=ctx.cache_key,
+            )
+        elif changeset is None or changeset.is_empty:
+            changes = []
+        else:
+            changes = [
+                BranchChange(
+                    ctx.repo_url or ctx.repo_path or "",
+                    ctx.ralph_branch,
+                    ctx.base_branch,
+                    evaluation_ref,
+                    await self._git.diff_patch(
+                        cwd, ctx.base_branch, evaluation_ref, PATCH_BYTES_PER_BRANCH
+                    ),
+                )
+            ]
+        findings = await language_findings(
+            runner=self._service,
+            prompts=self._prompts,
+            skills=self._skills,
+            workspace_path=cwd,
+            changes=changes,
+        )
+        language = finding_variables(findings)
+
         # The graph can retry this node after it already opened a session.
         # Give that execution a fresh invocation component; iteration and
         # correction ordinals alone repeat on a graph-level retry.
@@ -740,6 +797,7 @@ class RalphLoop:
                     **execution_criteria_variables(for_session),
                     **({} if changeset is None else changeset_variables(changeset)),
                     **({} if ctx.scope is None else scope_variables(ctx.scope)),
+                    **language,
                 },
             )
             nonlocal evaluation_attempt
@@ -1120,6 +1178,7 @@ class RalphLoop:
             "verdict": verdict,
             "pending_failures": pending_failures,
             "iteration_records": records,
+            "language_findings": findings,
             # The loop's own memory of what it has graded, kept as graph state
             # rather than on the receipt: the receipt is what the post-loop
             # roster check compares, and this is not part of that comparison.

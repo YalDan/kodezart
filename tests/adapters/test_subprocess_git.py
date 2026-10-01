@@ -462,6 +462,49 @@ async def test_diff_summary_names_only_what_the_branch_added_since_it_split(
     assert digest.commit_count == 1
 
 
+async def test_branch_heads_lists_every_branch_with_its_tip(
+    git_service: SubprocessGitService, git_repo: Path
+) -> None:
+    """Every local branch and its tip, so a loop can tell which ones moved."""
+    main_tip = await git_service.current_sha(str(git_repo))
+    await _run_git(["git", "checkout", "-b", "DUC-7-unit"], cwd=git_repo)
+    (git_repo / "unit.txt").write_text("unit")
+    await _run_git(["git", "add", "unit.txt"], cwd=git_repo)
+    await _run_git(["git", "commit", "-m", "feat: unit"], cwd=git_repo)
+    unit_tip = await git_service.current_sha(str(git_repo))
+
+    heads = await git_service.branch_heads(str(git_repo))
+
+    assert heads == {"main": main_tip, "DUC-7-unit": unit_tip}
+
+
+async def test_diff_patch_is_the_branch_patch_since_the_split_and_is_bounded(
+    git_service: SubprocessGitService, git_repo: Path
+) -> None:
+    """The patch runs from the split point, so trunk commits after it add
+    nothing; a patch past the byte bound is cut and says so; equal refs give
+    an empty patch.
+    """
+    await _run_git(["git", "checkout", "-b", "loop"], cwd=git_repo)
+    (git_repo / "branch.txt").write_text("def rehearse_transfer():\n    pass\n")
+    await _run_git(["git", "add", "branch.txt"], cwd=git_repo)
+    await _run_git(["git", "commit", "-m", "feat: branch work"], cwd=git_repo)
+    await _run_git(["git", "checkout", "main"], cwd=git_repo)
+    (git_repo / "trunk.txt").write_text("landed after the split")
+    await _run_git(["git", "add", "trunk.txt"], cwd=git_repo)
+    await _run_git(["git", "commit", "-m", "feat: trunk work"], cwd=git_repo)
+
+    patch = await git_service.diff_patch(str(git_repo), "main", "loop", 100_000)
+    assert "+def rehearse_transfer():" in patch
+    assert "trunk.txt" not in patch
+
+    cut = await git_service.diff_patch(str(git_repo), "main", "loop", 40)
+    assert cut.endswith(f"[patch cut at 40 bytes of {len(patch.encode())}]")
+    assert len(cut.encode()) < len(patch.encode())
+
+    assert await git_service.diff_patch(str(git_repo), "loop", "loop", 100) == ""
+
+
 async def test_diff_summary_reads_the_commit_record_not_the_working_tree(
     git_service: SubprocessGitService, git_repo: Path
 ) -> None:

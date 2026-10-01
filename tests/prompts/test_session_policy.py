@@ -126,6 +126,7 @@ def test_every_role_runs_at_the_top_of_the_ladder() -> None:
         PromptKey.PASS_GATE.value,
         PromptKey.SCOPE_SCAN.value,
         PromptKey.SCOPE_DONE.value,
+        PromptKey.LANGUAGE_PASS.value,
         PromptKey.PR_DESCRIPTION.value,
     }
 
