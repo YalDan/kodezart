@@ -197,6 +197,21 @@ The session delivering the unit keeps each pull request a draft whenever its uni
 A pull request is merged only into the trunk, by merge commit, once the pull requests of every unit it is blocked by have merged, so the pull requests above it stay descendants and show only their own work.\
 """
 
+# Fixtures go, scaffolding stays (owner ruling of 2026-09-30, after runs
+# deleted the strategy catalog and the compliance surface because their
+# criteria said "deleted"): one source composed into the intake passes, the
+# run's own groom and prep session, the implementer, the two changeset
+# graders and the supervisor, so the criterion writer, the builder and the
+# grader read the same rule. Which a thing is stays the session's judgment.
+scaffolding_rule = """\
+Fixtures and scaffolding. A fixture, and code whose only purpose is to read one, goes when the real source arrives.
+Code a planned feature will use — a schema, a port, an operation, a handler, a component, a page — is unwired, never deleted: it stays exported, with no route, wiring, navigation entry or fixture behind it, and the feature is named on the board.
+Which a thing is, is your judgment each time, from what the code does and what the board plans.
+A criterion never says delete such code: it says unwired and names the feature, and an open criterion that says delete where the code is scaffolding is rewritten so, with a fields-only edit and a comment.
+Building on a criterion that still says delete, unwire instead and say so in your evidence.
+Every whole-file deletion in a change is judged as a fixture or scaffolding: scaffolding deleted fails the criterion the change was made for, naming the feature that will need it, and a pushed change that deleted scaffolding is reported.\
+"""
+
 # The same rule as the two changeset graders apply it, composed into their
 # scope block only: in a per-request run kodezart opens the pull request
 # after the loop and the review, so there is none yet to judge.

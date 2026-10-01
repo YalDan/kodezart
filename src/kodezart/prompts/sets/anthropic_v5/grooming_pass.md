@@ -63,6 +63,7 @@ Any issue you create or convert — a verified defect, a principal's instruction
 
 {{board_hierarchy}}
 {{delivery_units}}
+{{scaffolding_rule}}
 
 ## How you judge
 

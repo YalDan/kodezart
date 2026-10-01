@@ -560,6 +560,118 @@ def test_the_delivery_standard_names_no_cadence() -> None:
 
 
 # ---------------------------------------------------------------------------
+# scaffolding_rule — fixtures go, scaffolding stays (KOD-1308)
+# ---------------------------------------------------------------------------
+
+#: The members the rule is composed into: the two intake passes and the run's
+#: own groom and prep session (they write criteria), the implementer (it
+#: builds on them), the two changeset graders (they judge each whole-file
+#: deletion) and the supervisor (it reports a pushed deletion of scaffolding).
+SCAFFOLDING_CARRIERS = frozenset(
+    {
+        PromptKey.FIRE_PREP_PASS.value,
+        PromptKey.GROOMING_PASS.value,
+        PromptKey.ORGANIZE_SESSION.value,
+        PromptKey.IMPLEMENTATION.value,
+        PromptKey.EVALUATION.value,
+        PromptKey.POST_MERGE_REVIEW.value,
+        PromptKey.SUPERVISOR_PASS.value,
+    },
+)
+
+#: The rule, whole, as the owner ruled it on 2026-09-30.
+SCAFFOLDING_RULE = (
+    "Fixtures and scaffolding. A fixture, and code whose only purpose is to"
+    " read one, goes when the real source arrives. Code a planned feature"
+    " will use — a schema, a port, an operation, a handler, a component, a"
+    " page — is unwired, never deleted: it stays exported, with no route,"
+    " wiring, navigation entry or fixture behind it, and the feature is named"
+    " on the board. Which a thing is, is your judgment each time, from what"
+    " the code does and what the board plans. A criterion never says delete"
+    " such code: it says unwired and names the feature, and an open criterion"
+    " that says delete where the code is scaffolding is rewritten so, with a"
+    " fields-only edit and a comment. Building on a criterion that still says"
+    " delete, unwire instead and say so in your evidence. Every whole-file"
+    " deletion in a change is judged as a fixture or scaffolding: scaffolding"
+    " deleted fails the criterion the change was made for, naming the feature"
+    " that will need it, and a pushed change that deleted scaffolding is"
+    " reported."
+)
+
+
+def test_the_scaffolding_rule_reads_whole() -> None:
+    """Six sentences, one source, no list of files or words: the judgment stays
+    the session's."""
+    assert prose(fragment("scaffolding_rule")) == SCAFFOLDING_RULE
+    assert fragment("scaffolding_rule").count("\n") == 5
+
+
+def test_the_scaffolding_rule_is_declared_once() -> None:
+    """The manifest states it; no member file carries any of its sentences."""
+    manifest = prose(SET_TOML.read_text(encoding="utf-8"))
+    assert manifest.count(SCAFFOLDING_RULE) == 1
+    for sentence in fragment("scaffolding_rule").splitlines():
+        assert member_files_carrying(sentence) == []
+
+
+def test_the_scaffolding_rule_resolves_into_exactly_its_carriers() -> None:
+    """Criterion writers, the builder, both graders and the supervisor, once each."""
+    rule = fragment("scaffolding_rule")
+    bodies = v5_bodies()
+    consumers = {key for key, body in bodies.items() if rule in body}
+    assert consumers == SCAFFOLDING_CARRIERS
+    for key in SCAFFOLDING_CARRIERS:
+        assert bodies[key].count(rule) == 1
+
+
+#: Where the slot stands: bare in the four board passes, which write and
+#: judge criteria for every unit; inside the scope block for the implementer
+#: and the two graders, beside the delivery standard and the draft rule, so a
+#: per-issue fire renders the bytes the goldens' base of record holds (KOD-416)
+#: and the v0.2 path stays as it was.
+SCAFFOLDING_SCOPE_ONLY = frozenset(
+    {
+        PromptKey.IMPLEMENTATION.value,
+        PromptKey.EVALUATION.value,
+        PromptKey.POST_MERGE_REVIEW.value,
+    },
+)
+
+
+@pytest.mark.parametrize("key", sorted(SCAFFOLDING_CARRIERS))
+def test_the_scaffolding_slot_stands_where_its_carrier_needs_it(key: str) -> None:
+    """One slot per carrier; in the scope block for the three the goldens freeze,
+    bare everywhere else."""
+    body = (SET_TOML.parent / f"{key}.md").read_text("utf-8")
+    assert body.count("{{scaffolding_rule}}") == 1
+    before = body[: body.index("{{scaffolding_rule}}")]
+    open_blocks = before.count("{{#if") - before.count("{{/if}}")
+    assert open_blocks == (1 if key in SCAFFOLDING_SCOPE_ONLY else 0), key
+
+
+@pytest.mark.parametrize(
+    ("key", "case"),
+    [
+        (PromptKey.IMPLEMENTATION, "implementation"),
+        (PromptKey.EVALUATION, "evaluation"),
+        (PromptKey.POST_MERGE_REVIEW, "post_merge_review"),
+    ],
+    ids=lambda value: value.value if isinstance(value, PromptKey) else value,
+)
+@pytest.mark.parametrize(
+    "kind", SCOPES, ids=lambda kind: "per-issue" if kind is None else kind.value
+)
+def test_the_scaffolding_rule_reaches_a_scope_run_and_never_a_per_issue_fire(
+    key: PromptKey, case: str, kind: ScopeKind | None
+) -> None:
+    """Rendered: in every scope kind's implementer and grader prompt, once; in no
+    per-issue render, whose bytes the goldens' base of record holds."""
+    rule = prose(fragment("scaffolding_rule"))
+    rendered = prose(render_in_scope(key, case, kind))
+    assert rendered.count(rule) == (0 if kind is None else 1)
+
+
+# ---------------------------------------------------------------------------
 # house_rules — in no body, delivered as the system-prompt append
 # ---------------------------------------------------------------------------
 

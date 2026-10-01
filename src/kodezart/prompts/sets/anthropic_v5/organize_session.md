@@ -8,6 +8,7 @@ Work every issue below it against the rubric below.
 Size for quick wins: a member is something that can be finished and shipped soon and shows progress when it lands. Split one that is larger, and never finer than one coherent change that is useful on its own. A rare or improbable edge case found along the way is its own backlog issue for cleanup, not added scope on the member being organized.
 
 {{delivery_units}}
+{{scaffolding_rule}}
 
 A body's "Open question for the fire to rule on before it starts" is the fire's own question: the fire answers it when it starts, so it is never an open human choice and never a reason to escalate.
 
