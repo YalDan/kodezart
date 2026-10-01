@@ -315,9 +315,13 @@ def approving_board() -> FakeTrackerPort:
 
     The container as well as the label, because the approval question reads
     a node's labels AND its parent edge: a board holding the label and no
-    container answers a question no workspace answers.
+    container answers a question no workspace answers. And one open member,
+    because the heartbeat submits only a scope with open work on the board
+    (KOD-1302): an approved project holding nothing is finished, not due.
     """
     return FakeTrackerPort(
+        issues=[make_tracker_issue("STANDING-1")],
+        scope_memberships={STANDING_SCOPE: ["STANDING-1"]},
         scope_containers=[
             ScopeContainer(
                 ref=STANDING_SCOPE,
@@ -518,6 +522,57 @@ async def test_the_boot_tick_asks_no_gate_and_the_next_tick_does(
         )
     )
     assert runner.calls[1]["session_type"] is SessionType.SCHEDULED_PASS
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        PromptKey.FIRE_PREP_PASS.value,
+        PromptKey.GROOMING_PASS.value,
+        PromptKey.SUPERVISOR_PASS.value,
+    ],
+)
+def test_the_gate_wakes_on_merges_and_on_triage_that_moved(name: str) -> None:
+    """The gate's window (KOD-1305 item 5, KOD-1287): fire-prep counts a
+    triage item as work only when it has no open blocker (the owner's rule of
+    2026-09-29, mirroring the pass's frontier rule), a blocked one only when a
+    blocker or its pull request moved, lists the discounted ones, and always
+    counts what the last record row left untaken (KOD-1285); a principal's
+    merge or close wakes the passes that act on pull requests. Each clause
+    renders exactly once for every pass."""
+    prompts = load_registry(
+        default_set=V5_SET, bindings=dict(bindings_for(example_config()))
+    )
+    gate = prompts.template_for(PromptKey.PASS_GATE).render(
+        gate_render_bindings(name=name, window_start=FIXTURE_EPOCH)
+    )
+    assert "{{" not in gate
+    assert (
+        gate.count(
+            "items with no open blocker (a blocked-by relation to an issue not yet"
+            " closed, re-read every tick), which the frontier rule inside the pass"
+            " routes; a blocked one is work only when a blocker or its pull request"
+            " moved in the window; list the discounted items with their blockers in"
+            " your answer so a person sees them, and an item the last record row of"
+            " this pass names as left for the next tick is work;"
+        )
+        == 1
+    )
+    assert "created or updated in the window, or whose blocking" not in gate
+    assert (
+        gate.count(
+            "and on any pull request on the declared repositories merged or"
+            " closed in the window;"
+        )
+        == 1
+    )
+    assert (
+        gate.count(
+            "the review threads of the declared repositories, and their pull"
+            " requests merged or closed in the window."
+        )
+        == 1
+    )
 
 
 async def test_the_boot_seam_registers_the_prompt_passes(tmp_path: Path) -> None:
@@ -1922,4 +1977,41 @@ def test_the_supervisor_pass_renders_as_the_one_supervisor(prompt_set: str) -> N
     assert (
         "The supervisor pass's own record rows and finding comments are not the"
         " account's work" in rendered
+    )
+    # The pass stays read-only (KOD-1290), and it judges the graph (KOD-1305):
+    # every pull request sits where the blocking edges put it, and no stack
+    # is ever rewritten. Each sentence exactly once. The graph rules are the
+    # served set's; the older set carries the read-only sentence alone.
+    assert (
+        rendered.count(
+            "You edit nothing, you rule on nothing, you never fire and you never"
+            " approve."
+        )
+        == 1
+    )
+    if prompt_set != V5_SET:
+        return
+    assert rendered.count("- A pull request sits where the graph puts it.") == 1
+    assert rendered.count("- A stack is never rewritten.") == 1
+    assert (
+        rendered.count(
+            "and a merge into anything but the trunk or ahead of a blocker's"
+            " request are each a finding."
+        )
+        == 1
+    )
+    assert (
+        rendered.count(
+            "A rebase or force-push by the account of a branch that an open pull"
+            " request or a union builds on is a finding of the first rank;"
+        )
+        == 1
+    )
+    assert (
+        "a squash merge of such a branch is a finding for the run of each request"
+        " above it, naming the merge it must take." in rendered
+    )
+    assert (
+        "read every pull request merged on the declared repositories in the"
+        " window, with the way it was merged." in rendered
     )

@@ -26,6 +26,11 @@ it stops returning at all.
 A tick that RAN and a tick its gate skipped are the fourth distinction,
 and the pass itself is what draws it: the run record obligation belongs to
 runs, and a skipped tick is not one.
+
+The budget bounds the pass's own work and nothing else.  A provider rate
+limit waited out inside the pass is the provider's time, so the budget is
+published for the tick (``tick_budget``) and the wait moves its deadline
+out by exactly the time it sleeps (KOD-1303).
 """
 
 import asyncio
@@ -36,6 +41,7 @@ from datetime import UTC, datetime
 from kodezart.core.logging import get_logger
 from kodezart.core.protocols import LogEmitter
 from kodezart.services.run_recorder import report_record_failure
+from kodezart.services.tick_budget import running_tick
 from kodezart.types.domain.dispatch import PassRun
 from kodezart.types.domain.run_records import RunOutcome
 
@@ -175,7 +181,8 @@ class PassScheduler:
         budget = asyncio.timeout(entry.timeout_seconds)
         try:
             async with budget:
-                ran = await entry.run(started_at)
+                with running_tick(budget):
+                    ran = await entry.run(started_at)
         except asyncio.CancelledError:
             raise
         except Exception as exc:

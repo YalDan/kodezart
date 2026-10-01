@@ -28,6 +28,7 @@ from kodezart.types.domain.tracker import (
 from tests.fakes import FakeLinearMcpServer, FakeMcpIssue, FakeTrackerPort
 from tests.tracker.conftest import (
     FIXTURE_NOW,
+    ISSUE_LABELS,
     TRACKER_ADAPTERS,
     TRACKER_IMPLEMENTATIONS,
     FixtureClock,
@@ -44,13 +45,23 @@ OTHER_PROJECT = "project-two"
 EMPTY_PROJECT = ScopeRef(kind=ScopeKind.PROJECT, key="empty-project")
 EMPTY_INITIATIVE = ScopeRef(kind=ScopeKind.INITIATIVE, key="empty-initiative")
 PAGE_SIZE = 2
+#: The connected server's listing cut: this many characters, then the marker.
+LISTING_BODY_CHARS = 449
+LISTING_CUT_MARKER = "… (truncated, use `get_issue` for full description)"
+
+
+def _listed_body(description: object) -> object:
+    if not isinstance(description, str) or len(description) <= LISTING_BODY_CHARS:
+        return description
+    return description[:LISTING_BODY_CHARS] + LISTING_CUT_MARKER
 
 
 @dataclass
 class ScopeMcpIssue(FakeMcpIssue):
     """Membership fields observed on issue listings, absent from the old fake."""
 
-    project_key: str = PROJECT.key
+    #: ``None`` for an issue in no project, as a minted criterion is.
+    project_key: str | None = PROJECT.key
     milestone_key: str | None = MILESTONE.key
 
     def entry(self) -> dict[str, object]:
@@ -198,10 +209,15 @@ class ScopeMcpServer(FakeLinearMcpServer):
             rows = [row for row in rows if row["projectId"] == arguments["project"]]
         if "parentId" in arguments:
             rows = [row for row in rows if row["parentId"] == arguments["parentId"]]
-        # Lists may abbreviate descriptions and never report relations.
+        if "team" in arguments:
+            rows = [row for row in rows if row["team"] == arguments["team"]]
+        if "label" in arguments:
+            rows = [row for row in rows if arguments["label"] in row["labels"]]
+        # Lists cut a long description as the connected server does, and
+        # never report relations.
         return self._page(
             "issues",
-            [{**row, "description": "truncated list body"} for row in rows],
+            [{**row, "description": _listed_body(row["description"])} for row in rows],
             arguments,
         )
 
@@ -784,3 +800,172 @@ async def test_linear_container_metadata_refuses_a_parent_cycle(ref: ScopeRef) -
         await linear_over_fake_mcp(server).container_metadata(ref=ref)
 
     assert caught.value.ref == ref
+
+
+async def _paged_keys(tracker: TrackerPort, ref: ScopeRef) -> list[list[str]]:
+    return [
+        [issue.issue_key for issue in page]
+        async for page in tracker.scope_member_pages(ref=ref)
+    ]
+
+
+@pytest.mark.parametrize(
+    ("ref", "expected"),
+    [
+        (ROOT, {"FIX-2", "FIX-3"}),
+        (PROJECT, {ROOT.key, "FIX-2", "FIX-4"}),
+        (MILESTONE, {ROOT.key, "FIX-2"}),
+        (INITIATIVE, {ROOT.key, "FIX-2", "FIX-3", "FIX-4", "FIX-5"}),
+        (EMPTY_PROJECT, set()),
+        (EMPTY_INITIATIVE, set()),
+    ],
+)
+async def test_member_pages_hold_every_issue_below_the_scope_but_the_issue_itself(
+    scope_fixture: ScopeFixture, ref: ScopeRef, expected: set[str]
+) -> None:
+    pages = await _paged_keys(scope_fixture.tracker, ref)
+
+    keys = [key for page in pages for key in page]
+    assert set(keys) == expected
+    assert len(keys) == len(expected)
+
+
+@pytest.mark.parametrize("ref", [PROJECT, INITIATIVE])
+async def test_linear_member_pages_follow_the_cursor_and_hydrate_no_member(
+    ref: ScopeRef,
+) -> None:
+    """A thousand members cost their listing pages, not a read each (KOD-1288)."""
+    server = ScopeMcpServer()
+
+    pages = await _paged_keys(linear_over_fake_mcp(server), ref)
+
+    assert len(pages) > 1
+    assert all(len(page) <= PAGE_SIZE for page in pages)
+    listings = server.tool_calls("list_issues")
+    assert any("cursor" in args for args in listings)
+    assert all(args["limit"] == 250 for args in listings)
+    assert not any("includeArchived" in args for args in listings)
+    assert server.tool_calls("get_issue") == []
+
+
+async def test_linear_issue_member_pages_read_only_the_root_whole() -> None:
+    server = ScopeMcpServer()
+
+    pages = await _paged_keys(linear_over_fake_mcp(server), ROOT)
+
+    assert pages == [["FIX-2"], ["FIX-3"], []]
+    assert [args["id"] for args in server.tool_calls("get_issue")] == [ROOT.key]
+
+
+async def test_linear_member_pages_refuse_a_cursor_that_does_not_advance() -> None:
+    server = ScopeMcpServer()
+    server.repeat_cursor = True
+
+    with pytest.raises(TrackerProtocolError) as caught:
+        await _paged_keys(linear_over_fake_mcp(server), PROJECT)
+
+    assert caught.value.tool == "list_issues"
+
+
+def _criterion(key: str, *, parent: str, description: str = "") -> ScopeMcpIssue:
+    """A minted criterion: labelled, below its parent, in no project."""
+    return ScopeMcpIssue(
+        id=key,
+        parent_id=parent,
+        labels=[ISSUE_LABELS["criterion"]],
+        project_key=None,
+        milestone_key=None,
+        description=description,
+    )
+
+
+def _with_criteria(server: ScopeMcpServer) -> ScopeMcpServer:
+    for issue in (
+        _criterion("FIX-6", parent=ROOT.key),
+        _criterion("FIX-7", parent="FOREIGN-ROOT"),
+    ):
+        server.issues[issue.id] = issue
+    return server
+
+
+@pytest.mark.parametrize(
+    ("ref", "expected"),
+    [
+        (PROJECT, ["FIX-6"]),
+        (MILESTONE, ["FIX-6"]),
+        (INITIATIVE, ["FIX-6"]),
+    ],
+)
+async def test_linear_container_pages_reach_the_criteria_below_their_members(
+    ref: ScopeRef, expected: list[str]
+) -> None:
+    """A criterion has no project: the container listing alone misses it (KOD-1288)."""
+    server = _with_criteria(ScopeMcpServer())
+
+    pages = await _paged_keys(linear_over_fake_mcp(server), ref)
+
+    keys = [key for page in pages for key in page]
+    assert [
+        key for key in keys if key.startswith("FIX-6") or key == "FIX-7"
+    ] == expected
+    assert keys.count("FIX-6") == 1
+    labelled = [args for args in server.tool_calls("list_issues") if "label" in args]
+    assert [(args["team"], args["label"]) for args in labelled] == [
+        ("fixture-team", ISSUE_LABELS["criterion"])
+    ]
+    assert server.tool_calls("get_issue") == []
+
+
+async def test_linear_container_pages_hold_a_member_criterion_once() -> None:
+    """A labelled criterion filed into the project is listed twice and kept once."""
+    server = _with_criteria(ScopeMcpServer())
+    server.issues["FIX-9"] = ScopeMcpIssue(
+        id="FIX-9",
+        parent_id=ROOT.key,
+        labels=[ISSUE_LABELS["criterion"]],
+        project_key=PROJECT.key,
+        milestone_key=None,
+    )
+
+    pages = await _paged_keys(linear_over_fake_mcp(server), PROJECT)
+
+    keys = [key for page in pages for key in page]
+    assert keys.count("FIX-9") == 1
+    assert keys.count("FIX-6") == 1
+    assert len(keys) == len(set(keys))
+
+
+async def test_linear_issue_pages_reach_their_criteria_by_parent_alone() -> None:
+    server = _with_criteria(ScopeMcpServer())
+
+    pages = await _paged_keys(linear_over_fake_mcp(server), ROOT)
+
+    assert [key for page in pages for key in page] == ["FIX-2", "FIX-6", "FIX-3"]
+    assert not any("label" in args for args in server.tool_calls("list_issues"))
+
+
+async def _bodies(
+    tracker: TrackerPort, ref: ScopeRef, *, whole_bodies: bool
+) -> dict[str, str]:
+    return {
+        issue.issue_key: issue.body
+        async for page in tracker.scope_member_pages(ref=ref, whole_bodies=whole_bodies)
+        for issue in page
+    }
+
+
+async def test_linear_whole_bodies_read_only_the_rows_the_listing_cut() -> None:
+    """A Check the listing cut is not the board's; the cut rows alone are read whole."""
+    server = ScopeMcpServer()
+    long_body = "Check: " + "x" * (LISTING_BODY_CHARS + 40)
+    server.issues["FIX-6"] = _criterion("FIX-6", parent=ROOT.key, description=long_body)
+    server.issues["FIX-8"] = _criterion("FIX-8", parent=ROOT.key, description="short")
+
+    listed = await _bodies(linear_over_fake_mcp(server), PROJECT, whole_bodies=False)
+    assert listed["FIX-6"].endswith(LISTING_CUT_MARKER)
+    assert server.tool_calls("get_issue") == []
+
+    whole = await _bodies(linear_over_fake_mcp(server), PROJECT, whole_bodies=True)
+    assert whole["FIX-6"] == long_body
+    assert whole["FIX-8"] == "short"
+    assert [args["id"] for args in server.tool_calls("get_issue")] == ["FIX-6"]

@@ -17,7 +17,7 @@
   "tests/adapters/test_git_change_persister.py": 71,
   "tests/adapters/test_git_ref_publisher.py": 7,
   "tests/adapters/test_git_worktree_provider.py": 22,
-  "tests/adapters/test_github_api.py": 131,
+  "tests/adapters/test_github_api.py": 141,
   "tests/adapters/test_host_mcp_opt_in.py": 28,
   "tests/adapters/test_host_skill_inventory.py": 20,
   "tests/adapters/test_hosted_mcp_session.py": 13,
@@ -63,11 +63,11 @@
   "tests/chains/test_criteria_validation.py": 116,
   "tests/chains/test_delivery_coordinator.py": 50,
   "tests/chains/test_dispatch_definitions.py": 15,
-  "tests/chains/test_fire_extraction.py": 35,
+  "tests/chains/test_fire_extraction.py": 40,
   "tests/chains/test_fire_graph.py": 146,
   "tests/chains/test_fire_spec_prompt_consumers.py": 17,
   "tests/chains/test_fresh_write_back_judge.py": 11,
-  "tests/chains/test_lane_delivery.py": 81,
+  "tests/chains/test_lane_delivery.py": 93,
   "tests/chains/test_lane_state_loop.py": 361,
   "tests/chains/test_m4_local_sdk_independent.py": 18,
   "tests/chains/test_m4_native_extension_independent.py": 2,
@@ -86,6 +86,7 @@
   "tests/chains/test_node_session_events.py": 24,
   "tests/chains/test_organize.py": 47,
   "tests/chains/test_outbound_gating.py": 24,
+  "tests/chains/test_pr_draft_flag.py": 29,
   "tests/chains/test_ralph_loop.py": 180,
   "tests/chains/test_ralph_workflow.py": 364,
   "tests/chains/test_remediation.py": 19,
@@ -298,12 +299,12 @@
   "tests/prompts/test_supervision_adoption.py": 20,
   "tests/prompts/test_supervision_block_adoption.py": 30,
   "tests/prompts/test_v5_board_hierarchy.py": 31,
-  "tests/prompts/test_v5_fragments.py": 56,
+  "tests/prompts/test_v5_fragments.py": 71,
   "tests/prompts/test_v5_lenses.py": 6,
   "tests/prompts/test_v5_orchestration.py": 23,
   "tests/prompts/test_v5_style_rules.py": 13,
   "tests/prompts/test_v5_wiring.py": 23,
-  "tests/services/test_agent_service.py": 5,
+  "tests/services/test_agent_service.py": 7,
   "tests/services/test_amendment_interrupted_writes.py": 17,
   "tests/services/test_applied_native_amendments.py": 288,
   "tests/services/test_assertion_drift.py": 30,
@@ -342,7 +343,7 @@
   "tests/services/test_parent_rollup_authority.py": 4,
   "tests/services/test_pass_delta_cancellation.py": 14,
   "tests/services/test_pass_gate.py": 91,
-  "tests/services/test_pass_scheduler.py": 87,
+  "tests/services/test_pass_scheduler.py": 99,
   "tests/services/test_prompt_pass.py": 120,
   "tests/services/test_prompt_passes.py": 140,
   "tests/services/test_rate_limit_backoff.py": 44,
@@ -352,6 +353,7 @@
   "tests/services/test_scope_classification_static.py": 13,
   "tests/services/test_scope_dispatcher.py": 147,
   "tests/services/test_scope_entry.py": 14,
+  "tests/services/test_scope_heartbeat.py": 18,
   "tests/services/test_scope_planning.py": 17,
   "tests/services/test_scope_resolution.py": 7,
   "tests/services/test_scope_terminal.py": 84,
@@ -379,7 +381,7 @@
   "tests/test_graded_sha_trap.py": 48,
   "tests/test_issue_state_write_sites.py": 32,
   "tests/test_lane_verification.py": 15,
-  "tests/test_lifespan_cleanup.py": 69,
+  "tests/test_lifespan_cleanup.py": 74,
   "tests/test_mandate_dispatch_sites.py": 9,
   "tests/test_name_resolution.py": 68,
   "tests/test_organize_definition_sites.py": 7,
@@ -741,6 +743,10 @@
   ],
   "tests/adapters/test_github_api.py": [
    "test_create_pr_success",
+   "test_create_pr_opens_a_draft",
+   "test_mark_ready_for_review_reads_the_node_id_then_mutates",
+   "test_mark_ready_for_review_refuses_a_request_left_in_draft",
+   "test_mark_ready_for_review_treats_a_graphql_error_as_a_forge_failure",
    "test_create_pr_http_error",
    "test_comment_on_pr_success",
    "test_retries_on_429_then_succeeds",
@@ -1537,6 +1543,9 @@
   ],
   "tests/chains/test_lane_delivery.py": [
    "test_green_opens_on_actual_head_and_resolved_base_and_round_trips",
+   "test_a_green_lane_opens_a_draft_and_marks_it_ready",
+   "test_an_unfinished_lane_keeps_its_pull_request_a_draft",
+   "test_a_refused_readiness_flip_is_logged_and_the_lane_still_delivers",
    "test_missing_or_changed_remote_head_refuses_before_pr",
    "test_missing_resolved_base_never_falls_back_to_trunk",
    "test_open_pr_replay_reuses_native_head_lookup_without_generation",
@@ -1811,6 +1820,16 @@
    "test_writer_matrix_over_every_visibility",
    "test_blocked_write_fails_loudly_and_posts_nothing",
    "test_private_target_sees_no_behavioral_change_beyond_the_events"
+  ],
+  "tests/chains/test_pr_draft_flag.py": [
+   "test_an_accepted_run_with_green_checks_marks_its_pull_request_ready",
+   "test_a_stalled_run_opens_a_draft_and_never_marks_it_ready",
+   "test_red_checks_leave_the_pull_request_a_draft",
+   "test_unmonitored_checks_leave_the_pull_request_a_draft",
+   "test_a_forge_refusal_of_the_flip_is_logged_and_the_run_still_completes",
+   "test_a_finished_scope_run_marks_every_repository_s_pull_request_ready",
+   "test_the_flip_addresses_the_repository_the_request_was_opened_in",
+   "test_a_refused_flip_in_one_repository_still_flips_the_other"
   ],
   "tests/chains/test_ralph_loop.py": [
    "test_loop_single_iteration_accepted",
@@ -4477,7 +4496,17 @@
    "test_utility_templates_carry_no_depth_instruction",
    "test_every_judgment_template_ends_with_the_depth_block",
    "test_the_depth_block_is_declared_once_and_carried_by_no_member_file",
-   "test_the_ultracode_token_is_declared_and_used_by_no_member"
+   "test_the_ultracode_token_is_declared_and_used_by_no_member",
+   "test_the_neighbour_review_is_declared_exactly_once",
+   "test_the_neighbour_review_reads_whole",
+   "test_the_neighbour_review_resolves_into_the_graders_and_the_implementer",
+   "test_each_grader_renders_the_lens_once",
+   "test_the_rendered_evaluator_finds_the_schema_logic_sentence_once",
+   "test_every_scope_kind_carries_the_relocation_rule_and_the_lens",
+   "test_each_grader_keeps_the_lens_slot_bare_and_ahead_of_its_data_blocks",
+   "test_the_implementer_keeps_both_rules_and_the_slot_bare_in_the_scope_block",
+   "test_each_grader_renders_the_lens_for_tracker_criteria",
+   "test_a_per_issue_implementer_carries_neither_rule_nor_the_lens"
   ],
   "tests/prompts/test_v5_lenses.py": [
    "test_the_set_declares_exactly_the_three_lenses",
@@ -4526,7 +4555,8 @@
    "test_stream_workflow_persists_changes",
    "test_stream_passes_output_format",
    "test_stream_propagates_executor_error",
-   "test_authored_persistence_failure_keeps_workspace_cleanup"
+   "test_authored_persistence_failure_keeps_workspace_cleanup",
+   "test_a_session_over_several_repositories_leaves_no_directory_behind"
   ],
   "tests/services/test_amendment_interrupted_writes.py": [
    "test_interrupted_amendment_preserves_history_across_fresh_reentry"
@@ -5152,7 +5182,11 @@
    "test_a_report_hop_that_breaks_otherwise_is_named_apart",
    "test_a_pass_without_a_report_records_nowhere_by_design",
    "test_a_gate_skipped_tick_writes_no_run_record_and_names_the_skip",
-   "test_a_real_run_beside_a_skipped_tick_still_records_its_row"
+   "test_a_real_run_beside_a_skipped_tick_still_records_its_row",
+   "test_a_provider_wait_longer_than_the_budget_does_not_time_the_tick_out",
+   "test_the_budget_still_bounds_the_work_around_a_provider_wait",
+   "test_a_pass_that_meets_no_limit_keeps_the_budget_it_was_given",
+   "test_a_provider_wait_outside_any_tick_moves_no_deadline"
   ],
   "tests/services/test_prompt_pass.py": [
    "test_the_grooming_prompt_composes_through_the_registry",
@@ -5346,6 +5380,13 @@
    "test_a_run_the_registry_does_not_hold_yields_to_any_live_one",
    "test_a_terminal_job_over_the_scope_does_not_refuse",
    "test_an_operation_missing_a_scope_plan_label_is_refused_before_delivery"
+  ],
+  "tests/services/test_scope_heartbeat.py": [
+   "test_an_approved_scope_with_open_work_is_submitted",
+   "test_an_approved_scope_whose_members_are_all_closed_is_rejected",
+   "test_an_approved_scope_with_no_member_at_all_is_rejected",
+   "test_a_scope_the_board_does_not_approve_is_rejected",
+   "test_a_rejected_node_does_not_stop_the_next_one"
   ],
   "tests/services/test_scope_planning.py": [
    "test_an_offending_key_under_a_deliverable_child_refuses_the_plan",
@@ -5843,7 +5884,8 @@
    "test_actual_lifespan_forwards_logging_choices",
    "test_actual_lifespan_forwards_git_section_and_resolves_shorthand",
    "test_actual_lifespan_agent_settings_reach_native_session",
-   "test_actual_lifespan_tracker_section_reaches_native_boot_and_recorder"
+   "test_actual_lifespan_tracker_section_reaches_native_boot_and_recorder",
+   "test_shutdown_does_not_wait_on_removing_a_cancelled_sessions_directory"
   ],
   "tests/test_mandate_dispatch_sites.py": [
    "test_the_sources_dispatch_on_a_mandate_kind_at_the_phase_table_alone",

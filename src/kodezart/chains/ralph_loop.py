@@ -63,11 +63,7 @@ from kodezart.domain.thread_id import ralph_thread_id
 from kodezart.domain.trajectory import fold_trajectory
 from kodezart.services.audit_sessions import judge_in_workspace
 from kodezart.services.evaluator_rulings import EvaluatorRulingWriter
-from kodezart.services.gained_commits import (
-    folded,
-    gained_commits,
-    scope_repositories,
-)
+from kodezart.services.gained_commits import scope_repositories
 from kodezart.services.git_observations import read_workspace_head
 from kodezart.services.mutation_survival import MutationSurvivalReader
 from kodezart.services.native_amendments import NativeAmendments
@@ -127,6 +123,17 @@ from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.subagents import NO_SUBAGENTS
 from kodezart.types.domain.trajectory import IterationRecord
 from kodezart.types.domain.workflow import RalphLoopContext, RalphLoopState
+
+
+def _session_kind(scope: ScopeRef | None) -> SessionType:
+    """The session kind the loop's implementer and grader both open as.
+
+    A scope run's implementer keeps the board current as it works, and its
+    grader reads each unit's pull request on the tracker, so on a scope run
+    both run as the board session kind, which carries the tracker.  Any
+    other run's sessions are fires.
+    """
+    return SessionType.ORGANIZE_PASS if scope is not None else SessionType.TICKET_FIRE
 
 
 class RalphLoop:
@@ -446,13 +453,7 @@ class RalphLoop:
             permission_mode=ctx.permission_mode,
             allowed_tools=ctx.allowed_tools,
             skills=self._prompts.session_skills(PromptKey.IMPLEMENTATION, self._skills),
-            # A scope run's implementer keeps the board current as it works,
-            # so it runs as the board session kind, which carries the tracker.
-            session_type=(
-                SessionType.ORGANIZE_PASS
-                if ctx.scope is not None
-                else SessionType.TICKET_FIRE
-            ),
+            session_type=_session_kind(ctx.scope),
             run_identity=ctx.run_identity,
             session_policy=self._prompts.session_policy(PromptKey.IMPLEMENTATION),
             visibility=ctx.repo_visibility,
@@ -623,20 +624,14 @@ class RalphLoop:
             else None
         )
         evaluation_ref = native_ref if native_ref is not None else ctx.ralph_branch
-        # A scope run reads what the loop branch holds in every repository
-        # it committed in, each against that repository's own trunk.
         repositories = scope_repositories(ctx.scope, self._repositories)
+        # A scope run's grader works at each unit's pull-request head, which
+        # its prompt tells it to fetch, so the loop branch's changeset is
+        # neither read nor shown to it: that branch holds none of the units'
+        # work.
         changeset = (
-            folded(
-                await gained_commits(
-                    git=self._git,
-                    cache=self._cache,
-                    repositories=repositories,
-                    branch=ctx.ralph_branch,
-                    cache_key=ctx.cache_key,
-                )
-            )
-            if repositories
+            None
+            if ctx.scope is not None
             else await self._git.diff_summary(
                 cwd=cwd,
                 base_ref=ctx.base_branch,
@@ -743,7 +738,7 @@ class RalphLoop:
             eval_prompt = self._prompts.template_for(PromptKey.EVALUATION).render(
                 {
                     **execution_criteria_variables(for_session),
-                    **changeset_variables(changeset),
+                    **({} if changeset is None else changeset_variables(changeset)),
                     **({} if ctx.scope is None else scope_variables(ctx.scope)),
                 },
             )
@@ -780,6 +775,7 @@ class RalphLoop:
                 )
             skills = self._prompts.session_skills(PromptKey.EVALUATION, self._skills)
             policy = self._prompts.session_policy(PromptKey.EVALUATION)
+            session_type = _session_kind(ctx.scope)
             observe = None if observer is None else observer.observe
             # What the observer saw open is put on the lane's stream whether
             # the drain returned or raised: a drain that opened sessions and
@@ -803,7 +799,7 @@ class RalphLoop:
                             ),
                             allowed_tools=ToolPreset.EVALUATION,
                             skills=skills,
-                            session_type=SessionType.TICKET_FIRE,
+                            session_type=session_type,
                             run_identity=ctx.run_identity,
                             # Evaluative: no lens is dispatched from here. Asking a
                             # template not to fan out is a request; an empty
@@ -839,7 +835,7 @@ class RalphLoop:
                                 permission_mode=EVAL_PERMISSION_MODE,
                                 allowed_tools=ToolPreset.EVALUATION,
                                 skills=skills,
-                                session_type=SessionType.TICKET_FIRE,
+                                session_type=session_type,
                                 run_identity=ctx.run_identity,
                                 agents=NO_SUBAGENTS,
                                 session_policy=policy,

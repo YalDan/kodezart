@@ -43,6 +43,7 @@ from kodezart.domain.gap import (
     state_membership,
 )
 from kodezart.domain.issue_tree import SubtreeClosure
+from kodezart.domain.scope_submission import open_work_count
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.agent import AgentEvent, ResultEvent
 from kodezart.types.domain.gap import CriterionGap, GapMembership
@@ -254,13 +255,16 @@ GAP_COMPUTATION_MODULES = frozenset(
         "chains/ralph_loop.py",
         "chains/ralph_workflow.py",
         "chains/remediation.py",
+        "chains/scope_stages.py",
         "chains/scope_walker.py",
         "composition/audit.py",
         "composition/delivery.py",
         "composition/engine.py",
+        "composition/organize.py",
         "composition/passes.py",
         "domain/gap.py",
         "domain/issue_tree.py",
+        "domain/scope_submission.py",
         "main.py",
         "services/audit_runtime.py",
         "services/audit_terminal.py",
@@ -268,6 +272,8 @@ GAP_COMPUTATION_MODULES = frozenset(
         "services/mandate_graph.py",
         "services/run_shape.py",
         "services/scope_dispatcher.py",
+        "services/scope_entry.py",
+        "services/scope_heartbeat.py",
     }
 )
 #: Every module of the tree that spells the change stamp, and the reason it
@@ -1090,15 +1096,15 @@ def arithmetic_outcome(entry, arguments, records):
 
     A record answered by its key is read at the position of the record
     carrying that key; a gap read is read as its two halves, the owed records
-    and the keys set aside beside them; a truth value, a membership and
-    ``None`` are read as themselves; a subtree read refuses as a scope
+    and the keys set aside beside them; a truth value, a count, a membership
+    and ``None`` are read as themselves; a subtree read refuses as a scope
     read error.
     """
     try:
         answer = entry(**arguments)
     except (ValueError, ScopeReadError) as refusal:
         return ("refused", str(refusal))
-    if isinstance(answer, bool | str) or answer is None:
+    if isinstance(answer, bool | int | str) or answer is None:
         return ("answered", answer)
 
     def positions(items):
@@ -1274,6 +1280,9 @@ def call_site_cases(stamp):
     over open and completed criteria, over a subject with no criterion, over
     a criterion of every state kind, and over canceled and duplicate criteria
     alone, which are excluded on their state and named, never refused.
+    ``open_work_count``, the scope heartbeat's count, over a criterion of
+    every state kind and over open tracker records alone, which it never
+    counts.
     """
     built = iter(range(1_000))
 
@@ -1301,6 +1310,9 @@ def call_site_cases(stamp):
     excluded = tuple(each for each in kinds if each not in settled)
     subject = record(SUBJECT)
     ref = ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT)
+    records = tuple(
+        record(f"record/{copy}", issue_labels=["tracker"]) for copy in (1, 2)
+    )
 
     def closure(criteria):
         return SubtreeClosure(
@@ -1326,6 +1338,16 @@ def call_site_cases(stamp):
             scope_gap(excluded)
         ),
         "SubtreeClosure.scope_gap: every state kind": scope_gap(kinds),
+        "open_work_count: every state kind": (
+            open_work_count,
+            {"members": kinds},
+            (subject, *kinds),
+        ),
+        "open_work_count: open tracker records alone": (
+            open_work_count,
+            {"members": records},
+            records,
+        ),
     }
 
 
@@ -1349,6 +1371,8 @@ CALL_SITE_OUTCOMES = {
         "answered",
         {"owed": (1, 2, 3, 4, 5, 6, 7, 8), "excluded": (11, 12, 13, 14)},
     ),
+    "open_work_count: every state kind": ("answered", 8),
+    "open_work_count: open tracker records alone": ("answered", 0),
 }
 #: The call sites found by object that the arithmetic's fixtures cannot run,
 #: each with why; the trap does not reach them, and the call-site scan above
@@ -1366,6 +1390,10 @@ CALL_SITES_NOT_RUN = {
     "the git and forge ports.",
     ("services/run_shape.py", "read_barren_tick"): "Async; reads criteria "
     "through the tracker port.",
+    ("domain/issue_tree.py", "open_work"): "The scope-done gate's selection "
+    "over one listing page: leaves the records out and asks open_state_kind, "
+    "an entry point the trap runs, about each of the rest; it takes issues, "
+    "not criteria, so the arithmetic's fixtures do not apply (KOD-1288).",
 }
 
 
@@ -1387,11 +1415,13 @@ def test_every_call_site_the_fixtures_can_run_is_run_under_the_trap():
 
     Every call site found by object that is not an entry point the trap
     already runs is either a case of ``call_site_cases`` —
-    ``SubtreeClosure._walk`` and ``SubtreeClosure.scope_gap`` — or named in
+    ``SubtreeClosure._walk``, ``SubtreeClosure.scope_gap`` and
+    ``open_work_count`` — or named in
     ``CALL_SITES_NOT_RUN`` with why: the criteria reader's ``_finished``,
-    ``observe_ruling_growth``, ``read_barren_tick`` and the audit terminal
-    reader's ``observe``, each of which needs a tracker port, a service
-    instance or the composition's wiring.  A new call site reds here until
+    ``observe_ruling_growth``, ``read_barren_tick``, the audit terminal
+    reader's ``observe`` and the scope-done gate's ``open_work``, each of
+    which needs a tracker port, a service instance, the composition's wiring
+    or a page of issues rather than criteria.  A new call site reds here until
     it is one or the other.  Each
     case answers what it was built for over the baseline stamp.
     """

@@ -273,3 +273,37 @@ def test_issue_tree_module_imports_no_adapters_and_does_no_io():
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
     }
     assert not called & forbidden
+
+
+@pytest.mark.parametrize(
+    ("state", "labels", "owed"),
+    [
+        (WorkflowStateKind.BACKLOG, frozenset(), True),
+        (WorkflowStateKind.TRIAGE, frozenset(), True),
+        (WorkflowStateKind.UNSTARTED, frozenset(), True),
+        (WorkflowStateKind.STARTED, frozenset(), True),
+        (WorkflowStateKind.COMPLETED, frozenset(), False),
+        (WorkflowStateKind.CANCELED, frozenset(), False),
+        (WorkflowStateKind.DUPLICATE, frozenset(), False),
+        (WorkflowStateKind.STARTED, frozenset({"tracker"}), False),
+        (WorkflowStateKind.BACKLOG, frozenset({"decision"}), False),
+        (WorkflowStateKind.STARTED, frozenset({"criterion"}), True),
+    ],
+)
+def test_open_work_leaves_out_records_and_asks_the_gap_rule_about_the_rest(
+    state: WorkflowStateKind, labels: frozenset[str], owed: bool
+) -> None:
+    """A record is never work; the rest owe what the gap rule says (KOD-1288)."""
+    row = make_tracker_issue(
+        "ROW-1", state_kind=state, state_name=state.value, issue_labels=labels
+    )
+
+    assert issue_tree.open_work([row]) == ((row,) if owed else ())
+
+
+def test_open_work_keeps_the_rows_in_the_order_they_came() -> None:
+    first = make_tracker_issue("ROW-1", state_kind=WorkflowStateKind.STARTED)
+    done = make_tracker_issue("ROW-2", state_kind=WorkflowStateKind.COMPLETED)
+    second = make_tracker_issue("ROW-3", state_kind=WorkflowStateKind.BACKLOG)
+
+    assert issue_tree.open_work([second, done, first]) == (second, first)

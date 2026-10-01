@@ -9,6 +9,77 @@ concerns.
 
 ## [Unreleased]
 
+Changes that let a scope run finish, stacked on 0.3.1: they are unreleased
+because the 0.3.1 section above is dated and closed, and they become 0.3.2
+when released. No new environment name; the operation file is unchanged.
+
+### Added
+
+- The scope run's implementer, the fire-prep, grooming and supervisor
+  passes and the pull-request description share one delivery-unit standard
+  (`prompts/sets/anthropic_v5/set.toml`, `delivery_units`): one issue per
+  pull request, the blocking edges as the merge order, a unit's base derived
+  from the edges, a union branch where a unit is blocked by two or more open
+  units, and a person merging. The supervisor pass reports every pull
+  request that leaves that graph and every rewritten stack; the pass gate
+  wakes the supervisor on merges and wakes fire-prep on triage that has no
+  open blocker or was left by the last row (`prompts/sets/anthropic_v5/{pass_gate,supervisor_pass,fire_prep_pass,grooming_pass}.md`).
+- A fire-prep tick takes up at most eight problem groups and names what it
+  left in its record row; grooming posts a status update only for an
+  initiative that moved and pushes no composition branch, and never ends a
+  process by pattern (`prompts/sets/anthropic_v5/{fire_prep_pass,grooming_pass}.md`).
+- The graders and the scope implementer judge a change against its
+  neighbours beside each criterion's Check (`set.toml`, `neighbour_review`;
+  `prompts/sets/anthropic_v5/{evaluation,implementation}.md`): a new or
+  moved file is compared with its siblings, non-data under `constants/` or
+  `config/`, a move made to satisfy a lint rule, and business logic carried
+  by a schema are findings that fail the criterion.
+- Every pull request the engine opens is a draft, and the port can mark one
+  ready (`adapters/github/api.py`, `PRCreator.mark_ready_for_review`); a
+  finished unit is marked ready once its checks passed and the gate and the
+  review cleared, in every repository it opened a request in
+  (`chains/authored_delivery.py`, `chains/authored_publication.py`,
+  `chains/lane_delivery.py`, `types/domain/run_state.py`).
+- A paged read of the issues below a scope, criteria included, one listing
+  page at a time (`core/protocols.py`, `ScopeMemberPager`;
+  `adapters/linear/scope_reader.py`, `adapters/linear/tracker.py`).
+
+### Changed
+
+- A scope run's grader works at each unit's pull-request head, fetched and
+  checked out detached per unit, never on the trunk or the run's own branch;
+  no loop-branch changeset is built or bound on a scope run
+  (`chains/ralph_loop.py`, `prompts/sets/anthropic_v5/evaluation.md`). The
+  grader opens as a board session and reaches a tracker either way: the
+  deployment's own tracker server is attached when the host-MCP opt-in is on
+  but the host offers none (`adapters/mcp/mapping.py`,
+  `adapters/claude/host_mcp_servers.py`).
+- The scope-done gate answers from the board's state kinds in code, through
+  the paged read, with no prompt session: records labelled as trackers are
+  left out, the count and the first keys are reported, and prep reads each
+  Check whole (`chains/scope_stages.py`, `domain/issue_tree.py`,
+  `open_work`). The `scope_done` question role stays declared for the boot
+  render and the deployment's session-model map.
+- The scope heartbeat submits a run only for a scope that carries the
+  approval label on the board and has open work below it, counted through
+  the one state rule; an issue scope's root is found in its family, not in
+  the scan's spelling; a refused scope is logged
+  (`scope_heartbeat_scan_rejected`) (`services/scope_heartbeat.py`,
+  `domain/scope_submission.py`).
+- The pull-request description no longer ends with `Delivers:` lines on a
+  scope run (`prompts/sets/anthropic_v5/pr_description.md`).
+
+### Fixed
+
+- The server no longer hangs in shutdown after releasing its workspaces: a
+  session's parent directory is removed off the event loop
+  (`services/`, engine).
+- A pass waiting in rate-limit backoff is not charged to its tick budget,
+  so the backoff completes instead of the tick timing out and repeating
+  (`services/pass_scheduler.py`, `services/tick_budget.py`).
+- The suppression baseline records the three test declarations that had
+  vanished (`tests/negative_shape_baseline.json`).
+
 ## [0.3.1] - 2026-09-30
 
 Fixes from running v0.3 live against a real board for five days. One

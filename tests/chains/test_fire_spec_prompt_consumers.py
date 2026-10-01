@@ -323,7 +323,18 @@ SCOPE_ONLY_RULES = (
     ),
     ("implementation", "Deliverable units."),
     ("implementation", "argue against your own change"),
-    ("workflow_pr", "one per line in the form `Delivers: ABC-123`"),
+    ("implementation", "is proved there, not rebuilt"),
+    ("implementation", "commit only on unit and union branches"),
+    (
+        "implementation",
+        "never satisfy a directory rule by relocating what is not data",
+    ),
+    (
+        "implementation",
+        "you and every agent you dispatch, to build or to verify, apply the rule "
+        "above and the review below beside its Check",
+    ),
+    ("implementation", "Neighbour review, a second lens beside each criterion"),
 )
 
 

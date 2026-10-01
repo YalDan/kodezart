@@ -11,6 +11,7 @@ from pydantic import Field, model_validator
 
 from kodezart.adapters.linear.wire import (
     LinearAddressedIssueWire,
+    LinearIssueWire,
     LinearWireModel,
 )
 
@@ -65,6 +66,12 @@ class LinearScopeIssueWire(LinearScopeIdentityWire):
 
 class LinearScopeIssuesWire(LinearScopePageWire):
     issues: list[LinearScopeIssueWire]
+
+
+class LinearScopeMemberPageWire(LinearScopePageWire):
+    """One ``list_issues`` page read whole: each row as the listing reports it."""
+
+    issues: list[LinearIssueWire]
 
 
 class LinearScopeProjectsWire(LinearScopePageWire):

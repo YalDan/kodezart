@@ -10,7 +10,7 @@ the whole live set and keeps only what that read confirms.
 """
 
 import asyncio
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
@@ -184,6 +184,22 @@ _REFUSAL_WAIT_SECONDS = 900.0
 _REFUSAL_WAITS = 4
 
 _TOOL_LIST_ISSUES = "list_issues"
+
+#: How the connected server ends a listing description it cut short.  A
+#: ``list_issues`` row carries at most the first few hundred characters of
+#: a body and then this marker; only ``get_issue`` carries the body whole.
+#: Measured 2026-09-30 on the live server: every cut row keeps 449
+#: characters and ends with the marker (KOD-1288).
+_LISTING_CUT_MARKER = "(truncated, use `get_issue` for full description)"
+
+
+def listing_cut(row: LinearIssueWire) -> bool:
+    """True iff the listing cut *row*'s body, so its Check cannot be read."""
+    return row.description is not None and row.description.rstrip().endswith(
+        _LISTING_CUT_MARKER
+    )
+
+
 _TOOL_LIST_DIFFS = "list_diffs"
 _ORDER_BY_UPDATED_AT = "updatedAt"
 _TOOL_GET_ISSUE = "get_issue"
@@ -2769,6 +2785,31 @@ class _LinearTrackerSession:
             url=wire.url,
         )
 
+    async def _listed_issues(
+        self, wires: Sequence[LinearIssueWire]
+    ) -> tuple[TrackerIssue, ...]:
+        """The listed rows in domain vocabulary, leaving out an unnamed state.
+
+        An issue carrying a workflow-state kind the domain does not name is
+        EXCLUDED rather than unwinding the whole listing, and it is named as
+        it goes: its key, the tool that returned it and the raw value the
+        vendor sent, once per issue. A listing reads many issues, so one such
+        issue would take down every reader of it for as long as it sat there
+        (one groomed duplicate crash-looped the dispatch pass).
+        """
+        found: list[TrackerIssue] = []
+        for wire in wires:
+            if wire.status_type not in _STATE_KIND_BY_VALUE:
+                await self._log.aerror(
+                    "tracker_scan_issue_excluded",
+                    issue_key=wire.id,
+                    tool=_TOOL_LIST_ISSUES,
+                    status_type=wire.status_type,
+                )
+                continue
+            found.append(self._to_issue(wire))
+        return tuple(found)
+
     def _to_comment(
         self,
         wire: LinearCommentWire,
@@ -3504,18 +3545,7 @@ class LinearIssueScanReader(_LinearTrackerSession):
             arguments["updatedAt"] = query.updated_since.isoformat()
         payload = await self._call(_TOOL_LIST_ISSUES, arguments)
         listing = self._validate(LinearIssueListWire, payload, _TOOL_LIST_ISSUES)
-        found: list[TrackerIssue] = []
-        for wire in listing.issues:
-            if wire.status_type not in _STATE_KIND_BY_VALUE:
-                await self._log.aerror(
-                    "tracker_scan_issue_excluded",
-                    issue_key=wire.id,
-                    tool=_TOOL_LIST_ISSUES,
-                    status_type=wire.status_type,
-                )
-                continue
-            found.append(self._to_issue(wire))
-        return tuple(found)
+        return await self._listed_issues(listing.issues)
 
 
 class LinearLaneEventHistory(_LinearTrackerSession):
@@ -4012,6 +4042,59 @@ class LinearScopeFamilyReader(_LinearTrackerSession):
 
     async def _planning_issue(self, *, issue_key: str) -> TrackerIssue:
         return self._to_issue(await self._read_planning_wire(issue_key))
+
+
+class LinearScopeMemberPager(LinearIssueReader):
+    """The ``ScopeMemberPager`` role, over the shared session."""
+
+    async def scope_member_pages(
+        self, *, ref: ScopeRef, whole_bodies: bool = False
+    ) -> AsyncIterator[Sequence[TrackerIssue]]:
+        """Each listing page below *ref*, its rows read off the page itself.
+
+        No member is hydrated for its state, so a scope of a thousand
+        members costs its listing pages and no more (KOD-1288). A container
+        scope then pages the criterion sub-issues beneath its members: the
+        vendor lists an issue by project, and a minted criterion has none,
+        so they are read by their label on each member's team and kept where
+        their parent is a member. With *whole_bodies*, a row whose body the
+        listing cut short is read whole through ``get_issue``; the other
+        rows are never read twice.
+        """
+        label = self._classification_label(
+            "criterion", stops="scope criterion membership cannot be read"
+        )
+        reader = LinearScopeReader(call=self._call, read_issue=self.read_issue)
+        members: set[str] = set()
+        teams: dict[str, None] = {}
+        async for rows in reader.member_pages(ref=ref):
+            members.update(row.id for row in rows)
+            teams.update((row.team, None) for row in rows)
+            yield await self._paged_issues(rows, whole_bodies=whole_bodies)
+        if ref.kind is ScopeKind.ISSUE:
+            return
+        for team in teams:
+            async for rows in reader.labelled_pages(team=team, label=label):
+                kept = tuple(
+                    row
+                    for row in rows
+                    if row.parent_id in members and row.id not in members
+                )
+                if kept:
+                    yield await self._paged_issues(kept, whole_bodies=whole_bodies)
+
+    async def _paged_issues(
+        self, rows: Sequence[LinearIssueWire], *, whole_bodies: bool
+    ) -> tuple[TrackerIssue, ...]:
+        """The page's rows as issues, each cut body read whole when asked."""
+        if not whole_bodies:
+            return await self._listed_issues(rows)
+        whole: list[LinearIssueWire] = []
+        for row in rows:
+            whole.append(
+                await self._read_issue_wire(row.id) if listing_cut(row) else row
+            )
+        return await self._listed_issues(whole)
 
 
 class LinearFireSubjectReader(
@@ -4693,6 +4776,7 @@ class LinearMcpTracker(
     LinearCriterionMintWriter,
     LinearContainerMetadataReader,
     LinearClassificationWriter,
+    LinearScopeMemberPager,
     _LinearTrackerSession,
 ):
     """``TrackerPort`` over the Linear MCP server.

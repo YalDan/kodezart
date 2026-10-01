@@ -12,13 +12,14 @@ from kodezart.adapters.linear.scope_types import (
     LinearScopeInitiativeWire,
     LinearScopeIssuesWire,
     LinearScopeIssueWire,
+    LinearScopeMemberPageWire,
     LinearScopeMetadataWire,
     LinearScopeMilestonesWire,
     LinearScopePageWire,
     LinearScopeProjectsWire,
     LinearScopeProjectWire,
 )
-from kodezart.adapters.linear.wire import LinearWireModel
+from kodezart.adapters.linear.wire import LinearIssueWire, LinearWireModel
 from kodezart.adapters.pagination import cursor_pages
 from kodezart.core.errors import TrackerProtocolError
 from kodezart.core.protocols import McpToolResult
@@ -82,6 +83,70 @@ class LinearScopeReader:
                 assert_never(ref.kind)
         self._check_issue_parents(issues, ref)
         return tuple(issues.values())
+
+    async def member_pages(
+        self, *, ref: ScopeRef
+    ) -> AsyncIterator[tuple[LinearIssueWire, ...]]:
+        """Each listing page of the unarchived issues below *ref*, as listed.
+
+        No member is hydrated: the rows are the listing's own. An issue
+        scope pages each listed parent's children, breadth first, and never
+        yields the issue itself; a milestone keeps only its own rows of its
+        project's pages.
+        """
+        match ref.kind:
+            case ScopeKind.ISSUE:
+                root = await self._read_issue(issue_key=ref.key)
+                pending = [root.issue_key]
+                seen = {root.issue_key}
+                for parent_key in pending:
+                    async for rows in self._member_pages({"parentId": parent_key}):
+                        fresh = tuple(row for row in rows if row.id not in seen)
+                        seen.update(row.id for row in fresh)
+                        pending.extend(row.id for row in fresh)
+                        yield fresh
+            case ScopeKind.PROJECT:
+                project = await self._project(ref.key)
+                async for rows in self._member_pages({"project": project.id}):
+                    yield rows
+            case ScopeKind.MILESTONE:
+                project_key, milestone = await self._milestone(ref)
+                async for rows in self._member_pages({"project": project_key}):
+                    yield tuple(
+                        row
+                        for row in rows
+                        if row.project_milestone is not None
+                        and row.project_milestone.id == milestone.id
+                    )
+            case ScopeKind.INITIATIVE:
+                for project_key in await self._initiative_projects(ref):
+                    async for rows in self._member_pages({"project": project_key}):
+                        yield rows
+            case _:
+                assert_never(ref.kind)
+
+    async def labelled_pages(
+        self, *, team: str, label: str
+    ) -> AsyncIterator[tuple[LinearIssueWire, ...]]:
+        """Each listing page of *team*'s unarchived issues carrying *label*.
+
+        The listing a container scope reads its criterion sub-issues from:
+        they belong to no project, so only their label and their team reach
+        them in one listing, whoever their parent is. The caller keeps the
+        rows whose parent it holds.
+        """
+        async for rows in self._member_pages({"team": team, "label": label}):
+            yield rows
+
+    async def _member_pages(
+        self, filters: Mapping[str, object]
+    ) -> AsyncIterator[tuple[LinearIssueWire, ...]]:
+        async for page in self._pages(
+            LinearScopeMemberPageWire,
+            _TOOL_LIST_ISSUES,
+            {**filters, "limit": _ISSUE_PAGE_SIZE},
+        ):
+            yield tuple(page.issues)
 
     async def approval_parent(
         self, *, ref: ScopeRef, approved_label: str
@@ -279,9 +344,15 @@ class LinearScopeReader:
 
     async def _initiative_issues(self, ref: ScopeRef) -> dict[str, TrackerIssue]:
         found: dict[str, TrackerIssue] = {}
+        for project in await self._initiative_projects(ref):
+            found.update(await self._project_issues(project, ref=ref))
+        return found
+
+    async def _initiative_projects(self, ref: ScopeRef) -> list[str]:
+        """Every project of the initiative and its sub-initiatives, once each."""
+        projects: list[str] = []
         pending = [ref.key]
         seen: set[str] = set()
-        projects: set[str] = set()
         children: dict[str, set[str]] = {}
         for key in pending:
             if key in seen:
@@ -308,8 +379,7 @@ class LinearScopeReader:
             ):
                 for project in page.projects:
                     if project.id not in projects:
-                        projects.add(project.id)
-                        found.update(await self._project_issues(project.id, ref=ref))
+                        projects.append(project.id)
         checked: set[str] = set()
         for start in children:
             active: set[str] = set()
@@ -325,7 +395,7 @@ class LinearScopeReader:
                     active.add(current)
                     chain.append((current, True))
                     chain.extend((child, False) for child in children[current])
-        return found
+        return projects
 
     async def _milestone(self, ref: ScopeRef) -> tuple[str, LinearScopeMetadataWire]:
         matches: set[tuple[str, str]] = set()

@@ -109,6 +109,7 @@ async def test_actual_native_authored_delivery_runs_after_the_fire_and_clean(
 ):
     requests = []
     created = []
+    flipped = []
     artifacts = FakeArtifactPersister()
 
     def handler(message):
@@ -126,6 +127,21 @@ async def test_actual_native_authored_delivery_runs_after_the_fire_and_clean(
             return _completed_run() if passed is True else _empty_runs()
         if message.url.path.endswith("/actions/workflows"):
             return httpx.Response(200, json={"total_count": 0, "workflows": []})
+        if message.url.path == "/repos/owner/repo/pulls/7" and message.method == "GET":
+            # The readiness flip reads the node id first (KOD-1294).
+            return httpx.Response(200, json={"node_id": "PR_kwDOextraction7"})
+        if message.url.path == "/graphql":
+            flipped.append(json.loads(message.content))
+            return httpx.Response(
+                200,
+                json={
+                    "data": {
+                        "markPullRequestReadyForReview": {
+                            "pullRequest": {"isDraft": False}
+                        }
+                    }
+                },
+            )
         raise AssertionError((message.method, message.url.path))
 
     client = _make_client(handler, ci_no_workflows_grace_polls=1)
@@ -150,9 +166,16 @@ async def test_actual_native_authored_delivery_runs_after_the_fire_and_clean(
         assert "Tracker issue:" not in created[0]["body"]
     else:
         assert created[0]["body"].endswith(f"Tracker issue: {issue_key}")
-    assert [message.method for message in requests if message.method != "GET"] == [
-        "POST"
-    ]
+    # The pull request opens as a draft; green checks flip it ready with one
+    # GraphQL write, and unmonitored checks leave it a draft (KOD-1294).
+    assert created[0]["draft"] is True
+    writes = [message.url.path for message in requests if message.method != "GET"]
+    if passed is True:
+        assert writes == ["/repos/owner/repo/pulls", "/graphql"]
+        assert flipped[0]["variables"] == {"pullRequestId": "PR_kwDOextraction7"}
+    else:
+        assert writes == ["/repos/owner/repo/pulls"]
+        assert flipped == []
 
 
 @pytest.mark.parametrize("issue_key", [None, "native/criterion-42"])
@@ -259,7 +282,13 @@ async def test_authored_delivery_preserves_one_public_terminal_and_wire(issue_ke
     assert terminal.outcome is WorkflowOutcome.ci_passed
     assert terminal.ci_status is CIStatus.passed
     assert terminal.pr_url and terminal.pr_number
-    assert len(forge.calls) == 1
+    # One pull request opened, as a draft, then flipped ready once the
+    # checks passed (KOD-1294): two forge writes, one request.
+    assert [call["method"] for call in forge.calls] == [
+        "create_pr",
+        "mark_ready_for_review",
+    ]
+    assert forge.calls[1]["pr_number"] == terminal.pr_number
     assert len(checks.calls) == 1
     assert len(artifacts.clean_calls) == 1
     body = forge.calls[0]["body"]

@@ -62,7 +62,8 @@ from kodezart.types.domain.workflow import ExecutionContext, WorkflowState
 class LaneDeliveryCoordinator:
     """The lane's existing head/base, open PR and coherent check observation.
 
-    No tracker port or PR mutation beyond creation and comments.
+    No tracker port; the PR writes are creation (as a draft), the readiness
+    flip once the checks are green, and comments.
     NativeLaneWorkflow owns the existing fire remediation transition.
     """
 
@@ -196,7 +197,34 @@ class LaneDeliveryCoordinator:
                 remediation_pending=pending,
             ),
         )
-        if (
+        finished = (
+            result.checks_passed
+            and not result.stalled
+            and not result.remediation_pending
+        )
+        if finished:
+            # The lane is finished: its criteria were accepted before this
+            # step ran and the checks are green at the published head.
+            # Every lane pull request opens as a draft (KOD-1294); this is
+            # the one write that lifts it.  Like the failure comment on the
+            # arm below, the write is preceded by its own re-check of the
+            # evidence and a forge refusal is logged: the lane is delivered
+            # either way, and a draft with every criterion done is what the
+            # supervisor pass reports.
+            await self._require_current(state, context, pr)
+            try:
+                await self._pr_creator.mark_ready_for_review(
+                    repo_url=repo_url, pr_number=pr.number
+                )
+            except (ForgeAPIError, TransientAPIError) as exc:
+                await self._log.aerror(
+                    "mark_ready_failed",
+                    pr_number=pr.number,
+                    repo_url=repo_url,
+                    error=str(exc),
+                    error_kind=type(exc).__name__,
+                )
+        elif (
             result.checks_passed is False or result.no_run_at_ref
         ) and not result.remediation_pending:
             body = await gated_write(

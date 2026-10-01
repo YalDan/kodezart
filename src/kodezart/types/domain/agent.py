@@ -822,26 +822,39 @@ class ScopeScanOutput(CamelCaseModel):
 
 
 class ScopeItem(CamelCaseModel):
-    """One issue below the parent, as the board shows it now."""
+    """One open issue below the parent, as the board shows it now."""
 
     key: str = Field(min_length=1, description="The issue's key.")
-    criterion: bool = Field(
-        description="True when the issue is a criterion sub-issue.",
-    )
-    text: str = Field(
-        min_length=1,
-        description="A criterion's Check exactly as written; any other issue's title.",
-    )
-    done: bool = Field(
-        description="True when its workflow state is a completed or canceled one.",
-    )
+    title: str = Field(min_length=1, description="The issue's title.")
 
 
-class ScopeItemsOutput(CamelCaseModel):
-    """The scope-done answer: every issue below the parent, and whether it is done."""
+class ScopeOpenCount(CamelCaseModel):
+    """The scope-done answer: how much below the parent is open, not the list.
 
-    items: list[ScopeItem] = Field(
-        description="Every issue below the parent, once each, at any depth.",
+    A count and a few keys, never the membership: at a thousand members the
+    whole list no longer fits a structured answer (KOD-1288).
+    """
+
+    open_count: int = Field(
+        ge=0,
+        description=(
+            "How many issues below the parent are open: their workflow state "
+            "is neither a completed nor a canceled one. When the query's "
+            "first page is full, the number on that page."
+        ),
+    )
+    total_count: int | None = Field(
+        ge=0,
+        description=(
+            "How many issues are below the parent in all, when the tracker "
+            "reports it; null when only reading every page would tell."
+        ),
+    )
+    sample: list[ScopeItem] = Field(
+        description=(
+            "Up to ten of the open issues, the first the query returned; "
+            "empty when none is open."
+        ),
     )
     reason: str = Field(
         min_length=1,
@@ -1413,7 +1426,7 @@ CONTENT_AUDIT_SCHEMA: dict[str, object] = ContentAuditOutput.model_json_schema()
 PASS_GATE_SCHEMA: dict[str, object] = PassGateOutput.model_json_schema()
 # Schemas for the two scope questions: the cron's scan and the run's check
 SCOPE_SCAN_SCHEMA: dict[str, object] = ScopeScanOutput.model_json_schema()
-SCOPE_DONE_SCHEMA: dict[str, object] = ScopeItemsOutput.model_json_schema()
+SCOPE_DONE_SCHEMA: dict[str, object] = ScopeOpenCount.model_json_schema()
 # Schema for the draft-critic lens's verdict on a drafted artifact
 DRAFT_CRITIQUE_SCHEMA: dict[str, object] = DraftCritiqueOutput.model_json_schema()
 

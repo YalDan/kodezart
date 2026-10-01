@@ -3,7 +3,14 @@
 import asyncio
 import copy
 import re
-from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping, Sequence
+from collections.abc import (
+    AsyncGenerator,
+    AsyncIterator,
+    Awaitable,
+    Callable,
+    Mapping,
+    Sequence,
+)
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
@@ -398,6 +405,7 @@ def executor_for(
     fire_record: PromptTemplate | None = None,
     dangerously_allow_host_mcp: bool = False,
     tracker_server: TrackerSessionServer | None = None,
+    host_mcp_servers: frozenset[str] = frozenset(),
 ):
     """Build the adapter that lives in *module* with configured setting sources."""
     if module.endswith("client_executor"):
@@ -409,6 +417,7 @@ def executor_for(
             output_style=output_style,
             dangerously_allow_host_mcp=dangerously_allow_host_mcp,
             tracker_server=tracker_server,
+            host_mcp_servers=host_mcp_servers,
         )
     return ClaudeAgentExecutor(
         setting_sources=DEFAULT_SETTING_SOURCES,
@@ -416,6 +425,7 @@ def executor_for(
         fire_record=fire_record,
         dangerously_allow_host_mcp=dangerously_allow_host_mcp,
         tracker_server=tracker_server,
+        host_mcp_servers=host_mcp_servers,
     )
 
 
@@ -503,6 +513,7 @@ async def recorded_session(
     run_identity: RunIdentity | None = None,
     dangerously_allow_host_mcp: bool = False,
     tracker_server: TrackerSessionServer | None = None,
+    host_mcp_servers: frozenset[str] = frozenset(),
 ) -> RecordedSession:
     """Run one session through *module*'s adapter against a recording transport."""
     recorded: list[RecordedSession] = []
@@ -520,6 +531,7 @@ async def recorded_session(
         fire_record=fire_record,
         dangerously_allow_host_mcp=dangerously_allow_host_mcp,
         tracker_server=tracker_server,
+        host_mcp_servers=host_mcp_servers,
     )
     events: list[AgentEvent] = []
 
@@ -1976,12 +1988,23 @@ class FakePRCreator:
         pr_number: int = 1,
         fail_create: Exception | None = None,
         fail_comment: Exception | None = None,
+        fail_mark_ready: Exception | None = None,
     ) -> None:
         self._pr_url = pr_url
         self._pr_number = pr_number
+        #: The number each repository's request got: the configured number
+        #: in the first repository opened, the next in each further one, so
+        #: a run over several repositories gets one number per request while
+        #: two runs in one repository still meet the same number.
+        self._numbers: dict[str, int] = {}
         self._fail_create = fail_create
         self._fail_comment = fail_comment
+        self._fail_mark_ready = fail_mark_ready
         self.calls: list[dict[str, object]] = []
+        #: Pull requests this double opened and their draft state, by number.
+        #: Opened as drafts, as the port promises; ``mark_ready_for_review``
+        #: flips one, so a test reads what state the run left it in.
+        self.drafts: dict[int, bool] = {}
 
     async def create_pr(
         self,
@@ -2000,12 +2023,33 @@ class FakePRCreator:
                 "body": body,
                 "head": head,
                 "base": base,
+                "draft": True,
             }
         )
         if self._fail_create is not None:
             raise self._fail_create
-        pr_url, pr_number = self._pr_url, self._pr_number
+        pr_number = self._numbers.setdefault(
+            repo_url, self._pr_number + len(self._numbers)
+        )
+        pr_url = (
+            self._pr_url
+            if pr_number == self._pr_number
+            else f"{self._pr_url.rsplit('/', 1)[0]}/{pr_number}"
+        )
+        self.drafts[pr_number] = True
         return (pr_url, pr_number)
+
+    async def mark_ready_for_review(self, *, repo_url: str, pr_number: int) -> None:
+        self.calls.append(
+            {
+                "method": "mark_ready_for_review",
+                "repo_url": repo_url,
+                "pr_number": pr_number,
+            }
+        )
+        if self._fail_mark_ready is not None:
+            raise self._fail_mark_ready
+        self.drafts[pr_number] = False
 
     async def comment_on_pr(
         self,
@@ -4728,6 +4772,56 @@ class FakeScopeFamilyReader(_FakeTrackerState):
         return tuple(selected.values())
 
 
+#: The scope member pager double's page size: small, so a consumer's test
+#: crosses a page boundary.
+FAKE_MEMBER_PAGE_SIZE = 2
+
+
+class FakeScopeMemberPager(_FakeTrackerState):
+    """The ``ScopeMemberPager`` role of this double, a few members per page."""
+
+    async def scope_member_pages(
+        self, *, ref: ScopeRef, whole_bodies: bool = False
+    ) -> AsyncIterator[Sequence[TrackerIssue]]:
+        """The double's bodies are never cut, so *whole_bodies* changes nothing."""
+        _ = whole_bodies
+        if ref.kind is ScopeKind.ISSUE:
+            if ref.key not in self.issues:
+                raise ScopeReadError("issue is missing", ref=ref)
+            keys: list[str] = []
+            pending = [ref.key]
+            for parent in pending:
+                children = [
+                    issue.issue_key
+                    for issue in self.issues.values()
+                    if issue.parent_key == parent and issue.issue_key not in keys
+                ]
+                keys.extend(children)
+                pending.extend(children)
+        else:
+            if ref not in self.scope_containers and ref not in self.scope_memberships:
+                raise ScopeReadError("container is missing", ref=ref)
+            keys = list(dict.fromkeys(self.scope_memberships.get(ref, ())))
+            # A container's criterion sub-issues sit below its members with
+            # no project of their own, as the adapter reads them.
+            keys.extend(
+                issue.issue_key
+                for issue in self.issues.values()
+                if issue.parent_key in keys
+                and issue.issue_key not in keys
+                and "criterion" in issue.issue_labels
+            )
+        for start in range(0, len(keys), FAKE_MEMBER_PAGE_SIZE):
+            page: list[TrackerIssue] = []
+            for key in keys[start : start + FAKE_MEMBER_PAGE_SIZE]:
+                if key not in self.issues:
+                    raise ScopeReadError("scope member is missing", ref=ref)
+                await asyncio.sleep(0)
+                self.issue_reads.append(key)
+                page.append(self._issue_as_read(key))
+            yield tuple(page)
+
+
 class FakeFireSubjectReader(
     FakeExecutionApprovalReader, FakeTrackerCriteriaReader, FakeScopeFamilyReader
 ):
@@ -5393,6 +5487,7 @@ class FakeTrackerPort(
     FakeContainerMetadataReader,
     FakeCriterionMintWriter,
     FakeScopeReadPreflight,
+    FakeScopeMemberPager,
 ):
     """In-process ``TrackerPort`` — the double every port CONSUMER is tested on.
 
@@ -5526,6 +5621,13 @@ class FakeRequestRecordReader(
     FakeTrackerCommentReader,
 ):
     """The ``RequestRecordReader`` role, composed of its role doubles."""
+
+
+class FakeScopeHeartbeatReader(
+    FakeTrackerScopeApprovalReader,
+    FakeScopeFamilyReader,
+):
+    """The ``ScopeHeartbeatReader`` role, composed of its role doubles."""
 
 
 class FakeScopeMemberReader(

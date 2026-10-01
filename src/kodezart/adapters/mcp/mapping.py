@@ -19,7 +19,9 @@ session also receives the servers the host's own Claude configuration
 declares — the tracker under the operator's stored login, measured
 2026-09-24 — and whatever its working directory declares.  The opt-in
 answers the guard and nothing else: the servers this process describes,
-and the knowledge-map prelude, are decided as before.
+and the knowledge-map prelude, are decided as before.  One exception: a board
+session whose host declares no tracker server of the deployment's name is
+still described the deployment's own, so it reaches a tracker either way.
 
 The grant has two consequences — the servers a session is configured with,
 and the what-lives-where map its prompt is preluded with.  The second reads
@@ -125,6 +127,7 @@ def map_knowledge_mcp(
     *,
     dangerously_allow_host_mcp: bool = False,
     tracker: TrackerSessionServer | None = None,
+    host_servers: frozenset[str] = frozenset(),
 ) -> McpSessionOptions:
     """Session options for *session_type* under *grant*.
 
@@ -135,11 +138,15 @@ def map_knowledge_mcp(
     per-session choice — switches it off for every kind alike.  *tracker*,
     the deployment's own tracker server, is described to the two kinds that
     work the board — the scheduled pass and the organize pass — beside
-    whatever the grant describes, unless the opt-in is on: then the host's
-    own tracker login serves them under its own request budget, and the
-    deployment's server is not described beside it, since the two carry one
-    server name and the session would otherwise reach whichever the SDK
-    lets win.
+    whatever the grant describes, unless the opt-in is on and the host
+    offers a server of that name: then the host's own tracker login serves
+    them under its own request budget, and the deployment's server is not
+    described beside it, since the two carry one server name and the
+    session would otherwise reach whichever the SDK lets win.
+    *host_servers* names the servers the host's own Claude configuration
+    declares; with the opt-in on and no tracker among them, the board
+    session would reach no tracker at all, so the deployment's server is
+    described to it instead.
     """
     match session_type:
         case (
@@ -151,10 +158,15 @@ def map_knowledge_mcp(
             | SessionType.ORGANIZE_PASS
         ):
             servers = _described_servers(grant, session_type)
+            host_serves_tracker = (
+                tracker is not None
+                and dangerously_allow_host_mcp
+                and tracker.server_name in host_servers
+            )
             if (
                 tracker is not None
                 and session_type in BOARD_SESSION_TYPES
-                and not dangerously_allow_host_mcp
+                and not host_serves_tracker
             ):
                 servers = {**servers, tracker.server_name: tracker.definition}
             return McpSessionOptions(

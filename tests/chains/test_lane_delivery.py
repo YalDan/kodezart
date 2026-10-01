@@ -26,6 +26,7 @@ from kodezart.domain.errors import (
     CheckObservationError,
     DeliveryHeadError,
     FireSpecEntryError,
+    ForgeAPIError,
     PRStateReadError,
 )
 from kodezart.types.domain.check_observation import IncompleteChecks
@@ -308,6 +309,54 @@ async def test_green_opens_on_actual_head_and_resolved_base_and_round_trips():
         result.head_branch = "other"
 
 
+async def test_a_green_lane_opens_a_draft_and_marks_it_ready():
+    """The draft flag tells the truth (KOD-1294): opened draft, flipped once green."""
+    parts = await setup()
+    result = await deliver(parts)
+    creator = parts[3]
+    assert result.outcome is WorkflowOutcome.ci_passed
+    assert [call["method"] for call in creator.calls] == [
+        "create_pr",
+        "mark_ready_for_review",
+    ]
+    assert creator.calls[0]["draft"] is True
+    assert creator.calls[1]["pr_number"] == result.pr.number
+    assert creator.drafts == {result.pr.number: False}
+
+
+@pytest.mark.parametrize(
+    ("monitor", "stalled"),
+    [
+        (FakeCIMonitor(passed=False), False),
+        (FakeCIMonitor(passed=True), True),
+        (FakeCIMonitor(passed=None, summary="no checks", declared=False), False),
+    ],
+    ids=["red checks", "stalled lane", "no checks"],
+)
+async def test_an_unfinished_lane_keeps_its_pull_request_a_draft(monitor, stalled):
+    parts = await setup(monitor=monitor, bound=0)
+    result = await deliver(parts, stalled=stalled)
+    creator = parts[3]
+    assert result.outcome is not WorkflowOutcome.ci_passed
+    assert "mark_ready_for_review" not in [call["method"] for call in creator.calls]
+    assert creator.drafts == {result.pr.number: True}
+
+
+async def test_a_refused_readiness_flip_is_logged_and_the_lane_still_delivers():
+    parts = await setup()
+    creator = parts[3]
+    creator._fail_mark_ready = ForgeAPIError(
+        "refused", status_code=403, detail="POST /graphql"
+    )
+    result = await deliver(parts)
+    assert result.outcome is WorkflowOutcome.ci_passed
+    assert [call["method"] for call in creator.calls] == [
+        "create_pr",
+        "mark_ready_for_review",
+    ]
+    assert creator.drafts == {result.pr.number: True}
+
+
 @pytest.mark.parametrize("observed", [None, "f" * 40])
 async def test_missing_or_changed_remote_head_refuses_before_pr(observed):
     parts = await setup(
@@ -338,7 +387,12 @@ async def test_open_pr_replay_reuses_native_head_lookup_without_generation():
         open_prs={(REPO, HEAD): ("https://github.com/owner/repo/pull/7", 7)}
     )
     result = await deliver(parts)
-    assert result.pr.number == 7 and creator.calls == []
+    # No second pull request is generated; the one already open on the head
+    # is reused, and once its checks are green it is the one flipped ready.
+    assert result.pr.number == 7
+    assert creator.calls == [
+        {"method": "mark_ready_for_review", "repo_url": REPO, "pr_number": 7}
+    ]
 
 
 @pytest.mark.parametrize(
@@ -630,7 +684,7 @@ def test_creator_has_no_merge_or_workflow_state_capability():
         name
         for name, method in vars(PRCreator).items()
         if not name.startswith("_") and callable(method)
-    } == {"create_pr", "comment_on_pr"}
+    } == {"create_pr", "mark_ready_for_review", "comment_on_pr"}
     assert not hasattr(FakePRCreator(), "merge_pr")
 
 

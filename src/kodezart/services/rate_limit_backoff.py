@@ -19,7 +19,10 @@ spent, the last attempt's events go on unchanged and the existing failure
 path handles them exactly as before.
 
 While it waits, the caller is still inside its own ``stream`` call, so the
-job stays alive and its workspace stays acquired.
+job stays alive and its workspace stays acquired.  A scheduled pass's tick
+is not charged for the wait: its deadline moves out by the time slept
+(``tick_budget``, KOD-1303), so a wait longer than the tick's budget no
+longer cancels the pass in the middle of it.
 
 A session that has spent its whole budget is evidence that the limit is
 standing on the account, not on the session.  The graph retries above this
@@ -37,6 +40,7 @@ from random import SystemRandom
 
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import AgentExecutor
+from kodezart.services.tick_budget import leave_off_the_clock
 from kodezart.types.domain.agent import (
     AgentEvent,
     ErrorEvent,
@@ -248,5 +252,6 @@ class RateLimitBackoffExecutor:
                 key=session_type.value,
                 run=None if run_identity is None else run_identity.title(),
             )
+            leave_off_the_clock(wait_seconds)
             await self._sleep(wait_seconds)
             waited += wait_seconds

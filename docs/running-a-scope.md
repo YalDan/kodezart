@@ -23,7 +23,7 @@ Nothing merges. A run ends at a pull request somebody else decides about.
 The scope heartbeat runs on the dispatch cadence pair, beside the per-issue
 dispatch passes, and ticks once at boot. It is scheduled wherever a tracker is
 dialled, the operation declares `[scope_labels]` and the dispatch pair is set.
-Each tick does three things:
+Each tick does four things:
 
 1. It asks the scope scan: one short agent session (`scope_scan.md`) reads the
    board with the tracker tools it is given and lists every approved node that
@@ -33,13 +33,19 @@ Each tick does three things:
 2. It skips a node the job registry already holds a live run for
    (`scope_heartbeat_scope_live`), and a node whose repository is not one the
    operation declares (`scope_heartbeat_repository_undeclared`).
-3. It submits every other node as a scope run, onto the same queue and in the
+3. It reads two facts from the board for every other node, in code rather
+   than from the scan's answer: whether the node is approved, through the same
+   resolver a run's entry uses, and how many of its members are open and not
+   labelled `tracker`. A node that is not approved, or that has no such open
+   member, is logged `scope_heartbeat_scan_rejected` with a `reason` naming
+   which of the two failed, and skipped.
+4. It submits every node left as a scope run, onto the same queue and in the
    same shape as `POST /api/v1/agent/fire` with a `scope`
    (`scope_heartbeat_run_submitted`).
 
-A node is finished when it has at least one issue below it and every issue below
-it, criterion sub-issues included, is completed or canceled. The scan leaves a
-finished node out, so a finished scope is not submitted again. The heartbeat
+The scan nominates; the board decides. A scope with no open member other than
+tracker records, including one with no member at all, is not submitted again,
+whatever the scan lists. The heartbeat
 remembers nothing between ticks. A node whose check or submission raises is
 logged (`scope_heartbeat_scope_failed`) and does not stop the others; the tick
 then fails loudly with the first failure.

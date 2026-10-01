@@ -8,6 +8,7 @@ from kodezart.core.protocols import (
     JobQueue,
     JobRegistry,
     PromptSetProvider,
+    ScopeHeartbeatReader,
 )
 from kodezart.services.agent_question import ask
 from kodezart.services.scope_heartbeat import ScopeHeartbeat
@@ -30,7 +31,7 @@ def build_scope_heartbeat(
     *,
     config: AppConfig,
     operation: OperationConfig,
-    tracker_present: bool,
+    tracker: ScopeHeartbeatReader | None,
     queue: JobQueue,
     registry: JobRegistry,
     runner: AgentRunner,
@@ -42,10 +43,16 @@ def build_scope_heartbeat(
     Its scan is the shared question on the scope_scan key, asked in the
     scheduled passes' working directory, which is no cloned repository; the
     session reads the board through the tracker server its kind is given. What
-    the heartbeat holds besides is the two ports it submits through and each
-    declared repository's trunk.
+    the heartbeat holds besides is the dialled tracker, whose approval and
+    membership reads decide each submission (KOD-1302), the two ports it
+    submits through and each declared repository's trunk.
     """
-    if not scope_heartbeat_wires(operation, tracker_present=tracker_present):
+    # The ``tracker is None`` clause repeats what the predicate answered, for
+    # the type checker's narrowing only.
+    if (
+        not scope_heartbeat_wires(operation, tracker_present=tracker is not None)
+        or tracker is None
+    ):
         return None
     working_dir = Path(config.scheduled_pass_working_dir).expanduser()
     working_dir.mkdir(parents=True, exist_ok=True)
@@ -63,6 +70,7 @@ def build_scope_heartbeat(
 
     return ScopeHeartbeat(
         ask=scan,
+        tracker=tracker,
         registry=registry,
         queue=queue,
         trunks={repo.url: repo.trunk for repo in operation.repos},

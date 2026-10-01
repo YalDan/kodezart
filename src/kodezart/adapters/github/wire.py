@@ -42,6 +42,53 @@ class PullRequestResponse(BaseModel):
     number: int
 
 
+class PullRequestNodeResponse(BaseModel):
+    """The one fact the readiness mutation needs: a pull request's node id."""
+
+    model_config = ConfigDict(frozen=True)
+
+    node_id: str = Field(min_length=1)
+
+
+class PullRequestReadiness(BaseModel):
+    """The draft flag GitHub reports on a pull request.
+
+    GraphQL names its fields in camel case; the wire models keep the
+    repository's names and read GitHub's through aliases.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    is_draft: bool = Field(alias="isDraft")
+
+
+class MarkReadyPayload(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    pull_request: PullRequestReadiness = Field(alias="pullRequest")
+
+
+class MarkReadyData(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    mark_pull_request_ready_for_review: MarkReadyPayload = Field(
+        alias="markPullRequestReadyForReview"
+    )
+
+
+class MarkReadyResponse(BaseModel):
+    """GitHub's answer to ``markPullRequestReadyForReview``.
+
+    A GraphQL failure answers 200 with ``errors`` and no ``data``: the
+    absence of ``data`` is the refusal, and this model makes it a
+    ``ValidationError`` so the request seam reports it as a forge failure.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    data: MarkReadyData
+
+
 class PullRequestSummary(BaseModel):
     """One entry of the open pull request listing."""
 

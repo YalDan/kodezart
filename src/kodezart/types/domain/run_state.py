@@ -67,6 +67,20 @@ class LanePR(CamelCaseModel):
     state: str
 
 
+class OpenedPullRequest(CamelCaseModel):
+    """A pull request a run opened: the repository it was opened in, its number.
+
+    A scope run opens one per repository its branch gained commits in, and
+    every later write addressed to the request (the readiness flip, KOD-1294)
+    reads the repository here, so the write and the open cannot disagree.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    repo_url: str
+    number: int
+
+
 class LaneRunState(CamelCaseModel):
     """The committing loop's recorded branch facts and complete association set.
 

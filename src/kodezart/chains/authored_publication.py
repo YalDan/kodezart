@@ -51,6 +51,7 @@ from kodezart.types.domain.gating import (
 )
 from kodezart.types.domain.operation import RepoEntry
 from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.run_state import OpenedPullRequest
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.workflow import (
@@ -172,7 +173,7 @@ class AuthoredPublication:
             ),
             state["issue_key"],
         )
-        opened: list[tuple[str, int]] = []
+        opened: list[tuple[str, OpenedPullRequest]] = []
         for url, base, sha in await self._heads(
             state, ctx, repo_url=repo_url, head_sha=head_sha
         ):
@@ -192,9 +193,8 @@ class AuthoredPublication:
                     delivered=False,
                 )
             )
-            opened.append((pr_url, pr_number))
-        pr_url, pr_number = opened[0]
-        return {"pr_url": pr_url, "pr_number": pr_number}
+            opened.append(_opened(url, pr_url, pr_number))
+        return _opened_state(opened)
 
     async def open_pr(
         self,
@@ -306,7 +306,7 @@ class AuthoredPublication:
             ),
             state["issue_key"],
         )
-        opened: list[tuple[str, int]] = []
+        opened: list[tuple[str, OpenedPullRequest]] = []
         for url, base, sha in await self._heads(
             state, ctx, repo_url=repo_url, head_sha=feature_tip_sha
         ):
@@ -328,10 +328,9 @@ class AuthoredPublication:
                     delivered=True,
                 )
             )
-            opened.append((pr_url, pr_number))
+            opened.append(_opened(url, pr_url, pr_number))
 
-        pr_url, pr_number = opened[0]
-        return {"pr_url": pr_url, "pr_number": pr_number}
+        return _opened_state(opened)
 
     async def comment_failure(
         self,
@@ -365,18 +364,7 @@ class AuthoredPublication:
         if pr_number is None:
             msg = "comment_failure requires pr_number but state['pr_number'] is None"
             raise RuntimeError(msg)
-        repositories = scope_repositories(ctx.scope, self._repositories)
-        if repositories:
-            # The pull request the state names is the first one opened: in the
-            # first repository the deliverable branch gained commits in.
-            gained = await gained_commits(
-                git=self._git,
-                cache=self._cache,
-                repositories=repositories,
-                branch=state["feature_branch"],
-                cache_key=ctx.cache_key,
-            )
-            repo_url = gained[0].repository.url
+        repo_url = await self._pr_repository(state, ctx, repo_url)
 
         comment_parts = [
             "## kodezart: remediation budget exhausted\n",
@@ -418,3 +406,92 @@ class AuthoredPublication:
             )
 
         return {}
+
+    async def _pr_repository(
+        self, state: AuthoredWorkflowState, ctx: ExecutionContext, repo_url: str
+    ) -> str:
+        """The repository of the pull request ``state["pr_number"]`` names.
+
+        ``pr_number`` is the first pull request opened: the one in the first
+        repository the deliverable branch gained commits in.  The failure
+        comment resolves its repository here; the readiness flip reads
+        ``state["opened_prs"]`` instead, which records every request with
+        the repository it was opened in.
+        """
+        repositories = scope_repositories(ctx.scope, self._repositories)
+        if not repositories:
+            return repo_url
+        gained = await gained_commits(
+            git=self._git,
+            cache=self._cache,
+            repositories=repositories,
+            branch=state["feature_branch"],
+            cache_key=ctx.cache_key,
+        )
+        return gained[0].repository.url
+
+    async def mark_ready(
+        self,
+        state: AuthoredWorkflowState,
+        config: RunnableConfig,
+    ) -> dict[str, object]:
+        """Take every delivered pull request out of draft (KOD-1294).
+
+        Reached only when the unit is finished: the acceptance gate
+        cleared, the final review passed and the checks are green at the
+        pushed head in every repository the branch gained commits in —
+        the graph routes here from nowhere else.  Every pull request the
+        engine opens is a draft, so this is the one write that says
+        "review this", and it is made on each request the run opened,
+        addressed to the repository recorded when it was opened.
+
+        A forge refusal is LOGGED per request and the others are still
+        flipped; the run reaches its terminal, as ``comment_failure``
+        does: the work is delivered either way, and a pull request left
+        in draft with every criterion done is the state the supervisor
+        pass reports (KOD-1290), so nothing is lost silently.
+        """
+        _ = config
+        pr_creator = self._pr_creator
+        if pr_creator is None:
+            msg = "mark_ready requires pr_creator but self._pr_creator is None"
+            raise RuntimeError(msg)
+        opened = state.get("opened_prs", ())
+        if not opened:
+            msg = "mark_ready requires opened_prs but the run opened none"
+            raise RuntimeError(msg)
+        for request in opened:
+            try:
+                await pr_creator.mark_ready_for_review(
+                    repo_url=request.repo_url, pr_number=request.number
+                )
+            except (ForgeAPIError, TransientAPIError) as exc:
+                await self._log.aerror(
+                    "mark_ready_failed",
+                    pr_number=request.number,
+                    repo_url=request.repo_url,
+                    error=str(exc),
+                    error_kind=type(exc).__name__,
+                )
+                continue
+            await self._log.ainfo(
+                "pr_marked_ready", pr_number=request.number, repo_url=request.repo_url
+            )
+        return {}
+
+
+def _opened(
+    repo_url: str, pr_url: str, pr_number: int
+) -> tuple[str, OpenedPullRequest]:
+    """The request's URL beside the value later writes address it by."""
+    return (pr_url, OpenedPullRequest(repo_url=repo_url, number=pr_number))
+
+
+def _opened_state(opened: Sequence[tuple[str, OpenedPullRequest]]) -> dict[str, object]:
+    """The state an open writes: the first request by URL and number, then all."""
+    pr_url, first = opened[0]
+    return {
+        "pr_url": pr_url,
+        "pr_number": first.number,
+        "opened_prs": tuple(request for _, request in opened),
+    }

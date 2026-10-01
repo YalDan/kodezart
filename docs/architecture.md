@@ -89,7 +89,7 @@ does not exist.
 | WorkspaceProvider | GitWorktreeProvider      | Disposable Git worktrees in `/tmp`                   |
 | ChangePersister   | GitChangePersister       | Detects changes, generates commit message, commits, pushes |
 | BranchMerger      | GitBranchMerger          | Fast-forward merge and push                          |
-| PRCreator         | GitHubAPIClient          | Opens pull requests and comments on them             |
+| PRCreator         | GitHubAPIClient          | Opens pull requests as drafts, marks a finished one ready, comments |
 | PRStateReader | GitHubAPIClient | Reads exact native PR identity, head repository/branch/SHA, base repository/branch and open/closed/merged lifecycle; refuses foreign or unavailable head/base repositories; no mutation authority |
 | ForgeQuery | GitHubAPIClient | Reads the open pull request on a head ref for check-before-create, and composes a branch's web page from the origin's own host; no mutation authority |
 | CIMonitor         | GitHubAPIClient          | Returns a coherent completed, absent or incomplete check observation; re-observes Actions attempts at one commit |
@@ -108,7 +108,8 @@ does not exist.
 | FireCriteriaReader | TrackerCriteria | Refreshes current native criterion obligations at execution, retry and replay barriers, and answers the same obligations from a subtree reading the caller already holds (the native writer's authority read) |
 | FireCriteriaSource | TrackerCriteria | Composes the typed native subject specification from the admitted subject and its subtree's criteria, and supplies current criterion reads |
 | TrackerContextReader | LinearMcpTracker | Referenced assets and document bodies for fire context |
-| TrackerScopeApprovalReader | LinearMcpTracker | The reads a scope-member question needs, composed from the cascade and the container metadata roles and declaring the scope's own labels; a scope run's entry and the heartbeat depend on it alone |
+| TrackerScopeApprovalReader | LinearMcpTracker | The reads a scope-member question needs, composed from the cascade and the container metadata roles and declaring the scope's own labels; a scope run's entry depends on it alone, and the heartbeat's read composes it |
+| ScopeHeartbeatReader | LinearMcpTracker | The two board reads the scope heartbeat guards a submission with: approval, composed from the scope-approval read, and the scope family, composed from the family read, to count open work that is not a tracker record. It declares no member of its own |
 | LaneStateTracker | LinearMcpTracker | Exactly the tracker calls the lane's own state writer makes, composed from the comment, event, issue, description, state and criterion roles those calls belong to |
 | CriterionReopener | LinearMcpTracker | The one state move the audit makes (a refuted finished criterion back to unstarted), narrowed out of the port rather than added to it |
 | ContainerMetadataReader | LinearMcpTracker | What a container is, read on its own; composed into the approval read and taken by the tracker-artifact reader |
@@ -138,6 +139,7 @@ does not exist.
 | ScopeMemberReader | LinearMcpTracker | The scope family and each member's criteria, which is what scope membership resolves |
 | ScopePlanReader | LinearMcpTracker | Everything a scope plan is read from, with no write in it: the plan and delivery coordinator readings |
 | ScopeReadyReader | LinearMcpTracker | The scope plan plus the approval an entry asks for: what the scope walker and the dispatcher read |
+| ScopeMemberPager | LinearMcpTracker | Each listing page below a scope with its rows read off the page, the criteria beneath a container's members by their label, and a cut body read whole on request: what the scope-done gate counts and prep reads (KOD-1288) |
 | FireSubjectReader | LinearMcpTracker | The admitted subject of a fire over the family it is measured against: the criteria stage's reads |
 | PassGateReader | LinearMcpTracker | The board and review scans the dispatch pass's gate decides on, with no write |
 | TrackerArtifactReader | LinearMcpTracker | Every read a tracker artifact is assembled from; taken by the audit pass, the sweep's verifier and the artifact reader itself |
@@ -786,9 +788,9 @@ the tracker server its kind is given — the deployment's own server under the
 tracker key, or, with the host MCP opt-in on, the host's own — and what it
 writes there is the whole of what happens: kodezart takes no lease, writes no
 marker, keeps no record and runs no verifier. After its criteria session,
-`prep` asks the `scope_done` question and keeps each criterion sub-issue the
-board lists, with its Check, as the run's criteria; a board that lists none
-ends the run `criteria_infeasible`. There is no stage barrier and no marker
+`prep` reads the criterion sub-issues below the parent through the tracker
+port, one listing page at a time and each Check whole, and keeps them as the
+run's criteria; a board that lists none ends the run `criteria_infeasible`. There is no stage barrier and no marker
 roster: a run submitted again after a failure grooms and preps again from
 what the board holds.
 
@@ -808,11 +810,16 @@ member as it is.
 Setting the approval label is what starts a scope run. On the dispatch
 cadence the `scope_heartbeat` pass asks the scope scan, one short agent session
 over the board, which approved nodes inside the declared teams are not finished,
-and submits a scope run for each one the record store holds no live job for and
-whose repository the operation declares, onto the queue `POST /fire` submits to.
-It makes no tracker write and remembers nothing between ticks: a finished node
-is left out of the scan, and the run's entry refuses a node that is not approved
-or already has a run going.
+and submits a scope run for each one the record store holds no live job for,
+whose repository the operation declares, and that the board itself admits, onto
+the queue `POST /fire` submits to. The scan only nominates: before submitting,
+the heartbeat reads approval through the resolver the run's entry uses
+(`services/scope_approval.py`) and counts the scope's open members that are not
+tracker records (`domain/scope_submission.py`). A node the board does not
+approve, or that holds no such open member, is logged
+`scope_heartbeat_scan_rejected` with its reason and skipped (KOD-1302). It
+makes no tracker write and remembers nothing between ticks, and the run's entry
+still refuses a node that is not approved or already has a run going.
 
 Approval is read once per run, at its entry. `ScopeEntry.admit`
 (`services/scope_entry.py`) refuses a scope that already has a live job, and
@@ -970,6 +977,14 @@ changed file's compliance with that standard: a violation named with file:line
 and the principle breached fails every criterion whose evidence rests on that
 file, and a violation in a file no criterion rests on is raised as a flag in
 the session's own name, which the accept gate carries to the pull request.
+
+Beside it, the `neighbour_review` fragment asks whether each added, moved or
+reshaped file reads like its sibling files, and names three findings of its
+own: executable text under `constants/` or `config/`, a move made only to
+satisfy a lint rule, and logic that belongs to an operation sitting in a
+schema or a clever construct. It is composed into the same two graders and
+into the implementer's scope block, where the scope session applies it before
+an item is Done and passes it word for word to every verifier it briefs.
 
 The default maximum is 5 iterations (configurable via
 `KODEZART_MAX_ITERATIONS`).

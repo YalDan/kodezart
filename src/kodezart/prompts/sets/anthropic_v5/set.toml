@@ -123,6 +123,28 @@ written or covers a case that cannot occur, and handling added for an improbable
 each breach KISS; name it with file:line and fail the criteria that rest on that file.\
 """
 
+# The neighbour lens (KOD-1306), one source composed into the two changeset
+# graders and into the implementer's scope block, where the session applies
+# it before an item is Done and passes it to every verifier it briefs: a
+# criterion's own Check never asks whether a change reads like the files
+# beside it, so this does.
+neighbour_review = """\
+Neighbour review, a second lens beside each criterion: for every file the change adds,
+moves or reshapes, name its sibling files and say whether the file follows their pattern
+(the same directory, the same port, the same builder or library); a departure from that
+pattern is a finding unless the change shows its own shape is the simpler one. A file
+under `constants/` or `config/` that holds a query, a statement, a template with
+placeholders or other executable text is a finding. A move made to satisfy a lint rule is
+reported with the rule's name, and is a finding unless the rule's intent is met. A schema
+at a boundary states shape and per-field constraints: a business rule, a cross-object
+consistency check or a decision that belongs to the operation producing the value is a
+finding when a schema carries it, and so is any clever construct carrying logic a plain
+function would carry, unless the change shows it is the simplest correct place; name the
+operation or function it belongs in. A finding here fails the criterion the change was
+made for, with the file:line and the principle breached, named as your house rules name
+it.\
+"""
+
 # The store mechanism every scheduled pass owes. Window and Record ride in
 # each member beside its own kind's declared destination instead (KOD-170,
 # amended per the founder's one-surface ruling): the record row a pass
@@ -163,11 +185,16 @@ An issue's finish line stays its stated criteria.\
 # its pull request leaves draft (owner ruling of 2026-09-29, after a run
 # left finished work in draft and unfinished work ready for review).
 delivery_units = """\
-Deliverable units. A milestone, or the parent issue where a project has none, is the unit of delivery: one run finishes it.
-Finishable means a bounded set of criteria, each Check executable in the repository, no open decision beneath it, and no dependency on unmerged work except the unit it stacks on.
+Deliverable units. A unit is the issue its pull request is attached to, with every issue below it: those issues are exactly what the pull request carries, one pull request per repository the unit changes, and one run finishes it; an issue labelled tracker, a milestone and a project group units and are never a pull request.
+Finishable means a bounded set of criteria, each Check executable in the repository, and no open decision beneath it.
 Cut anything broader into such units before it is approved. A unit that starts to loop, sprawl into new issues or chase tests past its criteria was cut too broad: cut it again rather than push on.
-Each unit is delivered on its own branch and draft pull request per repository, opened at the unit's first push, named after the project and the unit, stacked on the project's previous unit only where it depends on it; progress is pushed there as it is made.
-The session delivering the unit keeps each pull request a draft whenever its unit is work in progress — any criterion open, any review comment unanswered, its checks red or its base conflicting at the pushed head — returning it to draft if it was marked ready; when every criterion is done, every review comment addressed, its checks green and its base not conflicting at the pushed head, it marks the pull request ready for review and stops there; a person merges it, never a session.\
+The graph is the blocking edges between unit issues and nothing else: a dependency between issues of two units is an edge between their unit issues, the edges give the order the pull requests merge in, and no description, wrapper field, comment, title or pull-request text states a base, a stack or a merge order; a principal's hold is an edge from the issue that carries it, which only that principal closes or removes.
+Each unit's pull request is opened as a draft at the unit's first push, from a branch named with the unit issue's key, titled ending with that key and no other, and attached to the unit issue; progress is pushed there as it is made.
+Its base follows from the graph: of the units it is blocked by that have an open pull request in that repository, drop any whose head another one's head contains; none left is the trunk, one is that unit's branch, and two or more are the unit's union.
+A union is a branch for that one unit, named with its key and `-integration`, cut from the first input's head in key order with the other inputs merged in by merge commits and each conflict resolved inside its merge commit, pushed before the unit's first commit, and advanced only by merging an input's newer head; the session delivering the unit is its only writer.
+Nothing waits for a merge: a unit starts once its blockers' branches carry what it builds on, and once every pull request its base stands on has merged, its own pull request moves to the trunk. No session rebases, force-pushes or squashes a branch that a pull request or a union builds on.
+The session delivering the unit keeps each pull request a draft whenever its unit is work in progress — any criterion open, any review comment unanswered, its checks red or its base conflicting at the pushed head — returning it to draft if it was marked ready; when every criterion is done, every review comment addressed, its checks green and its base not conflicting at the pushed head, it marks the pull request ready for review and stops there; a person merges it, never a session.
+A pull request is merged only into the trunk, by merge commit, once the pull requests of every unit it is blocked by have merged, so the pull requests above it stay descendants and show only their own work.\
 """
 
 # The same rule as the two changeset graders apply it, composed into their

@@ -1,0 +1,463 @@
+"""The scope heartbeat submits only what the board itself admits (KOD-1302).
+
+The scan is a cheap question whose answer on one board is not stable, so it
+only nominates. Approval and open work are read from the tracker in code;
+these tests drive the heartbeat with a scan that lists a node and a board
+that does or does not admit it, and read what reached the queue and the log.
+"""
+
+from collections.abc import Awaitable, Callable, Mapping, Sequence
+
+import pytest
+import structlog.testing
+
+from kodezart.core.constants import DEFAULT_LANE
+from kodezart.core.protocols import McpToolResult
+from kodezart.services.scope_heartbeat import ScopeHeartbeat
+from kodezart.types.domain.agent import ScopeScanNode, ScopeScanOutput
+from kodezart.types.domain.dispatch import PassRun
+from kodezart.types.domain.operation import ScopeLabel
+from kodezart.types.domain.scope import ScopeContainer, ScopeKind, ScopeRef
+from kodezart.types.domain.tracker import TrackerIssue, WorkflowStateKind
+from tests.fakes import (
+    FIXTURE_EPOCH,
+    FakeJobQueue,
+    FakeTrackerPort,
+    make_tracker_issue,
+)
+from tests.tracker.conftest import FIRE_SCOPE_LABEL, linear_over_fake_mcp
+from tests.tracker.test_scope_reads import ROOT, ScopeMcpServer
+
+REPO_URL = "https://example.invalid/example-org/example-repo"
+PROJECT = ScopeRef(kind=ScopeKind.PROJECT, key="scratch-project")
+OTHER = ScopeRef(kind=ScopeKind.PROJECT, key="live-project")
+
+
+def _board(
+    *,
+    members: Sequence[TrackerIssue],
+    approved: bool = True,
+    ref: ScopeRef = PROJECT,
+    extra: dict[ScopeRef, Sequence[TrackerIssue]] | None = None,
+) -> FakeTrackerPort:
+    """A board holding *ref* with *members*, approved or not, plus *extra* scopes.
+
+    Every extra scope is approved: they are the neighbours a rejected node
+    must not starve.
+    """
+    scopes: dict[ScopeRef, tuple[Sequence[TrackerIssue], bool]] = {
+        ref: (members, approved)
+    }
+    for other, rows in (extra or {}).items():
+        scopes[other] = (rows, True)
+    return FakeTrackerPort(
+        issues=[issue for rows, _ in scopes.values() for issue in rows],
+        scope_memberships={
+            node: [issue.issue_key for issue in rows]
+            for node, (rows, _) in scopes.items()
+        },
+        scope_containers=[
+            ScopeContainer(
+                ref=node,
+                name=node.key,
+                description="",
+                url=f"https://tracker.invalid/project/{node.key}",
+            )
+            for node in scopes
+        ],
+        scope_label_members={
+            node: frozenset({ScopeLabel.APPROVED})
+            for node, (_, is_approved) in scopes.items()
+            if is_approved
+        },
+    )
+
+
+def _scan(*refs: ScopeRef) -> ScopeScanOutput:
+    return ScopeScanOutput(
+        scopes=[
+            ScopeScanNode(
+                kind=ref.kind,
+                key=ref.key,
+                repository=REPO_URL,
+                why="the scan listed it",
+            )
+            for ref in refs
+        ],
+        reason="the scan listed what it listed",
+    )
+
+
+def _answers(
+    *answers: ScopeScanOutput,
+) -> Callable[[], Awaitable[ScopeScanOutput | None]]:
+    """A scan that answers *answers* in turn, one per tick."""
+    pending = list(answers)
+
+    async def ask() -> ScopeScanOutput | None:
+        return pending.pop(0)
+
+    return ask
+
+
+def _heartbeat(
+    board: FakeTrackerPort, queue: FakeJobQueue, *answers: ScopeScanOutput
+) -> ScopeHeartbeat:
+    """A heartbeat whose scan answers *answers* in turn, one per tick."""
+    return ScopeHeartbeat(
+        ask=_answers(*answers),
+        tracker=board,
+        registry=queue,
+        queue=queue,
+        trunks={REPO_URL: "main"},
+    )
+
+
+def _closed(key: str) -> TrackerIssue:
+    return make_tracker_issue(
+        key, state_name="Done", state_kind=WorkflowStateKind.COMPLETED
+    )
+
+
+def _rejections(logs: Sequence[Mapping[str, object]]) -> list[tuple[object, object]]:
+    return [
+        (entry["scope_key"], entry["reason"])
+        for entry in logs
+        if entry["event"] == "scope_heartbeat_scan_rejected"
+    ]
+
+
+async def test_an_approved_scope_with_open_work_is_submitted() -> None:
+    queue = FakeJobQueue()
+    board = _board(members=[_closed("S-1"), make_tracker_issue("S-2")])
+
+    with structlog.testing.capture_logs() as logs:
+        outcome = await _heartbeat(board, queue, _scan(PROJECT)).run(FIXTURE_EPOCH)
+
+    assert outcome is PassRun.RAN
+    ((lane, request),) = queue.submissions
+    assert lane == DEFAULT_LANE
+    assert request.scope == PROJECT
+    assert request.repo_url == REPO_URL
+    assert _rejections(logs) == []
+    assert [e["event"] for e in logs if e["event"].startswith("scope_heartbeat")] == [
+        "scope_heartbeat_scanned",
+        "scope_heartbeat_run_submitted",
+    ]
+
+
+async def test_an_approved_scope_whose_members_are_all_closed_is_rejected() -> None:
+    """The observed case: every member done, the tracker record still open.
+
+    Two ticks, the scan leaving the node out on the first and listing it on
+    the second, as it did five minutes apart on 2026-09-29. The board did not
+    change, and neither tick submits.
+    """
+    queue = FakeJobQueue()
+    record = make_tracker_issue("S-3", issue_labels=frozenset({"tracker"}))
+    canceled = make_tracker_issue(
+        "S-4", state_name="Canceled", state_kind=WorkflowStateKind.CANCELED
+    )
+    board = _board(members=[_closed("S-1"), _closed("S-2"), record, canceled])
+    heartbeat = _heartbeat(board, queue, _scan(), _scan(PROJECT))
+
+    with structlog.testing.capture_logs() as logs:
+        first = await heartbeat.run(FIXTURE_EPOCH)
+        second = await heartbeat.run(FIXTURE_EPOCH)
+
+    assert (first, second) == (PassRun.SKIPPED, PassRun.SKIPPED)
+    assert queue.submissions == []
+    (event,) = [e for e in logs if e["event"] == "scope_heartbeat_scan_rejected"]
+    assert event == {
+        "event": "scope_heartbeat_scan_rejected",
+        "log_level": "info",
+        "scope_kind": PROJECT.kind.value,
+        "scope_key": PROJECT.key,
+        "repo_url": REPO_URL,
+        "reason": "no_open_member",
+    }
+
+
+async def test_an_approved_scope_with_no_member_at_all_is_rejected() -> None:
+    queue = FakeJobQueue()
+
+    with structlog.testing.capture_logs() as logs:
+        outcome = await _heartbeat(_board(members=[]), queue, _scan(PROJECT)).run(
+            FIXTURE_EPOCH
+        )
+
+    assert outcome is PassRun.SKIPPED
+    assert queue.submissions == []
+    assert _rejections(logs) == [(PROJECT.key, "no_open_member")]
+
+
+async def test_a_scope_the_board_does_not_approve_is_rejected() -> None:
+    """The scan's word is not approval: the label on the board is."""
+    queue = FakeJobQueue()
+    board = _board(members=[make_tracker_issue("S-1")], approved=False)
+
+    with structlog.testing.capture_logs() as logs:
+        outcome = await _heartbeat(board, queue, _scan(PROJECT)).run(FIXTURE_EPOCH)
+
+    assert outcome is PassRun.SKIPPED
+    assert queue.submissions == []
+    assert _rejections(logs) == [(PROJECT.key, "not_approved")]
+
+
+async def test_a_rejected_node_does_not_stop_the_next_one() -> None:
+    queue = FakeJobQueue()
+    board = _board(
+        members=[_closed("S-1")],
+        extra={OTHER: [make_tracker_issue("L-1")]},
+    )
+
+    with structlog.testing.capture_logs() as logs:
+        outcome = await _heartbeat(board, queue, _scan(PROJECT, OTHER)).run(
+            FIXTURE_EPOCH
+        )
+
+    assert outcome is PassRun.RAN
+    assert [request.scope for _, request in queue.submissions] == [OTHER]
+    assert _rejections(logs) == [(PROJECT.key, "no_open_member")]
+
+
+@pytest.mark.parametrize(
+    "kind",
+    [
+        WorkflowStateKind.TRIAGE,
+        WorkflowStateKind.BACKLOG,
+        WorkflowStateKind.UNSTARTED,
+        WorkflowStateKind.STARTED,
+    ],
+)
+async def test_a_member_in_any_state_that_still_owes_work_is_open(
+    kind: WorkflowStateKind,
+) -> None:
+    """Open is what the one state rule says owes work, not Todo alone (KOD-443)."""
+    queue = FakeJobQueue()
+    member = make_tracker_issue("S-2", state_name=kind.value, state_kind=kind)
+    board = _board(members=[_closed("S-1"), member])
+
+    outcome = await _heartbeat(board, queue, _scan(PROJECT)).run(FIXTURE_EPOCH)
+
+    assert outcome is PassRun.RAN
+    assert [request.scope for _, request in queue.submissions] == [PROJECT]
+
+
+async def test_approval_granted_above_the_scope_admits_it() -> None:
+    """Approval cascades down from a container, as a run's entry reads it."""
+    queue = FakeJobQueue()
+    initiative = ScopeRef(kind=ScopeKind.INITIATIVE, key="approved-initiative")
+    member = make_tracker_issue("S-1")
+    board = FakeTrackerPort(
+        issues=[member],
+        scope_memberships={PROJECT: [member.issue_key], initiative: []},
+        scope_containers=[
+            ScopeContainer(
+                ref=PROJECT,
+                name=PROJECT.key,
+                description="",
+                url=f"https://tracker.invalid/project/{PROJECT.key}",
+                parent=initiative,
+            ),
+            ScopeContainer(
+                ref=initiative,
+                name=initiative.key,
+                description="",
+                url=f"https://tracker.invalid/initiative/{initiative.key}",
+            ),
+        ],
+        scope_label_members={initiative: frozenset({ScopeLabel.APPROVED})},
+    )
+
+    with structlog.testing.capture_logs() as logs:
+        outcome = await _heartbeat(board, queue, _scan(PROJECT)).run(FIXTURE_EPOCH)
+
+    assert outcome is PassRun.RAN
+    assert [request.scope for _, request in queue.submissions] == [PROJECT]
+    assert _rejections(logs) == []
+
+
+async def test_each_tick_reads_the_board_afresh() -> None:
+    """A rejection is not remembered: open work added later is submitted."""
+    queue = FakeJobQueue()
+    board = _board(members=[_closed("S-1")])
+    heartbeat = _heartbeat(board, queue, _scan(PROJECT), _scan(PROJECT))
+
+    first = await heartbeat.run(FIXTURE_EPOCH)
+    reopened = make_tracker_issue("S-2")
+    board.issues[reopened.issue_key] = reopened
+    board.scope_memberships[PROJECT] = (*board.scope_memberships[PROJECT], "S-2")
+    second = await heartbeat.run(FIXTURE_EPOCH)
+
+    assert (first, second) == (PassRun.SKIPPED, PassRun.RAN)
+    assert [request.scope for _, request in queue.submissions] == [PROJECT]
+
+
+ISSUE = ScopeRef(kind=ScopeKind.ISSUE, key="P-1")
+
+
+def _issue_board(
+    root: TrackerIssue, *below: TrackerIssue, approved: bool = True
+) -> FakeTrackerPort:
+    """A board holding the issue scope *root* with *below* as its descendants."""
+    return FakeTrackerPort(
+        issues=[root, *below],
+        scope_label_members=(
+            {ISSUE: frozenset({ScopeLabel.APPROVED})} if approved else {}
+        ),
+    )
+
+
+async def test_an_issue_scope_with_everything_below_it_done_is_rejected() -> None:
+    """The verifier's probe (KOD-1302, round 3): the root is open, all below it done.
+
+    The scan judges only the issues below the parent and so does the run's
+    own done question, so the heartbeat must not count the root as the
+    work that keeps the scope alive, whatever the scan lists on a tick.
+    """
+    queue = FakeJobQueue()
+    board = _issue_board(
+        make_tracker_issue("P-1"),
+        _closed("C-1"),
+        _closed("C-2"),
+        make_tracker_issue(
+            "AC-1",
+            parent_key="C-1",
+            state_name="Done",
+            state_kind=WorkflowStateKind.COMPLETED,
+        ),
+        make_tracker_issue(
+            "AC-2",
+            parent_key="C-2",
+            state_name="Done",
+            state_kind=WorkflowStateKind.COMPLETED,
+        ),
+    )
+    for child in ("C-1", "C-2"):
+        board.issues[child] = board.issues[child].model_copy(
+            update={"parent_key": "P-1"}
+        )
+    heartbeat = _heartbeat(board, queue, _scan(), _scan(ISSUE))
+
+    with structlog.testing.capture_logs() as logs:
+        first = await heartbeat.run(FIXTURE_EPOCH)
+        second = await heartbeat.run(FIXTURE_EPOCH)
+
+    assert (first, second) == (PassRun.SKIPPED, PassRun.SKIPPED)
+    assert queue.submissions == []
+    assert _rejections(logs) == [("P-1", "no_open_member")]
+
+
+async def test_an_issue_scope_with_open_work_below_it_is_submitted() -> None:
+    queue = FakeJobQueue()
+    board = _issue_board(
+        make_tracker_issue("P-1"),
+        _closed("C-1"),
+        make_tracker_issue("C-2"),
+    )
+    for child in ("C-1", "C-2"):
+        board.issues[child] = board.issues[child].model_copy(
+            update={"parent_key": "P-1"}
+        )
+
+    outcome = await _heartbeat(board, queue, _scan(ISSUE)).run(FIXTURE_EPOCH)
+
+    assert outcome is PassRun.RAN
+    assert [request.scope for _, request in queue.submissions] == [ISSUE]
+
+
+@pytest.mark.parametrize(
+    ("root", "expected"),
+    [
+        (make_tracker_issue("P-1"), PassRun.RAN),
+        (_closed("P-1"), PassRun.SKIPPED),
+    ],
+    ids=["open", "done"],
+)
+async def test_a_lone_issue_scope_is_its_own_work(
+    root: TrackerIssue, expected: PassRun
+) -> None:
+    """An issue with nothing below it is the whole scope, so its own state counts."""
+    queue = FakeJobQueue()
+    board = _issue_board(root)
+
+    outcome = await _heartbeat(board, queue, _scan(ISSUE)).run(FIXTURE_EPOCH)
+
+    assert outcome is expected
+
+
+def _uuid_board(*, open_below: bool) -> ScopeMcpServer:
+    """The shared scope workspace, FIX-1 approved with FIX-2 and FIX-3 below it.
+
+    The vendor answers FIX-1's UUID as an alias of the identifier: a scan
+    that names either must get the same answer from the heartbeat.
+    """
+    server = _UuidAliasServer()
+    server.issues[ROOT.key].labels = [FIRE_SCOPE_LABEL]
+    server.issues[ROOT.key].status = "Todo"
+    server.issues[ROOT.key].status_type = "unstarted"
+    for key in ("FIX-2", "FIX-3"):
+        server.issues[key].status = "Todo" if open_below else "Done"
+        server.issues[key].status_type = "unstarted" if open_below else "completed"
+    return server
+
+
+class _UuidAliasServer(ScopeMcpServer):
+    async def call_tool(
+        self, *, name: str, arguments: Mapping[str, object]
+    ) -> McpToolResult:
+        if name == "get_issue" and arguments.get("id") == ROOT_UUID:
+            payload = await super().call_tool(
+                name=name, arguments={**arguments, "id": ROOT.key}
+            )
+            assert isinstance(payload, Mapping)
+            return {**payload, "uuid": ROOT_UUID}
+        return await super().call_tool(name=name, arguments=arguments)
+
+
+ROOT_UUID = "00000000-0000-4000-8000-000000000073"
+ROOT_BY_UUID = ScopeRef(kind=ScopeKind.ISSUE, key=ROOT_UUID)
+
+
+@pytest.mark.parametrize(
+    ("open_below", "expected"),
+    [(False, PassRun.SKIPPED), (True, PassRun.RAN)],
+    ids=["all-below-done", "open-below"],
+)
+async def test_an_issue_scope_answers_the_same_by_identifier_and_by_uuid(
+    open_below: bool, expected: PassRun
+) -> None:
+    """The verifier's probe (KOD-1302, round 4), through the shipped Linear adapter.
+
+    The board keys the family by the identifier it answers, whatever
+    spelling the scan used, so the root is found in the family and the
+    UUID spelling cannot fail open where the identifier fails closed.
+    """
+    queue = FakeJobQueue()
+    tracker = linear_over_fake_mcp(_uuid_board(open_below=open_below))
+    heartbeat = ScopeHeartbeat(
+        ask=_answers(_scan(ROOT), _scan(ROOT_BY_UUID)),
+        tracker=tracker,
+        registry=queue,
+        queue=queue,
+        trunks={REPO_URL: "main"},
+    )
+
+    with structlog.testing.capture_logs() as logs:
+        by_identifier = await heartbeat.run(FIXTURE_EPOCH)
+        by_uuid = await heartbeat.run(FIXTURE_EPOCH)
+
+    assert (by_identifier, by_uuid) == (expected, expected)
+    if expected is PassRun.RAN:
+        assert [request.scope for _, request in queue.submissions] == [
+            ROOT,
+            ROOT_BY_UUID,
+        ]
+        assert _rejections(logs) == []
+    else:
+        assert queue.submissions == []
+        assert _rejections(logs) == [
+            (ROOT.key, "no_open_member"),
+            (ROOT_UUID, "no_open_member"),
+        ]

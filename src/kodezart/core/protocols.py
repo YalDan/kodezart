@@ -543,7 +543,7 @@ class RefPublisher(Protocol):
 
 @runtime_checkable
 class PRCreator(Protocol):
-    """Opens pull requests and posts comments on a code hosting platform."""
+    """Opens pull requests, flips them ready, and posts comments on a forge."""
 
     async def create_pr(
         self,
@@ -553,7 +553,25 @@ class PRCreator(Protocol):
         body: str,
         head: str,
         base: str,
-    ) -> tuple[str, int]: ...
+    ) -> tuple[str, int]:
+        """Open a DRAFT pull request; returns its (url, number).
+
+        A pull request the engine opens is work in progress by
+        definition — no caller has a finished unit at that moment — so
+        the draft state is the port's contract, not a caller's choice.
+        ``mark_ready_for_review`` is the only way it changes.
+        """
+        ...
+
+    async def mark_ready_for_review(self, *, repo_url: str, pr_number: int) -> None:
+        """Take the pull request out of draft, or raise the forge's refusal.
+
+        Called exactly when the unit is finished: every criterion
+        accepted, the final review passed and the checks green at the
+        pushed head.  Raises ``ForgeAPIError`` / ``TransientAPIError``
+        like the other writes; never a vendor type.
+        """
+        ...
 
     async def comment_on_pr(
         self,
@@ -942,6 +960,36 @@ class ScopeFamilyReader(Protocol):
         Container scopes resolve by membership; issue scopes resolve to
         the issue and its descendant issues. No bounded scan substitutes
         for the complete scope.
+        """
+        ...
+
+
+@runtime_checkable
+class ScopeMemberPager(Protocol):
+    """The issues below a scope, one listing page at a time, and nothing else.
+
+    Narrowed out of the port beside ``ScopeFamilyReader`` rather than folded
+    into it: that read hydrates every member one issue at a time for its
+    relations, which a scope of a thousand members cannot afford, while a
+    consumer that only selects rows by label and state needs the listing
+    pages alone (KOD-1288).
+    """
+
+    def scope_member_pages(
+        self, *, ref: ScopeRef, whole_bodies: bool = False
+    ) -> AsyncIterator[Sequence[TrackerIssue]]:
+        """Each listing page of the unarchived issues below *ref*, in order.
+
+        Container scopes page their member issues and then the criterion
+        sub-issues beneath those members: a criterion is minted with no
+        project of its own, so a container listing alone never reaches it
+        and the read would answer a scope with none of its criteria. An
+        issue scope pages its descendants and leaves the issue itself out.
+        Rows carry no relations. A listing may cut a long body short;
+        *whole_bodies* asks for each cut row to be read whole, which a
+        consumer of the bodies (a Check) needs and a consumer of the states
+        (the done gate) does not pay for. A page that cannot be read or
+        advanced raises; it never ends the iteration early.
         """
         ...
 
@@ -1384,6 +1432,18 @@ class TrackerScopeApprovalReader(
     async def read_scope_labels(self, *, ref: ScopeRef) -> frozenset[ScopeLabel]:
         """Read configured labels on this exact scope, without approval cascade."""
         ...
+
+
+@runtime_checkable
+class ScopeHeartbeatReader(TrackerScopeApprovalReader, ScopeFamilyReader, Protocol):
+    """The two board reads the scope heartbeat guards a submission with.
+
+    Approval, read the way a run's entry reads it, and the scope's family, to
+    count its open work. Nothing else: the heartbeat writes nothing and reads
+    no other fact from the tracker (interface segregation), so the cheap
+    scan's answer decides which nodes are asked about, never whether one is
+    submitted (KOD-1302).
+    """
 
 
 @runtime_checkable
@@ -1989,6 +2049,7 @@ class TrackerPort(
     CriterionMintWriter,
     DescriptionWriter,
     ScopeFamilyReader,
+    ScopeMemberPager,
     PassGateReader,
     IssueScanReader,
     RecordedRepositoryReader,

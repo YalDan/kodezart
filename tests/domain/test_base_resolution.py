@@ -772,7 +772,7 @@ def test_the_pr_port_and_its_double_expose_no_merge(
     from kodezart.core import protocols
 
     surface = {name for name in vars(protocols.PRCreator) if not name.startswith("_")}
-    assert surface == {"create_pr", "comment_on_pr"}
+    assert surface == {"create_pr", "comment_on_pr", "mark_ready_for_review"}
     assert [name for name in dir(pr_creator) if "merge" in name] == []
 
 

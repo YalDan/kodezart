@@ -359,6 +359,7 @@ def built_workflow(monkeypatch, ci, *, config, repositories=()):
     creator = FakePRCreator()
     # The concrete forge client satisfies all these separate ports at composition.
     ci.create_pr = creator.create_pr
+    ci.mark_ready_for_review = creator.mark_ready_for_review
     ci.comment_on_pr = creator.comment_on_pr
 
     async def visibility(**kwargs):
@@ -503,6 +504,7 @@ def test_active_pr_write_port_exposes_no_merge_capability():
             if callable(value) and not name.startswith("_")
         } == {
             "create_pr",
+            "mark_ready_for_review",
             "comment_on_pr",
         }
 
