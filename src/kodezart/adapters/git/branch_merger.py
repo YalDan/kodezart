@@ -213,19 +213,16 @@ class GitBranchMerger:
         """Where a new feature branch starts, or ``None`` when the source is absent.
 
         Probes the source on origin without acquiring a feature worktree,
-        from a transient workspace on ``base_branch`` (the GitService API
-        requires a cwd even for remote-side queries). The trunk, not HEAD:
-        a bare cache's HEAD mirrors the remote's default branch, which a
-        remote may point at a branch it does not have, and ``git worktree
-        add`` refuses such a HEAD. When the source exists, the answer is the
-        merge base of ``base_branch`` and the fetched source: the commit the
-        source was cut from, however far the trunk has moved since. With no
-        merge base, ``base_branch`` itself.
+        from a transient workspace on HEAD (the GitService API requires a
+        cwd even for remote-side queries). When the source exists, the
+        answer is the merge base of ``base_branch`` and the fetched source:
+        the commit the source was cut from, however far the trunk has moved
+        since. With no merge base, ``base_branch`` itself.
         """
         workspace_path = await self._workspace.acquire(
             repo_path=repo_path,
             repo_url=repo_url,
-            ref=base_branch,
+            ref="HEAD",
             cache_key=cache_key,
         )
         try:
@@ -259,7 +256,7 @@ class GitBranchMerger:
         workspace_path = await self._workspace.acquire(
             repo_path=repo_path,
             repo_url=repo_url,
-            ref=base_branch,
+            ref="HEAD",
             cache_key=cache_key,
         )
         try:
