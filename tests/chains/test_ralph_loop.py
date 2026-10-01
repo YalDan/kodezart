@@ -24,6 +24,7 @@ from kodezart.domain.errors import CriteriaFanInError
 from kodezart.domain.fan_in import require_permutation
 from kodezart.domain.trajectory import fold_trajectory, landable_commit
 from kodezart.services.agent_service import AgentService
+from kodezart.services.language_pass import LanguagePass
 from kodezart.types.domain.accept import AcceptVerdict
 from kodezart.types.domain.agent import (
     ACCEPTANCE_CRITERIA_SCHEMA,
@@ -96,6 +97,7 @@ def _make_loop(
     prompts: RecordingPromptProvider | None = None,
     retry_initial_interval: float = 1.0,
     delay_floor_for: DelayFloor = no_delay_floor,
+    language: bool = False,
 ) -> RalphLoop:
     service = AgentService(
         git_base_url="https://github.com",
@@ -103,18 +105,32 @@ def _make_loop(
         workspace=workspace or FakeWorkspaceProvider(),
         persister=persister,
     )
+    provider = prompts if prompts is not None else make_prompt_provider()
+    git_service = git or FakeGitService()
+    repo_cache = cache or FakeRepoCache()
     return RalphLoop(
         skills=SUPPRESS_ALL_SKILLS,
-        prompts=prompts if prompts is not None else make_prompt_provider(),
+        prompts=provider,
         service=service,
         max_iterations=max_iterations,
         plateau_window=plateau_window,
-        git=git or FakeGitService(),
-        cache=cache or FakeRepoCache(),
+        git=git_service,
+        cache=repo_cache,
         retry_max_attempts=3,
         retry_initial_interval=retry_initial_interval,
         fan_in_max_attempts=2,
         delay_floor_for=delay_floor_for,
+        language=(
+            LanguagePass(
+                runner=service,
+                prompts=provider,
+                skills=SUPPRESS_ALL_SKILLS,
+                git=git_service,
+                cache=repo_cache,
+            )
+            if language
+            else None
+        ),
     )
 
 
@@ -1154,12 +1170,24 @@ class _ScriptedLoopExecutor:
         pass_masks: list[list[bool]],
         *,
         language_findings: list[dict[str, str]] | None = None,
+        language_rounds: list[list[dict[str, str]]] | None = None,
+        grade_by_findings: bool = False,
     ) -> None:
         self._criteria = criteria
         self._pass_masks = list(pass_masks)
         self._eval_count = 0
         self._exec_count = 0
-        self._language_findings = list(language_findings or [])
+        #: One answer per language question in order; the last repeats.
+        self._language_rounds = (
+            [list(r) for r in language_rounds]
+            if language_rounds is not None
+            else [list(language_findings or [])]
+        )
+        self._language_asks = 0
+        #: A grader that fails every criterion when the evaluation prompt
+        #: carries language findings and passes them otherwise, so a failed
+        #: grade is the finding's doing rather than a scripted mask.
+        self._grade_by_findings = grade_by_findings
 
     def commit_sha_for(self, iteration: int) -> str:
         return f"{iteration:x}" * 40
@@ -1181,13 +1209,20 @@ class _ScriptedLoopExecutor:
     ) -> AsyncGenerator[AgentEvent, None]:
         if output_format is not None:
             if is_language_pass_schema(output_format):
-                yield language_pass_answer(self._language_findings)
+                rounds = self._language_rounds
+                answer = rounds[min(self._language_asks, len(rounds) - 1)]
+                self._language_asks += 1
+                yield language_pass_answer(answer)
                 return
             schema = output_format.get("schema")
             if isinstance(schema, dict):
                 props = schema.get("properties", {})
                 if isinstance(props, dict) and "criteriaResults" in props:
-                    mask = self._pass_masks[self._eval_count]
+                    if self._grade_by_findings:
+                        passed_all = "<language_findings>" not in prompt
+                        mask = [passed_all] * len(self._criteria)
+                    else:
+                        mask = self._pass_masks[self._eval_count]
                     self._eval_count += 1
                     yield ResultEvent(
                         subtype="result",
@@ -2112,13 +2147,21 @@ async def test_the_native_evaluation_arm_carries_the_same_engineering_standard()
     assert standard is not None
 
     git = FakeGitService()
+    cache = FakeRepoCache()
     runner = RecordingRunner()
     loop = RalphLoop(
         runner,
         max_iterations=1,
         plateau_window=2,
         git=git,
-        cache=FakeRepoCache(),
+        cache=cache,
+        language=LanguagePass(
+            runner=runner,
+            prompts=provider,
+            skills=SUPPRESS_ALL_SKILLS,
+            git=git,
+            cache=cache,
+        ),
         prompts=provider,
         skills=SUPPRESS_ALL_SKILLS,
         retry_max_attempts=1,
@@ -2369,20 +2412,31 @@ async def test_a_language_finding_reaches_the_grader_and_the_next_implementer() 
     """
     executor = _ScriptedLoopExecutor(
         make_criteria("Tests pass"),
-        [[False], [True]],
-        language_findings=[_REHEARSE_FINDING],
+        [],
+        language_rounds=[[_REHEARSE_FINDING], []],
+        grade_by_findings=True,
     )
-    prompts = RecordingPromptProvider(make_prompt_provider())
-    loop = _make_loop(executor=executor, prompts=prompts, max_iterations=2)
-    _ = [e async for e in loop.run(**_run_kwargs())]
+    # The served set, whose evaluation prompt carries the findings block the
+    # scripted grader reads.
+    from tests.chains.test_dispatch_definitions import v5_provider
+
+    prompts = RecordingPromptProvider(v5_provider())
+    loop = _make_loop(
+        executor=executor, prompts=prompts, max_iterations=2, language=True
+    )
+    events = [e async for e in loop.run(**_run_kwargs())]
+
+    verdicts = [e.verdict for e in events if isinstance(e, WorkflowIterationEvent)]
+    assert verdicts == [AcceptVerdict.rejected, AcceptVerdict.accepted]
 
     asked = prompts.variables_for(PromptKey.LANGUAGE_PASS)
     assert len(asked) == 2
     changes = asked[0]["changes"]
     assert isinstance(changes, list) and len(changes) == 1
     assert changes[0]["branch"] == "kodezart/test-12345678-ralph-abcdef01"
-    assert changes[0]["trunk"] == "main"
+    assert changes[0]["base"] == "main"
     assert changes[0]["patch"]
+    assert changes[0]["commit_messages"]
 
     graded = prompts.variables_for(PromptKey.EVALUATION)
     assert len(graded) == 2
@@ -2405,7 +2459,7 @@ async def test_an_unanswered_language_question_is_said_to_the_grader() -> None:
         language_pass_answered=False,
     )
     prompts = RecordingPromptProvider(make_prompt_provider())
-    loop = _make_loop(executor=executor, prompts=prompts)
+    loop = _make_loop(executor=executor, prompts=prompts, language=True)
     _ = [e async for e in loop.run(**_run_kwargs())]
 
     graded = prompts.variables_for(PromptKey.EVALUATION)
@@ -2417,7 +2471,7 @@ async def test_no_findings_bind_nothing_for_the_grader() -> None:
     """An empty answer leaves both wording names unbound: no block renders."""
     executor = _one_passing_evaluation()
     prompts = RecordingPromptProvider(make_prompt_provider())
-    loop = _make_loop(executor=executor, prompts=prompts)
+    loop = _make_loop(executor=executor, prompts=prompts, language=True)
     _ = [e async for e in loop.run(**_run_kwargs())]
 
     graded = prompts.variables_for(PromptKey.EVALUATION)
@@ -2427,10 +2481,29 @@ async def test_no_findings_bind_nothing_for_the_grader() -> None:
 
 async def test_a_scope_run_reads_the_branches_the_session_pushed() -> None:
     """On a scope run the question reads every branch that moved during the
-    session, diffed against its repository's trunk; the trunk itself and an
-    unmoved branch are not read.
+    session; the trunk itself and an unmoved branch are not read. A branch
+    whose open pull request targets another unit's branch is read against
+    that branch, so a stacked unit's patch carries none of its parent's, and
+    its pull request's prose is read with it.
     """
     from kodezart.types.domain.operation import RepoEntry
+    from kodezart.types.domain.pr_state import PullRequestText
+
+    class _OpenRequests:
+        def __init__(self) -> None:
+            self.asked: list[tuple[str, str]] = []
+
+        async def open_pr_text(
+            self, *, repo_url: str, head: str
+        ) -> PullRequestText | None:
+            self.asked.append((repo_url, head))
+            if head != "DUC-7-new-unit":
+                return None
+            return PullRequestText(
+                title="Rehearse transfers",
+                body="Adds a rehearsal step.",
+                base_branch="DUC-1-old-unit",
+            )
 
     app = RepoEntry(url="https://github.com/o/app", trunk="main")
     before = {"main": "a" * 40, "DUC-1-old-unit": "b" * 40}
@@ -2441,8 +2514,10 @@ async def test_a_scope_run_reads_the_branches_the_session_pushed() -> None:
     }
     git = FakeGitService(
         branch_heads=[before, after],
-        patches={("main", "DUC-7-new-unit"): "+ def rehearse():\n"},
+        patches={("DUC-1-old-unit", "c" * 40): "+ def rehearse():\n"},
+        commit_messages={("DUC-1-old-unit", "c" * 40): "feat: rehearse\n"},
     )
+    requests = _OpenRequests()
     executor = FakeAgentExecutor(
         events=_one_passing_evaluation()._events,
         language_findings=[_REHEARSE_FINDING],
@@ -2470,6 +2545,14 @@ async def test_a_scope_run_reads_the_branches_the_session_pushed() -> None:
         retry_initial_interval=1.0,
         fan_in_max_attempts=2,
         delay_floor_for=no_delay_floor,
+        language=LanguagePass(
+            runner=service,
+            prompts=prompts,
+            skills=SUPPRESS_ALL_SKILLS,
+            git=git,
+            cache=cache,
+            pull_requests=requests,
+        ),
     )
     scope = ScopeRef(kind=ScopeKind.PROJECT, key="project-one")
     _ = [e async for e in loop.run(**_run_kwargs(), scope=scope)]
@@ -2478,12 +2561,17 @@ async def test_a_scope_run_reads_the_branches_the_session_pushed() -> None:
     assert len(asked) == 1
     changes = asked[0]["changes"]
     assert isinstance(changes, list)
-    assert [(c["branch"], c["trunk"], c["head_sha"]) for c in changes] == [
-        ("DUC-7-new-unit", "main", "c" * 40)
+    assert [(c["branch"], c["base"], c["head_sha"]) for c in changes] == [
+        ("DUC-7-new-unit", "DUC-1-old-unit", "c" * 40)
     ]
     assert changes[0]["patch"] == "+ def rehearse():\n"
-    patched = [c[3] for c in git.calls if c[0] == "diff_patch"]
-    assert patched == ["DUC-7-new-unit"]
+    assert changes[0]["commit_messages"] == "feat: rehearse\n"
+    assert changes[0]["pull_request_text"] == (
+        "Rehearse transfers\n\nAdds a rehearsal step."
+    )
+    patched = [(c[2], c[3]) for c in git.calls if c[0] == "diff_patch"]
+    assert patched == [("DUC-1-old-unit", "c" * 40)]
+    assert requests.asked == [("https://github.com/o/app", "DUC-7-new-unit")]
 
     graded = prompts.variables_for(PromptKey.EVALUATION)
     findings = graded[0]["language_findings"]

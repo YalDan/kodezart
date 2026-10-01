@@ -198,6 +198,8 @@ EXTENDED_CASES: dict[str, tuple[PromptKey, dict[str, object]]] = {
                     "main",
                     "f" * 40,
                     "--- a/src/x.py\n+++ b/src/x.py\n+def rehearse_transfer():\n",
+                    "feat: rehearse a transfer before sending it\n",
+                    "Rehearse transfers\n\nAdds a rehearsal step.",
                 )
             ]
         ),

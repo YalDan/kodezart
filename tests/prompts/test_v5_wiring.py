@@ -108,7 +108,7 @@ ARTIFACT_TAGS: dict[str, tuple[str, ...]] = {
     "scope_scan": (),
     "scope_done": (),
     # The language question renders one tagged block per pushed branch.
-    "language_pass": ("branch",),
+    "language_pass": ("branch", "patch", "commit_messages", "pull_request_text"),
     "fix": ("ticket", "review_feedback", "ci_summary"),
     "fix__no_optional_sections": ("ticket",),
     "grooming_pass": (),

@@ -575,6 +575,7 @@ class FakeGitService:
         missing_objects: set[str] | None = None,
         branch_heads: list[dict[str, str]] | None = None,
         patches: dict[tuple[str, str], str] | None = None,
+        commit_messages: dict[tuple[str, str], str] | None = None,
     ) -> None:
         self.calls: list[tuple[str, ...]] = []
         #: Object names the repository does not hold; every other name is held.
@@ -587,6 +588,7 @@ class FakeGitService:
         #: The patch ``diff_patch`` answers per ``(base_ref, head_ref)``;
         #: a pair not scripted answers a one-line stand-in patch.
         self._patches: dict[tuple[str, str], str] = dict(patches or {})
+        self._commit_messages: dict[tuple[str, str], str] = dict(commit_messages or {})
         self._merge_conflicts: dict[str, tuple[str, ...]] = dict(merge_conflicts or {})
         #: The commit each detached tree was checked out at, by its path.
         #:
@@ -847,6 +849,20 @@ class FakeGitService:
         if base_ref == head_ref:
             return ""
         return "+ scripted change\n"
+
+    async def commit_messages(
+        self,
+        cwd: str,
+        base_ref: str,
+        head_ref: str,
+        max_bytes: int,
+    ) -> str:
+        self.calls.append(("commit_messages", cwd, base_ref, head_ref, str(max_bytes)))
+        if base_ref == head_ref:
+            return ""
+        return self._commit_messages.get((base_ref, head_ref), "scripted commit\n")[
+            :max_bytes
+        ]
 
     async def reset_hard(self, cwd: str, ref: str) -> None:
         self.calls.append(("reset_hard", cwd, ref))
@@ -1668,6 +1684,9 @@ class ScriptedFakeExecutor:
                         },
                     )
                     return
+                if is_language_pass_schema(output_format):
+                    yield language_pass_answer()
+                    return
                 if "findings" in props:
                     yield ResultEvent(
                         subtype="result",
@@ -1692,9 +1711,6 @@ class ScriptedFakeExecutor:
                             }
                         ),
                     )
-                    return
-                if is_language_pass_schema(output_format):
-                    yield language_pass_answer()
                     return
                 if "criteriaResults" in props:
                     result = self._eval_results.pop(0)

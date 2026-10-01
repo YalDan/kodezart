@@ -2,11 +2,13 @@
 
 The loop knows nothing about the words a session chose; it knows which
 branches moved while the session ran, because the cache's clone heads are
-read before the session and again after it. Each moved branch is diffed
-against its trunk and the patches go to one short question on the cheap
-engine (``PromptKey.LANGUAGE_PASS``), whose answer is a list of findings
-the grader is handed. The principle lives in that prompt; this module holds
-the arithmetic around it and no opinion about words.
+read before the session and again after it. Each moved branch is read
+against its base (the branch its open pull request targets, or the trunk
+when it has none): the patch, the commit messages and the pull request's
+prose go to one short question on the cheap engine
+(``PromptKey.LANGUAGE_PASS``), whose answer is a list of findings the grader
+is handed. The principle lives in that prompt; this module holds the
+arithmetic around it and no opinion about words.
 """
 
 from collections.abc import Mapping, Sequence
@@ -17,6 +19,7 @@ from kodezart.core.protocols import (
     AgentRunner,
     GitService,
     PromptSetProvider,
+    PullRequestTextReader,
     RepoCache,
 )
 from kodezart.services.agent_question import ask
@@ -33,113 +36,174 @@ _log: BoundLogger = get_logger(__name__)
 #: patch text so the reader knows it saw a prefix.
 PATCH_BYTES_PER_BRANCH = 200_000
 
+#: How much of one branch's commit messages the question is shown.
+MESSAGE_BYTES_PER_BRANCH = 20_000
+
 
 class BranchChange(NamedTuple):
-    """One branch an iteration moved, with the patch it added over its trunk."""
+    """One branch an iteration moved: what it added over its base, in words."""
 
     repository: str
     branch: str
-    trunk: str
+    base: str
     head_sha: str
     patch: str
+    commit_messages: str
+    pull_request_text: str
 
 
-async def snapshot_heads(
-    *,
-    git: GitService,
-    cache: RepoCache,
-    repositories: Sequence[RepoEntry],
-    cache_key: str | None,
-) -> dict[str, dict[str, str]]:
-    """Every declared repository's branch heads, by repository url."""
-    heads: dict[str, dict[str, str]] = {}
-    for repository in repositories:
-        clone = await cache.ensure_available(repository.url, cache_key)
-        heads[repository.url] = await git.branch_heads(clone)
-    return heads
+class LanguagePass:
+    """Reads the words each iteration wrote and asks the language question.
 
-
-async def moved_branches(
-    *,
-    git: GitService,
-    cache: RepoCache,
-    repositories: Sequence[RepoEntry],
-    before: Mapping[str, Mapping[str, str]],
-    cache_key: str | None,
-) -> list[BranchChange]:
-    """The branches whose head is new or moved since *before*, with their patches.
-
-    A branch equal to its trunk's head added nothing and is left out; the
-    trunk itself is left out too, because the loop never writes it.
+    Holds no run state: the repositories, the heads before the session and
+    the workspace arrive per call, so one object serves every loop the
+    composition builds. Without a ``pull_requests`` reader a branch is read
+    against its trunk and with no pull-request text.
     """
-    changes: list[BranchChange] = []
-    for repository in repositories:
-        clone = await cache.ensure_available(repository.url, cache_key)
-        now = await git.branch_heads(clone)
-        earlier = before.get(repository.url, {})
-        for branch, head_sha in sorted(now.items()):
-            if branch == repository.trunk or earlier.get(branch) == head_sha:
-                continue
-            patch = await git.diff_patch(
-                clone, repository.trunk, branch, PATCH_BYTES_PER_BRANCH
-            )
-            if not patch:
-                continue
-            changes.append(
-                BranchChange(repository.url, branch, repository.trunk, head_sha, patch)
-            )
-    return changes
+
+    def __init__(
+        self,
+        *,
+        runner: AgentRunner,
+        prompts: PromptSetProvider,
+        skills: SkillsSelection,
+        git: GitService,
+        cache: RepoCache,
+        pull_requests: PullRequestTextReader | None = None,
+    ) -> None:
+        self._runner = runner
+        self._prompts = prompts
+        self._skills = skills
+        self._git = git
+        self._cache = cache
+        self._pull_requests = pull_requests
+
+    async def snapshot(
+        self, *, repositories: Sequence[RepoEntry], cache_key: str | None
+    ) -> dict[str, dict[str, str]]:
+        """Every declared repository's branch heads, by repository url."""
+        heads: dict[str, dict[str, str]] = {}
+        for repository in repositories:
+            clone = await self._cache.ensure_available(repository.url, cache_key)
+            heads[repository.url] = await self._git.branch_heads(clone)
+        return heads
+
+    async def moved(
+        self,
+        *,
+        repositories: Sequence[RepoEntry],
+        before: Mapping[str, Mapping[str, str]],
+        cache_key: str | None,
+    ) -> list[BranchChange]:
+        """The branches whose head is new or moved since *before*, read whole.
+
+        A branch equal to its base added nothing and is left out; the trunk
+        itself is left out too, because the loop never writes it.
+        """
+        changes: list[BranchChange] = []
+        for repository in repositories:
+            clone = await self._cache.ensure_available(repository.url, cache_key)
+            now = await self._git.branch_heads(clone)
+            earlier = before.get(repository.url, {})
+            for branch, head_sha in sorted(now.items()):
+                if branch == repository.trunk or earlier.get(branch) == head_sha:
+                    continue
+                change = await self._read(
+                    cwd=clone,
+                    repository=repository.url,
+                    branch=branch,
+                    trunk=repository.trunk,
+                    head=head_sha,
+                )
+                if change is not None:
+                    changes.append(change)
+        return changes
+
+    async def own(
+        self, *, cwd: str, repository: str, branch: str, base: str, head: str
+    ) -> BranchChange | None:
+        """A per-issue run's own branch over the base the run was given."""
+        return await self._read(
+            cwd=cwd,
+            repository=repository,
+            branch=branch,
+            trunk=base,
+            head=head,
+            look_up_pull_request=False,
+        )
+
+    async def findings(
+        self, *, workspace_path: str, changes: Sequence[BranchChange]
+    ) -> list[LanguageFinding] | None:
+        """Ask the language question over *changes*: the findings, or ``None``.
+
+        No change means nothing to read and an empty answer without a
+        session. ``None`` means the question went unanswered; the caller
+        decides what that is worth (the grader is told the pass did not run).
+        """
+        if not changes:
+            return []
+        answer = await ask(
+            runner=self._runner,
+            prompts=self._prompts,
+            skills=self._skills,
+            workspace_path=workspace_path,
+            key=PromptKey.LANGUAGE_PASS,
+            bindings=change_variables(changes),
+            answer=LanguagePassOutput,
+        )
+        if answer is None:
+            return None
+        await _log.ainfo(
+            "language_pass_answered",
+            branches=[f"{c.repository}#{c.branch}" for c in changes],
+            findings=len(answer.findings),
+        )
+        return list(answer.findings)
+
+    async def _read(
+        self,
+        *,
+        cwd: str,
+        repository: str,
+        branch: str,
+        trunk: str,
+        head: str,
+        look_up_pull_request: bool = True,
+    ) -> BranchChange | None:
+        """One branch over its base, or ``None`` when it added nothing."""
+        opened = (
+            await self._pull_requests.open_pr_text(repo_url=repository, head=branch)
+            if look_up_pull_request and self._pull_requests is not None
+            else None
+        )
+        base = trunk if opened is None else opened.base_branch
+        patch = await self._git.diff_patch(cwd, base, head, PATCH_BYTES_PER_BRANCH)
+        if not patch:
+            return None
+        messages = await self._git.commit_messages(
+            cwd, base, head, MESSAGE_BYTES_PER_BRANCH
+        )
+        text = "" if opened is None else f"{opened.title}\n\n{opened.body}".strip()
+        return BranchChange(repository, branch, base, head, patch, messages, text)
 
 
 def change_variables(changes: Sequence[BranchChange]) -> dict[str, object]:
     """The render variables the language-pass prompt reads."""
-    return {
-        "changes": [
-            {
-                "repository": change.repository,
-                "branch": change.branch,
-                "trunk": change.trunk,
-                "head_sha": change.head_sha,
-                "patch": change.patch,
-            }
-            for change in changes
-        ],
-    }
-
-
-async def language_findings(
-    *,
-    runner: AgentRunner,
-    prompts: PromptSetProvider,
-    skills: SkillsSelection,
-    workspace_path: str,
-    changes: Sequence[BranchChange],
-) -> list[LanguageFinding] | None:
-    """Ask the language question over *changes*: the findings, or ``None``.
-
-    No change means nothing to read and an empty answer without a session.
-    ``None`` means the question went unanswered; the caller decides what
-    that is worth (the grader is told the pass did not run).
-    """
-    if not changes:
-        return []
-    answer = await ask(
-        runner=runner,
-        prompts=prompts,
-        skills=skills,
-        workspace_path=workspace_path,
-        key=PromptKey.LANGUAGE_PASS,
-        bindings=change_variables(changes),
-        answer=LanguagePassOutput,
-    )
-    if answer is None:
-        return None
-    await _log.ainfo(
-        "language_pass_answered",
-        branches=[f"{c.repository}#{c.branch}" for c in changes],
-        findings=len(answer.findings),
-    )
-    return list(answer.findings)
+    rendered: list[dict[str, str]] = []
+    for change in changes:
+        entry = {
+            "repository": change.repository,
+            "branch": change.branch,
+            "base": change.base,
+            "head_sha": change.head_sha,
+            "patch": change.patch,
+            "commit_messages": change.commit_messages,
+        }
+        if change.pull_request_text:
+            entry["pull_request_text"] = change.pull_request_text
+        rendered.append(entry)
+    return {"changes": rendered}
 
 
 def finding_variables(findings: Sequence[LanguageFinding] | None) -> dict[str, object]:

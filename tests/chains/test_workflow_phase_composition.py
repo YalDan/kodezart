@@ -33,6 +33,7 @@ from tests.fakes import (
     FakeRefPublisher,
     PassThroughGate,
     ScriptedFakeExecutor,
+    is_language_pass_schema,
     make_prompt_provider,
 )
 from tests.integration.test_workflow_e2e import (
@@ -88,6 +89,10 @@ class ObservedExecutor:
             role = "implementation"
         elif "slug" in properties:
             role = "branch"
+        elif is_language_pass_schema(output_format):
+            # The loop's language question is a utility question, like the
+            # commit message: it carries no run identity of its own.
+            role = "other"
         elif "findings" in properties:
             role = "validation"
         elif "criteriaResults" in properties:

@@ -718,6 +718,27 @@ class SubprocessGitService:
         cut = encoded[:max_bytes].decode(errors="ignore")
         return f"{cut}\n[patch cut at {max_bytes} bytes of {len(encoded)}]"
 
+    async def commit_messages(
+        self,
+        cwd: str,
+        base_ref: str,
+        head_ref: str,
+        max_bytes: int,
+    ) -> str:
+        """The messages *head_ref* gained since the split, cut at *max_bytes*."""
+        if base_ref == head_ref:
+            return ""
+        split = await self.merge_base(cwd, base_ref, head_ref) or base_ref
+        messages = await self._run_output(
+            ["git", "log", "--format=%B", f"{split}..{head_ref}"],
+            cwd=cwd,
+        )
+        encoded = messages.encode()
+        if len(encoded) <= max_bytes:
+            return messages
+        cut = encoded[:max_bytes].decode(errors="ignore")
+        return f"{cut}\n[messages cut at {max_bytes} bytes of {len(encoded)}]"
+
     async def reset_hard(self, cwd: str, ref: str) -> None:
         """Hard-reset working tree + index + HEAD to *ref*."""
         await self._run(["git", "reset", "--hard", ref], cwd=cwd)

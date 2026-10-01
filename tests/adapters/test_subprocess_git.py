@@ -844,3 +844,33 @@ def test_bare_stream_guard_catches_a_deliberate_violation() -> None:
         "        raise RuntimeError(msg)\n"
     )
     assert _bare_stream_message_sites(violation) == ["_run_with_exit_codes:4"]
+
+
+async def test_commit_messages_reads_what_the_head_gained_since_the_split(
+    git_service: SubprocessGitService, git_repo: Path
+) -> None:
+    """KOD-1307: the language pass reads the messages a branch added, whole."""
+    for cmd in (
+        ["git", "checkout", "-b", "unit"],
+        [
+            "git",
+            "commit",
+            "--allow-empty",
+            "-m",
+            "feat: add a simulation\n\nBody line.",
+        ],
+        ["git", "checkout", "main"],
+        ["git", "commit", "--allow-empty", "-m", "trunk moved"],
+    ):
+        await _run_git(cmd, cwd=git_repo)
+
+    messages = await git_service.commit_messages(str(git_repo), "main", "unit", 10_000)
+    assert "feat: add a simulation" in messages
+    assert "Body line." in messages
+    assert "trunk moved" not in messages
+    assert "init" not in messages
+
+    cut = await git_service.commit_messages(str(git_repo), "main", "unit", 8)
+    assert cut.startswith("feat: ad")
+    assert "[messages cut at" in cut
+    assert await git_service.commit_messages(str(git_repo), "unit", "unit", 100) == ""

@@ -24,6 +24,7 @@ from kodezart.chains.ralph_loop import RalphLoop
 from kodezart.chains.ticket_generation import TicketGenerationLoop
 from kodezart.core.errors import NoStructuredOutputError
 from kodezart.core.protocols import AfterPublish, NativeWriteGuard
+from kodezart.services.language_pass import LanguagePass
 from kodezart.types.domain.agent import AgentEvent, ResultEvent
 from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.gating import RepoVisibility
@@ -395,18 +396,27 @@ async def evaluator_dispatches(provider: InRepoPromptRegistry) -> RecordingRunne
             ],
         },
     )
+    git = FakeGitService()
+    cache = FakeRepoCache()
     loop = RalphLoop(
         runner,
         max_iterations=1,
         plateau_window=2,
-        git=FakeGitService(),
-        cache=FakeRepoCache(),
+        git=git,
+        cache=cache,
         prompts=provider,
         skills=SUPPRESS_ALL_SKILLS,
         retry_max_attempts=3,
         retry_initial_interval=1.0,
         fan_in_max_attempts=2,
         delay_floor_for=no_delay_floor,
+        language=LanguagePass(
+            runner=runner,
+            prompts=provider,
+            skills=SUPPRESS_ALL_SKILLS,
+            git=git,
+            cache=cache,
+        ),
     )
     async for _event in loop.run(
         prompt="fix it",

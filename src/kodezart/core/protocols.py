@@ -51,7 +51,7 @@ from kodezart.types.domain.operation import (
     ScopeLabel,
 )
 from kodezart.types.domain.persist import ArtifactPersistStatus, PersistResult
-from kodezart.types.domain.pr_state import PRState
+from kodezart.types.domain.pr_state import PRState, PullRequestText
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run import RunState
 from kodezart.types.domain.run_alarm import RunAlarm
@@ -351,6 +351,21 @@ class GitService(Protocol):
         base (or *base_ref* itself with no common ancestor). The text is cut
         at *max_bytes* and ends with a line saying so when it was, so a reader
         knows it saw a prefix. Empty when the refs are equal.
+        """
+        ...
+
+    async def commit_messages(
+        self,
+        cwd: str,
+        base_ref: str,
+        head_ref: str,
+        max_bytes: int,
+    ) -> str:
+        """The full messages of the commits *head_ref* gained since *base_ref*.
+
+        Maps to ``git log --format=%B <split>..<head_ref>`` with the same
+        split as :meth:`diff_patch`, newest first, cut at *max_bytes* with a
+        closing line saying so. Empty when the refs are equal.
         """
         ...
 
@@ -660,6 +675,24 @@ class ForgeQuery(Protocol):
         This asks the forge nothing, so it is not a coroutine and it
         never reports whether the branch exists — an address is not an
         observation, and a caller must not read one as the other.
+        """
+        ...
+
+
+@runtime_checkable
+class PullRequestTextReader(Protocol):
+    """The prose and base of the open pull request on a head, read-only.
+
+    Its own role rather than a method on ``ForgeQuery``: the language pass
+    reads what a pull request says and which branch it targets, and needs
+    nothing else the forge answers.
+    """
+
+    async def open_pr_text(self, *, repo_url: str, head: str) -> PullRequestText | None:
+        """The open pull request on *head*: its title and body, and its base.
+
+        ``None`` when nothing is open on that head. A read that could not be
+        made raises, as :meth:`ForgeQuery.open_pr_for_head` does.
         """
         ...
 
