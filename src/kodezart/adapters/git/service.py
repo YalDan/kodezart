@@ -251,7 +251,16 @@ class SubprocessGitService:
         return p.is_dir() and ((p / ".git").exists() or (p / "HEAD").exists())
 
     async def clone_bare(self, url: str, target: str) -> None:
-        """Clone a remote URL as a bare repository."""
+        """Clone a remote URL as a bare repository whose HEAD resolves.
+
+        A bare clone takes the remote's HEAD as its own. A remote whose HEAD
+        names a branch it does not have (a repository initialised under one
+        default-branch name and pushed under another) leaves the clone with
+        an orphaned HEAD, and ``git worktree add`` refuses to cut anything
+        from it. Such a clone points HEAD at its first branch instead; a
+        clone with no branch at all is left as it is, since nothing could be
+        cut from it either way.
+        """
         Path(target).parent.mkdir(parents=True, exist_ok=True)
         effective_url = self._auth.authenticated_url(url) if self._auth else url
         await self._run(
@@ -259,6 +268,19 @@ class SubprocessGitService:
             cwd=str(Path(target).parent),
             env=self._auth.subprocess_env() if self._auth else None,
         )
+        head_resolves, _ = await self._run_with_exit_codes(
+            ["git", "rev-parse", "--verify", "--quiet", "HEAD"],
+            cwd=target,
+            allowed=frozenset({0, 1}),
+        )
+        if head_resolves == 0:
+            return
+        first_branch = await self._run_output(
+            ["git", "for-each-ref", "--count=1", "--format=%(refname)", "refs/heads/"],
+            cwd=target,
+        )
+        if first_branch:
+            await self._run(["git", "symbolic-ref", "HEAD", first_branch], cwd=target)
 
     async def fetch(self, repo_path: str) -> None:
         """Fetch latest from the configured remote, populating remote-tracking refs.
