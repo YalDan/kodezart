@@ -33,6 +33,10 @@ class WorkflowOutcome(StrEnum):
     exit by whether the run produced anything to land.  They are the
     machine-readable incompleteness marker a base-branch resolver checks
     before building on a run's output — a title prefix is not one.
+    ``zero_commit_no_pr`` also ends an accepted run whose loop branch gained
+    no commit in any repository: its criteria already held at the trunk, so
+    it had nothing to merge or deliver, and the terminal's ``accepted`` tells
+    it from the loop exit.
 
     ``remediation_budget_exhausted`` outranks both fix-budget members,
     which are consequently unreachable at any valid configuration.  They

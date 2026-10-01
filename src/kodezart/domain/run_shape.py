@@ -2,12 +2,6 @@
 
 from kodezart.domain.errors import RunShapeReadError
 from kodezart.domain.run_alarm_record import surface_alarm_member_id
-from kodezart.types.domain.escalation import EscalationResolutionState
-from kodezart.types.domain.organize import (
-    OrganizeLabelNamespace,
-    phase_marker_source,
-    split_label_key,
-)
 from kodezart.types.domain.run_alarm import (
     AlarmBound,
     AlarmReading,
@@ -16,27 +10,18 @@ from kodezart.types.domain.run_alarm import (
     AlarmSubjectKind,
     CommitsEvidence,
     CountEvidence,
-    EscalationEvidence,
     Evidence,
-    LabelsEvidence,
     LaneFieldEvidence,
-    LaneSubject,
     PresenceEvidence,
     ReferencesEvidence,
-    ResolutionEvidence,
     RunAlarm,
-    ScopeEvidence,
     SurfaceEvidence,
-    TallyEvidence,
     TextEvidence,
 )
 
-ESCALATION_COMMITS_BOUND = "run_alarm_escalation_age_max_commits"
-ESCALATION_TICKS_BOUND = "run_alarm_escalation_age_max_ticks"
 BARREN_FILES_BOUND = "run_alarm_barren_tick_max_files_changed"
 BARREN_COMMITS_BOUND = "run_alarm_barren_tick_max_commits_ahead"
 SURFACE_HOLDERS_BOUND = "run_alarm_max_surface_holders"
-COMMITS_WITHOUT_CLOSURE_BOUND = "run_alarm_max_commits_without_closure"
 
 
 def unreadable_reading(
@@ -261,93 +246,6 @@ def commits_ahead_of_record(
     )
 
 
-def escalation_ageing(
-    *,
-    subject: AlarmSubject,
-    readings: tuple[AlarmReading, ...],
-    raised_at_sha: str,
-    raised_by: str,
-) -> RunAlarm | None:
-    """Measure an unanswered occurrence on its lane's two recorded counters.
-
-    Readings are ordered: the escalation value, its resolution value, the
-    recorded commit SHA sequence, ticks since raise, and the two configured
-    count limits (commits then ticks). Values remain typed; their original values
-    and source references survive in the alarm. The resolution names the
-    same escalation source, and bound sources are AppConfig field names.
-
-    A counter must strictly exceed its limit to fire its own arm.
-    Either arm raises the one subject/signal alarm; if both fire, the commit
-    bound is reported first. Both readings remain available for replay.
-    Missing or ambiguous history refuses observation instead of clearing it.
-    """
-    signal = AlarmSignal.ESCALATION_AGEING
-    try:
-        escalation, resolution, commits, ticks, max_commits, max_ticks = readings
-    except ValueError as exc:
-        raise unreadable_reading(
-            signal, subject.scope_key, "incomplete readings"
-        ) from exc
-
-    record = read_alarm_value(escalation, EscalationEvidence, signal)
-    answer = read_alarm_value(resolution, ResolutionEvidence, signal)
-    if (
-        subject.kind is not AlarmSubjectKind.ESCALATION
-        or subject.member_id != record.escalation_key
-        or subject.issue_id != record.issue_id
-        or subject.lane_key is None
-    ):
-        raise unreadable_reading(
-            signal, escalation.source_ref, "subject does not identify this escalation"
-        )
-    if resolution.source_ref != escalation.source_ref:
-        raise unreadable_reading(
-            signal, resolution.source_ref, "resolution identifies another escalation"
-        )
-    if (max_commits.source_ref, max_ticks.source_ref) != (
-        ESCALATION_COMMITS_BOUND,
-        ESCALATION_TICKS_BOUND,
-    ):
-        raise unreadable_reading(
-            signal, subject.member_id, "age bounds do not name their AppConfig fields"
-        )
-
-    commit_order = read_alarm_value(commits, ReferencesEvidence, signal)
-    tick_age = read_alarm_value(ticks, CountEvidence, signal)
-    commit_limit = read_alarm_value(max_commits, CountEvidence, signal)
-    tick_limit = read_alarm_value(max_ticks, CountEvidence, signal)
-    if len(set(commit_order)) != len(commit_order):
-        raise unreadable_reading(
-            signal, commits.source_ref, "recorded commit order repeats a SHA"
-        )
-    if record.raised_at_sha not in commit_order:
-        raise unreadable_reading(
-            signal, commits.source_ref, "recorded commit order omits the raise SHA"
-        )
-    commit_age = len(commit_order) - commit_order.index(record.raised_at_sha) - 1
-
-    if answer.state is EscalationResolutionState.RESOLVED:
-        return None
-    for reading, configured, observed in (
-        (max_commits, commit_limit, commit_age),
-        (max_ticks, tick_limit, tick_age),
-    ):
-        if observed > configured:
-            return RunAlarm(
-                subject=subject,
-                signal=AlarmSignal.ESCALATION_AGEING,
-                readings=readings,
-                bound=AlarmBound(
-                    config_field=reading.source_ref,
-                    configured_value=configured,
-                    observed_value=observed,
-                ),
-                raised_at_sha=raised_at_sha,
-                raised_by=raised_by,
-            )
-    return None
-
-
 def surface_contended(
     *,
     subject: AlarmSubject,
@@ -483,208 +381,3 @@ def barren_tick_with_diff_growth(
                 raised_by=raised_by,
             )
     return None
-
-
-TICKET_MARKER_SOURCE = phase_marker_source("ticket")
-CRITERIA_MARKER_SOURCE = phase_marker_source("criteria")
-
-
-def tally_unmoved(
-    *,
-    subject: AlarmSubject,
-    readings: tuple[AlarmReading, ...],
-    raised_at_sha: str,
-    raised_by: str,
-) -> RunAlarm | None:
-    """One signal over two observation windows, chosen by the subject's kind.
-
-    A lane subject reads the same tally twice — what its subtree owed, what
-    it owes now, and what it recorded between the two — while a scope
-    subject reads one snapshot of an ORGANIZE marker barrier. Both are the
-    same question asked of what the run's shape is addressed to, so both are
-    arms of this member rather than a second signal, and a subject with no
-    arm refuses instead of being answered from some other arm's readings.
-
-    The scope arm is a WIDENING of ``TALLY_UNMOVED``, not a member of its
-    own: it is one more firing/clean pair on this function, and a second
-    signal for it would be a thirteenth member the vocabulary refuses.
-    """
-    if isinstance(subject, LaneSubject):
-        return _lane_tally_unmoved(
-            subject=subject,
-            readings=readings,
-            raised_at_sha=raised_at_sha,
-            raised_by=raised_by,
-        )
-    if subject.kind is AlarmSubjectKind.SCOPE:
-        return _scope_tally_unmoved(
-            subject=subject,
-            readings=readings,
-            raised_at_sha=raised_at_sha,
-            raised_by=raised_by,
-        )
-    raise unreadable_reading(
-        AlarmSignal.TALLY_UNMOVED, subject.scope_key, "no tally arm for this subject"
-    )
-
-
-def _lane_tally_unmoved(
-    *,
-    subject: LaneSubject,
-    readings: tuple[AlarmReading, ...],
-    raised_at_sha: str,
-    raised_by: str,
-) -> RunAlarm | None:
-    """Observe a lane's tally standing still across its own recorded commits.
-
-    Four readings in order: the earlier tally of this lane, its current
-    tally, the earlier reading's identities that have since closed, and the
-    configured bound. The clock is the lane's own record — the shas the
-    current reading carries that the earlier one did not — so a lane nobody
-    fired records nothing and is quiet by arithmetic rather than by a rule.
-
-    Work counts identities and never lengths: a reading that closed two
-    criteria while three more were surfaced did work the difference of two
-    counts would report as negative. A lane that closed something, or owes
-    nothing at all, is quiet whatever it recorded.
-
-    A lane's commit shas may repeat: a landing records the best commit again
-    as its own row (KOD-681), so a returning sha is a recorded act. The clock
-    counts distinct new shas, so a returning sha is never new work. Criterion
-    identities may not repeat, and a reading that repeats one refuses.
-    """
-    signal = AlarmSignal.TALLY_UNMOVED
-    try:
-        anchor_reading, latest_reading, closed_reading, bound_reading = readings
-    except ValueError as exc:
-        raise unreadable_reading(
-            signal, subject.lane_key, "incomplete lane tally readings"
-        ) from exc
-    for reading in (anchor_reading, latest_reading, closed_reading):
-        if reading.source_ref != subject.lane_key:
-            raise unreadable_reading(
-                signal, reading.source_ref, "a tally reading names another lane"
-            )
-    if bound_reading.source_ref != COMMITS_WITHOUT_CLOSURE_BOUND:
-        raise unreadable_reading(
-            signal, bound_reading.source_ref, "the bound names another configured field"
-        )
-    anchor = read_alarm_value(anchor_reading, TallyEvidence, signal)
-    latest = read_alarm_value(latest_reading, TallyEvidence, signal)
-    closed = read_alarm_value(closed_reading, ReferencesEvidence, signal)
-    configured = read_alarm_value(bound_reading, CountEvidence, signal)
-    for reading, identities in (
-        (anchor_reading, anchor.open),
-        (latest_reading, latest.open),
-        (closed_reading, closed),
-    ):
-        if len(set(identities)) != len(identities):
-            raise unreadable_reading(
-                signal, reading.source_ref, "an identity appears more than once"
-            )
-    if not set(closed) <= set(anchor.open):
-        raise unreadable_reading(
-            signal, closed_reading.source_ref, "a closed identity was never owed"
-        )
-    if set(closed) & set(latest.open):
-        raise unreadable_reading(
-            signal, closed_reading.source_ref, "a closed identity is still owed"
-        )
-    if not latest.open or closed:
-        return None
-    observed = len(set(latest.commits) - set(anchor.commits))
-    if observed > configured:
-        return RunAlarm(
-            subject=subject,
-            signal=signal,
-            readings=readings,
-            bound=AlarmBound(
-                config_field=COMMITS_WITHOUT_CLOSURE_BOUND,
-                configured_value=configured,
-                observed_value=observed,
-            ),
-            raised_at_sha=raised_at_sha,
-            raised_by=raised_by,
-        )
-    return None
-
-
-def _scope_tally_unmoved(
-    *,
-    subject: AlarmSubject,
-    readings: tuple[AlarmReading, ...],
-    raised_at_sha: str,
-    raised_by: str,
-) -> RunAlarm | None:
-    """Observe the one adjacent ORGANIZE marker barrier over its roster.
-
-    Readings retain two qualified configuration keys — the ticket stage's
-    marker source, then the criteria stage's, the one governed transition
-    the table has — the native scope address, its ORGANIZE work-target keys,
-    then per-member semantic label sets. An absent member reading or a
-    absent label set counts as open; malformed or foreign readings refuse.
-    The execution-entry event reader is not implemented by substituting
-    other tracker facts.
-    """
-    signal = AlarmSignal.TALLY_UNMOVED
-    try:
-        current, following, scope_reading, roster_reading, *members = readings
-    except ValueError as exc:
-        raise unreadable_reading(
-            signal, subject.scope_key, "incomplete scope tally readings"
-        ) from exc
-    if (current.source_ref, following.source_ref) != (
-        TICKET_MARKER_SOURCE,
-        CRITERIA_MARKER_SOURCE,
-    ):
-        raise unreadable_reading(
-            signal, subject.scope_key, "wrong phase marker sources"
-        )
-    try:
-        current_namespace, current_key = split_label_key(_identity(current, signal))
-        next_namespace, next_key = split_label_key(_identity(following, signal))
-    except ValueError as exc:
-        raise unreadable_reading(
-            signal, current.source_ref, "invalid phase marker key"
-        ) from exc
-    if (
-        current_namespace is not OrganizeLabelNamespace.ISSUE
-        or next_namespace is not OrganizeLabelNamespace.ISSUE
-        or current_key == next_key
-    ):
-        raise unreadable_reading(
-            signal, current.source_ref, "distinct issue phase markers required"
-        )
-    scope = read_alarm_value(scope_reading, ScopeEvidence, signal)
-    roster = read_alarm_value(roster_reading, ReferencesEvidence, signal)
-    if (
-        scope.key != subject.scope_key
-        or scope_reading.source_ref != scope.key
-        or roster_reading.source_ref != scope.key
-    ):
-        raise unreadable_reading(
-            signal, scope_reading.source_ref, "scope identity disagrees"
-        )
-    if len(set(roster)) != len(roster):
-        raise unreadable_reading(
-            signal, roster_reading.source_ref, "roster repeats a member"
-        )
-    labels: dict[str, tuple[str, ...] | None] = {}
-    for member in members:
-        if member.source_ref not in roster or member.source_ref in labels:
-            raise unreadable_reading(
-                signal, member.source_ref, "foreign or repeated member reading"
-            )
-        labels[member.source_ref] = read_alarm_value(member, LabelsEvidence, signal)
-    carrying = sum(current_key in (labels.get(key) or ()) for key in roster)
-    entered = any(next_key in (labels.get(key) or ()) for key in roster)
-    if carrying == len(roster) or not entered:
-        return None
-    return RunAlarm(
-        subject=subject,
-        signal=signal,
-        readings=readings,
-        bound=None,
-        raised_at_sha=raised_at_sha,
-        raised_by=raised_by,
-    )

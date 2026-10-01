@@ -9,6 +9,85 @@ concerns.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-09-30
+
+Fixes from running v0.3 live against a real board for five days. One
+environment name is new (`KODEZART_RETRY_RATE_LIMIT_MAX_WAIT_SECONDS`, under
+Added); the `KODEZART_SUPERVISOR_PASS_INTERVAL_SECONDS` and
+`KODEZART_SUPERVISOR_PASS_TIMEOUT_SECONDS` pair already existed and now
+schedules the prompt pass; three names retire (under Removed). The operation
+file gains an optional `[records.supervisor]` table and `supervisor` in the
+record-kind list (`docs/operation.example.toml`); a file without them boots
+as before.
+
+### Added
+
+- A scheduled supervisor pass (`PromptKey.SUPERVISOR_PASS`, `RunKind.SUPERVISOR`,
+  `[records.supervisor]`): the supervisor cadence pair
+  (`KODEZART_SUPERVISOR_PASS_INTERVAL_SECONDS`,
+  `KODEZART_SUPERVISOR_PASS_TIMEOUT_SECONDS`) now schedules a prompt pass that
+  reads what the run did since its last row, judges the account's conduct
+  against the standing rules from the board, and reports one comment per
+  finding and one record row. It writes no state, label or relation and
+  nothing on the forge. It runs at low effort on the engine the deployment
+  pins under the `supervisor_pass` key of `KODEZART_AGENT__SESSION_MODELS`.
+  Its own rows and findings never open its gate (`prompts/sets/*/pass_gate.md`).
+- A provider rate limit is waited out instead of ending the session
+  (`services/rate_limit_backoff.py`, `KODEZART_RETRY_RATE_LIMIT_MAX_WAIT_SECONDS`,
+  default 18000): the wait runs to the reset the provider states, read in the
+  Claude adapter (`adapters/claude/limit_reset.py`), else to the configured
+  floor with jitter; every session the composition starts goes through it
+  except the outbound content scan, and
+  `rate_limit_backoff` is logged with the wait and `resets_at`.
+- An investigate question may name the model its fan-out agents run on
+  (`.claude/workflows/kodezart-investigate.js`); the prompt set picks fan-out
+  models by task.
+
+### Changed
+
+- Cheap sessions run on Sonnet at low effort: the utility role
+  (`SessionRole.UTILITY`: `pr_description`, `branch_name`, `commit_message`,
+  `fire_record`, `native_writer_contract`, `mutation_survival`) joins the
+  question role at the floor, and the served set declares
+  `claude-sonnet-5-5` as its third engine beside Opus and Fable
+  (`prompts/sets/anthropic_v5/set.toml`); the judgment roles stay at the
+  maximum. `docs/deploying.md` pins every cheap key to Sonnet.
+- The clone cache fast-forwards its local heads to the remote after every
+  fetch, so a loop branch is cut from the current trunk and not from the tip
+  the first clone recorded (`adapters/git/bare_repo_cache.py`,
+  `LocalBareRepoCache`, with `adapters/git/clone_lock.py` and
+  `adapters/git/branch_merger.py`; `adapters/git/service.py` gains the port
+  methods); a diverged or
+  checked-out head stays and is logged; concurrent refreshes of one clone
+  take the head move under the clone lock; changesets diff from the merge
+  base, so a trunk that moved adds no files to a branch's changeset.
+- A pull request stays a draft until its unit is finished and leaves draft
+  the moment it is; the scope graders and the supervisor pass judge that,
+  and a session never
+  merges (`delivery_units` in `prompts/sets/anthropic_v5/set.toml`, carried by
+  the intake passes, the organize session, the implementer and the supervisor
+  pass).
+- An accepted scope run that gained no commits ends as already integrated
+  instead of raising: it classifies into `WorkflowOutcome.zero_commit_no_pr`
+  (`types/domain/outcome.py`, `domain/outcome.py`), routed in
+  `chains/ralph_workflow.py`.
+- `claude-agent-sdk` is pinned at 0.2.161 (`pyproject.toml`).
+
+### Removed
+
+- The supervisor's code observation tick and everything only it read:
+  `composition/supervisor.py`, `services/supervisor_pass.py`, the alarm,
+  escalation-ageing, tally and stream-signal modules, and the three tracker
+  roles only the tick took. Stored run-alarm records stay readable
+  (`domain/run_alarm_record.py`, `types/domain/run_alarm.py`) and the
+  `run_alarm_raised` and `run_alarm_cleared` event kinds remain.
+- `KODEZART_RUN_ALARM_MAX_COMMITS_WITHOUT_CLOSURE`,
+  `KODEZART_RUN_ALARM_ESCALATION_AGE_MAX_COMMITS` and
+  `KODEZART_RUN_ALARM_ESCALATION_AGE_MAX_TICKS`: the two signals they bounded
+  are conduct rules the supervisor pass reads from the board. Boot refuses
+  each name from every source with a message naming the pass
+  (`config/app.py`, `RETIRED_TO_SUPERVISOR_PASS`).
+
 ## [0.3.0] - 2026-09-29
 
 v0.3 adds the scope workflow beside the v0.2 per-issue workflow, which keeps
@@ -61,6 +140,22 @@ Each of these needs an action from a v0.2 operator; the steps are in
 
 ### Added
 
+- The supervisor is a third prompt pass, `supervisor_pass` (template
+  `supervisor_pass.md` in both sets, record kind `supervisor`, role row
+  `[session_roles.supervisor]` at low effort), on the existing
+  `KODEZART_SUPERVISOR_PASS_INTERVAL_SECONDS` /
+  `KODEZART_SUPERVISOR_PASS_TIMEOUT_SECONDS` pair. It reads what the
+  operation's own account did since its last pass and reports its conduct:
+  one comment per finding and a row under `[records.supervisor]`; it changes
+  no state or label and writes nothing on the forge. The code observation tick
+  that pair used to schedule (`composition/supervisor.py` and the alarm
+  observers under it) is merged into the pass and removed; its two signals
+  are two of the pass's rules. Unset, boot logs `scheduled_pass_not_configured`
+  naming `supervisor_pass`; `supervisor_pass_not_wired` is gone.
+- `run_alarm_max_commits_without_closure`,
+  `run_alarm_escalation_age_max_commits` and
+  `run_alarm_escalation_age_max_ticks` are retired: boot refuses each, from
+  every source, with a message naming the supervisor pass.
 - The standing scopes' heartbeat (`services/scope_heartbeat.py`) asks the
   `scope_scan` question once a tick and submits each approved, unfinished node
   it lists as a scope run, as `POST /api/v1/agent/fire` submits one. It skips a

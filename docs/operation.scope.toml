@@ -75,10 +75,9 @@ rubric_prompt_key = "organize_spec_rubric"
 admission_prompt_key = "organize_assess"
 terminal_marker_key = "issue_labels.criteria"
 
-# The scope rows the supervisor tick and a configured audit read; the cron
-# reads no row. Declaring a row makes boot require the marker prefixes the
-# supervisor tick uses, and the tick itself runs only when its own cadence
-# pair is set. Bound to exactly one declared repository; change the key to your
+# The scope rows a configured audit reads; the cron reads no row. Declaring a
+# row makes boot require the marker prefixes a scope run writes under. Bound
+# to exactly one declared repository; change the key to your
 # own project's.
 # No report_issue_key: this deployment configures no audit, so there is nowhere
 # a verified summary would be reported. A deployment that configures one adds
@@ -88,7 +87,8 @@ scope = { kind = "project", key = "example-scratch-project" }
 repo_url = "https://example.invalid/example-org/example-repo"
 
 # The team's own state names. Boot resolves them on the team and refuses one it
-# cannot find. The grooming prompt names in_progress and in_review, and the
+# cannot find. The grooming and supervisor prompts name in_progress and
+# in_review, and the
 # per-issue dispatch moves a fired issue through them.
 [workflow_states]
 in_progress = "In Progress"
@@ -99,7 +99,7 @@ done = "Done"
 # that already carries recorded work: changing one addresses a different
 # marker. Boot checks this table against every purpose a pass it wires can ask
 # for and refuses naming every missing key at once. Declaring [[organize_scopes]]
-# wires the supervisor tick's purposes; a forge token wires the per-issue
+# wires the scope run's purposes; a forge token wires the per-issue
 # dispatch passes' purposes (base_spec, claim, repository, run_outcome,
 # work_ref).
 [marker_prefixes]
@@ -118,6 +118,8 @@ audit = "kodezart-audit"
 # A team bound to no repository, beside several declared ones, has each
 # node's repository read off a marker under this prefix by the cron's scan.
 repository = "kodezart-repo"
+# Run-shape alarm records written before the supervisor pass replaced their
+# writer; kept so those records stay addressable. Nothing writes new ones.
 run_alarm = "kodezart-run-alarm"
 
 # The repository the work goes to. A scope run checks out every declared

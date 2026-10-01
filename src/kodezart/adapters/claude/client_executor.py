@@ -3,7 +3,7 @@
 from collections.abc import AsyncGenerator, Sequence
 from typing import Final
 
-# Claude Agent SDK API surface verified against claude-agent-sdk ~=0.2.151
+# Claude Agent SDK API surface verified against claude-agent-sdk ~=0.2.161
 # (ProcessError.exit_code: int | None; ProcessError.stderr: str | None;
 # ResultError subclasses ProcessError and adds the CLI's result payload).
 from claude_agent_sdk import (

@@ -340,9 +340,10 @@ async def test_consolidate_source_missing_returns_status_without_acquiring_workt
     from kodezart.types.domain.consolidation import ConsolidationStatus
 
     assert outcome.status is ConsolidationStatus.SOURCE_MISSING
-    # Worktree on feature_branch was NOT acquired.
+    # No worktree on the feature branch was acquired; the transient probe
+    # worktrees carry no branch name.
     feature_acquires = [
-        c for c in fake_workspace.calls if c[0] == "acquire" and c[2] == "main"
+        a for a in fake_workspace.acquisitions if a["branch_name"] == "feat/x"
     ]
     assert feature_acquires == []
     _ = tmp_path  # unused placeholder for pytest fixture compatibility
@@ -661,3 +662,74 @@ async def test_an_unchanged_source_branch_is_deleted_against_real_git(
     assert [e for e in logs if e["event"] == "branch_cleanup_skipped"] == []
     assert [e for e in logs if e["event"] == "branch_cleanup_source_advanced"] == []
     assert [e for e in logs if e["event"] == "branch_cleanup_failed"] == []
+
+
+async def test_a_trunk_that_moved_after_the_loop_cut_still_fast_forwards(
+    git_env: tuple[Path, Path],
+    tmp_path: Path,
+) -> None:
+    """The cache moves the clone's trunk on; the feature is cut where the loop was.
+
+    Cutting the new feature branch from the moved trunk would leave it and
+    the loop branch each holding commits the other lacks, and consolidation
+    would report them divergent.
+    """
+    repo, bare = git_env
+    (repo / "trunk.txt").write_text("trunk moved on")
+    await _git(["git", "add", "trunk.txt"], cwd=repo)
+    await _git(["git", "commit", "-m", "trunk moved on"], cwd=repo)
+    await _git(["git", "push", "origin", "main"], cwd=repo)
+    source_tip = await _git_output(["git", "rev-parse", "ralph-source"], cwd=repo)
+
+    git = SubprocessGitService(remote="origin")
+    cache = LocalBareRepoCache(git=git, base_dir=str(tmp_path / "cache-moved"))
+    workspace = GitWorktreeProvider(git=git, cache=cache)
+    merger = GitBranchMerger(git=git, workspace=workspace, remote="origin")
+
+    outcome = await merger.consolidate(
+        repo_path=None,
+        repo_url=bare.as_uri(),
+        base_branch="main",
+        feature_branch="feat/moved-trunk",
+        source_branch="ralph-source",
+        cache_key="job",
+    )
+
+    assert outcome.status is ConsolidationStatus.FAST_FORWARDED
+    assert outcome.feature_tip_sha == source_tip
+    feature = ["git", "rev-parse", "refs/heads/feat/moved-trunk"]
+    assert await _git_output(feature, cwd=bare) == source_tip
+
+
+async def test_consolidation_does_not_depend_on_the_remote_having_a_default_branch(
+    git_env: tuple[Path, Path],
+    tmp_path: Path,
+) -> None:
+    """A bare cache's HEAD mirrors the remote's; an orphaned one must not matter.
+
+    A remote whose HEAD names a branch it does not have (a bare repository
+    initialised under one default-branch name and pushed under another) gives
+    the cache an orphaned HEAD, which ``git worktree add`` refuses. Every
+    transient worktree the merger needs is cut from the trunk it was given,
+    so consolidation still fast-forwards.
+    """
+    repo, bare = git_env
+    await _git(["git", "symbolic-ref", "HEAD", "refs/heads/no-such-branch"], cwd=bare)
+    source_tip = await _git_output(["git", "rev-parse", "ralph-source"], cwd=repo)
+
+    git = SubprocessGitService(remote="origin")
+    cache = LocalBareRepoCache(git=git, base_dir=str(tmp_path / "cache-orphan"))
+    workspace = GitWorktreeProvider(git=git, cache=cache)
+    merger = GitBranchMerger(git=git, workspace=workspace, remote="origin")
+
+    outcome = await merger.consolidate(
+        repo_path=None,
+        repo_url=bare.as_uri(),
+        base_branch="main",
+        feature_branch="feat/orphan-head",
+        source_branch="ralph-source",
+        cache_key="job",
+    )
+
+    assert outcome.status is ConsolidationStatus.FAST_FORWARDED
+    assert outcome.feature_tip_sha == source_tip

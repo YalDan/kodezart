@@ -92,14 +92,14 @@ What each table does for the scope workflow:
 | `[[repos]]` | Each repository: `url`, `trunk`, optional `checks`. A scope run checks out every declared repository. | The same as for teams. With repositories declared, the cron still skips a node whose repository is not one of them (`scope_heartbeat_repository_undeclared`). |
 | `[scope_labels]` | `triage`, `proposed`, `approved`. The approval label starts a scope run. | The cron is not scheduled. A declared table missing a member fails the load. |
 | `[issue_labels]` | `criterion` marks a criterion sub-issue; `decision` marks an escalation; `tracker` marks a record issue that is not work. | The run's groom step cannot render its prompt and the run fails naming `issue_labels.decision`. |
-| `[queue_states]` | The five queue labels: `triage`, `proposed`, `approved`, `done`, `decision`. | The fire-prep and grooming prompts cannot render, so boot refuses with `PromptRenderError` when their cadences are set. |
+| `[queue_states]` | The five queue labels: `triage`, `proposed`, `approved`, `done`, `decision`. | The fire-prep, grooming and supervisor prompts cannot render, so boot refuses with `PromptRenderError` when their cadences are set. |
 | `[[principals]]` | People and their roles. Exactly one principal carries `approver`. | The fire-prep and grooming prompts cannot render (they name `principals.approver.tracker_user`), so boot refuses as above. |
-| `[workflow_states]` | Your team's names for `in_progress`, `in_review`, `done`. Boot resolves them on each team. | The grooming prompt cannot render, so boot refuses when its cadence is set. |
+| `[workflow_states]` | Your team's names for `in_progress`, `in_review`, `done`. Boot resolves them on each team. | The grooming and supervisor prompts cannot render, so boot refuses when either cadence is set. |
 | `[marker_prefixes]` | Comment identities kodezart writes under. | Boot refuses naming every missing purpose a scheduled pass can ask for. A file with no table is given `claim`, `work_ref`, `base_spec`, `repository` and `run_outcome`, which is what the per-issue dispatch passes need. |
-| `[records.fire_prep]`, `[records.grooming]`, `[records.fire]` | Where each run kind writes its log row: `system = "knowledge"` (Notion) or `system = "tracker"` (a Linear document). | The run is not recorded, and each run logs `run_record_destination_undeclared`. |
+| `[records.fire_prep]`, `[records.grooming]`, `[records.supervisor]`, `[records.fire]` | Where each run kind writes its log row: `system = "knowledge"` (Notion) or `system = "tracker"` (a Linear document). | The run is not recorded, and each run logs `run_record_destination_undeclared`. |
 | `[knowledge]` | The knowledge map: `run_logs`, `memories`, `personas`, `notes`, plus any other key a prompt addresses. | Sessions get no map. With a knowledge grant set, boot refuses with `PromptRenderError` naming the missing map keys. |
 | `[documents]` | Documents a prompt set can name. A populated table must carry `checkpoint`; boot creates a tracker-side document the operation owns if it is missing. | Nothing: the shipped `anthropic_v5` prompts name no document. |
-| `[[organize_scopes]]`, `[[organize_mandates]]` | `[[organize_scopes]]` is read by the supervisor tick and the audit, and requires `[[organize_mandates]]`. The mandate rows are read by the tracker adapter's fire-subject read. | Nothing in the scope workflow reads them. Declaring `[[organize_scopes]]` makes boot also require the marker prefixes the supervisor tick uses. |
+| `[[organize_scopes]]`, `[[organize_mandates]]` | `[[organize_scopes]]` is read by the audit, and requires `[[organize_mandates]]`. The mandate rows are read by the tracker adapter's fire-subject read. | Nothing in the scope workflow reads them. Declaring `[[organize_scopes]]` makes boot also require the marker prefixes a scope run writes under. |
 
 Boot splits the tables by who owns the value. Labels (`[queue_states]`,
 `[scope_labels]`, `[issue_labels]`) and `[documents]` are the operation's own:
@@ -134,16 +134,19 @@ example:
 | `KODEZART_TRACKER__TOKEN` | the Linear personal API key | The process's tracker credential. |
 | `KODEZART_GITHUB_TOKEN` | the fine-grained token | The forge credential. |
 | `KODEZART_AGENT__MODEL` | `claude-opus-5-5` | The engine every session runs on unless a key is pinned. |
-| `KODEZART_AGENT__SESSION_MODELS` | `{"pass_gate":"claude-opus-5-5","scope_scan":"claude-opus-5-5","scope_done":"claude-opus-5-5"}` | Pins the three board questions: the intake gate, the cron's scan and the "is it done" question. |
+| `KODEZART_AGENT__SESSION_MODELS` | `{"pass_gate":"claude-sonnet-5-5","scope_scan":"claude-sonnet-5-5","scope_done":"claude-sonnet-5-5","pr_description":"claude-sonnet-5-5","branch_name":"claude-sonnet-5-5","commit_message":"claude-sonnet-5-5","fire_record":"claude-sonnet-5-5","native_writer_contract":"claude-sonnet-5-5","mutation_survival":"claude-sonnet-5-5","supervisor_pass":"claude-sonnet-5-5"}` | Pins every cheap session (the board questions, the pull-request description and the utility keys) to Sonnet, which the prompt set runs at low effort: these answers are short and structured, so Opus buys nothing there; and runs the supervisor pass on Sonnet at low effort, since it reads and reports. |
 | `KODEZART_DISPATCH_PASS_INTERVAL_SECONDS` | `300` | The cron's cadence. It also paces the per-issue dispatch passes. |
 | `KODEZART_DISPATCH_PASS_TIMEOUT_SECONDS` | `240` | The longest one cron tick may take. |
 | `KODEZART_FIRE_PREP_PASS_INTERVAL_SECONDS` | `1800` | Fire prep every 30 minutes. |
 | `KODEZART_FIRE_PREP_PASS_TIMEOUT_SECONDS` | `1800` | The longest one fire-prep session may take. |
 | `KODEZART_GROOMING_PASS_INTERVAL_SECONDS` | `21600` | Grooming every 6 hours. |
 | `KODEZART_GROOMING_PASS_TIMEOUT_SECONDS` | `7200` | The longest one grooming session may take. |
+| `KODEZART_SUPERVISOR_PASS_INTERVAL_SECONDS` | `1800` | The supervisor reads what the run did and reports its conduct, every 30 minutes. |
+| `KODEZART_SUPERVISOR_PASS_TIMEOUT_SECONDS` | `1200` | The longest one supervisor session may take. |
 | `KODEZART_AGENT__DANGEROUSLY_ALLOW_HOST_MCP` | `true` | The host MCP opt-in. See below. |
 | `KODEZART_AGENT__SKILLS__MODE` | `all` | Lets each role load the skills the prompt set declares for it, where the host has them installed. `none`, the default, suppresses them. |
 | `KODEZART_AGENT__OUTPUT_STYLE` | `Concise` | The Claude Code output style. A session whose opening frame reports another style fails. |
+| `KODEZART_RETRY_RATE_LIMIT_MAX_WAIT_SECONDS` | `18000` (the default) | How long one session waits out a provider rate limit before it gives up: until the reset the provider states (the rejected frame's reset time, or the `resets 3:20pm (Europe/Berlin)` and `resets Oct 3 at 10pm (Europe/Berlin)` messages), or a doubling back-off from 60 seconds when it states none. The job and its workspace stay while it waits. A tick or pass timeout still cuts the wait, and so does `KODEZART_QUEUE__RUN_TIMEOUT_SECONDS` when set. `0` turns the wait off. |
 | `KODEZART_KNOWLEDGE__SESSION_GRANTS` | `["scheduled_pass","ticket_fire","organize_pass","content_audit"]` | Which session kinds get the Notion server and the knowledge map. |
 | `KODEZART_KNOWLEDGE__CONNECTION__TRANSPORT` | `stdio` | Run the Notion server as a local process. |
 | `KODEZART_KNOWLEDGE__CONNECTION__COMMAND` | absolute path to `notion-mcp-server` | Package runners such as `npx` are refused. |
@@ -156,8 +159,8 @@ example:
 A pass runs only when both its interval and its timeout are set. Setting one
 without the other refuses the boot, naming both.
 
-The session kinds in the grant list are: `scheduled_pass` (the fire-prep and
-grooming sessions and the three board questions), `organize_pass` (a scope
+The session kinds in the grant list are: `scheduled_pass` (the fire-prep,
+grooming and supervisor sessions and the three board questions), `organize_pass` (a scope
 run's groom, prep and implementation sessions), `ticket_fire` (every session of
 a `POST /fire` run, and a scope run's evaluator, review and pull-request
 description sessions), and `content_audit` (the outbound gate's judgment
@@ -170,16 +173,19 @@ export KODEZART_OPERATION_CONFIG=/path/to/operation.toml
 export KODEZART_TRACKER__TOKEN=<the Linear personal API key>
 export KODEZART_GITHUB_TOKEN=<the GitHub token>
 export KODEZART_AGENT__MODEL=claude-opus-5-5
-export KODEZART_AGENT__SESSION_MODELS='{"pass_gate":"claude-opus-5-5","scope_scan":"claude-opus-5-5","scope_done":"claude-opus-5-5"}'
+export KODEZART_AGENT__SESSION_MODELS='{"pass_gate":"claude-sonnet-5-5","scope_scan":"claude-sonnet-5-5","scope_done":"claude-sonnet-5-5","pr_description":"claude-sonnet-5-5","branch_name":"claude-sonnet-5-5","commit_message":"claude-sonnet-5-5","fire_record":"claude-sonnet-5-5","native_writer_contract":"claude-sonnet-5-5","mutation_survival":"claude-sonnet-5-5","supervisor_pass":"claude-sonnet-5-5"}'
 export KODEZART_DISPATCH_PASS_INTERVAL_SECONDS=300
 export KODEZART_DISPATCH_PASS_TIMEOUT_SECONDS=240
 export KODEZART_FIRE_PREP_PASS_INTERVAL_SECONDS=1800
 export KODEZART_FIRE_PREP_PASS_TIMEOUT_SECONDS=1800
 export KODEZART_GROOMING_PASS_INTERVAL_SECONDS=21600
 export KODEZART_GROOMING_PASS_TIMEOUT_SECONDS=7200
+export KODEZART_SUPERVISOR_PASS_INTERVAL_SECONDS=1800
+export KODEZART_SUPERVISOR_PASS_TIMEOUT_SECONDS=1200
 export KODEZART_AGENT__DANGEROUSLY_ALLOW_HOST_MCP=true
 export KODEZART_AGENT__SKILLS__MODE=all
 export KODEZART_AGENT__OUTPUT_STYLE=Concise
+export KODEZART_RETRY_RATE_LIMIT_MAX_WAIT_SECONDS=18000
 export KODEZART_KNOWLEDGE__SESSION_GRANTS='["scheduled_pass","ticket_fire","organize_pass","content_audit"]'
 export KODEZART_KNOWLEDGE__CONNECTION__TRANSPORT=stdio
 export KODEZART_KNOWLEDGE__CONNECTION__COMMAND=/absolute/path/to/notion-mcp-server
@@ -275,8 +281,7 @@ Logs are JSON lines on standard output. A good boot logs these, in this order:
 | `knowledge_map_rendered` or `knowledge_capability_unconfigured` | The grant and its map, or no knowledge server. |
 | `outbound_content_admission_resolved` | The outbound gate is built. |
 | `scheduled_pass_not_configured` | One per pass that would run here but has no cadence pair. |
-| `supervisor_pass_not_wired` | Expected: the operation declares no `[[organize_scopes]]`. |
-| `pass_scheduler_started` | The scheduler runs. `passes` lists each by name with its interval, for example `dispatch:<repo url>` (one per declared repository a team scans), `fire_prep_pass`, `grooming_pass` and `scope_heartbeat`. |
+| `pass_scheduler_started` | The scheduler runs. `passes` lists each by name with its interval, for example `dispatch:<repo url>` (one per declared repository a team scans), `fire_prep_pass`, `grooming_pass`, `supervisor_pass` and `scope_heartbeat`. |
 | `application_starting` | Startup finished; the HTTP server now serves. |
 
 Then check the health endpoint:
@@ -328,8 +333,8 @@ The cron is the `scope_heartbeat` pass. It ticks once at boot and then every
 A submitted run then logs `forge_capabilities_selected`,
 `repo_visibility_resolved` and `scope_base_resolved` before its first session.
 
-The fire-prep and grooming passes also tick at boot and open their sessions
-without asking. From the second tick on, each first asks the gate question
+The fire-prep, grooming and supervisor passes also tick at boot and open their
+sessions without asking. From the second tick on, each first asks the gate question
 (`agent_question_asked` with `key` `pass_gate`, then `pass_gate_answered`) and
 skips the session when nothing in its window is work for it
 (`scheduled_pass_skipped`).

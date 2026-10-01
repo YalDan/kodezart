@@ -1229,6 +1229,13 @@ class RalphLoop:
         tree: the paths it names are the ones the commits between those two
         revisions changed, so nothing uncommitted in any workspace can move a
         grading, and the same two revisions read the same way whoever asks.
+
+        Precondition: each graded sha is an ancestor of *head_sha*. The digest
+        reads paths from the merge base of the two, which is the graded sha
+        only then; for a graded sha off the head's line it would under-report
+        the paths, and with no merge base at all the read raises. The loop
+        holds it: standing gradings are taken on this lane's head, which only
+        ever advances.
         """
         return {
             sha: await self._git.diff_summary(cwd=cwd, base_ref=sha, head_ref=head_sha)

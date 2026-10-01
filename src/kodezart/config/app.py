@@ -30,7 +30,8 @@ from kodezart.types.domain.ticket_review import (
 )
 
 #: The groups of cadence settings, one per scheduled pass; the scope
-#: heartbeat runs on the dispatch group.
+#: heartbeat runs on the dispatch group, and the supervisor pass runs on the
+#: supervisor group.
 CadenceName = Literal["dispatch", "fire_prep", "grooming", "audit", "supervisor"]
 
 #: The two settings that schedule each pass: its interval, then its timeout.
@@ -59,6 +60,23 @@ CADENCE_SETTINGS: Final[dict[CadenceName, tuple[str, str]]] = {
         "KODEZART_SUPERVISOR_PASS_TIMEOUT_SECONDS",
     ),
 }
+
+
+#: Settings retired when the supervisor's arithmetic observers were merged
+#: into the supervisor pass: a boot that still sets one is refused with this
+#: reason, so the operator learns what replaced the knob rather than only
+#: that it is gone.
+RETIRED_TO_SUPERVISOR_PASS: Final[frozenset[str]] = frozenset(
+    {
+        "run_alarm_max_commits_without_closure",
+        "run_alarm_escalation_age_max_commits",
+        "run_alarm_escalation_age_max_ticks",
+    }
+)
+_REPLACED_BY_THE_SUPERVISOR = (
+    "is retired: the supervisor pass ({} and {}) now judges this from the "
+    "board; remove the setting"
+).format(*CADENCE_SETTINGS["supervisor"])
 
 
 @dataclass(frozen=True)
@@ -164,7 +182,12 @@ class AppConfig(BaseSettings):
                 "aggregate_tracker_object_nouns",
                 "aggregate_issue_identifier_pattern",
                 "aggregate_identifier_separator_pattern",
-            } or (name.startswith("knowledge_") and not name.startswith("knowledge__"))
+            } or (
+                name in RETIRED_TO_SUPERVISOR_PASS
+                or (
+                    name.startswith("knowledge_") and not name.startswith("knowledge__")
+                )
+            )
 
         def checked(source: PydanticBaseSettingsSource) -> InitSettingsSource:
             values = source()
@@ -234,23 +257,6 @@ class AppConfig(BaseSettings):
         le=10,
         description="Maximum ticket review rounds before accepting.",
     )
-    run_alarm_escalation_age_max_commits: int = Field(
-        default=5,
-        ge=0,
-        description=(
-            "Recorded lane commits allowed after an unanswered escalation's "
-            "raise SHA before an ageing observation fires."
-        ),
-    )
-    run_alarm_escalation_age_max_ticks: int = Field(
-        default=10,
-        ge=0,
-        description=(
-            "Walker ticks allowed after an unanswered escalation is first "
-            "observed, each tick counted by the commits it records across the "
-            "escalation's scope."
-        ),
-    )
     run_alarm_barren_tick_max_files_changed: int = Field(
         default=10,
         ge=0,
@@ -273,14 +279,6 @@ class AppConfig(BaseSettings):
         description=(
             "Distinct recorded run holders allowed on one writable surface "
             "before a contention observation fires."
-        ),
-    )
-    run_alarm_max_commits_without_closure: int = Field(
-        default=5,
-        ge=0,
-        description=(
-            "Recorded lane commits allowed since a lane last closed a "
-            "criterion its subtree already owed."
         ),
     )
     run_alarm_max_rulings_without_closure: int = Field(
@@ -341,6 +339,24 @@ class AppConfig(BaseSettings):
             "2026-09-01: under one standing limit the retry policy spawned "
             "around sixteen empty sessions in thirty seconds. The attempt "
             "budget is unchanged — only the spacing is."
+        ),
+    )
+    retry_rate_limit_max_wait_seconds: float = Field(
+        default=18000.0,
+        ge=0.0,
+        le=604800.0,
+        description=(
+            "Total seconds one session may spend waiting out provider rate "
+            "limits before it gives up. A session the provider stops on a "
+            "rate limit is run again after a wait: until the reset the "
+            "provider states, plus a small jitter, or, when it states none, "
+            "an exponential back-off from "
+            "retry_rate_limit_floor_seconds doubling to a 30-minute cap. The "
+            "job and its workspace stay while it waits. Once this total is "
+            "spent the existing failure path runs unchanged, and later "
+            "rate-limited sessions stop waiting until one session ends "
+            "without a rate limit or this many seconds pass. 0 turns the wait "
+            "off. Default 18000, five hours."
         ),
     )
     content_scan_retry_max_attempts: int = Field(
@@ -421,17 +437,21 @@ class AppConfig(BaseSettings):
         ge=60.0,
         le=86400.0,
         description=(
-            "Seconds between supervisor observation ticks on the existing "
-            "scheduler. Unset, the supervisor tick is not scheduled."
+            "Seconds between supervisor passes: the prompt-pass session that "
+            "reads what the operation's own account did and reports its "
+            "conduct. Set together with the timeout; unset, the pass is not "
+            "scheduled."
         ),
     )
     supervisor_pass_timeout_seconds: float | None = Field(
         default=None,
-        gt=0,
-        allow_inf_nan=False,
+        ge=60.0,
+        le=86400.0,
         description=(
-            "Wall-clock bound for one supervisor observation tick over every "
-            "declared scope. Set together with the interval."
+            "Seconds one supervisor pass session may take before it is "
+            "abandoned. On expiry the session is "
+            "cancelled and reported as timed out; the loop continues. Set "
+            "together with the interval."
         ),
     )
     audit_full_sweep_interval_seconds: float = Field(
@@ -818,6 +838,30 @@ class AppConfig(BaseSettings):
                 self.supervisor_pass_timeout_seconds,
             ),
         }
+
+    @model_validator(mode="before")
+    @classmethod
+    def _refuse_what_the_supervisor_pass_replaced(cls, data: object) -> object:
+        """Refuse a retired run-alarm bound by name, saying what replaced it.
+
+        The retired-name filter above lets these names reach the model from
+        every source so that ``extra="forbid"`` refuses them; for these
+        three the refusal also names the supervisor pass, which judges from
+        the board what the deleted observers counted. No value is echoed.
+        """
+        if not isinstance(data, dict):
+            return data
+        prefix = str(cls.model_config.get("env_prefix", "")).casefold()
+        named = sorted(
+            str(key)
+            for key in data
+            if str(key).casefold().removeprefix(prefix) in RETIRED_TO_SUPERVISOR_PASS
+        )
+        if named:
+            raise ValueError(
+                "; ".join(f"{name} {_REPLACED_BY_THE_SUPERVISOR}" for name in named)
+            )
+        return data
 
     @model_validator(mode="after")
     def _cadences_are_set_in_pairs(self) -> Self:

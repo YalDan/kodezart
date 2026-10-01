@@ -38,6 +38,8 @@ from kodezart.core.errors import (
 )
 from kodezart.core.logging import get_logger
 from kodezart.core.prompt_namespaces import bindings_for
+from kodezart.core.prompt_rendering import PromptTemplate
+from kodezart.main import create_app
 from kodezart.services import pass_scheduler as pass_scheduler_module
 from kodezart.services.pass_scheduler import PassScheduler, ScheduledPass
 from kodezart.services.prompt_pass import gate_render_bindings, pass_render_bindings
@@ -415,7 +417,7 @@ async def _settle_requests(metronome: Metronome, count: int) -> None:
 async def test_each_pass_sends_its_own_rendered_prompt_on_its_own_cadence(
     tmp_path: Path,
 ) -> None:
-    """One tick each: two sessions, two prompts, two configured intervals."""
+    """One tick each: three sessions, three prompts, three configured intervals."""
     registered, runner = await _registrations(tmp_path)
     prompts = load_registry(bindings=dict(bindings_for(example_config())))
     metronome = Metronome(limit=0)
@@ -425,13 +427,20 @@ async def test_each_pass_sends_its_own_rendered_prompt_on_its_own_cadence(
     await _settle_requests(metronome, len(registered))
     await scheduler.stop()
 
-    assert set(metronome.requested) == {FIRE_PREP_INTERVAL, GROOMING_INTERVAL}
+    assert set(metronome.requested) == {
+        FIRE_PREP_INTERVAL,
+        GROOMING_INTERVAL,
+        SUPERVISOR_INTERVAL,
+    }
     assert {call["prompt"] for call in runner.calls} == {
         prompts.template_for(PromptKey.FIRE_PREP_PASS).render(
             per_run(PromptKey.FIRE_PREP_PASS)
         ),
         prompts.template_for(PromptKey.GROOMING_PASS).render(
             per_run(PromptKey.GROOMING_PASS)
+        ),
+        prompts.template_for(PromptKey.SUPERVISOR_PASS).render(
+            per_run(PromptKey.SUPERVISOR_PASS)
         ),
     }
 
@@ -445,6 +454,7 @@ async def test_the_registrations_take_every_cadence_from_configuration(
     assert [(entry.name, entry.interval_seconds) for entry in registered] == [
         (PromptKey.FIRE_PREP_PASS.value, FIRE_PREP_INTERVAL),
         (PromptKey.GROOMING_PASS.value, GROOMING_INTERVAL),
+        (PromptKey.SUPERVISOR_PASS.value, SUPERVISOR_INTERVAL),
     ]
 
 
@@ -457,6 +467,7 @@ async def test_the_registrations_take_every_budget_from_configuration(
     assert [(entry.name, entry.timeout_seconds) for entry in registered] == [
         (PromptKey.FIRE_PREP_PASS.value, FIRE_PREP_TIMEOUT),
         (PromptKey.GROOMING_PASS.value, GROOMING_TIMEOUT),
+        (PromptKey.SUPERVISOR_PASS.value, SUPERVISOR_TIMEOUT),
     ]
 
 
@@ -525,6 +536,7 @@ async def test_the_boot_seam_registers_the_prompt_passes(tmp_path: Path) -> None
     assert {entry.name for entry in runtime.scheduler.passes} == {
         PromptKey.FIRE_PREP_PASS.value,
         PromptKey.GROOMING_PASS.value,
+        PromptKey.SUPERVISOR_PASS.value,
     }
     assert runtime.lifecycle is None
 
@@ -621,6 +633,7 @@ async def test_an_operation_with_no_scope_labels_registers_no_heartbeat(
     assert {entry.name for entry in runtime.scheduler.passes} == {
         PromptKey.FIRE_PREP_PASS.value,
         PromptKey.GROOMING_PASS.value,
+        PromptKey.SUPERVISOR_PASS.value,
     }
 
 
@@ -780,6 +793,7 @@ async def test_the_prompt_passes_put_no_signal_in_the_probe(
     assert {entry.name for entry in runtime.scheduler.passes} == {
         PromptKey.FIRE_PREP_PASS.value,
         PromptKey.GROOMING_PASS.value,
+        PromptKey.SUPERVISOR_PASS.value,
     }
 
 
@@ -890,7 +904,7 @@ async def test_the_shipped_example_wires_without_a_render_refusal(
 ) -> None:
     """Non-vacuity: the refusal above is the config's, not the check's."""
     assert len((await _registrations(tmp_path))[0]) == len(
-        (PromptKey.FIRE_PREP_PASS, PromptKey.GROOMING_PASS)
+        (PromptKey.FIRE_PREP_PASS, PromptKey.GROOMING_PASS, PromptKey.SUPERVISOR_PASS)
     )
 
 
@@ -923,7 +937,7 @@ async def test_a_scope_deployment_lacking_prefixes_its_passes_ask_for_is_refused
     released. Boot now names that key, and every other one a pass it
     schedules can ask for, in the spelling the point-of-use refusal uses.
     """
-    operation = without_prefixes(standing_scope_operation(), "claim", "run_alarm")
+    operation = without_prefixes(standing_scope_operation(), "claim", "amendment")
 
     with pytest.raises(OperationMemberAbsentError) as caught:
         await verify_pass_preflight(
@@ -935,7 +949,7 @@ async def test_a_scope_deployment_lacking_prefixes_its_passes_ask_for_is_refused
         )
 
     assert caught.value.missing == (
-        "marker_prefixes['claim'], marker_prefixes['run_alarm']"
+        "marker_prefixes['amendment'], marker_prefixes['claim']"
     )
 
 
@@ -1046,6 +1060,10 @@ async def test_with_no_cadence_set_a_per_issue_deployment_schedules_nothing(
             "KODEZART_GROOMING_PASS_INTERVAL_SECONDS",
             "KODEZART_GROOMING_PASS_TIMEOUT_SECONDS",
         ],
+        PromptKey.SUPERVISOR_PASS.value: [
+            "KODEZART_SUPERVISOR_PASS_INTERVAL_SECONDS",
+            "KODEZART_SUPERVISOR_PASS_TIMEOUT_SECONDS",
+        ],
     }
 
 
@@ -1054,9 +1072,9 @@ async def test_with_no_cadence_set_a_scope_deployment_schedules_nothing(
 ) -> None:
     """Every pass is named the same way: the scope passes and the session passes.
 
-    A declared scope switches nothing off (2026-09-24): the two session passes
-    would run here on their cadence pairs, so unset they are named too, and
-    so is the heartbeat, which runs on the dispatch pair.
+    A declared scope switches nothing off (2026-09-24): the three session
+    passes would run here on their cadence pairs, so unset they are named
+    too, and so is the heartbeat, which runs on the dispatch pair.
     """
     with structlog.testing.capture_logs() as logs:
         runtime = await _runtime(
@@ -1079,10 +1097,10 @@ async def test_with_no_cadence_set_a_scope_deployment_schedules_nothing(
     assert runtime.scheduler.passes == ()
     assert set(_not_configured(logs)) == {
         HEARTBEAT_PASS,
-        "supervisor",
         "audit",
         PromptKey.FIRE_PREP_PASS.value,
         PromptKey.GROOMING_PASS.value,
+        PromptKey.SUPERVISOR_PASS.value,
     }
     assert _not_configured(logs)[HEARTBEAT_PASS] == [
         "KODEZART_DISPATCH_PASS_INTERVAL_SECONDS",
@@ -1224,6 +1242,7 @@ KNOWLEDGE_ENTRIES = (
     "documents.constitution",
     "records.fire_prep",
     "records.grooming",
+    "records.supervisor",
     "knowledge.house_rules",
     "knowledge.constitution",
     "knowledge.run_logs",
@@ -1329,6 +1348,7 @@ async def test_the_same_config_boots_with_its_destinations_tracker_side(
     assert {entry.name for entry in runtime.scheduler.passes} == {
         PromptKey.FIRE_PREP_PASS.value,
         PromptKey.GROOMING_PASS.value,
+        PromptKey.SUPERVISOR_PASS.value,
     }
 
 
@@ -1355,6 +1375,7 @@ async def test_the_declared_map_boots_once_the_scheduled_pass_is_granted(
     assert {entry.name for entry in runtime.scheduler.passes} == {
         PromptKey.FIRE_PREP_PASS.value,
         PromptKey.GROOMING_PASS.value,
+        PromptKey.SUPERVISOR_PASS.value,
     }
 
 
@@ -1445,6 +1466,7 @@ async def test_the_same_operation_boots_once_the_fire_is_granted_too(
     assert {entry.name for entry in runtime.scheduler.passes} == {
         PromptKey.FIRE_PREP_PASS.value,
         PromptKey.GROOMING_PASS.value,
+        PromptKey.SUPERVISOR_PASS.value,
     }
 
 
@@ -1486,6 +1508,7 @@ async def test_a_deployment_with_no_store_wires_both_passes_and_records_nothing(
     assert {entry.name for entry in runtime.scheduler.passes} == {
         PromptKey.FIRE_PREP_PASS.value,
         PromptKey.GROOMING_PASS.value,
+        PromptKey.SUPERVISOR_PASS.value,
     }
     for entry in runtime.scheduler.passes:
         await entry.run(FIXTURE_EPOCH)
@@ -1503,9 +1526,10 @@ async def test_a_deployment_with_no_store_wires_both_passes_and_records_nothing(
 async def test_adding_a_pass_is_a_table_row(tmp_path: Path) -> None:
     """The open-closed claim, executable.
 
-    A third pass needs a prompt key and a cadence pair — and nothing
-    structural. The two registered rows prove the shape carries its own key
-    and interval rather than either being wired per pass.
+    A new pass needs a prompt key, a record kind and a cadence pair — and
+    nothing structural. The supervisor pass was added exactly that way, and
+    the three registered rows prove the shape carries its own key and
+    interval rather than either being wired per pass.
     """
     registered, runner = await _registrations(tmp_path)
     metronome = Metronome(limit=0)
@@ -1519,6 +1543,7 @@ async def test_adding_a_pass_is_a_table_row(tmp_path: Path) -> None:
     assert [entry.interval_seconds for entry in registered] == [
         FIRE_PREP_INTERVAL,
         GROOMING_INTERVAL,
+        SUPERVISOR_INTERVAL,
     ]
 
 
@@ -1705,3 +1730,196 @@ async def test_the_intake_passes_tick_at_boot_and_the_dispatcher_does_not(
         if name.startswith(f"{_DISPATCH_NAME}:")
     )
     assert any(name.startswith(f"{_DISPATCH_NAME}:") for name in at_boot)
+
+
+# ---------------------------------------------------------------------------
+# The supervisor pass: the third prompt pass, and the one supervisor
+# ---------------------------------------------------------------------------
+
+#: The supervisor pair as the deployment guide gives it: a pass every half
+#: hour, each session allowed twenty minutes.
+SUPERVISOR_PAIR: dict[str, object] = {
+    "supervisor_pass_interval_seconds": 1800.0,
+    "supervisor_pass_timeout_seconds": 1200.0,
+}
+
+#: The pair unset, the way a deployment that does not want the pass leaves it.
+SUPERVISOR_UNSET: dict[str, object] = {
+    "supervisor_pass_interval_seconds": None,
+    "supervisor_pass_timeout_seconds": None,
+}
+
+
+@pytest.mark.parametrize("prompt_set", [DEFAULT_SET, V5_SET])
+async def test_the_supervisor_pair_on_a_scope_deployment_schedules_the_supervisor_pass(
+    tmp_path: Path, prompt_set: str
+) -> None:
+    """One supervisor: the prompt pass, on its pair, and no tick beside it.
+
+    Booted through the preflight and the builder the composition root calls,
+    over an operation that declares ``[[organize_scopes]]`` and a dialled
+    tracker, which is exactly where the merged code tick used to register.
+    """
+    operation = standing_scope_operation()
+    assert operation.organize_scopes
+    runtime = await _runtime(
+        tmp_path,
+        tracker=approving_board(),
+        runner=FakeAgentRunner(events=[]),
+        operation=operation,
+        prompt_set=prompt_set,
+        **STANDING_SCOPE_SETTINGS,
+        **SUPERVISOR_PAIR,
+    )
+
+    by_name = {entry.name: entry for entry in runtime.scheduler.passes}
+    supervisor = by_name[PromptKey.SUPERVISOR_PASS.value]
+    assert (supervisor.interval_seconds, supervisor.timeout_seconds) == (
+        1800.0,
+        1200.0,
+    )
+    assert supervisor.tick_at_boot is True
+    assert supervisor.report is not None
+    assert "supervisor" not in by_name
+    assert [name for name in by_name if "supervisor" in name] == [
+        PromptKey.SUPERVISOR_PASS.value
+    ]
+
+
+async def test_with_the_supervisor_pair_unset_the_boot_log_names_the_supervisor_pass(
+    tmp_path: Path,
+) -> None:
+    """Unset, the pass is not scheduled and the log says which two settings to set.
+
+    Named once, as ``supervisor_pass``: nothing is logged under the old tick's
+    name, and there is no separate not-wired event for a supervisor any more.
+    """
+    with structlog.testing.capture_logs() as logs:
+        runtime = await _runtime(
+            tmp_path,
+            tracker=approving_board(),
+            runner=FakeAgentRunner(events=[]),
+            operation=standing_scope_operation(),
+            **STANDING_SCOPE_SETTINGS,
+            **SUPERVISOR_UNSET,
+        )
+
+    names = {entry.name for entry in runtime.scheduler.passes}
+    assert not {name for name in names if "supervisor" in name}
+    not_configured = _not_configured(logs)
+    assert not_configured[PromptKey.SUPERVISOR_PASS.value] == [
+        "KODEZART_SUPERVISOR_PASS_INTERVAL_SECONDS",
+        "KODEZART_SUPERVISOR_PASS_TIMEOUT_SECONDS",
+    ]
+    assert "supervisor" not in not_configured
+    assert [entry for entry in logs if "supervisor" in str(entry["event"])] == []
+
+
+def test_a_boot_setting_a_retired_run_alarm_bound_is_refused_naming_the_supervisor_pass(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The app factory refuses the knob the merged tick read, and says why."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("KODEZART_RUN_ALARM_MAX_COMMITS_WITHOUT_CLOSURE", "5")
+
+    with pytest.raises(ValidationError) as caught:
+        create_app()
+
+    refusal = str(caught.value)
+    assert "run_alarm_max_commits_without_closure" in refusal
+    assert "the supervisor pass" in refusal
+    assert "KODEZART_SUPERVISOR_PASS_INTERVAL_SECONDS" in refusal
+
+
+@pytest.mark.parametrize("prompt_set", [DEFAULT_SET, V5_SET])
+@pytest.mark.parametrize("scheduled", [True, False])
+async def test_the_boot_render_preflight_renders_the_supervisor_pass_and_its_gate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    prompt_set: str,
+    scheduled: bool,
+) -> None:
+    """The third key goes through the same boot render as the other two.
+
+    Scheduled, its template and its gate question are rendered at boot from
+    the shipped example, in both sets; unset, neither is asked for, because
+    a template the wiring will never send is no reason to refuse a boot.
+    """
+    operation = example_config()
+    prompts = load_registry(
+        default_set=prompt_set, bindings=dict(bindings_for(operation))
+    )
+    asked: list[PromptKey] = []
+    template_for = prompts.template_for
+
+    def remembered(key: PromptKey) -> PromptTemplate:
+        asked.append(key)
+        return template_for(key)
+
+    monkeypatch.setattr(prompts, "template_for", remembered)
+
+    await verify_pass_preflight(
+        config=_config(
+            tmp_path, **(SUPERVISOR_PAIR if scheduled else SUPERVISOR_UNSET)
+        ),
+        operation=operation,
+        tracker=None,
+        github_api=None,
+        prompts=prompts,
+    )
+
+    rendered = {key for key in asked if key is not PromptKey.PASS_GATE}
+    expected = {PromptKey.FIRE_PREP_PASS, PromptKey.GROOMING_PASS}
+    if scheduled:
+        expected.add(PromptKey.SUPERVISOR_PASS)
+    assert rendered == expected
+    assert asked.count(PromptKey.PASS_GATE) == len(expected)
+
+
+@pytest.mark.parametrize("prompt_set", [DEFAULT_SET, V5_SET])
+def test_the_supervisor_pass_renders_as_the_one_supervisor(prompt_set: str) -> None:
+    """What the session is sent names no code tick, and reads every fire in progress."""
+    prompts = load_registry(
+        default_set=prompt_set, bindings=dict(bindings_for(example_config()))
+    )
+    rendered = prompts.template_for(PromptKey.SUPERVISOR_PASS).render(
+        per_run(PromptKey.SUPERVISOR_PASS)
+    )
+    gate = prompts.template_for(PromptKey.PASS_GATE).render(
+        gate_render_bindings(
+            name=PromptKey.SUPERVISOR_PASS.value, window_start=FIXTURE_EPOCH
+        )
+    )
+
+    assert "{{" not in rendered
+    assert "observation tick" not in rendered.casefold()
+    assert "alarm" not in rendered.casefold()
+    assert "every fire in progress" in rendered
+    assert "A fire closes what it builds." in rendered
+    assert "A question to a person does not age unseen." in rendered
+    assert "A pull request's draft flag tells the truth." in rendered
+    assert (
+        "Never write on the forge — no comments, labels, reviews, merges, pushes"
+        " or branches — and never clone a repository" in rendered
+    )
+    assert (
+        "Never change a workflow state, a label, a relation, a parent, a date,"
+        " an assignee, a priority, a description or a title" in rendered
+    )
+    assert (
+        "A session never merges: a merge by the account is a finding of the first"
+        " rank." in rendered
+    )
+    assert "on every fire in progress" in gate
+    assert (
+        "except the supervisor pass's own record rows and finding comments,"
+        " which are never its work." in gate
+    )
+    assert (
+        "for the supervisor pass it is the work, save its own record rows and"
+        " finding comments." in gate
+    )
+    assert (
+        "The supervisor pass's own record rows and finding comments are not the"
+        " account's work" in rendered
+    )

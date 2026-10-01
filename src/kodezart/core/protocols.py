@@ -38,6 +38,7 @@ from kodezart.types.domain.gating import (
     TrackerAggregate,
     WriterShape,
 )
+from kodezart.types.domain.git import TrackedHead
 from kodezart.types.domain.issue_identity import IssueIdentity
 from kodezart.types.domain.job import JobRecord
 from kodezart.types.domain.native_execution import NativeAuthoritySnapshot
@@ -161,6 +162,29 @@ class GitService(Protocol):
 
     async def fetch(self, repo_path: str) -> None: ...
 
+    async def tracked_heads(self, cwd: str) -> tuple[TrackedHead, ...]:
+        """Every local head that has a remote-tracking ref of the same name.
+
+        Pairs ``refs/heads/<name>`` with ``refs/remotes/<remote>/<name>`` of
+        the remote ``fetch`` refreshes, and says whether a worktree of the
+        repository has the head checked out (``git worktree list``).
+        """
+        ...
+
+    async def update_ref(
+        self,
+        cwd: str,
+        ref: str,
+        new_sha: str,
+        old_sha: str,
+    ) -> None:
+        """Point *ref* at *new_sha*, refusing when it no longer points at *old_sha*.
+
+        Maps to ``git update-ref <ref> <new_sha> <old_sha>``; git's refusal
+        raises.
+        """
+        ...
+
     async def create_worktree(
         self,
         repo_path: str,
@@ -252,6 +276,19 @@ class GitService(Protocol):
         """
         ...
 
+    async def merge_base(
+        self,
+        cwd: str,
+        first_ref: str,
+        second_ref: str,
+    ) -> str | None:
+        """The best common ancestor of the two refs, or ``None`` when none.
+
+        Maps to ``git merge-base`` (exit 0 → the SHA, exit 1 → None, any
+        other exit raises).
+        """
+        ...
+
     async def has_object(self, cwd: str, object_sha: str) -> bool:
         """True iff the repository at *cwd* holds the object *object_sha*.
 
@@ -282,9 +319,12 @@ class GitService(Protocol):
         base_ref: str,
         head_ref: str,
     ) -> ChangesetDigest:
-        """File paths and commit subjects for ``base_ref..head_ref``.
+        """What *head_ref* added since it split from *base_ref*.
 
-        Empty digest when refs are equal.
+        Paths from ``git diff --name-only base...head`` (the merge base to
+        the head) and subjects from ``git log base..head``, so commits
+        *base_ref* gained after the split add nothing. Empty digest when refs
+        are equal.
         """
         ...
 
@@ -1617,30 +1657,6 @@ class ScopePlanReader(
 
 
 @runtime_checkable
-class ScopeRosterReader(
-    ScopeFamilyReader,
-    PlanningIssueReader,
-    Protocol,
-):
-    """A scope's roster and each member's classification, read twice to agree."""
-
-
-@runtime_checkable
-class ScopeTallyReader(
-    ScopeRosterReader,
-    ScopeReadPreflight,
-    Protocol,
-):
-    """The roster a tally is counted over, behind the classification preflight.
-
-    Exactly what a scope's stage barrier is read from: its roster and each
-    member's stage markers. It names no event read and no write, so a holder
-    of it can observe a scope's stall from those and from nothing keyed to
-    the scope — there is no such thing for it to read.
-    """
-
-
-@runtime_checkable
 class ScopeReadyReader(
     ScopePlanReader,
     ExecutionApprovalReader,
@@ -1846,15 +1862,6 @@ class AuditPublicationWriter(
     Protocol,
 ):
     """The record an audit publishes, under the lease that publication holds."""
-
-
-@runtime_checkable
-class EscalationSignalReader(
-    EscalationResolutionReader,
-    TrackerCommentReader,
-    Protocol,
-):
-    """The resolution and the records an escalation's ageing is observed from."""
 
 
 @runtime_checkable

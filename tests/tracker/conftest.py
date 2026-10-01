@@ -16,7 +16,7 @@ import pytest
 
 from kodezart.adapters.linear.tracker import LinearMcpTracker
 from kodezart.core.backoff import RetryPolicy
-from kodezart.core.protocols import TrackerPort
+from kodezart.core.protocols import RunAlarmTracker, TrackerPort
 from kodezart.types.domain.dispatch import PassSignal, SelfWriteLedger
 from kodezart.types.domain.operation import (
     LifecycleStage,
@@ -24,6 +24,7 @@ from kodezart.types.domain.operation import (
     ScopeLabel,
     aliases_approval_member,
 )
+from kodezart.types.domain.run_alarm import RunAlarm
 from kodezart.types.domain.scope import ScopeContainer, ScopeKind, ScopeRef
 from kodezart.types.domain.surface import (
     SurfaceKind,
@@ -759,3 +760,20 @@ def _instant_refusal_waits(monkeypatch: pytest.MonkeyPatch) -> None:
     from kodezart.adapters.linear import tracker as tracker_module
 
     monkeypatch.setattr(tracker_module, "_REFUSAL_WAIT_SECONDS", 0.0)
+
+
+def picked_alarm(records: Sequence[RunAlarm], value: RunAlarm) -> RunAlarm | None:
+    """The record at *value*'s address in one carrier listing, if it holds one."""
+    return next(
+        (
+            record
+            for record in records
+            if record.subject == value.subject and record.signal is value.signal
+        ),
+        None,
+    )
+
+
+async def stored_alarm(tracker: RunAlarmTracker, value: RunAlarm) -> RunAlarm | None:
+    """The record at *value*'s address, picked out of the carrier's one listing."""
+    return picked_alarm(await tracker.read_run_alarms(issue_key=APPROVED_ISSUE), value)

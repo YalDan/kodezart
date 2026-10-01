@@ -253,15 +253,12 @@ class FireConsolidation:
 
         Each repository merges onto its own trunk. The run merged when every
         one of them did; its tip and review endpoints are the first
-        repository's, which is what the steps after this one read.
+        repository's, which is what the steps after this one read. A branch
+        that gained commits in none of them has nothing to merge.
         """
         outcomes = await self._consolidate_each(state, ctx, repositories)
         if not outcomes:
-            msg = (
-                f"{state['ralph_branch']!r} was accepted with no commits in any "
-                "declared repository"
-            )
-            raise RuntimeError(msg)
+            return await self._nothing_to_deliver(state, ctx, repositories)
         first_repository, first = outcomes[0]
         diverged = [
             repository.url
@@ -279,16 +276,7 @@ class FireConsolidation:
                 "review_base_sha": None,
                 "review_head_sha": None,
             }
-        clone = await self._cache.ensure_available(first_repository.url, ctx.cache_key)
-        base_tip = await self._git.remote_branch_sha(
-            clone, self._git_remote, first_repository.trunk
-        )
-        if base_tip is None:
-            msg = (
-                f"Base branch {first_repository.trunk!r} not found on "
-                f"{self._git_remote} after successful consolidation"
-            )
-            raise RuntimeError(msg)
+        base_tip = await self._trunk_tip(first_repository, ctx)
         return {
             "merged": True,
             "merge_error": None,
@@ -297,6 +285,58 @@ class FireConsolidation:
             "review_head_sha": first.feature_tip_sha,
             "work_base_ref": state["feature_branch"],
         }
+
+    async def _nothing_to_deliver(
+        self,
+        state: WorkflowState,
+        ctx: ExecutionContext,
+        repositories: Sequence[RepoEntry],
+    ) -> dict[str, object]:
+        """End an accepted loop whose branch gained commits in no repository.
+
+        The criteria were accepted with the work already on every trunk,
+        which is a finished run and not a fault. Each repository is reported
+        already integrated at its trunk's tip and nothing is merged, so the
+        run ends unmerged with no error: nothing to review, and no pull
+        request to open or update. Its head is the first repository's trunk.
+        """
+        writer = get_stream_writer()
+        tips: list[str] = []
+        for repository in repositories:
+            tip = await self._trunk_tip(repository, ctx)
+            writer(
+                WorkflowConsolidationEvent(
+                    status=ConsolidationStatus.ALREADY_INTEGRATED,
+                    feature_branch=repository.trunk,
+                    source_branch=state["ralph_branch"],
+                    feature_tip_sha=tip,
+                )
+            )
+            tips.append(tip)
+        await self._log.ainfo(
+            "accepted_with_nothing_to_deliver",
+            ralph_branch=state["ralph_branch"],
+            repositories=[repository.url for repository in repositories],
+        )
+        return {
+            "merged": False,
+            "merge_error": None,
+            "feature_branch": repositories[0].trunk,
+            "feature_tip_sha": tips[0],
+            "review_base_sha": None,
+            "review_head_sha": None,
+        }
+
+    async def _trunk_tip(self, repository: RepoEntry, ctx: ExecutionContext) -> str:
+        """The sha *repository*'s trunk stands at on the remote; raises if absent."""
+        clone = await self._cache.ensure_available(repository.url, ctx.cache_key)
+        tip = await self._git.remote_branch_sha(
+            clone, self._git_remote, repository.trunk
+        )
+        if tip is None:
+            msg = f"Base branch {repository.trunk!r} not found on {self._git_remote}"
+            raise RuntimeError(msg)
+        return tip
 
     async def _land_each(
         self,

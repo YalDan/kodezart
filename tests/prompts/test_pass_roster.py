@@ -35,7 +35,11 @@ from tests.prompts.test_operation_config import raw_example, write_toml
 from tests.prompts.test_prompt_wiring import DEFAULT_SET, load_registry
 
 SHIPPED_SETS = (DEFAULT_SET, V5_SET)
-PASS_KEYS = (PromptKey.FIRE_PREP_PASS, PromptKey.GROOMING_PASS)
+PASS_KEYS = (
+    PromptKey.FIRE_PREP_PASS,
+    PromptKey.GROOMING_PASS,
+    PromptKey.SUPERVISOR_PASS,
+)
 
 #: The two roster collections a pass enumerates rather than addresses.
 ROSTERS = ("teams", "repos")
@@ -403,6 +407,7 @@ def test_the_configured_deployment_renders_the_present_arm_instead(
     expected = {
         PromptKey.FIRE_PREP_PASS: "Example Run Log",
         PromptKey.GROOMING_PASS: "Example Grooming Log",
+        PromptKey.SUPERVISOR_PASS: "Example Supervisor Log",
     }[key]
     assert expected in output
 

@@ -105,6 +105,7 @@ ARTIFACT_TAGS: dict[str, tuple[str, ...]] = {
     "fix": ("ticket", "review_feedback", "ci_summary"),
     "fix__no_optional_sections": ("ticket",),
     "grooming_pass": (),
+    "supervisor_pass": (),
     "implementation": ("ticket",),
     "iteration_feedback": ("failed_criteria",),
     "knowledge_map": (),
@@ -290,7 +291,11 @@ def test_the_critique_hands_the_critic_the_task_the_content_and_the_draft() -> N
 # KOD-290 — the Record clause prescribes the runner's own title
 # ---------------------------------------------------------------------------
 
-PASS_KEYS = (PromptKey.FIRE_PREP_PASS, PromptKey.GROOMING_PASS)
+PASS_KEYS = (
+    PromptKey.FIRE_PREP_PASS,
+    PromptKey.GROOMING_PASS,
+    PromptKey.SUPERVISOR_PASS,
+)
 
 
 @pytest.mark.parametrize("key", PASS_KEYS)

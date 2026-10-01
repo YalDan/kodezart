@@ -70,7 +70,11 @@ assert {DOCS / "configuration.md", DOCS / "operation.scope.toml"} <= set(
     PROSE_AND_SHIPPED_FILES
 )
 SET_DIR = REPO_ROOT / "src" / "kodezart" / "prompts" / "sets" / "claude-opus"
-PASS_KEYS = (PromptKey.FIRE_PREP_PASS, PromptKey.GROOMING_PASS)
+PASS_KEYS = (
+    PromptKey.FIRE_PREP_PASS,
+    PromptKey.GROOMING_PASS,
+    PromptKey.SUPERVISOR_PASS,
+)
 
 # Names a shipped template references from inside an ``{{#each}}`` frame
 # WITHOUT the ``this.`` root, so the renderer resolves them off the current
@@ -754,10 +758,7 @@ def test_placeholder_mapping_is_total_in_both_directions() -> None:
     # the mapping can no longer be checked against what it was derived from.
     native = dict(markdown_rows("## Native OperationConfig consumers"))
     assert native == {
-        "organize_scopes": (
-            "composition/audit.py::build_audit_pass, "
-            "composition/supervisor.py::build_supervisor_pass"
-        ),
+        "organize_scopes": "composition/audit.py::build_audit_pass",
         "workflow_states.done": "adapters/linear/tracker.py::set_workflow_state",
     }
     assert set(mapped).isdisjoint(native)

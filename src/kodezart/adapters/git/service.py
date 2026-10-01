@@ -23,7 +23,7 @@ from kodezart.domain.errors import (
     WorkspaceError,
 )
 from kodezart.types.domain.consolidation import ChangesetDigest
-from kodezart.types.domain.git import LsRemoteEntry
+from kodezart.types.domain.git import LsRemoteEntry, TrackedHead
 from kodezart.types.domain.workspace import GitWorktreeIdentity
 
 _UNKNOWN_EXIT_CODE = -1
@@ -251,7 +251,16 @@ class SubprocessGitService:
         return p.is_dir() and ((p / ".git").exists() or (p / "HEAD").exists())
 
     async def clone_bare(self, url: str, target: str) -> None:
-        """Clone a remote URL as a bare repository."""
+        """Clone a remote URL as a bare repository whose HEAD resolves.
+
+        A bare clone takes the remote's HEAD as its own. A remote whose HEAD
+        names a branch it does not have (a repository initialised under one
+        default-branch name and pushed under another) leaves the clone with
+        an orphaned HEAD, and ``git worktree add`` refuses to cut anything
+        from it. Such a clone points HEAD at its first branch instead; a
+        clone with no branch at all is left as it is, since nothing could be
+        cut from it either way.
+        """
         Path(target).parent.mkdir(parents=True, exist_ok=True)
         effective_url = self._auth.authenticated_url(url) if self._auth else url
         await self._run(
@@ -259,6 +268,19 @@ class SubprocessGitService:
             cwd=str(Path(target).parent),
             env=self._auth.subprocess_env() if self._auth else None,
         )
+        head_resolves, _ = await self._run_with_exit_codes(
+            ["git", "rev-parse", "--verify", "--quiet", "HEAD"],
+            cwd=target,
+            allowed=frozenset({0, 1}),
+        )
+        if head_resolves == 0:
+            return
+        first_branch = await self._run_output(
+            ["git", "for-each-ref", "--count=1", "--format=%(refname)", "refs/heads/"],
+            cwd=target,
+        )
+        if first_branch:
+            await self._run(["git", "symbolic-ref", "HEAD", first_branch], cwd=target)
 
     async def fetch(self, repo_path: str) -> None:
         """Fetch latest from the configured remote, populating remote-tracking refs.
@@ -281,6 +303,62 @@ class SubprocessGitService:
             cwd=repo_path,
             env=self._auth.subprocess_env() if self._auth else None,
         )
+
+    async def tracked_heads(self, cwd: str) -> tuple[TrackedHead, ...]:
+        """Local heads paired with this remote's tracking refs of the same name.
+
+        A head counts as checked out when ``git worktree list`` names it on a
+        worktree's ``branch`` line; a bare repository's own ``HEAD`` has no
+        such line, because it checks nothing out.
+        """
+        heads, tracking = "refs/heads/", f"refs/remotes/{self._remote}/"
+        listing = await self._run_output(
+            [
+                "git",
+                "for-each-ref",
+                "--format=%(objectname) %(refname)",
+                heads,
+                tracking,
+            ],
+            cwd=cwd,
+        )
+        local: dict[str, str] = {}
+        remote: dict[str, str] = {}
+        for line in listing.splitlines():
+            sha, ref = line.split(" ", 1)
+            if ref.startswith(heads):
+                local[ref] = sha
+            else:
+                remote[heads + ref.removeprefix(tracking)] = sha
+        roster = await self._run_output(
+            ["git", "worktree", "list", "--porcelain", "-z"],
+            cwd=cwd,
+        )
+        checked_out = {
+            field.removeprefix("branch ")
+            for field in roster.split("\0")
+            if field.startswith("branch ")
+        }
+        return tuple(
+            TrackedHead(
+                ref=ref,
+                sha=sha,
+                remote_sha=remote[ref],
+                checked_out=ref in checked_out,
+            )
+            for ref, sha in local.items()
+            if ref in remote
+        )
+
+    async def update_ref(
+        self,
+        cwd: str,
+        ref: str,
+        new_sha: str,
+        old_sha: str,
+    ) -> None:
+        """Move *ref* to *new_sha* only while it still points at *old_sha*."""
+        await self._run(["git", "update-ref", ref, new_sha, old_sha], cwd=cwd)
 
     async def create_worktree(
         self,
@@ -513,6 +591,24 @@ class SubprocessGitService:
         )
         return exit_code == 0
 
+    async def merge_base(
+        self,
+        cwd: str,
+        first_ref: str,
+        second_ref: str,
+    ) -> str | None:
+        """Best common ancestor of the two refs; ``None`` when they share none.
+
+        Maps to ``git merge-base``: exit 0 → the SHA, exit 1 → None, any
+        other exit raises.
+        """
+        exit_code, stdout = await self._run_with_exit_codes(
+            ["git", "merge-base", first_ref, second_ref],
+            cwd=cwd,
+            allowed=frozenset({0, 1}),
+        )
+        return stdout.strip() if exit_code == 0 else None
+
     async def has_object(self, cwd: str, object_sha: str) -> bool:
         """Return True iff the repository at *cwd* holds *object_sha*.
 
@@ -568,15 +664,23 @@ class SubprocessGitService:
         base_ref: str,
         head_ref: str,
     ) -> ChangesetDigest:
-        """Return a ``ChangesetDigest`` for ``base_ref..head_ref``."""
+        """What *head_ref* added since it split from *base_ref*.
+
+        Paths are diffed from the merge base, the same interval whose
+        commits ``git log base..head`` names, so commits *base_ref* gained
+        after the split add no paths. The split point is resolved first and
+        diffed two-dot, which is what git's three-dot diff does; with no
+        common ancestor the diff runs from *base_ref* itself.
+        """
         if base_ref == head_ref:
             return ChangesetDigest(
                 file_paths=[],
                 commit_subjects=[],
                 commit_count=0,
             )
+        split = await self.merge_base(cwd, base_ref, head_ref) or base_ref
         files_output = await self._run_output(
-            ["git", "diff", "--name-only", f"{base_ref}..{head_ref}"],
+            ["git", "diff", "--name-only", f"{split}..{head_ref}"],
             cwd=cwd,
         )
         subjects_output = await self._run_output(

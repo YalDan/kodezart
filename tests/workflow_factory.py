@@ -13,6 +13,7 @@ from kodezart.chains.fire_remediation import FireRemediation
 from kodezart.chains.fire_review import FireReview
 from kodezart.chains.fire_specification import FireSpecification
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
+from kodezart.chains.scope_stages import ScopeStages
 from kodezart.core.protocols import (
     AgentRunner,
     ArtifactPersister,
@@ -60,6 +61,8 @@ def make_fire_workflow(
     fan_in_max_attempts: int,
     artifact_persister: ArtifactPersister | None = None,
     criteria: FireCriteriaSource | None = None,
+    repositories: Sequence[RepoEntry] = (),
+    stages: ScopeStages | None = None,
 ) -> RalphWorkflowEngine:
     return RalphWorkflowEngine(
         specification=FireSpecification(
@@ -84,6 +87,7 @@ def make_fire_workflow(
             cache=cache,
             git_remote=git_remote,
             ref_publisher=ref_publisher,
+            repositories=repositories,
         ),
         review=FireReview(
             service=service,
@@ -102,6 +106,7 @@ def make_fire_workflow(
         retry_initial_interval=retry_initial_interval,
         delay_floor_for=delay_floor_for,
         criteria=criteria,
+        stages=stages,
     )
 
 
@@ -134,6 +139,7 @@ def make_authored_workflow(
     criteria_max_regeneration_rounds: int,
     fan_in_max_attempts: int,
     artifact_persister: ArtifactPersister | None = None,
+    stages: ScopeStages | None = None,
 ) -> AuthoredDeliveryCoordinator:
     return AuthoredDeliveryCoordinator(
         fire=make_fire_workflow(
@@ -159,6 +165,8 @@ def make_authored_workflow(
             fan_in_max_attempts=fan_in_max_attempts,
             artifact_persister=artifact_persister,
             ref_publisher=ref_publisher if pr_creator is not None else None,
+            repositories=repositories,
+            stages=stages,
         ),
         publication=AuthoredPublication(
             service=service,
@@ -171,6 +179,7 @@ def make_authored_workflow(
             remediation_max_rounds=remediation_max_rounds,
             git=git,
             cache=cache,
+            repositories=repositories,
         ),
         checks=AuthoredChecks(
             ci_monitor=ci_monitor,

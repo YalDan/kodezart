@@ -107,7 +107,6 @@ from kodezart.adapters.linear.tracker import LinearMcpTracker
 from kodezart.core.protocols import CriterionResolver, TrackerCriteriaReader
 from kodezart.domain.criterion_creation import existing_criterion
 from kodezart.domain.fire_spec import checklist_items
-from kodezart.services.alarm_supervisor import AlarmSupervisor
 from kodezart.services.criterion_sources import NativeCriterionResolver
 from kodezart.types.domain.criteria import CriterionId
 from kodezart.types.domain.criterion_ref import CriterionRef
@@ -1381,13 +1380,13 @@ def test_a_second_site_reading_the_family_is_counted(form: str) -> None:
 
 
 #: A definition the register must not cover: a function named after the
-#: lane's alarm observation, in a module the reading does not register, that
-#: looks a criterion up by text, and the registered lookup itself handed the
+#: registered lookup, in a module the reading does not register, that looks
+#: a criterion up by text, and the registered lookup itself handed the
 #: criterion parameter as well.
 REGISTER_CONTROLS = {
     "a same-named function in a module the reading does not register": (
-        _module_of(AlarmSupervisor),
-        f"{_ROWS}def {AlarmSupervisor.observe_lane.__name__}(rows: Sequence[{ROW}],"
+        _module_of(TrackerIssue),
+        f"{_ROWS}def {existing_criterion.__name__}(rows: Sequence[{ROW}],"
         f" {CRITERION_PARAMETER}: str) -> {ROW}:\n"
         f"    return {{r.issue_key: r for r in rows}}[{CRITERION_PARAMETER}]\n",
     ),

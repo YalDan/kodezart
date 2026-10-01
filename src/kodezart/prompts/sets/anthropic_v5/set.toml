@@ -6,7 +6,7 @@ name = "anthropic_v5"
 # The engines this corpus is authored for, by their model ids: the one
 # declaration boot compares KODEZART_AGENT__MODEL and every per-key engine
 # against. A model outside this list is logged as a mismatch, never refused.
-engines = ["claude-opus-5-5", "claude-fable-5-1"]
+engines = ["claude-opus-5-5", "claude-fable-5-1", "claude-sonnet-5-5"]
 
 # Roles that carry no reasoning-depth instruction: they emit a name, a
 # message, a description, or a prelude composed into another session's
@@ -14,7 +14,7 @@ engines = ["claude-opus-5-5", "claude-fable-5-1"]
 # key at authoring time — the knowledge map is here because it is a
 # prelude, and a prelude carrying its own depth block would put a second
 # one inside the prompt it joins.
-utility_keys = ["branch_name", "commit_message", "pr_description", "knowledge_map", "fire_record", "native_writer_contract", "mutation_survival", "organize_spec_rubric", "pass_gate", "scope_scan", "scope_done"]
+utility_keys = ["branch_name", "commit_message", "pr_description", "knowledge_map", "fire_record", "native_writer_contract", "mutation_survival", "organize_spec_rubric", "pass_gate", "scope_scan", "scope_done", "supervisor_pass"]
 
 # Which fan-out primitive this set's roles are told to use, set from a
 # measured verdict and never model-judged. The workflow primitive needs the
@@ -140,7 +140,7 @@ nothing is written to one.{{/if}}\
 """
 
 # The board's shape, stated once for every role that reads or writes
-# placement: the groom judge, the repair author, and the two scheduled
+# placement: the groom judge, the repair author, and the scheduled
 # passes. Creating a project or a milestone is no capability of the
 # tracker port, so the last sentence flags instead of inventing. One
 # sentence per line, so no guard over this text depends on a reflow.
@@ -156,15 +156,25 @@ A rare or improbable edge case found along the way is its own backlog issue for 
 An issue's finish line stays its stated criteria.\
 """
 
-# The delivery standard, composed into the two scheduled passes, the run's
+# The delivery standard, composed into the three scheduled passes, the run's
 # own groom and prep session and the implementer: what a finishable unit
 # is and how it is delivered (owner ruling of 2026-09-25, after a scope
-# whose units were too broad looped without landing anything).
+# whose units were too broad looped without landing anything), and when
+# its pull request leaves draft (owner ruling of 2026-09-29, after a run
+# left finished work in draft and unfinished work ready for review).
 delivery_units = """\
 Deliverable units. A milestone, or the parent issue where a project has none, is the unit of delivery: one run finishes it.
 Finishable means a bounded set of criteria, each Check executable in the repository, no open decision beneath it, and no dependency on unmerged work except the unit it stacks on.
 Cut anything broader into such units before it is approved. A unit that starts to loop, sprawl into new issues or chase tests past its criteria was cut too broad: cut it again rather than push on.
-Each unit is delivered on its own branch and draft pull request per repository, opened at the unit's first push, named after the project and the unit, stacked on the project's previous unit only where it depends on it; progress is pushed there as it is made, and a person merges it, never a session.\
+Each unit is delivered on its own branch and draft pull request per repository, opened at the unit's first push, named after the project and the unit, stacked on the project's previous unit only where it depends on it; progress is pushed there as it is made.
+The session delivering the unit keeps each pull request a draft whenever its unit is work in progress — any criterion open, any review comment unanswered, its checks red or its base conflicting at the pushed head — returning it to draft if it was marked ready; when every criterion is done, every review comment addressed, its checks green and its base not conflicting at the pushed head, it marks the pull request ready for review and stops there; a person merges it, never a session.\
+"""
+
+# The same rule as the two changeset graders apply it, composed into their
+# scope block only: in a per-request run kodezart opens the pull request
+# after the loop and the review, so there is none yet to judge.
+draft_review = """\
+Judge each pull request of the unit at its pushed head as well, and raise as a concern in your own name any one marked ready for review while its unit is unfinished, still a draft once its unit is finished, or merged by a session.\
 """
 
 # Appended as the final block of every member outside the utility roster,
@@ -269,13 +279,13 @@ tools = ["Read", "Glob", "Grep"]
 # under each role, in one place: changing what judgment costs is an edit
 # here, not an edit per key. Effort is NAMED at every role because the
 # harness exposes no way to ask what it resolved. The judgment roles run at
-# the maximum and the question role at the floor, by the owner's ruling of
-# 2026-09-24: the maximum replaced the earlier ladder that ran judgment one
-# level below authoring, and a short structured board question runs at the
-# floor. Per-key skill loadouts
-# are deliberately absent from this set: a loadout has one source, and for
-# this set that source is the role. No template of this set names a skill
-# or when to invoke one — a skill's own description is its trigger.
+# the maximum, and the question and utility roles at the floor because their
+# answers are short and structured (rulings of 2026-09-24 and 2026-09-29).
+# The maximum replaced the earlier ladder that ran judgment one level below
+# authoring. Per-key skill loadouts are deliberately absent from this set:
+# a loadout has one source, and for this set that source is the role. No
+# template of this set names a skill or when to invoke one — a skill's own
+# description is its trigger.
 
 [session_roles.generative]
 effort = "max"
@@ -291,7 +301,8 @@ keys = [
     "organize_session",
 ]
 
-# The two scheduled passes: one unattended session each, working a whole
+# The two intake passes (the supervisor pass has its own row): one
+# unattended session each, working a whole
 # board as the product and project manager. Their loadout is the skills the
 # adopted routines name for that work (KOD-50): the product-management
 # activities of grooming, the engineering, design, data and operations
@@ -329,6 +340,16 @@ skills = [
 ]
 keys = ["fire_prep_pass", "grooming_pass"]
 
+# The supervisor pass reads what the operation's own account did and reports
+# its conduct; it edits nothing and needs no skill to read the tracker and
+# the forge. One prompt on the smaller engine at the floor, like the
+# question role, so it carries no depth block and is on utility_keys above:
+# the deployment pins its engine through KODEZART_AGENT__SESSION_MODELS.
+[session_roles.supervisor]
+effort = "low"
+skills = []
+keys = ["supervisor_pass"]
+
 [session_roles.evaluative]
 effort = "max"
 skills = ["code-review", "security-review"]
@@ -356,10 +377,11 @@ effort = "max"
 skills = ["code-review"]
 keys = ["implementation", "fix"]
 
-# This roster and the question roster below together are utility_keys
-# above, and the metadata model refuses a set where they disagree.
+# This roster, the question roster and the supervisor roster together are
+# utility_keys above, and the metadata model refuses a set where they
+# disagree.
 [session_roles.utility]
-effort = "max"
+effort = "low"
 skills = []
 keys = ["branch_name", "commit_message", "knowledge_map", "fire_record", "native_writer_contract", "mutation_survival", "organize_spec_rubric"]
 # The rubric key is on this roster because a rubric opens no session:

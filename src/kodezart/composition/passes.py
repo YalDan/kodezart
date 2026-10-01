@@ -13,7 +13,6 @@ from kodezart.adapters.no_forge_delivery import NoForgeDeliveryProbe
 from kodezart.composition.audit import build_audit_pass, verify_audit_configuration
 from kodezart.composition.organize import build_scope_heartbeat, scope_heartbeat_wires
 from kodezart.composition.records import RECORD_KIND_BY_PASS, run_report
-from kodezart.composition.supervisor import build_supervisor_pass
 from kodezart.composition.tracker import DialledTracker
 from kodezart.config.app import CADENCE_SETTINGS, AppConfig, CadenceName
 from kodezart.config.knowledge import KnowledgeSettings
@@ -41,9 +40,7 @@ from kodezart.core.protocols import (
     WorkspaceProvider,
 )
 from kodezart.domain.git_url import is_forge_less_origin
-from kodezart.domain.lane_alarms import OBSERVED_ALARMS
 from kodezart.domain.prompt_variables import scope_variables
-from kodezart.domain.run_alarm_table import ALARM_TABLE, require_alarm_table
 from kodezart.services.base_resolver import BaseResolver
 from kodezart.services.claim_heartbeat import ClaimHeartbeat
 from kodezart.services.dispatch_pass import GatedDispatchPass
@@ -58,7 +55,6 @@ from kodezart.services.prompt_pass import (
     pass_render_bindings,
 )
 from kodezart.services.run_recorder import RunRecorder
-from kodezart.services.supervisor_pass import SUPERVISOR_TICK_NAME
 from kodezart.services.tracker_lifecycle import TrackerLifecycleWriter
 from kodezart.types.domain.dispatch import PassSignal, SelfWriteLedger
 from kodezart.types.domain.operation import (
@@ -158,7 +154,7 @@ def build_gate(
     """A gate over *signals*, or none when the pass declares none.
 
     The deterministic gate serves the per-issue dispatch tick alone: the
-    two prompt passes ask an agent instead (:class:`PromptPass`).  No
+    prompt passes ask an agent instead (:class:`PromptPass`).  No
     signals is the ONLY way a built gate is absent.  Having no tracker at
     all is the caller's arm — it holds a dialled tracker or it does not —
     and it is reported there, because "the gate is absent" and "nothing
@@ -217,6 +213,7 @@ def _assert_renders(
 _PROMPT_PASS_CADENCE: dict[PromptKey, CadenceName] = {
     PromptKey.FIRE_PREP_PASS: "fire_prep",
     PromptKey.GROOMING_PASS: "grooming",
+    PromptKey.SUPERVISOR_PASS: "supervisor",
 }
 
 
@@ -277,9 +274,10 @@ def absent_roster(operation: OperationConfig) -> tuple[str, ...]:
 
 
 def runs_scope_flow(operation: OperationConfig) -> bool:
-    """Whether this operation declares scope rows for the supervisor and the audit.
+    """Whether this operation declares scope rows for the audit.
 
-    A declared row turns those two ON, and it turns nothing else off. The
+    A declared row turns the audit's scope arm ON, and it turns nothing else
+    off. The
     heartbeat reads no row: it asks the board which approved scopes are not
     finished. Whether any other job runs is its cadence pair
     (KOD-1238); where it works is the declared teams and repositories, a team
@@ -291,7 +289,7 @@ def runs_scope_flow(operation: OperationConfig) -> bool:
 
 
 def session_passes_wire(operation: OperationConfig) -> bool:
-    """Whether the two prompt passes run as agent sessions here.
+    """Whether the prompt passes run as agent sessions here.
 
     One condition, named once: a roster a template could render over. Two
     sites ask the same question — the wiring and the render preflight — and
@@ -319,8 +317,7 @@ def scope_passes_wire(
 ) -> bool:
     """Whether the scope passes wire here: a dialled tracker and declared scopes.
 
-    The supervisor tick stands or falls on this answer, because it reads the
-    declared rows.
+    The scope family's marker purposes are demanded on exactly this answer.
     """
     return tracker_present and operation is not None and runs_scope_flow(operation)
 
@@ -330,14 +327,14 @@ def scope_passes_wire(
 #: ``_prefix("...")`` and ``*_PURPOSE`` site under ``src`` and the port
 #: methods behind them; a purpose asked some other way is a hole here.
 #:
-#: ``scope`` is the scope runs the heartbeat submits and the supervisor
-#: tick: ``claim`` on every leased write (the surface lease a stage releases
+#: ``scope`` is the scope runs the heartbeat submits: ``claim`` on every
+#: leased write (the surface lease a stage releases
 #: was the first live refusal), ``issue_identity``
 #: on description edits and split creation, ``work_ref`` on a lane's base,
 #: ``run_state`` and ``run_event`` on the lane record, ``ruling``,
 #: ``escalation`` and ``decision`` on the questions a run raises and reads
-#: back, ``amendment`` on the write-back, ``run_alarm`` on the supervisor's
-#: record. ``dispatch`` is what the per-issue dispatch pass and its
+#: back, ``amendment`` on the write-back. ``dispatch`` is what the per-issue
+#: dispatch pass and its
 #: lifecycle writer ask at their own tick; the fire a dispatch queues asks
 #: for the lane purposes at its point of use, and that stays a point-of-use
 #: refusal so that a v0.2 operation file boots as it did. ``audit`` is the
@@ -357,7 +354,6 @@ MARKER_PURPOSES_BY_FAMILY: Mapping[str, frozenset[str]] = {
             "escalation",
             "issue_identity",
             "ruling",
-            "run_alarm",
             "run_event",
             "run_state",
             "work_ref",
@@ -393,7 +389,7 @@ def wired_marker_purposes(
     Read off the same predicates the wiring builds on, so a purpose only an
     unwired family asks for is never demanded: a scope deployment is not
     refused over ``base_spec``, and a per-issue one is not refused over
-    ``run_alarm``. With no tracker dialled nothing here writes through one,
+    ``amendment``. With no tracker dialled nothing here writes through one,
     and the answer is empty.
     """
     families: list[str] = []
@@ -468,9 +464,9 @@ async def build_prompt_passes(
     skills: SkillsSelection,
     recorder: RunRecorder,
 ) -> list[ScheduledPass]:
-    """Bind the two prompt passes: the intake over the declared boards.
+    """Bind the prompt passes: the intake passes and the supervisor pass.
 
-    Each scans the declared boards on its own cadence pair, scope or no
+    Each reads the declared boards on its own cadence pair, scope or no
     scope: they wire wherever the roster renders
     (:func:`session_passes_wire`). Every pass here whose cadence is unset is
     not scheduled and is named as such. Preflight validates exactly those
@@ -526,7 +522,11 @@ async def build_prompt_passes(
                 session_type=SessionType.SCHEDULED_PASS,
             ).run,
             report=run_report(recorder, _record_kind_for(key), key.value),
-            # The intake runs when the process comes up (owner, 2026-09-24).
+            # Every pass here ticks when the process comes up: the intake by
+            # the owner's ruling of 2026-09-24, and the supervisor pass with
+            # it, so a restart never leaves the account's conduct unread for
+            # a whole interval. Each restart therefore opens one supervisor
+            # session too (docs/configuration.md, docs/deploying.md).
             tick_at_boot=True,
         )
         for key, row in schedule.items()
@@ -715,11 +715,10 @@ async def _verify_wired_gates(
     Exactly the gates about to be wired, on the same predicates the
     builders themselves use: a signal configured for a pass this deployment
     does not schedule is not a capability it needs, and refusing boot over
-    one would hold a deployment hostage to a knob nothing reads. Two things
-    scan through the dialled port: the per-issue dispatch pass, on its
-    configured signals, and the supervisor tick, which needs every scan the
-    alarms it observes declare, each named as ``supervisor/<alarm>``. The
-    two prompt passes scan through nothing here — their gate is a session
+    one would hold a deployment hostage to a knob nothing reads. One thing
+    scans through the dialled port: the per-issue dispatch pass, on its
+    configured signals. The
+    prompt passes scan through nothing here — their gate is a session
     over the same tracker server the pass itself is described — so no
     signal is probed on their behalf.
 
@@ -739,10 +738,6 @@ async def _verify_wired_gates(
         and config.pass_cadence("dispatch") is not None
     ):
         wired[_DISPATCH_NAME] = config.dispatch_pass_gate_signals
-    if runs_scope_flow(operation) and config.pass_cadence("supervisor") is not None:
-        # The supervisor tick is registered on exactly this predicate, so its
-        # alarms' scans are this deployment's to answer.
-        wired.update(_supervisor_scans())
     passes_by_signal: dict[PassSignal, list[str]] = {}
     for name, signals in wired.items():
         for signal in signals:
@@ -761,29 +756,16 @@ async def _verify_wired_gates(
     )
 
 
-def _supervisor_scans() -> dict[str, Sequence[PassSignal]]:
-    """The scans the supervisor tick's alarms declare, one entry per alarm.
-
-    Named ``supervisor/<alarm>`` so a refusal says which alarm needs the scan.
-    Takes no configuration on purpose: what the tick observes is the alarm
-    table, whole; whether the tick runs is its cadence pair, read by the caller.
-    """
-    return {
-        f"{SUPERVISOR_TICK_NAME}/{alarm.value}": sorted(ALARM_TABLE[alarm].scans)
-        for alarm in sorted(OBSERVED_ALARMS)
-    }
-
-
 def _session_running(kind: RunKind) -> SessionType:
     """Which session runs a kind, and therefore reads its record's log.
 
-    The two judgment passes are one session type by design — they differ
+    The judgment passes are one session type by design — they differ
     in what their prompt says, not in what kind of session runs them — and
-    a fire is its own.  Exhaustive by ``match``: a fourth run kind cannot
+    a fire is its own.  Exhaustive by ``match``: a new run kind cannot
     be added without answering this question for it.
     """
     match kind:
-        case RunKind.FIRE_PREP | RunKind.GROOMING | RunKind.AUDIT:
+        case RunKind.FIRE_PREP | RunKind.GROOMING | RunKind.AUDIT | RunKind.SUPERVISOR:
             return SessionType.SCHEDULED_PASS
         case RunKind.FIRE:
             return SessionType.TICKET_FIRE
@@ -889,9 +871,6 @@ async def verify_pass_preflight(
     Among them the marker prefixes: every purpose a pass that will wire can
     ask for must be declared, and a boot lacking any is refused naming all
     of them (:func:`wired_marker_purposes`).
-    Before all of them the alarm table is checked total, which needs nothing
-    at all: a signal of the vocabulary with no fold refuses the boot here and
-    is never asked about again.
     They used to fire from inside :func:`build_dispatch_runtime`, which the
     composition root reaches only after it has started the job queue and
     opened the tracker's MCP transport — so a refusal aborted the lifespan
@@ -909,7 +888,6 @@ async def verify_pass_preflight(
     a template it will never send would refuse a boot over a hole nothing
     reaches.
     """
-    require_alarm_table()
     # Before the audit check, which refuses its own three prefixes one at a
     # time: here a missing audit prefix is named beside every other one.
     _verify_marker_prefixes(
@@ -1081,28 +1059,6 @@ async def build_dispatch_runtime(
             forge=audit_forge,
         )
         await _log_not_configured(log, name="audit", cadence="audit")
-    # The observation tick needs a tracker to read and a declared roster to
-    # read it for; it needs nothing else, so it is gated on exactly those two
-    # and the absent arm names which one was missing rather than leaving an
-    # operator to deduce it from a schedule with no supervisor in it. The
-    # roster question is the one predicate that already answers "does this
-    # deployment work scope by scope", read off the same copy every other arm
-    # here reads: a tick observing rows the heartbeat never submits would be
-    # this factory holding two opinions about one operation.
-    if not scope_passes_wire(operation, tracker_present=dialled is not None):
-        await log.ainfo(
-            "supervisor_pass_not_wired",
-            tracker_present=dialled is not None,
-            scopes_declared=operation is not None and runs_scope_flow(operation),
-        )
-    elif config.pass_cadence("supervisor") is None:
-        await _log_not_configured(log, name=SUPERVISOR_TICK_NAME, cadence="supervisor")
-    elif dialled is not None and operation is not None:
-        scheduled.append(
-            build_supervisor_pass(
-                config=config, operation=operation, tracker=dialled.tracker
-            )
-        )
     if operation is not None:
         scheduled.extend(
             await build_prompt_passes(

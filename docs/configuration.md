@@ -4,7 +4,7 @@ The `[run_event_states]` table is optional, and dialling the tracker does not
 consult it. A table that IS declared must be total: its keys are the single
 `RunEventKind` vocabulary, and loading the file names every missing or
 undeclared key. `DERIVED` and `NO_TRANSITION` retain their meanings, including
-`NO_TRANSITION` for both supervisor events and `node_session_started`, and
+`NO_TRANSITION` for both run-alarm events and `node_session_started`, and
 `DERIVED` for `criterion_refuted` and `criterion_lapsed`, the two accounts a
 lane gives when it takes a finished criterion back. Other
 rows select an existing semantic workflow state. The table classifies events; it
@@ -83,6 +83,15 @@ from the environment, dotenv files and file-secret directories. Startup
 refuses these retired names. There is no replacement setting while the
 bounded ORGANIZE loops have no active consumer; this does not remove their
 required bounded retry and exhaustion behavior.
+
+The `run_alarm_max_commits_without_closure`,
+`run_alarm_escalation_age_max_commits` and `run_alarm_escalation_age_max_ticks`
+settings were removed with the supervisor's code observers, which were merged
+into the supervisor pass. Startup refuses each of them (uppercase `KODEZART_`
+names included) from every source, with a message naming the supervisor pass:
+it now judges a fire that commits without closing a criterion, and a question
+left unanswered, from the board, and reports the counts it reads. There is no
+replacement bound; delete the assignments.
 
 The `union_check_cleanup_poll_interval_seconds` setting and its uppercase
 environment name were also removed. Repeated process-group termination uses
@@ -165,57 +174,38 @@ counts still exclude the initial attempt and use the shared retry policy.
 
 Scheduled-pass cadences have no defaults. Each scheduled pass — the dispatch
 pass (whose pair also paces the standing scopes' heartbeat), fire preparation,
-grooming, the audit and the supervisor tick — runs only when
+grooming, the audit and the supervisor pass — runs only when
 its interval and its timeout are both set. Unset, the pass is not scheduled, and
 boot logs `scheduled_pass_not_configured` naming the pass and the two settings
 that would schedule it; `pass_scheduler_started` lists only the passes that are
 scheduled. Setting one half of a pair without the other refuses at load, naming
 both.
-Fire preparation, grooming and the standing scopes' heartbeat run their first
-tick at boot; every other pass runs its first tick one interval after boot.
+Fire preparation, grooming, the supervisor pass and the standing scopes'
+heartbeat run their first tick at boot; every other pass runs its first tick one interval after boot.
 
-Escalation ageing uses recorded run progress. The implementation defaults
-allow five lane commits after a question is raised, or ten walker ticks after
-it is first observed; operators can set either count to zero to observe the
-first subsequent commit or tick. A walker tick leaves no tracker fact of its
-own, so a tick is counted by the commits it records across the question's
-scope: the first observation anchors the scope's lane heads on the question's
-own record, and every later tick counts the commits recorded since. A tick
-records one or more commits, so this alarm can fire later than a raise-time
-anchor would, never earlier. A counter must exceed its configured limit.
-
-The supervisor tick observes each declared scope's stage barrier under the
-scope arm of `TALLY_UNMOVED`, read from the roster and the stage markers and
-logged, never recorded; every member of the scope's ready reading: for a ready
-or finished lane the lane tally arm of `TALLY_UNMOVED`, and for every lane,
-blocked, unapproved and held ones included, the criteria its own stream
-accounts for, under `TALLY_REGRESSED` and `LAPSE_UNDISCHARGED`, and the
-node-session openings its stream holds, under `COMPOSITION_SUBSTITUTED`; and
-for each ready lane, and each lane held on its own open question, the age of
-every open lapse question it holds, under `ESCALATION_AGEING`. It reads each
-scope without the walker's stage barriers, so a scope whose walk is held on an
-open decision is still observed: a lane its lapse question classified for
-decision has its questions aged over its whole criterion subtree, and its
-tally is not observed, because it is waiting on a person. Per lane it reads
-the run-state record, every alarm record on that lane's issue in one listing,
-and the lane's stream, composes what each address should hold, and writes only
-where the two differ. It moves no state and opens no session.
-It is registered only when the operation declares `[[organize_scopes]]` rows and
-the deployment dials a tracker; either one absent registers nothing and names
-which was missing in the boot log.
+The supervisor pass is the third prompt pass beside fire preparation and
+grooming: one unattended session that reads what the operation's own account
+did since its last pass — the states and labels it set, the comments and record
+rows it wrote, the pull requests it opened or pushed to, every fire in
+progress, and the principal comments addressed to it — and reports that conduct
+against the standing rules, one comment per finding on the issue it governs,
+with its own row under `[records.supervisor]`. It changes no state, label,
+relation, date or assignee on an existing issue, and writes nothing on the
+forge. Among its rules are the two the former code observers counted: a fire
+that keeps committing without closing a criterion, and a question to a person
+still unanswered since the previous pass. It wires wherever the declared teams
+and repositories render, with or without scope rows. Its engine is the
+`supervisor_pass` key of `KODEZART_AGENT__SESSION_MODELS`.
 
 | Variable                          | Type         | Default                  | Constraints | Description                                              |
 | --------------------------------- | ------------ | ------------------------ | ----------- | -------------------------------------------------------- |
 | `KODEZART_HTTP__PROJECT_NAME`           | `str`        | `kodezart`               |             | FastAPI application title                                |
-| `KODEZART_RUN_ALARM_ESCALATION_AGE_MAX_COMMITS` | `int` | `5` | >= 0 | Recorded lane commits allowed after an unanswered escalation's raise SHA. |
-| `KODEZART_RUN_ALARM_ESCALATION_AGE_MAX_TICKS` | `int` | `10` | >= 0 | Walker ticks allowed after an unanswered escalation is first observed, each tick counted by the commits it records across the escalation's scope. |
 | `KODEZART_RUN_ALARM_BARREN_TICK_MAX_FILES_CHANGED` | `int` | `10` | >= 0 | Recorded files changed against the lane base allowed on a tick closing no previously-open reference. |
 | `KODEZART_RUN_ALARM_BARREN_TICK_MAX_COMMITS_AHEAD` | `int` | `5` | >= 0 | Recorded commits ahead of the lane base allowed on a tick closing no previously-open reference. |
 | `KODEZART_RUN_ALARM_MAX_SURFACE_HOLDERS` | `int` | `1` | >= 0 | Distinct recorded run holders allowed on one complete writable-surface address. |
 | `KODEZART_UNION_CHECK_STEP_TIMEOUT_SECONDS` | `float` | `1800` | > 0 | Wall-clock bound for one check step of a union composition. |
 | `KODEZART_UNION_STALE_MAX_ATTEMPTS` | `int` | `3` | >= 1 | Maximum union attempts before continuously moving lane heads refuse. |
 | `KODEZART_RUN_ALARM_MAX_RULINGS_WITHOUT_CLOSURE` | `int` | `5` | >= 0 | Distinct machine-authored ruling identities allowed since the lane last closed a previously-open obligation. |
-| `KODEZART_RUN_ALARM_MAX_COMMITS_WITHOUT_CLOSURE` | `int` | `5` | >= 0 | Recorded lane commits allowed since a lane last closed a criterion its subtree already owed. A lane firing nothing records no commit, so it never reaches this bound. |
 | `KODEZART_HTTP__DEBUG`                  | `bool`       | `false`                  |             | Enables `/docs` and `/redoc` Swagger UI                  |
 | `KODEZART_LOGGING__LEVEL`              | `str`        | `INFO`                   |             | Logging level (DEBUG, INFO, WARNING, ERROR)              |
 | `KODEZART_LOGGING__PRETTY`             | `bool`       | `false`                  |             | `true` for colorized console output, `false` for JSON lines |
@@ -231,7 +221,7 @@ which was missing in the boot log.
 | `KODEZART_MAX_REVIEWS`            | `int`        | `2`                      | 1-10        | Maximum ticket review rounds before accepting            |
 | `KODEZART_TICKET_REVIEW_MODE`     | `str`        | `create_only`            | `reviewed`, `create_only` | Whether the ticket loop compiles a reviewer session or one creator session whose draft the set's draft-critic lens checks; setting `KODEZART_MAX_REVIEWS` under `create_only`, or `create_only` over a set declaring no such lens, is refused at boot |
 | `KODEZART_AGENT__FALLBACK_MODEL`         | `str\|None`  | `None`                   |             | Engine a session falls back to when the primary declines a request; absent declares no fallback |
-| `KODEZART_AGENT__SESSION_MODELS`         | `dict[str,str]` | `{}`                  | keys: prompt function keys | JSON object pinning named function keys' sessions to an engine, overriding `KODEZART_AGENT__MODEL` for those keys only; an unknown key is refused at boot naming the vocabulary. The `pass_gate` key is the gate question the fire-prep and grooming passes ask before every tick after boot (did anything move in the window that this pass should act on, answered in a fixed shape); pin it to the cheapest engine the provider offers, for example `{"branch_name": "<engine>", "pass_gate": "<engine>"}`. Unset, the question runs on `KODEZART_AGENT__MODEL`; its effort is the set's own for the key |
+| `KODEZART_AGENT__SESSION_MODELS`         | `dict[str,str]` | `{}`                  | keys: prompt function keys | JSON object pinning named function keys' sessions to an engine, overriding `KODEZART_AGENT__MODEL` for those keys only; an unknown key is refused at boot naming the vocabulary. The `pass_gate` key is the gate question the fire-prep, grooming and supervisor passes ask before every tick after boot (did anything move in the window that this pass should act on, answered in a fixed shape); pin it to the cheapest engine the provider offers, for example `{"branch_name": "<engine>", "pass_gate": "<engine>"}`. Unset, the question runs on `KODEZART_AGENT__MODEL`; its effort is the set's own for the key. The `supervisor_pass` key is the supervisor pass's own session; the deployment guide pins it to `claude-sonnet-5-5` |
 | `KODEZART_AGENT__OUTPUT_STYLE`    | `str\|None`  | `None`                   |             | Claude Code output style every engine session runs under, e.g. `Concise`. Absent sends no style at all and the CLI's own default stands; no style is ever picked in code. The session's own init message is read back, and a declared style it does not confirm fails that session rather than running it under some other system prompt. Requires a bundled CLI new enough for the named style |
 | `KODEZART_INVESTIGATION_CAP`      | `int`        | `8`                      | >= 1        | Read-only investigator agents one investigation may fan out to; substituted into the prompt set's investigation spec at set resolution. No ceiling: above the floor the only limits are the machine's concurrency and Claude Code's own per-workflow agent limit |
 | `KODEZART_CRITERIA_MAX_REGENERATION_ROUNDS` | `int` | `1`                 | 0-5         | Regeneration rounds the criteria sweep may spend on infeasible criteria before halting the run |
@@ -239,6 +229,7 @@ which was missing in the boot log.
 | `KODEZART_FAN_IN_MAX_ATTEMPTS`    | `int`        | `2`                      | 1-5         | Dispatches a node spends while the answer that came back is refused: a criterion-id set that is not a permutation of the dispatched one, and — at the criteria validator — a response the response model rejects or a verdict its own evidence does not derive. A contract refusal is restated to the next dispatch; a non-permutation is not, because the prompt already names the ids. Exhaustion grades fail-closed (evaluator, post-merge review) or halts the run on the refusal still standing (criteria validator) |
 | `KODEZART_RETRY_INITIAL_INTERVAL` | `float`      | `1.0`                    | >= 0.1      | Retry backoff initial interval in seconds                |
 | `KODEZART_RETRY_RATE_LIMIT_FLOOR_SECONDS` | `float` | `60.0` | >= 1.0, <= 3600.0 | Seconds a node attempt that died on a provider rate-limit rejection waits before the graph's own back-off begins, when the rejection states no retry-after of its own. Measured 2026-09-01: under one standing limit the retry policy spawned around sixteen empty sessions in thirty seconds. The attempt budget is unchanged — only the spacing is. |
+| `KODEZART_RETRY_RATE_LIMIT_MAX_WAIT_SECONDS` | `float` | `18000.0` | >= 0.0, <= 604800.0 | Total seconds one session may spend waiting out provider rate limits instead of ending on them. Every session kind waits the same way: the implementer, the evaluator, the board questions (`pass_gate`, `scope_scan`, `scope_done`), the prompt passes and the scope stages. A session the provider stops on a rate limit is run again after a wait: until the reset the provider stated, plus up to 30 seconds of jitter, or, when it stated none, `KODEZART_RETRY_RATE_LIMIT_FLOOR_SECONDS` doubling each time up to 30 minutes. The stated reset is the rejected rate-limit frame's `resets_at` when the frame carries one; otherwise the Claude adapter reads it off the limit message, in both forms the CLI writes: `resets 3:20pm (Europe/Berlin)` (today, or tomorrow when that time has passed) and `resets Oct 3 at 10pm (Europe/Berlin)` (that date, or next year's when it has passed). A message in any other form falls back to the doubling back-off. The job and its workspace stay while it waits, and each wait logs `rate_limit_backoff` (attempt, wait_seconds, resets_at when stated, key). Once the total is spent the session ends as it did before this setting, `rate_limit_backoff_exhausted` is logged, and later rate-limited sessions stop waiting until one session ends without a rate limit or this many seconds pass, so graph retries cannot multiply the wait. A timeout around the session still applies: a scheduled pass's own timeout and `KODEZART_QUEUE__RUN_TIMEOUT_SECONDS` cut a wait that outlasts them. The outbound content scan does not wait; it keeps its own bound. `0` turns the wait off. Default five hours. |
 | `KODEZART_CHECKPOINT_URL`         | `str\|None`  | `None`                   |             | LangGraph checkpoint URL (see Checkpointing below)       |
 | `KODEZART_LOOP_PLATEAU_WINDOW`    | `int`        | `2`                      | 2-10        | Iterations without a new best passed-count before the Ralph loop is considered plateaued and stops |
 | `KODEZART_QUEUE__MAX_CONCURRENT_RUNS_PER_LANE` | `int` | `1`             | 1-16        | Dispatcher worker tasks per lane; `1` makes runs serial. Above 1 is honored and warns at start |
@@ -258,8 +249,8 @@ which was missing in the boot log.
 | `KODEZART_CI_POLL_INTERVAL_SECONDS` | `float` | `30.0` | >= 5.0, <= 300.0 | Seconds between CI status check polls. |
 | `KODEZART_CI_POLL_MAX_ATTEMPTS` | `int` | `60` | >= 1, <= 600 | Maximum CI status check poll attempts before timeout. |
 | `KODEZART_AUDIT_SWEEP_INTERVAL_SECONDS` | `float \| None` | none | >= 60.0, <= 86400.0 | Seconds between audit delta ticks on the existing scheduler. Set together with `KODEZART_AUDIT__TIMEOUT_SECONDS`. Unset: the pass is not scheduled. |
-| `KODEZART_SUPERVISOR_PASS_INTERVAL_SECONDS` | `float \| None` | none | >= 60.0, <= 86400.0 | Seconds between supervisor observation ticks on the existing scheduler. Set together with its timeout. Unset: the pass is not scheduled. |
-| `KODEZART_SUPERVISOR_PASS_TIMEOUT_SECONDS` | `float \| None` | none | > 0 | Wall-clock bound for one supervisor observation tick over every declared scope. Set together with its interval. Unset: the pass is not scheduled. |
+| `KODEZART_SUPERVISOR_PASS_INTERVAL_SECONDS` | `float \| None` | none | >= 60.0, <= 86400.0 | Seconds between supervisor passes: the session that reads what the operation's own account did and reports its conduct. Set together with its timeout. Unset: the pass is not scheduled. |
+| `KODEZART_SUPERVISOR_PASS_TIMEOUT_SECONDS` | `float \| None` | none | >= 60.0, <= 86400.0 | Seconds one supervisor pass session may take; on expiry it is cancelled and reported as timed out. Set together with its interval. Unset: the pass is not scheduled. |
 | `KODEZART_AUDIT_FULL_SWEEP_INTERVAL_SECONDS` | `float` | `86400.0` | >= 60.0, <= 86400.0 | Full coverage interval, no shorter than the audit tick interval. |
 | `KODEZART_DELIVERY_MAX_CONCURRENT_WATCHES` | `int` | `4` | >= 1, <= 32 | Maximum simultaneous delivery check watches across lanes. |
 | `KODEZART_DELIVERY_RED_RERUN_MAX_ATTEMPTS` | `int` | `1` | >= 0, <= 5 | Same-SHA reruns before a red check set is treated as reproduced. Zero disables flake re-observation; explicit unmet prerequisites consume no rerun. |
@@ -834,8 +825,7 @@ secrets. A file secret named `KODEZART_LOGGING` holds a JSON object with `level`
 
 `[[organize_scopes]]` is the operation's one scope table: a deployment declares
 each scope there once, and every pass that works scope by scope is composed from
-those rows — the observation tick over the row's scope where a tracker is
-dialled, and the audit over the row and its report destination where audit
+those rows — the audit over the row and its report destination where audit
 settings are set.
 
 Explicit `[[organize_scopes]]` rows each carry
@@ -851,7 +841,7 @@ deployment that configures no audit has nowhere to report; a configured audit
 refuses naming `organize_scopes.report_issue_key` on a row that omits it.
 
 Declaring `[[organize_scopes]]` switches nothing off. The periodic dispatch
-pass and the two prompt passes are scheduled on their own premises — a roster to
+pass and the three prompt passes are scheduled on their own premises — a roster to
 scan, a delivery probe for the dispatcher, and each pass's own cadence pair —
 whether or not scopes are declared. A scope deployment that sets those pairs
 runs them over the declared teams' boards beside the scope passes; one that

@@ -6,6 +6,8 @@ half — what actually reaches the executor at each dispatch — is asserted in
 the chain modules the criteria name by path.
 """
 
+import json
+import re
 from pathlib import Path
 
 import pytest
@@ -33,12 +35,16 @@ V5_SET_DIR = default_sets_root() / V5_SET
 LADDER: tuple[SessionEffort, ...] = tuple(SessionEffort)
 
 #: The set's own declared role → effort. The judgment roles run at the
-#: maximum and the question role at the floor (owner ruling of 2026-09-24);
-#: the maximum replaced the fire-time ruling FR-2 that ran judgment one
-#: level below authoring.
+#: maximum and the question and utility roles at the floor (rulings of
+#: 2026-09-24 and 2026-09-29); the maximum replaced the fire-time ruling
+#: FR-2 that ran judgment one level below authoring. The supervisor pass
+#: reads and reports, and runs at the floor on the engine the deployment
+#: pins for it.
 EXPECTED_EFFORT: dict[SessionRole, SessionEffort] = {
     **dict.fromkeys(SessionRole, SessionEffort.MAX),
     SessionRole.QUESTION: SessionEffort.LOW,
+    SessionRole.UTILITY: SessionEffort.LOW,
+    SessionRole.SUPERVISOR: SessionEffort.LOW,
 }
 
 
@@ -96,9 +102,11 @@ def test_the_registry_serves_each_key_the_effort_of_its_role(key: PromptKey) -> 
 
 
 def test_every_role_runs_at_the_top_of_the_ladder() -> None:
-    """The substance of the policy since 2026-09-24: no judgment role thinks
-    less; the three board questions and the pull-request description alone run
-    at the floor (owner rulings of 2026-09-24 and 2026-09-25)."""
+    """The substance of the policy since 2026-09-24: every judgment role runs
+    at the top and none thinks less; the question and utility roles run at
+    the floor (owner rulings of 2026-09-24, 2026-09-25 and 2026-09-29), and
+    so does the supervisor pass, which reads and reports and edits nothing
+    (owner ruling of 2026-09-29)."""
     top = LADDER[-1]
     assert top is SessionEffort.MAX
     metadata = v5_metadata()
@@ -106,13 +114,31 @@ def test_every_role_runs_at_the_top_of_the_ladder() -> None:
     assert declared == {
         **dict.fromkeys(SessionRole, top),
         SessionRole.QUESTION: LADDER[0],
+        SessionRole.UTILITY: LADDER[0],
+        SessionRole.SUPERVISOR: LADDER[0],
     }
+    assert metadata.session_roles[SessionRole.SUPERVISOR].keys == [
+        PromptKey.SUPERVISOR_PASS.value
+    ]
+    assert metadata.session_roles[SessionRole.SUPERVISOR].skills == []
+    assert PromptKey.SUPERVISOR_PASS.value in metadata.utility_keys
     assert set(metadata.session_roles[SessionRole.QUESTION].keys) == {
         PromptKey.PASS_GATE.value,
         PromptKey.SCOPE_SCAN.value,
         PromptKey.SCOPE_DONE.value,
         PromptKey.PR_DESCRIPTION.value,
     }
+
+
+def test_the_served_set_is_authored_for_exactly_its_three_engines() -> None:
+    """The judgment roles run on Opus or Fable and the cheap sessions on
+    Sonnet (owner ruling of 2026-09-29); an engine added or dropped by hand
+    changes what boot compares every configured engine against."""
+    assert v5_metadata().engines == [
+        "claude-opus-5-5",
+        "claude-fable-5-1",
+        "claude-sonnet-5-5",
+    ]
 
 
 def test_a_key_no_role_claims_is_a_typed_boot_error(tmp_path: Path) -> None:
@@ -363,3 +389,17 @@ def test_an_empty_table_is_byte_identical_to_before_it_existed() -> None:
 
     for key in PromptKey:
         assert registry.session_policy(key).model is None
+
+
+def test_every_engine_the_deploying_guide_pins_is_one_the_set_declares() -> None:
+    """The guide's SESSION_MODELS example boots without an engine mismatch:
+    a model the set does not declare would be logged at every boot."""
+    guide = Path(__file__).resolve().parents[2] / "docs" / "deploying.md"
+    tables = re.findall(
+        r"SESSION_MODELS`? *[|=] *[`']?(\{[^}]*\})",
+        guide.read_text(encoding="utf-8"),
+    )
+    assert tables, "the deploying guide no longer shows a SESSION_MODELS example"
+
+    pinned = {engine for table in tables for engine in json.loads(table).values()}
+    assert pinned - set(v5_metadata().engines) == set()

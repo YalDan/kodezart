@@ -30,7 +30,8 @@ RETIRED_SCOPE_KEYS: Final[Mapping[str, str]] = {
         "row carrying its report_issue_key"
     ),
     "supervisor_scopes": (
-        "retired, declare each observed scope once as an [[organize_scopes]] row"
+        "retired, the supervisor pass reads the declared teams and "
+        "repositories; a scope is declared once as an [[organize_scopes]] row"
     ),
 }
 

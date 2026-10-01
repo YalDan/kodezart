@@ -103,12 +103,12 @@ With an operation file but **no key**, boot logs `tracker_not_configured` with
 - a request addressed at a scope refuses with
   `ScopedExecutionUnavailableError`: the scope arm is built only on a dialled
   tracker (`composition/engine.py`);
-- the per-issue dispatch passes and the supervisor tick are not scheduled, and
-  a configured audit refuses the boot naming `tracker`;
+- the per-issue dispatch passes are not scheduled, and a configured audit
+  refuses the boot naming `tracker`;
 - a `system = "tracker"` record logs `run_record_sink_unavailable` at boot and
   every write to it refuses;
-- the fire-prep and grooming passes are still scheduled when their cadence
-  pairs are set, but kodezart gives their sessions no tracker server. With the
+- the fire-prep, grooming and supervisor passes are still scheduled when their
+  cadence pairs are set, but kodezart gives their sessions no tracker server. With the
   host opt-in off they have no board to read.
 
 ## Notion
@@ -178,7 +178,15 @@ Leave `KODEZART_KNOWLEDGE__SESSION_GRANTS` empty, remove `[knowledge]` and any
   repository the run committed in.
 - **Pull requests.** One per repository the deliverable branch gained commits
   in, each against that repository's trunk (`chains/authored_publication.py`).
-  kodezart never merges one.
+  Sessions are instructed that the session delivering a unit keeps each of
+  the unit's pull requests a draft whenever any criterion is open, a review
+  comment is unanswered, or its checks are red or its base conflicts at the
+  pushed head, returning it to draft if it was marked ready, and marks it
+  ready for review and stops once every criterion is done, every review
+  comment addressed and its checks green with no base conflict at the pushed
+  head (`delivery_units` in `set.toml`). That is an instruction to sessions:
+  the pull requests kodezart's own publication step opens are opened ready
+  for review. kodezart never merges one.
 - **Checks.** The checks on each pull request are watched and classified. A red
   set is re-run at the same commit before it counts, and a work defect sends
   the run back into the loop while remediation rounds remain

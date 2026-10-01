@@ -12,7 +12,6 @@ from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.chains.scope_walker import read_scope_ready
 from kodezart.composition.tracker import criteria_stage_label_key
 from kodezart.domain.errors import ScopeNotApprovedError
-from kodezart.domain.run_alarm_record import MARKER_PURPOSE
 from kodezart.main import create_app, lifespan
 from kodezart.services.scope_approval import scope_approved
 from kodezart.services.tracker_boot import owned_mappings
@@ -388,7 +387,7 @@ async def test_a_scope_deployment_boots_from_the_shipped_files_and_fires_nothing
         }
         # The page's environment sets the dispatch pair and no other: the
         # per-issue dispatch pass and the heartbeat both run on it, and the
-        # supervisor and the two session passes are named as unset. Boot knows
+        # three session passes are named as unset. Boot knows
         # no pass named organize: the stages run inside the run the heartbeat
         # submits.
         assert [entry.name for entry in app.state.pass_scheduler.passes] == [
@@ -400,14 +399,9 @@ async def test_a_scope_deployment_boots_from_the_shipped_files_and_fires_nothing
         } == {
             PromptKey.FIRE_PREP_PASS.value,
             PromptKey.GROOMING_PASS.value,
-            "supervisor",
+            PromptKey.SUPERVISOR_PASS.value,
             "audit",
         }
-        # The observation tick records each lane's alarm under a configured
-        # prefix and refuses that lane by name without one, so a file that
-        # schedules the tick and declares no prefix is a file that stops at its
-        # first observed lane.
-        assert MARKER_PURPOSE in loaded.marker_prefixes
         assert app.state.checkpointer is None
         for name in ("scheduled_passes_not_wired", "prompt_passes_not_wired"):
             assert logged(events, name) == [], name

@@ -11,7 +11,6 @@ from kodezart.domain.errors import (
     SurfaceLeaseError,
     SurfaceLeaseLostError,
 )
-from kodezart.domain.lane_alarms import stored_alarm
 from kodezart.domain.run_alarm_record import render_run_alarm, run_alarm_marker
 from kodezart.services.run_surface_lease import RunSurfaceLease
 from kodezart.types.domain.operation import OperationMemberAbsentError
@@ -29,7 +28,12 @@ from kodezart.types.domain.run_alarm import (
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.surface import SurfaceKind, WritableSurface
 from tests.fakes import FakeTrackerPort
-from tests.tracker.conftest import APPROVED_ISSUE, FixtureClock, fixture_server
+from tests.tracker.conftest import (
+    APPROVED_ISSUE,
+    FixtureClock,
+    fixture_server,
+    stored_alarm,
+)
 from tests.tracker.marker_config import MARKER_PREFIXES
 from tests.tracker.test_linear_mcp_tracker import tracker_over
 
@@ -142,15 +146,6 @@ async def store(port, *values, holder=JOB):
             )
 
 
-async def read(port, value):
-    """The record at *value*'s address, picked out of the carrier's one listing."""
-    return stored_alarm(
-        await port.read_run_alarms(issue_key=APPROVED_ISSUE),
-        subject=value.subject,
-        signal=value.signal,
-    )
-
-
 async def test_real_adapter_implements_alarm_native_roundtrip_port(ports):
     port, boundary = ports
     values = (
@@ -160,9 +155,9 @@ async def test_real_adapter_implements_alarm_native_roundtrip_port(ports):
         alarm(signal=AlarmSignal.WRITE_BACK_MISSING),
     )
     assert len({address(v) for v in values}) == len(values)
-    assert await read(port, values[0]) is None
+    assert await stored_alarm(port, values[0]) is None
     await store(port, *values)
-    assert [await read(port, value) for value in values] == list(values)
+    assert [await stored_alarm(port, value) for value in values] == list(values)
     assert not hasattr(values[2].subject, "lane_key")
     assert set(RunAlarm.model_fields) == {
         "subject",
@@ -177,7 +172,7 @@ async def test_real_adapter_implements_alarm_native_roundtrip_port(ports):
     if isinstance(port, FakeTrackerPort):
         cold = FakeTrackerPort(marker_prefixes=PREFIXES, clock=boundary.clock)
         cold.comments = list(port.comments)
-    assert [await read(cold, value) for value in values] == list(values)
+    assert [await stored_alarm(cold, value) for value in values] == list(values)
 
 
 async def test_every_record_on_an_issue_is_read_in_one_listing(ports, monkeypatch):
@@ -245,7 +240,7 @@ async def test_identical_repeat_has_zero_native_mutations_and_update_keeps_addre
         assert writes(port, boundary) == before
         changed = value.model_copy(update={"raised_at_sha": "next-observed-head"})
         await port.record_run_alarm(issue_key=APPROVED_ISSUE, alarm=changed, holder=JOB)
-        assert await read(port, value) == changed
+        assert await stored_alarm(port, value) == changed
         assert len(await port.list_comments(issue_key=APPROVED_ISSUE)) >= 1
         records = [
             c
@@ -298,7 +293,7 @@ async def test_damaged_native_record_is_neither_absence_nor_overwritten(ports, d
         body = body.replace('"raisedBy":', '"active": true,\n  "raisedBy":')
     await port.post_comment(issue_key=APPROVED_ISSUE, body=body)
     with pytest.raises(TrackerProtocolError):
-        await read(port, value)
+        await stored_alarm(port, value)
     async with RunSurfaceLease(
         tracker=port,
         job_id=JOB,
@@ -321,7 +316,7 @@ async def test_duplicate_native_address_is_a_typed_refusal(ports):
     await port.post_comment(issue_key=APPROVED_ISSUE, body=body)
     before = writes(port, boundary)
     with pytest.raises(DuplicateCommentMarkerError):
-        await read(port, value)
+        await stored_alarm(port, value)
     with pytest.raises(DuplicateCommentMarkerError):
         await port.record_run_alarm(issue_key=APPROVED_ISSUE, alarm=value, holder=JOB)
     assert writes(port, boundary) == before
@@ -333,8 +328,8 @@ async def test_disjoint_alarm_addresses_can_be_written_by_concurrent_jobs(ports)
     await asyncio.gather(
         store(port, first, holder="job-one"), store(port, second, holder="job-two")
     )
-    assert await read(port, first) == first
-    assert await read(port, second) == second
+    assert await stored_alarm(port, first) == first
+    assert await stored_alarm(port, second) == second
 
 
 async def test_explicit_renewal_extends_duration_and_loss_never_reacquires(ports):
@@ -364,7 +359,7 @@ async def test_explicit_renewal_extends_duration_and_loss_never_reacquires(ports
         with pytest.raises(SurfaceLeaseLostError):
             await lease.renew()
         assert writes(port, boundary) == after_loss
-    assert await read(port, value) == value
+    assert await stored_alarm(port, value) == value
 
 
 async def test_required_prefix_has_no_fallback_or_mutation():
@@ -395,7 +390,7 @@ async def test_cancelled_owned_write_settles_then_releases_before_other_job():
     boundary.resume.set()
     with pytest.raises(asyncio.CancelledError):
         await task
-    assert await read(port, value) == value
+    assert await stored_alarm(port, value) == value
     await port.acquire_surfaces(
         surfaces=frozenset({address(value)}), holder="other", lease_seconds=DURATION
     )
@@ -432,7 +427,7 @@ async def test_in_flight_backend_write_is_explicitly_not_fenced_by_lease_expiry(
     await task
     # The backend accepted a request admitted before expiry. This is a measured
     # limitation, not a conditional-commit/fencing guarantee from the owner.
-    assert await read(port, value) == value
+    assert await stored_alarm(port, value) == value
     with pytest.raises(SurfaceLeaseError) as error:
         await port.record_run_alarm(issue_key=APPROVED_ISSUE, alarm=value, holder=JOB)
     assert error.value.current_holder == "next-real-job"
@@ -450,4 +445,4 @@ async def test_failure_exits_release_the_declared_surface_set(ports):
     await port.acquire_surfaces(
         surfaces=surface_set, holder="next-real-job", lease_seconds=DURATION
     )
-    assert await read(port, value) is None
+    assert await stored_alarm(port, value) is None

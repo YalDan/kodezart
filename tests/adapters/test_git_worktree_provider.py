@@ -214,3 +214,29 @@ async def test_acquire_with_explicit_ref_uses_branch_content(
     assert head_content == "on-main\n"
     assert dev_content == "on-develop\n"
     assert head_content != dev_content
+
+
+async def test_a_branch_cut_after_origin_moved_starts_at_origins_new_tip(
+    tmp_path: Path,
+) -> None:
+    """The clone is reused between cuts, so each cut reads origin's trunk anew."""
+    upstream = tmp_path / "upstream"
+    upstream.mkdir()
+    await _run_git(["git", "init", "-b", "main"], cwd=upstream)
+    await _run_git(["git", "commit", "--allow-empty", "-m", "first"], cwd=upstream)
+    git = SubprocessGitService(remote="origin")
+    cache = LocalBareRepoCache(git=git, base_dir=str(tmp_path / "cache"))
+    p = GitWorktreeProvider(git=git, cache=cache)
+    file_url = f"file://{upstream}"
+    earlier = await p.acquire(repo_url=file_url, ref="main")
+    stale = await git.current_sha(earlier)
+    await p.release(earlier)
+    await _run_git(["git", "commit", "--allow-empty", "-m", "moved"], cwd=upstream)
+    tip = await git.current_sha(str(upstream))
+    assert tip != stale
+
+    cut = await p.acquire(repo_url=file_url, ref="main", branch_name="kodezart/loop")
+    try:
+        assert await git.current_sha(cut) == tip
+    finally:
+        await p.release(cut)

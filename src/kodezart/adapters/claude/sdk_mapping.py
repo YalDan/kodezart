@@ -5,6 +5,7 @@ the union gains and this module has not absorbed is a named refusal at
 runtime and a type error at check time.
 """
 
+from datetime import UTC, datetime
 from typing import Final, Never, NoReturn, assert_never
 
 from claude_agent_sdk import (
@@ -28,6 +29,7 @@ from claude_agent_sdk import (
     UserMessage,
 )
 
+from kodezart.adapters.claude.limit_reset import stated_reset
 from kodezart.core.errors import UnmappedAgentMessageError
 from kodezart.types.domain.agent import (
     AgentEvent,
@@ -258,6 +260,10 @@ def map_message(message: Message) -> list[AgentEvent]:
         case ResultMessage():
             result = ResultEvent.model_validate(message, from_attributes=True)
             result.failure_kind = result_failure(message)
+            if message.is_error:
+                result.rate_limit_resets_at = stated_reset(
+                    message.result, now=datetime.now(UTC)
+                )
             return [result]
         case TaskStartedMessage():
             return [TaskStartedEvent.model_validate(message, from_attributes=True)]

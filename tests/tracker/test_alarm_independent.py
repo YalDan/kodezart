@@ -4,14 +4,13 @@ import pytest
 
 from kodezart.core.errors import TrackerProtocolError
 from kodezart.services.run_surface_lease import RunSurfaceLease
-from tests.tracker.conftest import APPROVED_ISSUE
+from tests.tracker.conftest import APPROVED_ISSUE, stored_alarm
 from tests.tracker.test_run_alarm_records import (
     DURATION,
     JOB,
     Boundary,
     address,
     alarm,
-    read,
     store,
 )
 
@@ -83,4 +82,4 @@ async def test_alarm_damage_seen_by_universal_writer_is_not_overwritten(
                 name == "save_comment"
                 for name, _ in boundary.server.calls[len(before) :]
             )
-            assert await read(port, value) == value
+            assert await stored_alarm(port, value) == value
